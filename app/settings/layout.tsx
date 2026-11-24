@@ -24,7 +24,7 @@ export const SETTINGS_ICON_BUTTON_CLASS =
 	"size-(--pilo-button-sm-height) shrink-0";
 /** A ghost text button in a settings row: a 14pt icon and a short label. */
 export const SETTINGS_TEXT_BUTTON_CLASS =
-	"h-(--pilo-button-sm-height) gap-1.5 px-2 py-0 text-xs font-normal";
+	"h-(--pilo-button-sm-height) gap-1.5 px-2 py-0 text-xs text-(length:--pilo-ui-text-xs) font-normal";
 /** An icon button in a SettingsSection header, as the WebUI's 28pt header actions. */
 export const SETTINGS_HEADER_ICON_BUTTON_CLASS = "size-7 shrink-0";
 
@@ -43,7 +43,7 @@ export function SettingsSection(props: {
 		<View
 			testID={props.testID}
 			class={classNames(
-				"overflow-hidden rounded-lg border border-border/70 bg-card/60 text-sm",
+				"overflow-hidden rounded-lg border border-border/70 bg-card/60 text-sm text-(length:--pilo-ui-text-sm)",
 				props.class,
 			)}
 		>
@@ -52,7 +52,7 @@ export function SettingsSection(props: {
 					<View class="min-h-10 flex-row items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5">
 						<View class="min-w-0 flex-1">
 							{props.title ? (
-								<Text class="font-sans text-xs font-semibold leading-tight text-muted-foreground">
+								<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) font-semibold leading-tight text-muted-foreground">
 									{props.title}
 								</Text>
 							) : null}
@@ -98,7 +98,7 @@ export function SettingsRow(props: {
 		props.children ? (
 			<View
 				class={classNames(
-					"min-w-0 flex-row flex-wrap items-center gap-2 text-sm",
+					"min-w-0 flex-row flex-wrap items-center gap-2 text-sm text-(length:--pilo-ui-text-sm)",
 					isNarrowSettings() ? "w-full" : "shrink-0 justify-end pl-4",
 				)}
 				style={{
@@ -129,7 +129,7 @@ export function SettingsRow(props: {
 			{() =>
 				props.helper ? (
 					typeof props.helper === "string" ? (
-						<Text class="font-sans text-[11px] leading-[1.4] text-muted-foreground">
+						<Text class="font-sans text-(length:--pilo-ui-text-2xs) leading-[1.4] text-muted-foreground">
 							{props.helper}
 						</Text>
 					) : (
@@ -187,7 +187,7 @@ export function SettingsStatus(props: {
 			) : null}
 			<Text
 				class={classNames(
-					"font-sans text-[11px] font-medium",
+					"font-sans text-(length:--pilo-ui-text-2xs) font-medium",
 					props.muted ? "text-muted-foreground" : "text-foreground/80",
 				)}
 			>
@@ -301,7 +301,7 @@ export function SettingsRetryInline(props: {
 		>
 			<Text
 				class={classNames(
-					"font-sans text-xs text-destructive",
+					"font-sans text-xs text-(length:--pilo-ui-text-xs) text-destructive",
 					props.fill && "min-w-0 flex-1",
 				)}
 			>
@@ -342,7 +342,9 @@ export function SettingsSectionMessage(props: {
 			<Text
 				class={classNames(
 					"font-sans",
-					props.size === "2xs" ? "text-[11px]" : "text-xs",
+					props.size === "2xs"
+						? "text-(length:--pilo-ui-text-2xs)"
+						: "text-xs text-(length:--pilo-ui-text-xs)",
 					props.tone === "error" ? "text-destructive" : "text-muted-foreground",
 				)}
 			>

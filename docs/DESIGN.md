@@ -54,37 +54,37 @@ colors:
 
 typography:
   display:
-    fontFamily: Inter
+    fontFamily: system-ui
     fontSize: 30px
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: -0.025em
   headline:
-    fontFamily: Inter
+    fontFamily: system-ui
     fontSize: 24px
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: -0.025em
   title:
-    fontFamily: Inter
+    fontFamily: system-ui
     fontSize: 18px
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: -0.02em
   body:
-    fontFamily: Inter
+    fontFamily: system-ui
     fontSize: 14px
     fontWeight: 400
     lineHeight: 1.45
     letterSpacing: 0em
   label:
-    fontFamily: Inter
+    fontFamily: system-ui
     fontSize: 12px
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: 0em
   code:
-    fontFamily: JetBrains Mono
+    fontFamily: ui-monospace
     fontSize: 12px
     fontWeight: 400
     lineHeight: 1.5
@@ -217,7 +217,7 @@ components:
 
 Two themes, one structure. Light is **Lody Light**: white paper, `#f7f8fa` panels, cool grey text, and a blue accent deliberately darkened to `hsl(219.7 82.2% 54%)` so white text on it reads 4.8:1. Dark is the bundled **Vesper**: a `#101010` canvas, grey ladder, and a warm amber accent `hsl(27.1 100% 80%)` carrying _black_ text. Dark is not the light palette inverted — it is a second palette that happens to share the same role names.
 
-The personality comes from three places, and none of them are decoration: **restraint** (one accent, four surface steps, one control height), **the two typographic voices** (Inter for chrome, JetBrains Mono for anything the user might paste into a terminal), and an **evidence-based contrast discipline** — every text token in `web/index.css` carries a comment recording the ratio it was calibrated to against the surface it actually renders on, 12px monospace included.
+The personality comes from three places, and none of them are decoration: **restraint** (one accent, four surface steps, one control height), **the two typographic voices** (system UI fonts for chrome, system monospace for anything the user might paste into a terminal), and an **evidence-based contrast discipline** — every text token in `web/index.css` carries a comment recording the ratio it was calibrated to against the surface it actually renders on, 12px monospace included.
 
 ## Colors
 
@@ -234,7 +234,7 @@ Tokens live as raw HSL triplets in `:root` / `.dark` in `web/index.css`, mapped 
 
 ## Typography
 
-Two families, both self-hosted via `@fontsource`, both Latin-subset with a deliberate CJK fallback chain (`Noto Sans SC`, `PingFang SC`, `Microsoft YaHei`) because the UI copy is Chinese and Latin-only line-height assumptions break on full-width glyphs.
+Typography uses system UI and monospace fonts by default, with installed CJK fallbacks such as `Noto Sans SC`, `PingFang SC`, and `Microsoft YaHei`. No font files are bundled.
 
 **Weight carries hierarchy; size mostly does not.** The interface runs almost entirely at 14px. Emphasis is `font-weight` 400 → 500 (control labels, menu items, row names) → 600 (titles). Only three sizes exist above body, and they belong to exactly three roles: 18px (sidebar brand), 24px (card title), 30px (empty-state hero). Nothing else gets to grow.
 
@@ -255,9 +255,7 @@ Two steps within 3px of each other (12 / 12.5 / 13) are not a hierarchy, they ar
 
 **Tracking tightens as size grows.** `-0.025em` at 24–30px, `-0.02em` at 18px, `0` at 14px and below. At 12px, negative tracking destroys legibility and is never used. The one exception runs the other way: an uppercase micro-label — a menu section heading (`web/ui/menu-styles.ts:43`) or the code-block language in a rendered fence (`web/index.css:370-375`) — gets positive tracking, because uppercase at 11px closes up without it.
 
-**Monospace marks "this is data".** JetBrains Mono at 12px with contextual ligatures on is used for code, file paths, shell commands, counts, keyboard shortcuts, and connection targets — anywhere the user might copy a literal string. It is not used for stylistic contrast. Inside a dense metadata line the same mono datum drops to `text-2xs` (`web/components/sidebar/project-row.tsx:194`, a project path nested inside its 12px tooltip label), and rendered code blocks keep their own `--pilo-code-font-size` (12px default, user-adjustable in Settings) so the fence scales independently of the page. Body code runs at 1.5 line-height rather than the UI's 1.45, because code is read line by line.
-
-**Inter is loaded at 400/500/600/700.** Nothing in the UI uses 700; it exists for markdown-rendered content inside a chat message.
+**Monospace marks "this is data".** System monospace at 12px is used for code, file paths, shell commands, counts, keyboard shortcuts, and connection targets — anywhere the user might copy a literal string. It is not used for stylistic contrast. Inside a dense metadata line the same mono datum drops to `text-2xs` (`web/components/sidebar/project-row.tsx:194`, a project path nested inside its 12px tooltip label), and rendered code blocks keep their own `--pilo-code-font-size` (12px default, user-adjustable in Settings) so the fence scales independently of the page. Body code runs at 1.5 line-height rather than the UI's 1.45, because code is read line by line.
 
 ## Layout
 

@@ -2,7 +2,6 @@ import { mount, Scroll, View } from "nsh";
 
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { Project } from "@shared/api/projects-types";
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { conversationContext } from "../shell/open-chat";
 import { ConnectionsPane } from "../settings/connections-pane";

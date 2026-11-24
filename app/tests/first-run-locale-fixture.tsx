@@ -1,7 +1,6 @@
 import { host, mount, Text } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { launch } from "../shell/launch";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";

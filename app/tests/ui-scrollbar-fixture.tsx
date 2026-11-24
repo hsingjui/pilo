@@ -9,7 +9,6 @@ import {
 	type ViewRef,
 } from "nsh";
 import claude from "../../theme/claude-theme.json";
-import "../shell/fonts";
 import { Button } from "../ui/button";
 import { Scrollbar, scrollbarLook } from "../ui/scrollbar";
 import { setStyleTheme } from "../ui/theme-style";

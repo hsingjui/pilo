@@ -184,7 +184,7 @@ export function ProjectSection(props: {
 						</Button>
 						<Text
 							class="min-w-0 flex-1 truncate font-sans font-semibold"
-							style={{ ...sidebarText.xs, color: foreground() }}
+							style={{ ...sidebarText("xs"), color: foreground() }}
 						>
 							{name}
 						</Text>
@@ -446,7 +446,7 @@ function ProjectSessions(props: {
 						testID={`${section()}:failed`}
 						role="alert"
 						class="px-3 py-2 text-center font-sans text-destructive"
-						style={sidebarText.xs}
+						style={sidebarText("xs")}
 					>
 						{current.message ?? t("common.loadFailed")}
 					</Text>
@@ -476,7 +476,7 @@ function ViewAllRow(props: { testID: string; onPress: () => void }) {
 				<View class="size-4 shrink-0" />
 				<Text
 					class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted group-hover:text-sidebar-hover-foreground"
-					style={sidebarText.xs}
+					style={sidebarText("xs")}
 				>
 					{() => t("sidebar.viewAll")}
 				</Text>

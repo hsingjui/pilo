@@ -2,7 +2,6 @@ import { mount, Storage } from "nsh";
 
 import type { Project } from "@shared/api/projects-types";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import "../shell/fonts";
 import { ComposerStore } from "../composer/composer-store";
 import { AppShell } from "../shell/AppShell";
 import { conversationContext, followOpenSession } from "../shell/open-chat";

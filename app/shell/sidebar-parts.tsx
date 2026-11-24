@@ -13,11 +13,21 @@ import { t } from "./i18n";
  * The sidebar's type at the WebUI's default UI size, as the chat's
  * (`chat/layout.ts`): Tailwind's `text-sm`, `text-xs` and `text-2xs` there.
  */
-export const sidebarText = {
-	sm: { fontSize: chatPx(14), lineHeight: chatPx(20) },
-	xs: { fontSize: chatPx(12), lineHeight: chatPx(16) },
-	"2xs": { fontSize: chatPx(11) },
+const sidebarTextSizes = {
+	sm: { fontSize: 14, lineHeight: 20 },
+	xs: { fontSize: 12, lineHeight: 16 },
+	"2xs": { fontSize: 11, lineHeight: undefined },
 } as const;
+
+export function sidebarText(size: keyof typeof sidebarTextSizes) {
+	const { fontSize, lineHeight } = sidebarTextSizes[size];
+	const scale = token("pilo-ui-text-sm") / 14;
+	return {
+		fontSize: chatPx(fontSize) * scale,
+		lineHeight:
+			lineHeight === undefined ? undefined : chatPx(lineHeight) * scale,
+	};
+}
 
 /** A `pilo-sidebar-*` row height at the WebUI's default UI size. */
 export const sidebarRowHeight = (

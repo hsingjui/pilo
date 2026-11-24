@@ -2,7 +2,6 @@ import {
 	type Accessor,
 	computed,
 	effect,
-	platform,
 	setColorScheme,
 	setTheme,
 	signal,
@@ -11,9 +10,12 @@ import {
 } from "nsh";
 
 import {
+	DEFAULT_CODE_FONT_FAMILY,
+	DEFAULT_PAGE_FONT_FAMILY,
+	DEFAULT_UI_FONT_SIZE,
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
-} from "@shared/font-stacks";
+} from "@shared/font-settings";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 import {
 	createThemeTokenCatalog,
@@ -28,14 +30,24 @@ import { setStyleTheme } from "../ui/theme-style";
 import { appLocale, setAppLocale } from "./i18n";
 
 const catalog = createThemeTokenCatalog(lody.cssVars);
-const defaultPageFont =
-	platform.os === "windows"
-		? "Noto Sans SC"
-		: platform.os === "web"
-			? "inter"
-			: "system-sans";
-const defaultMonoFont =
-	platform.os === "web" ? "jetbrains-mono" : "system-mono";
+export const MIN_UI_FONT_SIZE = 14;
+export const MAX_UI_FONT_SIZE = 20;
+const uiTextTokens = Object.entries(lody.cssVars.theme)
+	.filter(([name]) => name.startsWith("pilo-ui-text-"))
+	.map(([name, size]) => [name, Number.parseFloat(size)] as const);
+
+/** Scale the app's named UI text sizes without changing nsh's OS fontScale. */
+function uiTextSizes(size: number) {
+	const scale =
+		Math.min(MAX_UI_FONT_SIZE, Math.max(MIN_UI_FONT_SIZE, size)) /
+		DEFAULT_UI_FONT_SIZE;
+	return Object.fromEntries(
+		uiTextTokens.map(([name, base]) => [
+			name,
+			`${(base * scale).toFixed(3)}px`,
+		]),
+	);
+}
 
 // nsh 0.6.1 keeps only the first family when parsing font tokens.
 export const displayFontFamily = signal(lody.cssVars.theme["font-display"]);
@@ -58,9 +70,10 @@ export async function showStartupTheme(): Promise<StartupTheme | null> {
 	if (saved) {
 		showTheme(
 			saved,
-			getPageFontFamilyStack(defaultPageFont),
-			getMonospaceFontFamilyStack(defaultMonoFont),
+			getPageFontFamilyStack(DEFAULT_PAGE_FONT_FAMILY),
+			getMonospaceFontFamilyStack(DEFAULT_CODE_FONT_FAMILY),
 			undefined,
+			DEFAULT_UI_FONT_SIZE,
 		);
 	}
 	return saved;
@@ -103,25 +116,20 @@ function parseStartupTheme(stored: string | null): StartupTheme | null {
 /** Follow saved appearance, using platform fonts until preferences load. */
 export function followSavedAppearance(state: Accessor<AppState>) {
 	const locale = computed(() => state().preferences?.values.locale);
-	const pageSans = computed(() => {
-		const saved = state().preferences?.values.pageFontFamily;
-		if (platform.os === "web") {
-			return getPageFontFamilyStack(
-				!saved || saved === "system-sans" ? "inter" : saved,
-			);
-		}
-		return getPageFontFamilyStack(saved ?? defaultPageFont);
-	});
-	const codeMono = computed(() => {
-		const saved = state().preferences?.values.codeFontFamily;
-		if (platform.os === "web") {
-			return getMonospaceFontFamilyStack(
-				!saved || saved === "system-mono" ? "jetbrains-mono" : saved,
-			);
-		}
-		return getMonospaceFontFamilyStack(saved ?? defaultMonoFont);
-	});
+	const pageSans = computed(() =>
+		getPageFontFamilyStack(
+			state().preferences?.values.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,
+		),
+	);
+	const codeMono = computed(() =>
+		getMonospaceFontFamilyStack(
+			state().preferences?.values.codeFontFamily ?? DEFAULT_CODE_FONT_FAMILY,
+		),
+	);
 	const codeFontSize = computed(() => state().preferences?.values.codeFontSize);
+	const uiFontSize = computed(
+		() => state().preferences?.values.uiFontSize ?? DEFAULT_UI_FONT_SIZE,
+	);
 	const theme = computed(() => state().themeSettings);
 	const startupTheme = computed(() => {
 		const settings = theme();
@@ -142,7 +150,8 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 			setAppLocale(savedLocale);
 	});
 	const themeInputs = computed(
-		() => [theme(), pageSans(), codeMono(), codeFontSize()] as const,
+		() =>
+			[theme(), pageSans(), codeMono(), codeFontSize(), uiFontSize()] as const,
 	);
 	// Effects run after rendering; set the theme before building the first layout.
 	let applied = untracked(themeInputs);
@@ -160,6 +169,7 @@ function showTheme(
 	pageSans: string,
 	codeMono: string,
 	codeSize: number | undefined,
+	uiSize: number,
 ) {
 	setColorScheme(settings?.theme ?? "system");
 	const isClaude = settings?.themeFamily === "claude";
@@ -172,6 +182,7 @@ function showTheme(
 			...vars,
 			theme: {
 				...vars.theme,
+				...uiTextSizes(uiSize),
 				"font-sans": pageSans,
 				"font-mono": codeMono,
 				...(codeSize === undefined

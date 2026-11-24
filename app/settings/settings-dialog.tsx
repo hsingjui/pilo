@@ -262,7 +262,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												return (
 													<View>
 														{section.labelKey ? (
-															<Text class="font-sans px-2.5 pb-1 text-xs font-medium text-muted-foreground">
+															<Text class="font-sans px-2.5 pb-1 text-xs text-(length:--pilo-ui-text-xs) font-medium text-muted-foreground">
 																{() => t(section.labelKey ?? "")}
 															</Text>
 														) : null}
@@ -280,10 +280,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
 																		ref={pointerBlur.ref}
 																		onMouseUp={pointerBlur.onMouseUp}
 																		class={classNames(
-																			"w-full flex-row items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
+																			"w-full flex-row items-center gap-2.5 rounded-md px-2.5 py-1.5",
 																			active() === tab.id
 																				? "bg-secondary"
-																				: "hover:bg-secondary/50",
+																				: hover.hovered()
+																					? "bg-secondary/50"
+																					: "bg-transparent",
 																		)}
 																		focusVisibleStyle={focusRingStyle(
 																			token("ring"),
@@ -304,7 +306,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 																		/>
 																		<Text
 																			class={classNames(
-																				"flex-1 truncate font-sans text-sm font-medium",
+																				"flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) font-medium",
 																				highlighted()
 																					? "text-secondary-foreground"
 																					: "text-muted-foreground",
@@ -347,7 +349,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												}}
 											/>
 										) : (
-											<Text class="font-sans text-lg font-semibold leading-tight tracking-tight text-foreground">
+											<Text class="font-sans text-lg text-(length:--pilo-ui-text-lg) font-semibold leading-tight tracking-tight text-foreground">
 												{() => String(t(activeTab().labelKey))}
 											</Text>
 										)

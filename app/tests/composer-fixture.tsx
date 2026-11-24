@@ -1,5 +1,4 @@
 import { Text, View, signal } from "nsh";
-import "../shell/fonts";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { PiCommand } from "@shared/api/pi-runtime-types";

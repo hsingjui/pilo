@@ -13,7 +13,7 @@ test("generated themes apply at runtime without losing native tokens", async () 
 	expect(app.viewStyle("id:surface")?.backgroundColor).toBe("#ffffffff");
 	expect(app.shows("text:ready")).toBe(true);
 	expect(app.shows("text:Sheet radius: 8")).toBe(true);
-	expect(app.shows("text:Font: Inter")).toBe(true);
+	expect(app.shows("text:Font: system")).toBe(true);
 
 	await app.press("Apply Claude");
 	expect(app.viewStyle("id:surface")?.backgroundColor).toBe("#fcfcfcff");

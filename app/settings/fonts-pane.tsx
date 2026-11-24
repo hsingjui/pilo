@@ -27,6 +27,7 @@ import {
 } from "@shared/font-settings";
 import type { PreferencePatch } from "@shared/host-preferences-types";
 import { AppToaster, showToast } from "../shell/app-toasts";
+import { MAX_UI_FONT_SIZE, MIN_UI_FONT_SIZE } from "../shell/appearance";
 import type { AppState } from "../state/app-state";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
@@ -34,10 +35,18 @@ import { classNames } from "../ui/class-names";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
+import { Select } from "../ui/select";
 import { FontSelect, type FontSelectGroup } from "./font-select";
-import { FontSizeInput } from "./font-size-input";
 import { isNarrowSettings, SettingsRow, SettingsSection } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
+
+const FONT_SIZE_ITEMS = Array.from(
+	{ length: MAX_UI_FONT_SIZE - MIN_UI_FONT_SIZE + 1 },
+	(_, index) => {
+		const size = MIN_UI_FONT_SIZE + index;
+		return { value: String(size), title: `${size} px` };
+	},
+);
 
 /** One enumeration per app run; a failed one is retried when the pane opens again. */
 let systemFonts: Promise<SystemFontFamily[]> | undefined;
@@ -53,8 +62,8 @@ function loadSystemFonts(client: SettingsClient): Promise<SystemFontFamily[]> {
 }
 
 /**
- * Fonts: page / reading / code / terminal family + size. Built-in families,
- * the installed ones the Host lists, and a family typed into the picker's
+ * Fonts: page / reading / code / terminal family + size. System defaults,
+ * installed families the Host lists, and a family typed into the picker's
  * search.
  */
 export function FontsPane(props: {
@@ -96,15 +105,25 @@ export function FontsPane(props: {
 		value: number | undefined,
 		fallback: number,
 		saveValue: (next: number) => void,
-	) => (
-		<FontSizeInput
-			testID={testID}
-			class="w-20"
-			label={label}
-			value={value ?? fallback}
-			onChange={saveValue}
-		/>
-	);
+	) => {
+		const current = value ?? fallback;
+		return (
+			<Select
+				testID={testID}
+				size="sm"
+				class="w-28"
+				accessibilityLabel={t("settings.fontSizeInputLabel", {
+					font: label,
+				})}
+				items={FONT_SIZE_ITEMS}
+				value={String(current)}
+				placeholder={`${current} px`}
+				onChange={({ value }) => {
+					if (value !== null) saveValue(Number(value));
+				}}
+			/>
+		);
+	};
 	const family = (
 		testID: string,
 		label: string,
@@ -132,7 +151,7 @@ export function FontsPane(props: {
 			)}
 		>
 			<View class={isNarrowSettings() ? undefined : "w-[120px] shrink-0"}>
-				<Text class="font-sans pt-1 text-xs text-muted-foreground">
+				<Text class="font-sans pt-1 text-xs text-(length:--pilo-ui-text-xs) text-muted-foreground">
 					{label}
 				</Text>
 			</View>
@@ -284,7 +303,7 @@ export function FontsPane(props: {
 					<View class="rounded-md border border-border/60 bg-background p-3 gap-1.5">
 						{() => (
 							<Text
-								class="text-sm font-medium"
+								class="text-sm text-(length:--pilo-ui-text-sm) font-medium"
 								style={{
 									fontFamily: getPageFontFamilyStack(
 										values()?.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,
@@ -296,7 +315,7 @@ export function FontsPane(props: {
 						)}
 						{() => (
 							<Text
-								class="text-xs leading-[1.45] text-muted-foreground"
+								class="text-xs text-(length:--pilo-ui-text-xs) leading-[1.45] text-muted-foreground"
 								style={{
 									fontFamily: getPageFontFamilyStack(
 										values()?.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,

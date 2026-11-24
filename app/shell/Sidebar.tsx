@@ -220,7 +220,7 @@ function SectionHeader(props: {
 					<Icon name={props.icon} size={14} class="shrink-0 opacity-80" />
 					<Text
 						class="min-w-0 shrink truncate font-sans font-medium"
-						style={{ ...sidebarText.sm, color: foreground() }}
+						style={{ ...sidebarText("sm"), color: foreground() }}
 					>
 						{props.title}
 					</Text>
@@ -371,7 +371,7 @@ function NoSessions(props: { testID: string }) {
 		<Text
 			testID={`${props.testID}:empty`}
 			class="px-3 py-8 text-center font-sans text-sidebar-foreground-muted"
-			style={sidebarText.xs}
+			style={sidebarText("xs")}
 		>
 			{() => t("sidebar.noSessions")}
 		</Text>

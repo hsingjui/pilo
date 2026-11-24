@@ -8,7 +8,6 @@ import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type { Project } from "@shared/api/projects-types";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import "../shell/fonts";
 import { AppShell } from "../shell/AppShell";
 import { initializeI18n } from "../shell/i18n";
 import {

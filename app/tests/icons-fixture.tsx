@@ -8,7 +8,6 @@ import {
 	type CanvasRenderingContext2D,
 } from "nsh";
 import { Button } from "nsh/base";
-import "../shell/fonts";
 import icons from "../shell/lucide-icons.json";
 
 type Icon = { size: number; paths: { d: string; fill?: boolean }[] };

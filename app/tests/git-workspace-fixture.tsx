@@ -2,7 +2,6 @@ import { computed, mount, signal, Text, View } from "nsh";
 
 import type { Project } from "@shared/api/projects-types";
 import type { WorkspaceFile } from "@shared/project-workspace";
-import "../shell/fonts";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { FilePreviewLayer } from "../shell/file-preview-view";
 import {

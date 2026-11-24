@@ -9,7 +9,7 @@ test("FontSelect groups options, previews them and reports a choice", async () =
 	// The trigger shows the chosen option's resolved label, not its value.
 	expect(app.shows("text:System default")).toBe(true);
 	expect(app.shows("text:system-sans")).toBe(false);
-	expect(app.shows("text:JetBrains Mono")).toBe(true);
+	expect(app.shows("text:System monospace")).toBe(true);
 	await app.press("id:font-select");
 	await app.waitFor("text:SF Pro");
 	// Both group headers are shown.

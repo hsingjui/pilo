@@ -1,5 +1,4 @@
 import { mount, setTheme, signal, token, Text, View } from "nsh";
-import "../shell/fonts";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";

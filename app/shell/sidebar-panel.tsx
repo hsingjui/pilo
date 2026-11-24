@@ -439,7 +439,7 @@ function SidebarToolbarRow(props: {
 				</View>
 				<Text
 					class="min-w-0 flex-1 truncate font-sans"
-					style={{ ...sidebarText.sm, color: foreground() }}
+					style={{ ...sidebarText("sm"), color: foreground() }}
 				>
 					{props.label}
 				</Text>

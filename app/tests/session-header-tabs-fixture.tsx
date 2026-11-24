@@ -1,7 +1,6 @@
 import { computed, mount, signal, Text, View } from "nsh";
 
 import type { WorkspaceFile } from "@shared/project-workspace";
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { SessionHeader } from "../shell/session-header";
 import type { TerminalTab } from "../state/terminal-store";

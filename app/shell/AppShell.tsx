@@ -1027,7 +1027,10 @@ export function AppShell(props: AppShellProps) {
 	return (
 		<AppToaster.Provider value={toasts}>
 			<ChatMediaActions.Provider value={mediaActions}>
-				<View testID="app" class="flex-1 flex-row bg-background">
+				<View
+					testID="app"
+					class="flex-1 flex-row bg-background text-(length:--pilo-ui-text-sm)"
+				>
 					<ConversationColumnLayout.Provider value={conversationLayout}>
 						<ChatReadingFont.Provider value={readingFont}>
 							{layout()}

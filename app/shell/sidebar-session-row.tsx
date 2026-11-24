@@ -95,7 +95,7 @@ function ConfirmDeleteButton(props: {
 						<View class="pointer-events-none absolute inset-0 rounded-full bg-destructive/12 dark:bg-destructive/35" />
 						<Text
 							class="shrink-0 whitespace-nowrap font-sans font-medium leading-none text-destructive"
-							style={sidebarText["2xs"]}
+							style={sidebarText("2xs")}
 						>
 							{() => t("sidebar.confirmDelete")}
 						</Text>
@@ -274,14 +274,14 @@ export function SessionRow(props: {
 		menuOpen() ? shown : hidden;
 
 	const title = () => (
-		<View class="h-6 min-w-0 flex-row items-center">
+		<View class="min-h-6 min-w-0 flex-row items-center">
 			<Text
 				class={`min-w-0 flex-1 truncate font-sans ${
 					selected()
 						? "text-sidebar-selection-foreground"
 						: "text-sidebar-foreground dark:text-sidebar-foreground/75"
 				}`}
-				style={sidebarText.sm}
+				style={sidebarText("sm")}
 			>
 				{() => session().title}
 			</Text>
@@ -291,7 +291,7 @@ export function SessionRow(props: {
 		const name = props.projectName?.();
 		if (!name) return null;
 		return (
-			<View class="h-4 min-w-0 flex-row items-center gap-1">
+			<View class="min-h-4 min-w-0 flex-row items-center gap-1">
 				<Icon
 					name="Folder"
 					size={12}
@@ -301,7 +301,7 @@ export function SessionRow(props: {
 				<Text
 					testID={`session:${session().id}:project`}
 					class="min-w-0 flex-1 truncate font-sans leading-tight text-sidebar-foreground-muted"
-					style={sidebarText["2xs"]}
+					style={sidebarText("2xs")}
 				>
 					{name}
 				</Text>
@@ -325,8 +325,8 @@ export function SessionRow(props: {
 								autoFocus
 								value={renameValue()}
 								accessibilityLabel={t("sidebar.editSessionTitle")}
-								class="h-6 rounded-sm px-1"
-								style={{ fontSize: sidebarText.sm.fontSize }}
+								class="min-h-6 h-auto rounded-sm px-1 py-0"
+								style={{ fontSize: sidebarText("sm").fontSize }}
 								onChange={(event) => renameValue.set(event.value)}
 								onSubmit={submitRename}
 								onBlur={submitRename}

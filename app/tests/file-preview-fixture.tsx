@@ -3,7 +3,6 @@ import { computed, mount, signal, Text, View } from "nsh";
 import type { Project } from "@shared/api/projects-types";
 import type { ChatMessage } from "@shared/chat/conversation-types";
 import type { WorkspaceFile } from "@shared/project-workspace";
-import "../shell/fonts";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { FilePreviewLayer } from "../shell/file-preview-view";
 import { initializeI18n } from "../shell/i18n";

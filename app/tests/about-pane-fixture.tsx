@@ -1,6 +1,5 @@
 import { mount, Scroll, View } from "nsh";
 
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { AboutPane } from "../settings/about-pane";
 import { scriptedClient } from "./scripted-app-client";

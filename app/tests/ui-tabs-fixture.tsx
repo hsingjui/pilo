@@ -1,5 +1,4 @@
 import { mount, signal, token, Text, View } from "nsh";
-import "../shell/fonts";
 import { Tabs } from "../ui/tabs";
 import { Tab } from "../ui/tab";
 

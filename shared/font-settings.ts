@@ -19,23 +19,17 @@ export type {
 export type FontOption = {
 	value: string;
 	label: string;
-	/** 内置字体项的可翻译标签 key；系统字体项没有。 */
+	/** 系统默认项的可翻译标签 key。 */
 	labelKey?: "settings.systemDefault" | "settings.systemMonospace";
 	/** 下拉预览用的 CSS family；省略表示用应用默认字体渲染。 */
 	family?: string;
 };
 
 export const PAGE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
-	{ value: "inter", label: "Inter", family: "Inter" },
 	{ value: "system-sans", label: "", labelKey: "settings.systemDefault" },
 ];
 
 export const MONOSPACE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
-	{
-		value: "jetbrains-mono",
-		label: "JetBrains Mono",
-		family: "JetBrains Mono",
-	},
 	{ value: "system-mono", label: "", labelKey: "settings.systemMonospace" },
 ];
 
@@ -44,13 +38,6 @@ export type SystemFontFamily = {
 	family: string;
 	monospace: boolean;
 };
-
-/** 随应用打包、已在内置分组出现的字体族；系统分组跳过它们。 */
-const BUNDLED_FONT_FAMILIES = new Set(
-	[...PAGE_FONT_BUILTIN_OPTIONS, ...MONOSPACE_FONT_BUILTIN_OPTIONS]
-		.map((option) => option.family?.toLowerCase())
-		.filter((family): family is string => Boolean(family)),
-);
 
 /**
  * 符号/图标字体（选中后文字会变成不可读字形），不进入页面字体候选；
@@ -69,7 +56,7 @@ function systemFontOptions(families: Iterable<string>): FontOption[] {
 
 /**
  * 系统字体的页面与等宽候选：去空白、大小写不敏感去重并按名称排序，
- * 跳过与内置字体重名的族；页面候选再去掉符号字体。
+ * 页面候选再去掉符号字体。
  */
 export function systemFontOptionGroups(families: readonly SystemFontFamily[]): {
 	page: FontOption[];
@@ -80,7 +67,7 @@ export function systemFontOptionGroups(families: readonly SystemFontFamily[]): {
 	for (const item of families) {
 		const family = item.family.trim();
 		const key = family.toLowerCase();
-		if (!key || seen.has(key) || BUNDLED_FONT_FAMILIES.has(key)) continue;
+		if (!key || seen.has(key)) continue;
 		seen.add(key);
 		unique.push({ family, monospace: item.monospace });
 	}
@@ -104,14 +91,13 @@ export function systemFontOptionGroups(families: readonly SystemFontFamily[]): {
 
 export const DEFAULT_UI_FONT_SIZE: UiFontSize = 15;
 
-export const DEFAULT_PAGE_FONT_FAMILY: PageFontFamily = "inter";
+export const DEFAULT_PAGE_FONT_FAMILY: PageFontFamily = "system-sans";
 export const DEFAULT_READING_FONT_SIZE: ReadingFontSize = 16;
 export const DEFAULT_READING_FONT_FAMILY: PageFontFamily =
 	DEFAULT_PAGE_FONT_FAMILY;
-export const DEFAULT_CODE_FONT_FAMILY: MonospaceFontFamily = "jetbrains-mono";
+export const DEFAULT_CODE_FONT_FAMILY: MonospaceFontFamily = "system-mono";
 export const DEFAULT_CODE_FONT_SIZE: CodeFontSize = 14;
-export const DEFAULT_TERMINAL_FONT_FAMILY: MonospaceFontFamily =
-	"jetbrains-mono";
+export const DEFAULT_TERMINAL_FONT_FAMILY: MonospaceFontFamily = "system-mono";
 export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 14;
 
 export {

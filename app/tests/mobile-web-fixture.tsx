@@ -5,7 +5,6 @@ import type { Project } from "@shared/api/projects-types";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { conversationContext, followOpenSession } from "../shell/open-chat";
 import type {

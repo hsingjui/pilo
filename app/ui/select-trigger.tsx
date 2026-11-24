@@ -25,7 +25,7 @@ export function SelectTrigger(props: SelectTriggerProps) {
 			disabled={props.disabled}
 			onLayout={props.onLayout}
 			class={classNames(
-				"flex-row min-w-0 max-w-full items-center justify-between gap-2 rounded-(--pilo-radius-md) border border-input-border bg-input-field text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60",
+				"flex-row min-w-0 max-w-full items-center justify-between gap-2 rounded-(--pilo-radius-md) border border-input-border bg-input-field text-sm text-(length:--pilo-ui-text-sm) font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60",
 				fieldSizes[props.size ?? "default"],
 				props.class ?? "w-full",
 			)}

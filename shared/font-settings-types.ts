@@ -1,12 +1,6 @@
-/**
- * 字体值：内置标识（随应用打包或系统回退，始终可用）或 DirectWrite
- * 枚举出的系统字体族名（直接作为 CSS family 使用）。
- */
-export type PageFontFamily = "inter" | "system-sans" | (string & {});
-export type MonospaceFontFamily =
-	| "jetbrains-mono"
-	| "system-mono"
-	| (string & {});
+/** 字体值：系统默认标识，或用户选择的字体族名。 */
+export type PageFontFamily = "system-sans" | (string & {});
+export type MonospaceFontFamily = "system-mono" | (string & {});
 
 export type UiFontSize = number;
 export type ReadingFontSize = number;

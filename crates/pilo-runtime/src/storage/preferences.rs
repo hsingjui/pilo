@@ -31,7 +31,20 @@ fn complete(stored: &Map<String, Value>) -> Map<String, Value> {
     if let Some(stored) = stored.get("keyboardShortcuts").and_then(Value::as_object) {
         shortcuts.extend(stored.clone());
     }
-    values.extend(stored.clone());
+    for (key, value) in stored {
+        // Old bundled font IDs now resolve to the system defaults.
+        if matches!(
+            (key.as_str(), value.as_str()),
+            ("pageFontFamily" | "readingFontFamily", Some("inter"))
+                | (
+                    "codeFontFamily" | "terminalFontFamily",
+                    Some("jetbrains-mono")
+                )
+        ) {
+            continue;
+        }
+        values.insert(key.clone(), value.clone());
+    }
     values.insert("keyboardShortcuts".to_owned(), Value::Object(shortcuts));
     values
 }

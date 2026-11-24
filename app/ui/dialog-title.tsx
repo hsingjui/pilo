@@ -8,7 +8,7 @@ export function DialogTitle(props: TextProps) {
 			role="header"
 			{...rest}
 			class={classNames(
-				"font-sans text-lg font-semibold leading-tight",
+				"font-sans text-lg text-(length:--pilo-ui-text-lg) font-semibold leading-tight",
 				local.class,
 			)}
 		>

@@ -31,7 +31,7 @@ const foregrounds = {
 
 const sizes = {
 	default: "h-(--pilo-button-height) px-4 py-2",
-	sm: "h-(--pilo-button-sm-height) px-3 py-0 text-xs",
+	sm: "h-(--pilo-button-sm-height) px-3 py-0 text-xs text-(length:--pilo-ui-text-xs)",
 	lg: "h-(--pilo-button-lg-height) px-8 py-0",
 	icon: "h-(--pilo-button-icon-size) w-(--pilo-button-icon-size) p-0",
 };
@@ -45,7 +45,7 @@ export function buttonVariants(
 	props: Pick<ButtonProps, "variant" | "size" | "class"> = {},
 ) {
 	return classNames(
-		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm font-medium font-sans text-foreground transition-[color,background-color,border-color,scale] active:scale-[0.96] focus-visible:outline-hidden disabled:opacity-50",
+		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm text-(length:--pilo-ui-text-sm) font-medium font-sans text-foreground transition-[color,background-color,border-color,scale] active:scale-[0.96] focus-visible:outline-hidden disabled:opacity-50",
 		variants[props.variant ?? "default"],
 		sizes[props.size ?? "default"],
 		props.class,

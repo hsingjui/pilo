@@ -27,9 +27,9 @@ pub(crate) fn defaults() -> Map<String, Value> {
         },
         "collapseCompletedActivity": true, "collapseLongMessages": true, "showWorkDuration": true,
         "showPluginNotifications": false, "desktopNotifications": false, "developerMode": false,
-        "pageFontFamily": "inter", "uiFontSize": 15, "readingFontFamily": "inter", "readingFontSize": 16,
-        "codeFontFamily": "jetbrains-mono", "codeFontSize": 14,
-        "terminalFontFamily": "jetbrains-mono", "terminalFontSize": 14
+        "pageFontFamily": "system-sans", "uiFontSize": 15, "readingFontFamily": "system-sans", "readingFontSize": 16,
+        "codeFontFamily": "system-mono", "codeFontSize": 14,
+        "terminalFontFamily": "system-mono", "terminalFontSize": 14
     }).as_object().cloned().unwrap_or_default()
 }
 
@@ -173,6 +173,27 @@ mod runtime_tests {
         let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
         runtime.events.subscribe("test", 1, host.clone());
         let initial = preferences_get(&runtime).unwrap();
+        assert_eq!(initial.values["pageFontFamily"], "system-sans");
+        assert_eq!(initial.values["readingFontFamily"], "system-sans");
+        assert_eq!(initial.values["codeFontFamily"], "system-mono");
+        assert_eq!(initial.values["terminalFontFamily"], "system-mono");
+        let fonts = preferences_patch(
+            &runtime,
+            json!({
+                "pageFontFamily": "inter", "readingFontFamily": "Inter",
+                "codeFontFamily": "JetBrains Mono", "terminalFontFamily": "jetbrains-mono"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(fonts.values["pageFontFamily"], "system-sans");
+        assert_eq!(fonts.values["readingFontFamily"], "Inter");
+        assert_eq!(fonts.values["codeFontFamily"], "JetBrains Mono");
+        assert_eq!(fonts.values["terminalFontFamily"], "system-mono");
+        assert_eq!(preferences_get(&runtime).unwrap(), fonts);
         let settings = preferences_patch(
             &runtime,
             json!({"desktopNotifications": false})

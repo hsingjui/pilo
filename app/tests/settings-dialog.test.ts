@@ -235,10 +235,11 @@ test("the fonts reset menu renders its items and resets families and sizes", asy
 	await app.press("text:Default sizes");
 	await app.waitFor("id:settings-fonts-reset-sizes", { state: "gone" });
 	await app.host.send("fixture", "probe-shortcuts");
-	await app.waitUntil(
-		() =>
-			Boolean(
-				app.storage()["shortcut-patches"]?.includes('"pageFontFamily"'),
-			) && Boolean(app.storage()["shortcut-patches"]?.includes('"uiFontSize"')),
-	);
+	await app.waitUntil(() => {
+		const patches = app.storage()["shortcut-patches"];
+		return Boolean(
+			patches?.includes('"pageFontFamily":"system-sans"') &&
+			patches.includes('"uiFontSize"'),
+		);
+	});
 });

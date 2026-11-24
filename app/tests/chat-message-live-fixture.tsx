@@ -2,7 +2,6 @@ import { host, mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { NshPiloClient } from "../client/nsh-pilo-client";

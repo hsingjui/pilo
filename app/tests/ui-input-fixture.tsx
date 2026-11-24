@@ -1,5 +1,4 @@
 import { mount, signal, Text, View, type InputRef } from "nsh";
-import "../shell/fonts";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { styleVar } from "../ui/theme-style";

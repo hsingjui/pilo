@@ -8,7 +8,6 @@ import {
 	type ScrollRef,
 	type ViewRef,
 } from "nsh";
-import "../shell/fonts";
 import claude from "../../theme/claude-theme.json";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";

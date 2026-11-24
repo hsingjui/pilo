@@ -1,5 +1,4 @@
 import { mount, signal, Text, View, setTheme } from "nsh";
-import "../shell/fonts";
 import type { CommandRef } from "nsh/base";
 import claude from "../../theme/claude-theme.json";
 import { Command } from "../ui/command";

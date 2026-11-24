@@ -8,7 +8,6 @@ import {
 	SHORTCUT_COMMANDS,
 } from "@shared/keyboard-shortcuts-types";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import "../shell/fonts";
 import { AppShell } from "../shell/AppShell";
 import { conversationContext, followOpenSession } from "../shell/open-chat";
 import { initializeI18n } from "../shell/i18n";

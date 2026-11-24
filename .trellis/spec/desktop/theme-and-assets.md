@@ -32,11 +32,9 @@ pnpm desktop:generate:icons --check
 
 ## 字体
 
-字体放 `desktop/fonts/`，并在 `desktop/app/fonts.ts` 静态导入注册，入口 `desktop/App.tsx` 导入该模块，独立 UI fixture 同样导入。应用内资产布局见 `desktop/fonts/README.md`。
+桌面端与 WebUI 不打包字体。页面和阅读默认 `system-sans`，代码和终端默认 `system-mono`。修改默认值时同步 `shared/font-settings.ts`、`theme/lody-theme.css` 和 Runtime 的 `preferences::defaults()`。Runtime 返回偏好快照时将旧内置标识 `inter`、`jetbrains-mono` 回退到对应默认值，保留用户选择的字体族名和字号。
 
-Inter、JetBrains Mono 的字体来自根依赖，与 Web 字体对应；具体字重、依赖版本和 OFL 许可证见 `desktop/fonts/README.md`，注册回归见 `desktop/tests/fonts.test.ts`。
-
-nsh 0.6.1 解析 `cssVars` 中的字体 token 时只保留第一项。需要回退栈的桌面标题使用 `desktop/app/appearance.ts` 的 `displayFontFamily()` 作为 inline `fontFamily`，不要用 `token("font-display")` 读取回退栈。
+nsh 0.6.1 解析 `cssVars` 中的字体 token 时只保留第一项；`system-ui` 不产生可读的 token，由宿主使用系统字体。需要回退栈的桌面标题使用 `app/shell/appearance.ts` 的 `displayFontFamily()` 作为 inline `fontFamily`，不要用 `token("font-display")` 读取回退栈。
 
 ### 已知问题：macOS 上 nsh 文字比 Tauri/WebUI 粗
 

@@ -4,7 +4,6 @@ import {
 	MONOSPACE_FONT_BUILTIN_OPTIONS,
 	PAGE_FONT_BUILTIN_OPTIONS,
 } from "@shared/font-settings";
-import "../shell/fonts";
 import { initializeI18n, t } from "../shell/i18n";
 import { FontSelect } from "../settings/font-select";
 
@@ -35,7 +34,7 @@ mount(() => {
 			/>
 			<FontSelect
 				testID="mono-select"
-				value="jetbrains-mono"
+				value="system-mono"
 				groups={[
 					{
 						label: String(t("settings.builtIn")),

@@ -217,7 +217,7 @@ export function SessionHeader(props: SessionHeaderProps) {
 							<Text
 								testID="session-header-title"
 								class={classNames(
-									"min-w-0 shrink truncate font-sans text-sm",
+									"min-w-0 shrink truncate font-sans text-sm text-(length:--pilo-ui-text-sm)",
 									chatSelected()
 										? hasTabs()
 											? "font-medium text-foreground"
@@ -358,7 +358,11 @@ function WorkspaceHeaderTab(props: {
 				tooltip={
 					<Tooltip>
 						<Text
-							class={props.tab.tooltipMono ? "font-mono text-xs" : "font-sans"}
+							class={
+								props.tab.tooltipMono
+									? "font-mono text-xs text-(length:--pilo-ui-text-xs)"
+									: "font-sans"
+							}
 						>
 							{props.tab.tooltip}
 						</Text>
@@ -375,7 +379,7 @@ function WorkspaceHeaderTab(props: {
 				/>
 				<Text
 					class={classNames(
-						"min-w-0 shrink truncate font-sans text-sm",
+						"min-w-0 shrink truncate font-sans text-sm text-(length:--pilo-ui-text-sm)",
 						active()
 							? "font-medium text-foreground"
 							: hover.hovered()
@@ -416,7 +420,7 @@ function OverflowTabsMenu(props: { items: () => readonly AuxTabItem[] }) {
 					testID="workspace-tabs-overflow"
 					variant="ghost"
 					size="sm"
-					class="h-7 shrink-0 gap-1 rounded-(--pilo-radius-md) border border-border/60 px-2 text-xs text-muted-foreground hover:bg-hover/70 hover:text-foreground"
+					class="h-7 shrink-0 gap-1 rounded-(--pilo-radius-md) border border-border/60 px-2 text-xs text-(length:--pilo-ui-text-xs) text-muted-foreground hover:bg-hover/70 hover:text-foreground"
 					accessibilityLabel={label()}
 					tooltip={
 						<Tooltip>
@@ -424,7 +428,7 @@ function OverflowTabsMenu(props: { items: () => readonly AuxTabItem[] }) {
 						</Tooltip>
 					}
 				>
-					<Text class="font-mono text-xs text-muted-foreground">
+					<Text class="font-mono text-xs text-(length:--pilo-ui-text-xs) text-muted-foreground">
 						{() => `+${count()}`}
 					</Text>
 					<Icon
@@ -444,7 +448,7 @@ function OverflowTabsMenu(props: { items: () => readonly AuxTabItem[] }) {
 							icon={<Icon name={item().icon} size={14} />}
 							onSelect={() => item().onSelect()}
 						>
-							<Text class="min-w-0 flex-1 truncate font-sans text-sm">
+							<Text class="min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm)">
 								{() => item().label()}
 							</Text>
 						</MenuItem>
@@ -508,7 +512,7 @@ function SessionHeaderMenu(props: {
 						<Text class="shrink-0 font-sans text-muted-foreground">
 							{() => t("chat.sessionId")}
 						</Text>
-						<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs">
+						<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs text-(length:--pilo-ui-text-xs)">
 							{() => props.sessionId() ?? "—"}
 						</Text>
 					</MenuItem>
@@ -525,7 +529,7 @@ function SessionHeaderMenu(props: {
 						<Text class="shrink-0 font-sans text-muted-foreground">
 							{() => t("chat.sessionFilePath")}
 						</Text>
-						<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs">
+						<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs text-(length:--pilo-ui-text-xs)">
 							{() => props.sessionPath() ?? t("chat.sessionPathUnavailable")}
 						</Text>
 					</MenuItem>

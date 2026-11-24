@@ -1,5 +1,4 @@
 import { mount, signal, Text, View } from "nsh";
-import "../shell/fonts";
 import { Select } from "../ui/select";
 
 const manyItems = Array.from({ length: 24 }, (_, index) => ({

@@ -7,7 +7,6 @@ import {
 	signal,
 	type ViewRef,
 } from "nsh";
-import "../shell/fonts";
 import { Button, type ButtonProps } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Foreground } from "../ui/foreground";

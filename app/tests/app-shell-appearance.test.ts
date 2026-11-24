@@ -127,7 +127,7 @@ test("the shell shows the saved fonts instead of the theme's", async () => {
 
 test("the shell follows saved font changes in the theme it shows", async () => {
 	const app = await openSaved("en-US", { theme: "light", themeFamily: "lody" });
-	expect(fonts(app)).toBe("page Inter, code JetBrains Mono 14, display Inter");
+	expect(fonts(app)).toBe("page system, code ui-monospace 14, display system");
 
 	await app.press("Save Georgia and Menlo");
 	await becomes(app, fonts, "page Georgia, code Menlo 16, display Georgia");
@@ -156,7 +156,7 @@ test("saved fonts replace a custom theme's, and its display font stays", async (
 	await becomes(
 		app,
 		fonts,
-		"page Inter, code JetBrains Mono 14, display Times New Roman",
+		"page system, code ui-monospace 14, display Times New Roman",
 	);
 
 	await app.press("Save Georgia and Menlo");

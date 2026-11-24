@@ -10,7 +10,6 @@ import {
 } from "nsh";
 import { TextView, type TextViewRef } from "nsh/base";
 
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { Button } from "../ui/button";
 

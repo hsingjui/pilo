@@ -7,7 +7,6 @@ import {
 	View,
 	type ViewRef,
 } from "nsh";
-import "../shell/fonts";
 import claude from "../../theme/claude-theme.json";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";

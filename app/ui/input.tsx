@@ -51,7 +51,7 @@ export function Input(props: InputProps) {
 			readonly={local.disabled || local.readonly}
 			multiline={local.multiline}
 			class={[
-				"w-full rounded-(--pilo-radius-md) border border-input-border bg-input-field text-sm font-sans text-input-foreground placeholder:text-input-placeholder hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60",
+				"w-full rounded-(--pilo-radius-md) border border-input-border bg-input-field text-sm text-(length:--pilo-ui-text-sm) font-sans text-input-foreground placeholder:text-input-placeholder hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60",
 				local.multiline
 					? "min-h-20 px-3 py-2"
 					: fieldSizes[local.size ?? "default"],

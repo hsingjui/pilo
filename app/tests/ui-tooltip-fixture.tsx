@@ -1,5 +1,4 @@
 import { colorScheme, mount, setTheme, signal, token, Text, View } from "nsh";
-import "../shell/fonts";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 import { setStyleTheme } from "../ui/theme-style";

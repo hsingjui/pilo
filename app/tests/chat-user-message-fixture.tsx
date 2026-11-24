@@ -1,5 +1,4 @@
 import { mount, signal, Text, View } from "nsh";
-import "../shell/fonts";
 
 import {
 	sessionMentionValue,

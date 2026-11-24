@@ -469,23 +469,29 @@ mod tests {
 
     #[test]
     fn complete_legacy_placeholder_reports_unrepresentable_layout() {
-        let source = include_str!("../../../shared/theme-custom.ts");
-        let example = source
-            .split(" * :root {")
-            .nth(1)
-            .unwrap()
-            .split(" * 布局入口")
-            .next()
-            .unwrap();
-        let css = format!(
-            ":root {{{}",
-            example
-                .lines()
-                .map(|line| line.strip_prefix(" *").unwrap_or(line).trim_start())
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        let (tokens, issues) = convert(&css);
+        let css = r#"
+:root {
+  --primary: 15.9 62.4% 59.6%;
+  --pilo-bubble-radius: 1.25rem;
+  --pilo-mobile-bubble-radius: 1rem;
+  --pilo-button-height: 36px;
+  --pilo-mobile-button-height: 48px;
+  --pilo-field-height: 36px;
+  --pilo-mobile-field-height: 48px;
+  --pilo-sidebar-margin: 0;
+  --pilo-sidebar-radius: 0;
+  --pilo-sidebar-border-width: 0 1px 0 0;
+  --pilo-sidebar-width: 100%;
+  --pilo-sidebar-height: 100%;
+  --pilo-sidebar-padding: 0.5rem;
+  --pilo-sidebar-shadow: none;
+}
+
+.dark {
+  --primary: 15.9 62.4% 59.6%;
+}
+"#;
+        let (tokens, issues) = convert(css);
         assert!(!tokens.light.is_empty());
         assert!(!tokens.dark.is_empty());
         assert!(!issues.is_empty());

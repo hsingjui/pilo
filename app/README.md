@@ -377,8 +377,10 @@ A custom theme is a token table shared by the desktop and the WebUI, checked by
 `followSavedAppearance` (`app/shell/appearance.ts`) applies the saved page and code
 fonts to `font-sans` and `font-mono`. Lody also uses the page font for
 `font-display`; Claude and custom themes keep their own display font when set.
-Until preferences load, the page font falls back to Noto Sans SC on Windows
-and the system UI font elsewhere, and the code font to system monospace.
+Desktop and WebUI ship no font files. Page and reading fonts default to the
+system UI font, and code and terminal fonts default to system monospace.
+The Host resolves legacy bundled font IDs to these defaults without changing
+custom family names or font sizes.
 
 - `codeFontSize` still sets `pilo-code-font-size`, and the composer still uses
   `readingFontSize`. The chat's texts follow `readingFontSize` and
@@ -387,8 +389,13 @@ and the system UI font elsewhere, and the code font to system monospace.
   thinking and the work rows. `ChatMarkdown` replaces `TextView`'s fixed
   reading typography (15pt text, 27/20/17pt headings, 13pt code, 14pt
   tables) with the WebUI's, relative to that size.
-- `uiFontSize` is not applied: nsh 0.6.1 has no text size an app can set
-  (`fontScale` is read-only).
+- `uiFontSize` scales the `pilo-ui-text-*` theme tokens for the shell's base
+  text, sidebar, session header, settings, and shared controls. At the default
+  size (15), their existing sizes are unchanged. Keep the named class before
+  the token class (e.g. `text-sm text-(length:--pilo-ui-text-sm)`) to retain its
+  line-height. This scales text, not the whole layout or nsh's read-only OS
+  `fontScale`. The font size dropdowns offer 14–20; existing preferences are
+  preserved, with the interface scale limited to that range.
 
 ## Native images
 

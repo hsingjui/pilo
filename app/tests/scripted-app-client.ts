@@ -248,8 +248,8 @@ export type AppScript = {
 /** A new Host's preferences and theme, as far as the shell reads them. */
 export const HOST_DEFAULT_VALUES = {
 	locale: "en-US",
-	pageFontFamily: "inter",
-	codeFontFamily: "jetbrains-mono",
+	pageFontFamily: "system-sans",
+	codeFontFamily: "system-mono",
 	codeFontSize: 14,
 } as HostPreferenceValues;
 

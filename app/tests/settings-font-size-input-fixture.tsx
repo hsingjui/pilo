@@ -1,6 +1,5 @@
 import { mount, signal, Text, View } from "nsh";
 
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { FontSizeInput } from "../settings/font-size-input";
 import { Button } from "../ui/button";

@@ -1,7 +1,6 @@
 import { mount, Scroll, View } from "nsh";
 
 import type { RemoteHostState } from "@shared/api/remote-types";
-import "../shell/fonts";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { initializeI18n } from "../shell/i18n";
 import { RemotePane } from "../settings/remote-pane";

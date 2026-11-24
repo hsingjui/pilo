@@ -4,7 +4,6 @@ import { Button } from "nsh/base";
 import type { AppLocale } from "@shared/i18n/locale-types";
 import type { HostPreferenceValues } from "@shared/host-preferences-types";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import "../shell/fonts";
 import { AppShell } from "../shell/AppShell";
 import { ComposerStore } from "../composer/composer-store";
 import { conversationContext } from "../shell/open-chat";

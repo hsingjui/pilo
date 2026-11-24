@@ -1,6 +1,5 @@
 import { BootstrapFixture, Pilo } from "app/native";
 
-import "../shell/fonts";
 import { initializeI18n } from "../shell/i18n";
 import { launch } from "../shell/launch";
 import { NshPiloClient } from "../client/nsh-pilo-client";
