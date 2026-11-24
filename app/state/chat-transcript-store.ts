@@ -246,6 +246,7 @@ function startsTurn(event: PiloClientEvent) {
 export class ChatTranscriptStore {
 	private readonly current = signal(closed);
 	readonly state: Accessor<ChatTranscriptState> = this.current;
+	private readonly liveTurnSignal = signal(false);
 	private readonly historyMetaSignal =
 		signal<ChatTranscriptHistoryMetadata | null>(null);
 	/** Metadata from the latest settled history read or cache hit, shared with run config. */
@@ -472,6 +473,11 @@ export class ChatTranscriptStore {
 		}
 	}
 
+	/** Whether the open chat has a live turn in flight (local submission or live stream). */
+	hasLiveTurn(sessionKey: string): boolean {
+		return this.current().sessionKey === sessionKey && this.liveTurnSignal();
+	}
+
 	/**
 	 * Shows a prompt the user sent as the open chat's next turn, with a
 	 * pending reply, as the WebUI does before Pi has started or echoed
@@ -506,6 +512,7 @@ export class ChatTranscriptStore {
 			],
 		};
 		this.applyLocal(this.local.actions);
+		this.liveTurnSignal.set(true);
 		return clientMessageId;
 	}
 
@@ -530,11 +537,18 @@ export class ChatTranscriptStore {
 		if (this.local?.clientMessageId !== clientMessageId) return;
 		this.local = undefined;
 		const state = this.current();
-		if (!state.conversation) return;
+		if (!state.conversation) {
+			this.liveTurnSignal.set(false);
+			return;
+		}
+		const conversation = withoutLocalTurn(state.conversation, clientMessageId);
 		this.current.set({
 			...state,
-			conversation: withoutLocalTurn(state.conversation, clientMessageId),
+			conversation,
 		});
+		this.liveTurnSignal.set(
+			Boolean(conversation.active && (this.cut !== undefined || this.waiting)),
+		);
 	}
 
 	private applyLocal(actions: readonly ConversationAction[]) {
@@ -581,6 +595,7 @@ export class ChatTranscriptStore {
 		this.local = undefined;
 		this.localImageEcho = undefined;
 		this.external = false;
+		this.liveTurnSignal.set(false);
 		this.historyMetaSignal.set(null);
 	}
 
@@ -626,6 +641,20 @@ export class ChatTranscriptStore {
 		for (const event of events) {
 			if (event.sessionKey !== sessionKey) continue;
 			turnOver ||= settles(event);
+			const activeProcessEvent =
+				this.cut !== undefined
+					? "generation" in event &&
+						(event.generation > this.cut.generation ||
+							(event.generation === this.cut.generation &&
+								event.sequence > this.cut.eventSequence))
+					: this.fresh ||
+						this.buffer !== undefined ||
+						this.running ||
+						this.showsNewProcess(event);
+			if (activeProcessEvent) {
+				if (startsTurn(event)) this.liveTurnSignal.set(true);
+				else if (settles(event)) this.liveTurnSignal.set(false);
+			}
 			// Pi's echo of the local prompt, or the end of its process, takes
 			// the place of what was shown for it.
 			if (event.type === "user_message_start") {
@@ -1042,6 +1071,14 @@ export class ChatTranscriptStore {
 						),
 						source: "snapshot",
 					});
+					let live =
+						snapshot.live.type === "active" || this.local !== undefined;
+					for (const event of events) {
+						if (!followsSnapshot(snapshot, event)) continue;
+						if (startsTurn(event)) live = true;
+						else if (settles(event)) live = false;
+					}
+					this.liveTurnSignal.set(live);
 					this.fill();
 					for (const event of buffered) this.see(event);
 					if (this.seen !== undefined && this.seen > snapshot.generation) {
@@ -1052,6 +1089,7 @@ export class ChatTranscriptStore {
 				after = snapshot.eventSequence;
 				if (!settled && (runtime?.activeTurn || runtime?.compacting)) {
 					if (shown.conversation !== null && !reloadWaitingHistory) {
+						this.liveTurnSignal.set(Boolean(this.local || runtime?.activeTurn));
 						const later = finish({ status: "loading" }, after);
 						this.waiting = true;
 						// The turn may have settled while the snapshot was on its way.
@@ -1145,6 +1183,9 @@ export class ChatTranscriptStore {
 				};
 			}
 			// Pi may have come up, or a turn started or ended, meanwhile.
+			this.liveTurnSignal.set(
+				Boolean(this.local || (waitingFallback && runtime?.activeTurn)),
+			);
 			for (const event of finish(result, after)) this.receive([event]);
 			this.fill();
 		} catch (error) {

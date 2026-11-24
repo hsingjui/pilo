@@ -17,7 +17,7 @@ export function MobilePendingQueue(props: {
 		return (
 			!key ||
 			!props.connected() ||
-			props.queue.busy(key) ||
+			!props.queue.canMutate(key) ||
 			props.composer.state().sending ||
 			props.composer.readOnly() ||
 			props.composer.compacting()
@@ -33,7 +33,7 @@ export function MobilePendingQueue(props: {
 					{t("chat.pendingMessages")}
 				</Text>
 				<Scroll class="max-h-40" bounces={false}>
-					<Each of={items()} key={(entry) => entry.id}>
+					<Each of={items()} key={(entry) => entry.key}>
 						{(entry) => (
 							<View class="min-w-0 flex-row items-center gap-1 px-1">
 								<View class="w-0 min-w-0 flex-1 gap-0.5">
@@ -60,10 +60,13 @@ export function MobilePendingQueue(props: {
 									size="sm"
 									class="min-h-11"
 									accessibilityLabel={t("chat.retrieveEdit")}
-									disabled={disabled()}
-									onPress={() =>
-										void props.queue.change(props.composer, entry().id, "edit")
-									}
+									disabled={disabled() || entry().id === null}
+									onPress={() => {
+										const id = entry().id;
+										if (id !== null) {
+											void props.queue.change(props.composer, id, "edit");
+										}
+									}}
 								>
 									<Text>{t("chat.edit")}</Text>
 								</Button>
@@ -72,14 +75,13 @@ export function MobilePendingQueue(props: {
 									size="sm"
 									class="min-h-11"
 									accessibilityLabel={t("chat.interruptSend")}
-									disabled={disabled()}
-									onPress={() =>
-										void props.queue.change(
-											props.composer,
-											entry().id,
-											"send_now",
-										)
-									}
+									disabled={disabled() || entry().id === null}
+									onPress={() => {
+										const id = entry().id;
+										if (id !== null) {
+											void props.queue.change(props.composer, id, "send_now");
+										}
+									}}
 								>
 									<Text>{t("chat.sendModeNowAction")}</Text>
 								</Button>

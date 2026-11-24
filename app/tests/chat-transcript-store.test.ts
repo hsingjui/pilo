@@ -2089,3 +2089,29 @@ test("opening an idle saved session overlaps chatState and loadHistory", async (
 	expect(store.state().status).toBe("ready");
 	expect(store.messages().map((message) => message.text)).toEqual(["parallel"]);
 });
+
+test("hasLiveTurn tracks local submissions and live streamed turns without false positives on idle history", async () => {
+	const { store, answers, snapshots } = fakeClient();
+	answers.runtime = null;
+	await store.open(target, true);
+	// Even when settled history ends with a user message, it is not a live turn.
+	expect(store.hasLiveTurn(target.sessionKey)).toBe(false);
+
+	// Submitting locally immediately marks the turn live.
+	const localId = store.submitLocal(target.sessionKey, "hello", []);
+	expect(localId).not.toBeNull();
+	expect(store.hasLiveTurn(target.sessionKey)).toBe(true);
+
+	// Pi starts and echoes the user message while the snapshot is being read.
+	answers.runtime = running;
+	store.receive([process(11, "running"), asked(12, "hello")]);
+	expect(store.hasLiveTurn(target.sessionKey)).toBe(true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(12, turn("working")));
+	await settle();
+	expect(store.hasLiveTurn(target.sessionKey)).toBe(true);
+
+	// Settling the turn clears the live flag synchronously.
+	store.receive([settled(13)]);
+	expect(store.hasLiveTurn(target.sessionKey)).toBe(false);
+});

@@ -889,6 +889,100 @@ test("coalesced thinking deltas preserve the first timestamp without a start eve
 	}
 });
 
+test("live queued user_message_start immediately creates a streaming placeholder reused by assistant output", () => {
+	const ctx = context();
+	let state = reduceConversationActions(
+		createConversationState(),
+		[
+			{
+				type: "local_user_submit",
+				clientMessageId: "u1",
+				text: "first",
+				timestampMs: 1,
+			},
+			{ type: "local_assistant_pending", timestampMs: 1, replyRunwayPx: 180 },
+			{ type: "user_message_start", text: "first", timestampMs: 2 },
+			{ type: "assistant_text_delta", delta: "working", timestampMs: 3 },
+		],
+		ctx,
+	);
+
+	// Queued message dispatched without a local pendingUsers entry (ChatQueueStore path).
+	const echoAction = toConversationAction({
+		type: "user_message_start",
+		generation: 1,
+		text: "queued second",
+		timestampMs: 4,
+	});
+	assert.ok(echoAction);
+	state = reduceConversation(state, echoAction, ctx);
+
+	assert.deepEqual(
+		state.messages.map((message) => message.role),
+		["user", "assistant", "user", "assistant"],
+	);
+	const prevAssistant = state.messages[1];
+	const nextAssistant = state.messages[3];
+	assert.equal(prevAssistant?.role, "assistant");
+	assert.equal(nextAssistant?.role, "assistant");
+	if (
+		prevAssistant?.role !== "assistant" ||
+		nextAssistant?.role !== "assistant"
+	)
+		throw new Error("expected assistants");
+	assert.equal(prevAssistant.streaming, false);
+	assert.equal(prevAssistant.completion, "continued");
+	assert.equal(nextAssistant.streaming, true);
+	assert.equal(nextAssistant.replyRunwayPx, 180);
+
+	// Subsequent assistant_message_start and text reuse the placeholder without duplicating rows.
+	const assistantStart = toConversationAction({
+		type: "assistant_message_start",
+		generation: 1,
+		timestampMs: 5,
+	});
+	const textDelta = toConversationAction({
+		type: "assistant_text_delta",
+		generation: 1,
+		delta: "second answer",
+		timestampMs: 6,
+	});
+	assert.ok(assistantStart && textDelta);
+	state = reduceConversationActions(state, [assistantStart, textDelta], ctx);
+	assert.equal(state.messages.length, 4);
+	assert.equal(state.messages[3]?.id, nextAssistant.id);
+	assert.equal(state.messages[3]?.text, "second answer");
+});
+
+test("consecutive live user_message_start echoes drop empty placeholders between users", () => {
+	const ctx = context();
+	const actions = [
+		toConversationAction({
+			type: "user_message_start",
+			generation: 1,
+			text: "q1",
+			timestampMs: 1,
+		}),
+		toConversationAction({
+			type: "user_message_start",
+			generation: 1,
+			text: "q2",
+			timestampMs: 2,
+		}),
+	].filter((action): action is ConversationAction => action !== null);
+	const state = reduceConversationActions(
+		createConversationState(),
+		actions,
+		ctx,
+	);
+	assert.deepEqual(
+		state.messages.map((message) => message.role),
+		["user", "user", "assistant"],
+	);
+	const last = state.messages[2];
+	assert.equal(last?.role === "assistant" && last.streaming, true);
+});
+
 test("thinking with missing boundaries never mixes Host and processing clocks", () => {
 	const cases: ConversationAction[][] = [
 		[

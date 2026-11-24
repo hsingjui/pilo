@@ -552,7 +552,14 @@ function reduceConversationAction(
 			}
 			const timestampMs = action.timestampMs ?? context.now();
 			let next = state;
+			let replyRunwayPx: number | undefined;
 			if (state.active?.assistantMessageId) {
+				const currentAssistant = state.messages.find(
+					(message) => message.id === state.active?.assistantMessageId,
+				);
+				if (currentAssistant?.role === "assistant") {
+					replyRunwayPx = currentAssistant.replyRunwayPx;
+				}
 				next = endTurn(
 					state,
 					context,
@@ -562,7 +569,7 @@ function reduceConversationAction(
 					"continued",
 				);
 			}
-			return {
+			next = {
 				...next,
 				messages: [
 					...next.messages,
@@ -581,6 +588,14 @@ function reduceConversationAction(
 					firstRuntimeUserSeen: true,
 				},
 			};
+			if (action.pendingAssistant) {
+				next = withAssistant(next, context, action.timestampMs, (message) => ({
+					...message,
+					streaming: true,
+					replyRunwayPx,
+				}));
+			}
+			return next;
 		}
 		case "assistant_message_start": {
 			const next = withAssistant(

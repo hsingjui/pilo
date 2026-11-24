@@ -77,6 +77,8 @@ export type ConversationEvent = ConversationEventMeta &
 				type: "user_message_start";
 				text: string;
 				images?: ChatConversationImage[];
+				/** Live runtime echo starts a streaming placeholder until assistant output arrives. */
+				pendingAssistant?: boolean;
 		  }
 		| { type: "compaction_marker"; summary: string; tokensBefore?: number }
 		| { type: "assistant_message_start" }

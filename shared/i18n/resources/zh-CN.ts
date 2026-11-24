@@ -675,7 +675,7 @@ const zhCN = {
 		queuedSteer: "调整",
 		queuedFollowUp: "稍后",
 		queueFailed: "无法排队发送",
-		retrieveFailed: "取回失败，消息已恢复到输入框",
+		retrieveFailed: "无法取回排队消息",
 		immediateSendFailed: "无法立即发送消息",
 		promptNotSent: "消息未能发出，已恢复草稿。",
 		promptUnconfirmed:

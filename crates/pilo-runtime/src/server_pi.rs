@@ -584,9 +584,14 @@ impl ServerPiSession {
         Ok(self.snapshot())
     }
 
-    pub async fn send_rpc(&self, command: Value) -> Result<(), String> {
+    pub async fn send_rpc(&self, mut command: Value) -> Result<(), String> {
         if !command.is_object() {
             return Err("RPC command must be a JSON object".to_owned());
+        }
+        // Older servers forward unknown commands to Pi, which rejects this
+        // rather than executing an unchecked clear_queue.
+        if command["type"] == "clear_queue" && command.get("piloQueueOwner").is_some() {
+            command["type"] = json!("pilo_clear_owned_queue");
         }
         let client = self
             .state

@@ -30,6 +30,7 @@ export function requestPiRpcOutcome<T>(
 	sessionKey: string,
 	command: Record<string, unknown>,
 	timeoutMs = PI_RPC_TIMEOUT_MS,
+	canDispatch?: () => boolean,
 ): Promise<PiRpcOutcome<T>> {
 	const id = `${client.rpcIdPrefix ?? "nsh-rpc"}-${++rpcSequence}`;
 	return new Promise<PiRpcOutcome<T>>((resolve, reject) => {
@@ -60,6 +61,10 @@ export function requestPiRpcOutcome<T>(
 		const dispatch = async () => {
 			// Registration provides a disposer, not confirmation the stream is live.
 			if (settled || dispatched || !disconnect || !connected) return;
+			if (canDispatch && !canDispatch()) {
+				noReply();
+				return;
+			}
 			dispatched = true;
 			await client.sendChatCommand(sessionKey, { ...command, id });
 		};
@@ -111,12 +116,14 @@ export async function requestPiRpcReply<T>(
 	sessionKey: string,
 	command: Record<string, unknown>,
 	timeoutMs = PI_RPC_TIMEOUT_MS,
+	canDispatch?: () => boolean,
 ): Promise<PiRpcReply<T> | null> {
 	const outcome = await requestPiRpcOutcome<T>(
 		client,
 		sessionKey,
 		command,
 		timeoutMs,
+		canDispatch,
 	);
 	if (outcome.type === "unconfirmed" && outcome.dispatchError) {
 		throw outcome.dispatchError;

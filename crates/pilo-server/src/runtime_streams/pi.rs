@@ -4,7 +4,10 @@ mod trace;
 
 use std::{
     process::Stdio,
-    sync::{Arc, Mutex as StdMutex, Weak},
+    sync::{
+        Arc, Mutex as StdMutex, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use pilo_protocol::{BuiltinExtension, MAX_BINARY_PAYLOAD_BYTES};
@@ -35,20 +38,27 @@ struct PiWork {
     active: bool,
     compacting: bool,
     tools: std::collections::HashSet<String>,
-    queued: bool,
+    queued: usize,
+    // Mixed or untracked input stays unowned until the queue drains.
+    queue_owner: Option<String>,
     clearing_stalled_queue: bool,
     // Clients restore unsent queued input after a stall; late queue input would duplicate it.
     stalled_input_closed: bool,
     warming_until: u64,
-    pending: std::collections::HashMap<String, String>,
+    pending: std::collections::HashMap<String, PendingCommand>,
     dialogs: std::collections::HashMap<String, (Value, Option<std::time::Instant>)>,
+}
+
+struct PendingCommand {
+    kind: String,
+    queue_owner: Option<String>,
 }
 
 impl PiWork {
     fn is_busy(&self) -> bool {
         self.active
             || self.compacting
-            || self.queued
+            || self.has_queued_input()
             || self.clearing_stalled_queue
             || !self.pending.is_empty()
             || !self.tools.is_empty()
@@ -58,10 +68,28 @@ impl PiWork {
                 .any(|(_, until)| until.is_none_or(|until| until > std::time::Instant::now()))
     }
 
-    fn has_pending_chat_input(&self) -> bool {
+    fn has_queued_input(&self) -> bool {
+        self.queued != 0
+    }
+
+    fn pending_chat_input(&self) -> impl Iterator<Item = &PendingCommand> {
         self.pending
             .values()
-            .any(|command| queues_chat_input(command))
+            .filter(|command| queues_chat_input(&command.kind))
+    }
+
+    fn has_pending_chat_input(&self) -> bool {
+        self.pending_chat_input().next().is_some()
+    }
+
+    // Pi emits queue_update before the corresponding input reply. When
+    // several inputs are in flight it doesn't identify which one queued.
+    fn pending_queue_owner(&self) -> Option<&str> {
+        let mut pending = self.pending_chat_input();
+        let owner = pending.next()?.queue_owner.as_deref()?;
+        pending
+            .all(|command| command.queue_owner.as_deref() == Some(owner))
+            .then_some(owner)
     }
 
     fn observe(&mut self, event: &Value) {
@@ -92,17 +120,29 @@ impl PiWork {
             }
             Some("summarization_retry_finished") => self.compacting = false,
             Some("queue_update") => {
-                self.queued = ["steering", "followUp"].iter().any(|key| {
-                    event
-                        .get(*key)
-                        .and_then(Value::as_array)
-                        .is_some_and(|queue| !queue.is_empty())
-                });
+                let queued = ["steering", "followUp"]
+                    .iter()
+                    .filter_map(|key| event.get(*key).and_then(Value::as_array))
+                    .map(Vec::len)
+                    .sum();
+                if queued == 0 {
+                    self.queue_owner = None;
+                } else if queued > self.queued {
+                    let owner = self.pending_queue_owner();
+                    self.queue_owner = if self.queued == 0 || self.queue_owner.as_deref() == owner {
+                        owner.map(str::to_owned)
+                    } else {
+                        None
+                    };
+                }
+                self.queued = queued;
             }
             Some("response") => {
                 let command = event.get("command").and_then(Value::as_str);
                 let id = event.get("id").and_then(Value::as_str).unwrap_or_default();
-                if command.is_some() && self.pending.get(id).map(String::as_str) == command {
+                if command.is_some()
+                    && self.pending.get(id).map(|pending| pending.kind.as_str()) == command
+                {
                     self.pending.remove(id);
                 }
                 if command == Some("compact")
@@ -187,7 +227,7 @@ impl PiProcess {
                 }
             })
             .collect::<Vec<_>>();
-        json!({ "active": work.active || work.queued || work.clearing_stalled_queue || !work.pending.is_empty(), "compacting": work.compacting, "dialogs": dialogs })
+        json!({ "active": work.active || work.has_queued_input() || work.clearing_stalled_queue || !work.pending.is_empty(), "compacting": work.compacting, "dialogs": dialogs })
     }
 
     pub(crate) async fn stop(self) -> Result<std::process::ExitStatus, String> {
@@ -322,6 +362,7 @@ async fn stop_registered_pi(
 }
 
 const STALLED_INPUT_CLOSED: &str = "PILO_STALLED_TURN_INPUT_CLOSED";
+static PI_INPUT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 fn queues_chat_input(command: &str) -> bool {
     matches!(command, "prompt" | "steer" | "follow_up")
@@ -479,10 +520,19 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     Ok(json!({ "started": true }))
 }
 
-pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result<Value, String> {
-    if !params.command.is_object() {
-        return Err("Pi RPC command must be a JSON object".to_owned());
-    }
+pub(crate) async fn pi_send(
+    state: &ServerState,
+    mut params: PiSendParams,
+) -> Result<Value, String> {
+    let command_fields = params
+        .command
+        .as_object_mut()
+        .ok_or_else(|| "Pi RPC command must be a JSON object".to_owned())?;
+    let queue_owner = command_fields.remove("piloQueueOwner");
+    let queue_owner = queue_owner
+        .as_ref()
+        .and_then(Value::as_str)
+        .filter(|owner| !owner.is_empty() && owner.len() <= 64);
     trace_pi(
         "pi.send",
         &params.stream_id,
@@ -502,6 +552,19 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
             process.track_work,
         )
     };
+    let guarded_clear = params.command["type"] == "pilo_clear_owned_queue";
+    if guarded_clear {
+        params.command["type"] = json!("clear_queue");
+    }
+    let command = params.command["type"].as_str().unwrap_or_default();
+    let queues_input = queues_chat_input(command);
+    let tracked = track_work && (queues_input || matches!(command, "compact" | "bash"));
+    if track_work && queues_input && params.command["id"].as_str().is_none_or(str::is_empty) {
+        params.command["id"] = json!(format!(
+            "pilo-server-input-{}",
+            PI_INPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+    }
     let mut bytes = serde_json::to_vec(&params.command).map_err(|error| error.to_string())?;
     if bytes.len() > MAX_BINARY_PAYLOAD_BYTES {
         return Err(format!(
@@ -514,22 +577,27 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
     let started = std::time::Instant::now();
     let mut stdin = stdin.lock().await;
     let lock_wait_ms = started.elapsed().as_millis();
-    let command = params
-        .command
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let command = params.command["type"].as_str().unwrap_or_default();
     let id = params
         .command
         .get("id")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let queues_input = queues_chat_input(command);
-    let tracked = track_work && (queues_input || matches!(command, "compact" | "bash"));
-    if tracked {
+    if tracked || guarded_clear {
         let mut work = work
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // The stdin lock orders this check with every Pilo client write. An
+        // earlier input handler may still be awaiting before it queues its message.
+        if guarded_clear
+            && (!track_work
+                || queue_owner.is_none()
+                || work.clearing_stalled_queue
+                || work.has_pending_chat_input()
+                || (work.has_queued_input() && work.queue_owner.as_deref() != queue_owner))
+        {
+            return Err("Pi queue ownership changed; the queue was not cleared".to_owned());
+        }
         // Only a new prompt may follow a stalled turn; queue input sent before the
         // client saw the stall is already back in its draft.
         if queues_input
@@ -537,7 +605,22 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
         {
             return Err(STALLED_INPUT_CLOSED.to_owned());
         }
-        work.pending.insert(id.to_owned(), command.to_owned());
+        if tracked {
+            if work
+                .pending
+                .get(id)
+                .is_some_and(|pending| queues_input || queues_chat_input(&pending.kind))
+            {
+                return Err("Pi RPC id is already in use".to_owned());
+            }
+            work.pending.insert(
+                id.to_owned(),
+                PendingCommand {
+                    kind: command.to_owned(),
+                    queue_owner: queue_owner.map(str::to_owned),
+                },
+            );
+        }
     }
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         stdin.write_all(&bytes).await?;

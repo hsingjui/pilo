@@ -101,13 +101,37 @@ export type ComposerViewState = {
 
 export type ComposerQueueKind = "steer" | "follow_up";
 
-/** The WebUI keeps the full submissions for queue edits and replay. */
+export type ComposerQueueEnqueueResult =
+	| "queued"
+	| "started"
+	| "handled"
+	| "cancelled";
+
+/** Tracks queued messages per session for edits, replay, and stop/send-now coordination. */
 export type ComposerQueue = {
+	readonly queueOwner?: string;
 	busy: (sessionKey: string) => boolean;
 	enqueue: (
 		target: ComposerTarget,
 		kind: ComposerQueueKind,
 		submission: ChatSubmission,
+		canDispatch?: () => boolean,
+		beforeSend?: () => Promise<boolean>,
+	) => Promise<ComposerQueueEnqueueResult | void>;
+	adoptQueued?: (
+		sessionKey: string,
+		kind: ComposerQueueKind,
+		submission: ChatSubmission,
+	) => void;
+	sendNow?: (
+		target: ComposerTarget,
+		submission: ChatSubmission,
+		composer: ComposerStore,
+		canDispatchPrompt: () => boolean,
+	) => Promise<boolean>;
+	clearForStop?: (
+		target: ComposerTarget,
+		composer: ComposerStore,
 	) => Promise<void>;
 };
 
@@ -131,7 +155,8 @@ export type ComposerNotice = {
 export type ComposerTranscript = Pick<
 	ChatTranscriptStore,
 	"submitLocal" | "setLocalStatus" | "dropLocal"
->;
+> &
+	Partial<Pick<ChatTranscriptStore, "hasLiveTurn">>;
 
 /** How long Pi may take to accept a prompt, as the WebUI waits. */
 const PROMPT_REPLY_TIMEOUT_MS = 120_000;
@@ -204,13 +229,24 @@ export class ComposerStore {
 	private readonly removedFilePaths = new Set<string>();
 	private historyCursor: number | null = null;
 	/**
-	 * The send in flight, so Stop can end it at any stage: before the prompt
-	 * goes out it just stops there; once Pi has it, the turn is aborted.
+	 * The blocking send in flight (`/compact`, `send_now`, extension commands,
+	 * or sends without a queue), so Stop can end it at any stage.
 	 */
 	private readonly activeSubmits = new Map<
 		string,
 		{ dispatched: boolean; stopped: boolean }
 	>();
+	/**
+	 * A plain prompt that is starting Pi or awaiting Pi's prompt reply while
+	 * allowing immediate follow-up/steer messages to queue behind it.
+	 */
+	private readonly startingPrompts = new Map<
+		string,
+		{ dispatched: boolean; stopped: boolean; settled: Promise<boolean> }
+	>();
+	private readonly startingPromptSessions = signal<ReadonlySet<string>>(
+		new Set(),
+	);
 	private fileQueryRequest = 0;
 	private commandsRequest = 0;
 	private sessionCommandsInFlight: string | null = null;
@@ -417,6 +453,18 @@ export class ComposerStore {
 		this.stateSignal.update((s) => ({ ...s, status }));
 	}
 
+	/** Surfaces an operational error via toast when wired, otherwise session status. */
+	reportError(title: string, description?: string, sessionKey?: string) {
+		if (this.onNotice) {
+			this.notify({ variant: "error", title, description });
+			return;
+		}
+		this.setStatus(
+			description && description !== title ? `${title}: ${description}` : title,
+			sessionKey,
+		);
+	}
+
 	setSendMode(sendMode: ComposerSendMode) {
 		this.stateSignal.update((s) => ({ ...s, sendMode }));
 		void Storage.setItem(COMPOSER_SEND_MODE_STORAGE_KEY, sendMode).catch(
@@ -435,10 +483,39 @@ export class ComposerStore {
 		);
 	}
 
-	/** A turn or compaction is running on the open chat. */
+	private setStartingPrompt(
+		sessionKey: string,
+		entry: {
+			dispatched: boolean;
+			stopped: boolean;
+			settled: Promise<boolean>;
+		} | null,
+	) {
+		if (entry) {
+			this.startingPrompts.set(sessionKey, entry);
+			this.startingPromptSessions.update((set) => new Set(set).add(sessionKey));
+		} else {
+			this.startingPrompts.delete(sessionKey);
+			this.startingPromptSessions.update((set) => {
+				if (!set.has(sessionKey)) return set;
+				const next = new Set(set);
+				next.delete(sessionKey);
+				return next;
+			});
+		}
+	}
+
+	/** A turn or compaction is running (or starting) on the open chat. */
 	running(): boolean {
+		const target = this.targetSignal();
+		if (!target) return false;
 		const chat = this.chatState();
-		return Boolean(chat?.activeTurn || chat?.compacting);
+		return Boolean(
+			chat?.activeTurn ||
+			chat?.compacting ||
+			this.startingPromptSessions().has(target.sessionKey) ||
+			this.transcript?.hasLiveTurn?.(target.sessionKey),
+		);
 	}
 
 	compacting(): boolean {
@@ -1096,8 +1173,91 @@ export class ComposerStore {
 					command.name === slash.name && command.source !== "extension",
 			);
 
+		const delivery = mode ?? sendMode;
+		if (running && this.queue && delivery !== "send_now") {
+			this.historyCursor = null;
+			this.updateDraft((s) => ({
+				...s,
+				value: "",
+				caret: 0,
+				images: [],
+				status: null,
+			}));
+			rememberLocalChatImages(submission.images);
+			const pendingStart = this.startingPrompts.get(target.sessionKey);
+			try {
+				const outcome = await this.queue.enqueue(
+					target,
+					delivery,
+					submission,
+					undefined,
+					async () => {
+						let startedFromPending = false;
+						if (pendingStart) {
+							startedFromPending = await pendingStart.settled;
+							if (!startedFromPending) return false;
+						}
+						if (
+							this.beforeSend &&
+							!(await this.beforeSend(target.sessionKey))
+						) {
+							return false;
+						}
+						if (
+							mode === "follow_up" &&
+							((!startedFromPending && !this.running()) || this.compacting())
+						) {
+							return false;
+						}
+						return true;
+					},
+				);
+				if (outcome === "cancelled") {
+					this.restoreQueuedDraft(target, [submission]);
+					return;
+				}
+				retainChatFiles(submission.text);
+				await this.appendHistory(target.projectId, submission.text);
+			} catch (error) {
+				this.restoreQueuedDraft(target, [submission]);
+				this.reportError(
+					t("chat.queueFailed"),
+					errorMessage(error),
+					target.sessionKey,
+				);
+			}
+			return;
+		}
+
+		const nonBlockingStart =
+			!running &&
+			!knownExtensionCommand &&
+			!needsExtensionCheck &&
+			this.queue !== undefined;
+		let resolveSettled: ((ok: boolean) => void) | undefined;
 		const submit = { dispatched: false, stopped: false };
-		this.activeSubmits.set(target.sessionKey, submit);
+		if (nonBlockingStart) {
+			const settled = new Promise<boolean>((resolve) => {
+				resolveSettled = resolve;
+			});
+			this.setStartingPrompt(target.sessionKey, {
+				get dispatched() {
+					return submit.dispatched;
+				},
+				set dispatched(next: boolean) {
+					submit.dispatched = next;
+				},
+				get stopped() {
+					return submit.stopped;
+				},
+				set stopped(next: boolean) {
+					submit.stopped = next;
+				},
+				settled,
+			});
+		} else {
+			this.activeSubmits.set(target.sessionKey, submit);
+		}
 		// The draft leaves the composer at once, as in the WebUI; it comes
 		// back if it is not sent.
 		this.historyCursor = null;
@@ -1106,7 +1266,7 @@ export class ComposerStore {
 			value: "",
 			caret: 0,
 			images: [],
-			sending: true,
+			sending: nonBlockingStart ? s.sending : true,
 			status: null,
 		}));
 		// A prompt that starts a turn shows in the chat while Pi starts and
@@ -1128,7 +1288,33 @@ export class ComposerStore {
 		let isExtensionCommand = knownExtensionCommand;
 		let failure: string | undefined;
 		try {
-			if (!running) {
+			const pendingStart = running
+				? this.startingPrompts.get(target.sessionKey)
+				: undefined;
+			let pendingStartDispatched = true;
+			if (pendingStart) {
+				if (delivery === "send_now" && !pendingStart.dispatched) {
+					pendingStart.stopped = true;
+					pendingStartDispatched = false;
+				}
+				const started = await pendingStart.settled;
+				if (!started) pendingStartDispatched = false;
+				if (
+					this.targetSignal()?.sessionKey !== target.sessionKey ||
+					submit.stopped
+				) {
+					return;
+				}
+			}
+			const stillRunning =
+				running &&
+				(pendingStartDispatched ||
+					Boolean(
+						this.chatState()?.activeTurn ||
+						this.chatState()?.compacting ||
+						this.transcript?.hasLiveTurn?.(target.sessionKey),
+					));
+			if (!stillRunning) {
 				if (
 					!(await this.ensureStartedForSubmit(target, submit, () =>
 						localStatus("starting"),
@@ -1172,16 +1358,25 @@ export class ComposerStore {
 			}
 
 			let disposition: PiPromptResult["disposition"] | undefined;
-			if (running) {
-				const delivery = mode ?? sendMode;
+			if (stillRunning) {
 				if (this.queue && delivery !== "send_now") {
 					submit.dispatched = true;
 					await this.queue.enqueue(target, delivery, submission);
 				} else {
-					for (const command of this.commandFor(delivery, submission)) {
-						if (submit.stopped) return;
-						submit.dispatched = true;
-						await this.client.sendChatCommand(target.sessionKey, command);
+					const sentWithQueue =
+						delivery === "send_now" &&
+						(await this.queue?.sendNow?.(target, submission, this, () => {
+							if (submit.stopped) return false;
+							submit.dispatched = true;
+							return true;
+						}));
+					if (!sentWithQueue) {
+						for (const command of this.commandFor(delivery, submission)) {
+							if (submit.stopped) return;
+							submit.dispatched = true;
+							// oxlint-disable-next-line no-await-in-loop -- `abort` must precede `prompt`.
+							await this.client.sendChatCommand(target.sessionKey, command);
+						}
 					}
 				}
 			} else if (isExtensionCommand && slash) {
@@ -1193,12 +1388,14 @@ export class ComposerStore {
 			} else {
 				localStatus("sending");
 				submit.dispatched = true;
+				const queueOwner = this.queue?.queueOwner;
 				const outcome = await requestPiRpcOutcome<PiPromptResult>(
 					this.client,
 					target.sessionKey,
 					{
 						type: "prompt",
 						message,
+						...(queueOwner ? { piloQueueOwner: queueOwner } : {}),
 						...(submission.images.length > 0
 							? { images: toPiImageContents(submission.images) }
 							: {}),
@@ -1230,12 +1427,13 @@ export class ComposerStore {
 			}
 			sent = true;
 			retainChatFiles(submission.text);
-			if (!running && !isExtensionCommand) {
-				if (disposition !== "handled") {
+			if (!stillRunning && !isExtensionCommand) {
+				if (disposition === "queued") {
+					if (local) this.transcript?.dropLocal(local);
+					this.queue?.adoptQueued?.(target.sessionKey, "follow_up", submission);
+				} else if (disposition !== "handled") {
 					localStatus();
-					if (disposition !== "queued") {
-						this.onPromptStarted?.(target, submission.text);
-					}
+					this.onPromptStarted?.(target, submission.text);
 				} else if (
 					local &&
 					!chatRuntimeHasOpenTurn(
@@ -1266,9 +1464,14 @@ export class ComposerStore {
 					isExtensionCommand && this.onNotice ? undefined : failure,
 				);
 			}
-			this.activeSubmits.delete(target.sessionKey);
-			if (this.targetSignal()?.sessionKey === target.sessionKey) {
-				this.stateSignal.update((s) => ({ ...s, sending: false }));
+			if (nonBlockingStart) {
+				this.setStartingPrompt(target.sessionKey, null);
+				resolveSettled?.(sent && !submit.stopped);
+			} else {
+				this.activeSubmits.delete(target.sessionKey);
+				if (this.targetSignal()?.sessionKey === target.sessionKey) {
+					this.stateSignal.update((s) => ({ ...s, sending: false }));
+				}
 			}
 		}
 	}
@@ -1309,11 +1512,23 @@ export class ComposerStore {
 	async stop() {
 		const target = this.targetSignal();
 		if (!target) return;
-		const submit = this.activeSubmits.get(target.sessionKey);
+		const submit =
+			this.activeSubmits.get(target.sessionKey) ??
+			this.startingPrompts.get(target.sessionKey);
 		if (submit) {
 			submit.stopped = true;
-			// Nothing has reached Pi yet: the send ends at its next step.
-			if (!submit.dispatched && !this.running()) return;
+			// Nothing has reached Pi yet: cancel any locally queued follow-ups and exit.
+			if (
+				!submit.dispatched &&
+				!this.chatState()?.activeTurn &&
+				!this.chatState()?.compacting
+			) {
+				await this.queue?.clearForStop?.(target, this);
+				return;
+			}
+		}
+		if (this.queue?.clearForStop) {
+			await this.queue.clearForStop(target, this);
 		}
 		try {
 			await this.client.sendChatCommand(target.sessionKey, {

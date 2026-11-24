@@ -92,6 +92,9 @@ export class AppStore {
 	private readonly liveListeners = new Set<
 		(event: PiloClientEvent | null) => void
 	>();
+	private readonly messageListeners = new Set<
+		(message: PiloClientEventMessage | null) => void
+	>();
 	private readonly client: AppStoreClient;
 	private readonly chat: ChatTranscriptStore | undefined;
 	/** Identifies the current event connection; unset while disconnected. */
@@ -423,6 +426,16 @@ export class AppStore {
 		};
 	}
 
+	/** Subscribes to raw stream messages (including events at or below bootstrap); null signals disconnect. */
+	subscribeEventMessages(
+		listener: (message: PiloClientEventMessage | null) => void,
+	) {
+		this.messageListeners.add(listener);
+		return () => {
+			this.messageListeners.delete(listener);
+		};
+	}
+
 	/** Stops listening to runtime events. */
 	stop() {
 		const disconnect = this.disconnect;
@@ -431,7 +444,10 @@ export class AppStore {
 		this.disconnect = undefined;
 		this.synced = false;
 		disconnect?.();
-		if (connected) for (const listener of this.liveListeners) listener(null);
+		if (connected) {
+			for (const listener of this.liveListeners) listener(null);
+			for (const listener of this.messageListeners) listener(null);
+		}
 	}
 
 	private apply(...actions: AppAction[]) {
@@ -450,6 +466,7 @@ export class AppStore {
 				if (connected || this.connection !== connection) return;
 				if (this.client.reconnectsEvents && !this.client.closed) {
 					for (const listener of this.liveListeners) listener(null);
+					for (const listener of this.messageListeners) listener(null);
 				} else {
 					this.dropped();
 				}
@@ -486,6 +503,7 @@ export class AppStore {
 	}
 
 	private receive(message: PiloClientEventMessage) {
+		for (const listener of this.messageListeners) listener(message);
 		if (message.type === "resyncRequired") {
 			for (const listener of this.liveListeners) listener(null);
 			void this.chat?.refresh();

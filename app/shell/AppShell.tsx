@@ -25,6 +25,7 @@ import {
 	ChatMediaActions,
 	type ChatImagePreview,
 } from "../chat/chat-media-actions";
+import { ChatPendingQueue } from "../chat/chat-pending-queue";
 import { ChatReadingFont, chatReadingFont } from "../chat/chat-reading-font";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
 import { readChatUserImage } from "../chat/chat-user-image-cache";
@@ -41,6 +42,7 @@ import {
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject, isTemporarySessionId } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
+import type { ChatQueueStore } from "../state/chat-queue-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
@@ -109,6 +111,8 @@ export interface AppShellProps {
 	>;
 	/** The open session's composer; whoever mounts the shell targets it. */
 	composer: ComposerStore;
+	/** Pending steer/follow-up messages queued during active turns. */
+	queue?: ChatQueueStore;
 	assistanceClient?: ComposerAssistanceClient;
 	/** Reads a project-relative image's bytes (reply `![…](path)` previews). */
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
@@ -944,6 +948,13 @@ export function AppShell(props: AppShellProps) {
 											class="relative z-20 -mt-4 w-full shrink-0 pb-4"
 										>
 											<ConversationColumn class="relative">
+												{props.queue ? (
+													<ChatPendingQueue
+														queue={props.queue}
+														composer={composer}
+														sessionKey={chatSessionKey}
+													/>
+												) : null}
 												<Each
 													of={cacheNoticeSessions()}
 													key={(sessionKey) => `cache-keep-alive:${sessionKey}`}

@@ -10,6 +10,7 @@ export function toConversationAction(
 				type: event.type,
 				text: event.text,
 				timestampMs: event.timestampMs,
+				pendingAssistant: true,
 			};
 		case "assistant_message_start":
 			return { type: event.type, timestampMs: event.timestampMs };

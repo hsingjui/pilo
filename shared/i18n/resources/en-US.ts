@@ -710,7 +710,7 @@ const enUS = {
 		queuedSteer: "Steer",
 		queuedFollowUp: "Later",
 		queueFailed: "Failed to queue message",
-		retrieveFailed: "Failed to retrieve; message restored to composer",
+		retrieveFailed: "Couldn't retrieve queued messages",
 		immediateSendFailed: "Unable to send message immediately",
 		promptNotSent: "Couldn't send the message. Your draft was restored.",
 		promptUnconfirmed:

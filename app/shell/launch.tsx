@@ -5,6 +5,7 @@ import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
+import { ChatQueueStore } from "../state/chat-queue-store";
 import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
@@ -184,12 +185,22 @@ export async function launch(
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
 	const toasts = new AppToasts();
+	const queue = new ChatQueueStore(client);
+	store.subscribeEventMessages((message) => {
+		if (!message || message.type === "resyncRequired") {
+			queue.reset();
+			return;
+		}
+		if (message.type !== "events") return;
+		for (const event of message.events) queue.receive(event);
+	});
 	const workspace = new WorkspaceStore();
 	const terminals = new TerminalStore(client);
 	const composer: ComposerStore = new ComposerStore({
 		client,
 		app: store.state,
 		catalog,
+		queue,
 		beforeSend: (sessionKey) => runConfig.prepareToSend(sessionKey),
 		transcript: chat,
 		onPromptStarted: createSessionAutoTitle(client, (target, error) =>
@@ -247,6 +258,7 @@ export async function launch(
 		store,
 		chat,
 		composer,
+		queue,
 		assistanceClient: client,
 		runConfig,
 		catalog,

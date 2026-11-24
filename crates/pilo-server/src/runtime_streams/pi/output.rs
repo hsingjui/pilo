@@ -56,7 +56,8 @@ pub(super) fn spawn_output_tasks(
                                     work.stalled_input_closed = stalled;
                                 }
                                 Some("agent_settled") if work.clearing_stalled_queue => {
-                                    clear_queue = work.queued || work.has_pending_chat_input();
+                                    clear_queue =
+                                        work.has_queued_input() || work.has_pending_chat_input();
                                     work.clearing_stalled_queue = clear_queue;
                                 }
                                 _ => {}
