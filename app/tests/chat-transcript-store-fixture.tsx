@@ -175,7 +175,7 @@ async function run() {
 		);
 		await chat.open({ sessionKey: unsavedKey, projectId }, app.connected);
 		assert(
-			chat.state().status === "loading" &&
+			chat.state().status === "not_loaded" &&
 				chat.state().conversation === null &&
 				snapshots === 3,
 			`unexpected state for a truncated snapshot: ${describe()}`,
@@ -184,8 +184,10 @@ async function run() {
 		// session file, so the chat is empty.
 		await client.stopChat(unsavedKey);
 		await until(
-			() => chat.state().status !== "loading",
-			"the stopped chat leaving the loading state",
+			() =>
+				chat.state().status !== "not_loaded" &&
+				chat.state().status !== "loading",
+			"the stopped chat leaving the waiting state",
 		);
 		await new Promise((resolve) => setTimeout(resolve, 200));
 		assert(

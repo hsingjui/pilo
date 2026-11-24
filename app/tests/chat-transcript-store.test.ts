@@ -386,7 +386,7 @@ test("a newer Pi process seen while the snapshot was awaited takes another", asy
 	expect(snapshots.length).toBe(2);
 });
 
-test("a truncated snapshot shows nothing new and is taken again once when the turn settles", async () => {
+test("a truncated snapshot on open falls back to saved history and resyncs once when the turn settles", async () => {
 	const { store, snapshots, histories, answers, texts } = fakeClient();
 	answers.runtime = busy;
 	const opened = store.open(target, true);
@@ -394,20 +394,20 @@ test("a truncated snapshot shows nothing new and is taken again once when the tu
 	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
 	await opened;
 
-	// Its empty history is not the chat's, so the chat is still loading.
-	expect(store.state()).toEqual({
-		sessionKey: "k1",
-		status: "loading",
-		conversation: null,
-		historyPrefix: [],
-		source: null,
-	});
-	// The running turn's events are not applied, and ask for nothing.
+	// Instead of sticking on the loading skeleton, persisted history is shown
+	// while waiting for the running turn to settle.
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
+	expect(texts()).toEqual(["settled"]);
+	expect(histories.length).toBe(1);
+
+	// The running turn's raw events are not applied on top of fallback history,
+	// and ask for no extra snapshot.
 	store.receive([delta(11, "partial"), delta(12, " reply")]);
 	await settle();
 	expect(snapshots.length).toBe(1);
-	expect(histories.length).toBe(0);
-	expect(store.state().conversation).toBe(null);
+	expect(histories.length).toBe(1);
+	expect(texts()).toEqual(["settled"]);
 
 	store.receive([settled(13)]);
 	await settle();
@@ -418,7 +418,117 @@ test("a truncated snapshot shows nothing new and is taken again once when the tu
 	expect(store.state().status).toBe("ready");
 	expect(store.state().source).toBe("snapshot");
 	expect(texts()).toEqual(["saved"]);
+	expect(histories.length).toBe(1);
+});
+
+test("opening a running truncated chat marks an unfinished reply live and refreshes on file writes", async () => {
+	const { store, snapshots, histories, answers, texts } = fakeClient();
+	answers.runtime = busy;
+	answers.history = {
+		fingerprint: { fileSize: 100, fileMtimeNs: "1" },
+		history: {
+			model: null,
+			thinkingLevel: null,
+			name: null,
+			sourceMessageCount: 2,
+			events: [
+				{ type: "user_message_start", text: "asked", timestampMs: 1 },
+				{ type: "assistant_message_start", timestampMs: 2 },
+				{
+					type: "tool_execution_start",
+					toolCallId: "t1",
+					toolName: "bash",
+					args: { command: "ls" },
+					timestampMs: 3,
+				},
+				{
+					type: "assistant_turn_end",
+					stopReason: "toolUse",
+					completion: "interrupted",
+					timestampMs: 4,
+				},
+			],
+		},
+	};
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await opened;
+
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
+	const reply = store.state().conversation?.messages.at(-1);
+	expect(reply?.role).toBe("assistant");
+	expect(reply && reply.role === "assistant" && reply.streaming).toBe(true);
+	expect(reply && reply.role === "assistant" && reply.completion).toBe(
+		undefined,
+	);
+	expect(store.state().conversation?.active).not.toBe(null);
+
+	// File writes during the truncated turn refresh persisted progress in place.
+	answers.history = history("asked", "step 2");
+	store.historyChanged();
+	await settle();
+	expect(snapshots.length).toBe(2);
+	snapshots[1]?.resolve(snapshot(11, { type: "truncated" }));
+	await settle();
+	expect(histories.length).toBe(2);
+	expect(store.state().status).toBe("ready");
+	expect(texts()).toEqual(["asked", "step 2"]);
+
+	// Transient concurrent-write history errors keep the shown conversation.
+	answers.history = null;
+	store.historyChanged();
+	await settle();
+	snapshots[2]?.resolve(snapshot(12, { type: "truncated" }));
+	await settle();
+	histories
+		.at(-1)
+		?.reject(new Error("session changed while history was being read"));
+	await settle();
+	expect(store.state().status).toBe("ready");
+	expect(texts()).toEqual(["asked", "step 2"]);
+});
+
+test("opening a running truncated chat with an unwritten or empty session file waits without failing", async () => {
+	const { store, snapshots, histories, answers, texts } = fakeClient();
+	answers.runtime = { ...busy, sessionPath: target.sessionPath };
+	answers.history = null;
+	const opened = store.open({ sessionKey: "k1", projectId: "p1" }, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await settle();
+	histories[0]?.reject(new Error("No such file or directory (os error 2)"));
+	await opened;
+
+	expect(store.state().status).toBe("not_loaded");
+	expect(store.state().conversation).toBe(null);
+
+	// Once Pi writes messages to disk, historyChanged loads them.
+	answers.history = history("first step");
+	store.historyChanged();
+	await settle();
+	snapshots[1]?.resolve(snapshot(11, { type: "truncated" }));
+	await settle();
+	expect(store.state().status).toBe("ready");
+	expect(texts()).toEqual(["first step"]);
+});
+
+test("opening an unsaved running truncated chat shows not_loaded until the turn settles", async () => {
+	const { store, snapshots, histories, answers } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open({ sessionKey: "k1", projectId: "p1" }, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await opened;
+
+	expect(store.state().status).toBe("not_loaded");
+	expect(store.state().conversation).toBe(null);
 	expect(histories.length).toBe(0);
+
+	store.receive([settled(11)]);
+	await settle();
+	expect(snapshots.length).toBe(2);
 });
 
 test("a truncated snapshot keeps the transcript the chat showed before", async () => {
@@ -457,7 +567,10 @@ test("a chat truncated again after its turn settled shows its settled history", 
 
 	expect(
 		histories.map(({ projectId, sessionPath }) => [projectId, sessionPath]),
-	).toEqual([["p1", "/s.jsonl"]]);
+	).toEqual([
+		["p1", "/s.jsonl"],
+		["p1", "/s.jsonl"],
+	]);
 	expect(store.state().status).toBe("ready");
 	expect(store.state().source).toBe("history");
 	expect(texts()).toEqual(["settled"]);
@@ -466,7 +579,7 @@ test("a chat truncated again after its turn settled shows its settled history", 
 	await settle();
 	expect(texts()).toEqual(["settled"]);
 	expect(snapshots.length).toBe(2);
-	expect(histories.length).toBe(1);
+	expect(histories.length).toBe(2);
 });
 
 test("a chat on settled history goes back to a snapshot when its next turn starts", async () => {
@@ -498,7 +611,7 @@ test("a chat on settled history goes back to a snapshot when its next turn start
 	await settle();
 	expect(texts()).toEqual(["saved", "asked", "one two"]);
 	expect(snapshots.length).toBe(3);
-	expect(histories.length).toBe(1);
+	expect(histories.length).toBe(2);
 });
 
 test("a chat that stays truncated costs two snapshots and one history read per turn", async () => {
@@ -602,7 +715,8 @@ test("a settle from before a truncated snapshot's cut does not count for it", as
 	await settle();
 
 	expect(snapshots.length).toBe(1);
-	expect(store.state().status).toBe("loading");
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
 });
 
 for (const [name, event] of [

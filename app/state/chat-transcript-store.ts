@@ -192,6 +192,12 @@ const firstWindow: ChatTranscriptWindow = {
 	includeMessageIndex: true,
 };
 
+/** Whether the session file was missing when history was read. */
+function isMissingHistoryFile(error: unknown) {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.endsWith("(os error 2)") || message.includes("ENOENT");
+}
+
 /** Whether the event says no turn is running in the chat any more. */
 function settles(event: PiloClientEvent) {
 	return (
@@ -447,16 +453,23 @@ export class ChatTranscriptStore {
 	/**
 	 * The open chat's session file changed. Without a Pi of this app running
 	 * for the chat, the writer is another one (an external Pi), and its turn
-	 * reaches this app only through the file, so it is read again.
+	 * reaches this app only through the file, so it is read again. When this
+	 * app's own running turn is truncated and displaying persisted history,
+	 * file writes also refresh the persisted progress until the turn settles.
 	 */
 	historyChanged() {
-		if (this.running) return;
+		if (this.running && !this.waiting) return;
 		if (this.historyRead) {
 			this.historyRead.changed = true;
 			return;
 		}
 		const { status, source } = this.current();
-		if (status === "ready" && source === "history") void this.read();
+		if (
+			(status === "ready" && source === "history") ||
+			(this.waiting && status === "not_loaded")
+		) {
+			void this.read(false, false, this.waiting);
+		}
 	}
 
 	/**
@@ -788,7 +801,7 @@ export class ChatTranscriptStore {
 					!sameHistoryFingerprint(this.rereadFor, fingerprint)
 				) {
 					this.rereadFor = fingerprint;
-					void this.read();
+					void this.read(false, false, this.waiting);
 				}
 				return;
 			}
@@ -887,14 +900,21 @@ export class ChatTranscriptStore {
 
 	/**
 	 * Reads the chat's runtime state, then its snapshot if Pi is running, or
-	 * its settled history if not. A truncated snapshot of a running turn is
-	 * waited out: nothing new is shown until the turn has settled.
+	 * its settled history if not. A truncated snapshot of a running turn keeps
+	 * any already-shown conversation and waits for settlement; when nothing is
+	 * shown yet (or a file write triggers `reloadWaitingHistory`), it falls
+	 * back to the persisted session history (or `not_loaded` when no persisted
+	 * messages exist yet) so the chat never sticks on the loading skeleton.
 	 *
 	 * `settled` marks the read made because a turn is over. A snapshot that
 	 * is truncated then, or with no turn running, will not get better by
 	 * waiting, so the settled history is read instead.
 	 */
-	private async read(settled = false, preloadHistory = false) {
+	private async read(
+		settled = false,
+		preloadHistory = false,
+		reloadWaitingHistory = false,
+	) {
 		const read = ++this.reads;
 		const target = this.target;
 		if (!target) return;
@@ -936,6 +956,8 @@ export class ChatTranscriptStore {
 			});
 			return buffered.filter((event) => event.sequence > after);
 		};
+		let after = -1;
+		let waitingFallback = false;
 		try {
 			const runtimePromise = this.client.chatState(sessionKey);
 			// For idle saved sessions, overlap history loading with the runtime check
@@ -955,7 +977,6 @@ export class ChatTranscriptStore {
 			if (this.reads !== read) return;
 			if (runtime) this.sawProcess(runtime.snapshot.generation);
 			this.running = runtime?.snapshot.state === "running";
-			let after = -1;
 			if (this.running) {
 				prefetchedHistory = undefined;
 				this.historyRead = undefined;
@@ -1030,11 +1051,15 @@ export class ChatTranscriptStore {
 				}
 				after = snapshot.eventSequence;
 				if (!settled && (runtime?.activeTurn || runtime?.compacting)) {
-					const later = finish({ status: "loading" }, after);
+					if (shown.conversation !== null && !reloadWaitingHistory) {
+						const later = finish({ status: "loading" }, after);
+						this.waiting = true;
+						// The turn may have settled while the snapshot was on its way.
+						for (const event of later) this.receive([event]);
+						return;
+					}
 					this.waiting = true;
-					// The turn may have settled while the snapshot was on its way.
-					for (const event of later) this.receive([event]);
-					return;
+					waitingFallback = true;
 				}
 			}
 			// No snapshot can be had now: the settled history is what there is.
@@ -1087,14 +1112,25 @@ export class ChatTranscriptStore {
 						history: metadata,
 					});
 				}
-				result = {
-					status: "ready",
-					conversation: this.withLocal(
-						this.external ? markExternalTurnLive(saved) : saved,
-					),
-					historyPrefix,
-					source: "history",
-				};
+				const conversation = this.withLocal(
+					this.external || waitingFallback
+						? markExternalTurnLive(saved)
+						: saved,
+				);
+				if (
+					waitingFallback &&
+					conversation.messages.length === 0 &&
+					historyPrefix.length === 0
+				) {
+					result = { status: "not_loaded" };
+				} else {
+					result = {
+						status: "ready",
+						conversation,
+						historyPrefix,
+						source: "history",
+					};
+				}
 			} else if (this.running) {
 				// A chat that was never saved, with turns that cannot be rebuilt.
 				result = { status: "not_loaded" };
@@ -1113,6 +1149,20 @@ export class ChatTranscriptStore {
 			this.fill();
 		} catch (error) {
 			if (this.reads !== read) return;
+			if (waitingFallback) {
+				const missingFile = isMissingHistoryFile(error);
+				// The runtime path may be assigned before Pi writes it; an adopted
+				// or opened saved path must already exist, even during a live turn.
+				const unwrittenDraft = missingFile && !this.target?.sessionPath;
+				if (unwrittenDraft || (!missingFile && shown.conversation !== null)) {
+					const later = finish(
+						{ status: shown.conversation !== null ? "ready" : "not_loaded" },
+						after,
+					);
+					for (const event of later) this.receive([event]);
+					return;
+				}
+			}
 			const later = finish({
 				status: "failed",
 				message: error instanceof Error ? error.message : String(error),
@@ -1122,7 +1172,9 @@ export class ChatTranscriptStore {
 			if (this.reads === read && this.historyRead) {
 				const { changed } = this.historyRead;
 				this.historyRead = undefined;
-				if (changed && !this.running) void this.read();
+				if (changed && (!this.running || this.waiting)) {
+					void this.read(false, false, this.waiting);
+				}
 			}
 		}
 	}
