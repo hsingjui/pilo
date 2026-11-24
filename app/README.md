@@ -225,15 +225,60 @@ root's `dist/`, even when nsh generates its own manifest.
 Once the workflow is on the default branch, open **Actions → Release → Run workflow**
 in GitHub and select the branch to build. Download the packages from that run's
 **Artifacts**: a Windows x64
-installer and portable ZIP, an Apple Silicon DMG, and a Linux x64 tarball
-(GTK 4.14 or later). Manual runs never create a GitHub Release.
+installer and portable ZIP, an Apple Silicon DMG and app tarball, and a Linux
+x64 tarball (GTK 4.14 or later). Manual runs never create a GitHub Release or
+an update manifest. They embed the update source only when the public key below
+is configured.
 
 For a release, make sure the root `Cargo.toml` workspace version matches
 `nsh.json`, the desktop `Cargo.toml`, and the local package entries in both
 Cargo lockfiles. Push the matching `v<version>` tag. The workflow creates a
-draft only after all three builds succeed; review the packages before
-publishing. The macOS bundle is ad hoc signed, not notarized. There is no
-Tauri updater feed or automatic upgrade from Tauri.
+draft only after all three builds succeed, the final packages are signed, and
+the nsh update manifest is signed. Review the packages before publishing. Tag
+runs reuse `TAURI_SIGNING_PRIVATE_KEY` and, if the key is password-protected,
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to give each package a matching `.sig`
+file. Manual runs do not produce these signatures.
+
+To verify a download, save the package and its `.sig` together. Decode the
+Tauri signature and verify it with the existing Pilo public key using Minisign:
+
+```bash
+asset=Pilo-vX.Y.Z-macos-arm64.dmg # Replace with the downloaded filename.
+openssl base64 -d -A -in "$asset.sig" -out "$asset.minisig"
+minisign -Vm "$asset" -P 'RWSj2ZxAmPuk9OWT1sIsn74KLN+X3OEX5FBIWkEZpFC/2wKDmCETb828'
+```
+
+These signatures verify downloads; they do not replace OS code signing. On
+macOS, the shared build ad hoc signs `pilo-server`. `nsh package` ad hoc
+signs the app, and the workflow signs it again after adding the WebUI and
+runtimes, before creating the DMG and the update tarball. The app is not
+notarized. Users of the old Tauri app must install the first nsh version
+manually; future updates use nsh, not the old Tauri feed.
+
+### nsh app updates
+
+Generate a separate key pair once with `nsh keygen pilo-update` in a private
+local directory. Configure the repository's GitHub Actions variable and secret:
+
+```bash
+gh variable set NSH_UPDATE_PUBLIC_KEY --repo hsingjui/pilo < pilo-update.pub
+gh secret set NSH_UPDATE_PRIVATE_KEY --repo hsingjui/pilo < pilo-update.secret
+```
+
+Back up the private key securely and never commit it. Keep the same key pair
+across releases: installed apps trust the public key embedded at packaging
+time. The workflow signs `latest.json` as `latest.json.sig` with this key and
+publishes both alongside the archives it hashes: the Windows portable ZIP,
+the macOS app tarball, and the Linux tarball. Neither the DMG nor the Windows
+installer is an in-place update archive. Drafts and prereleases are not offered
+by the default GitHub update source.
+
+On Windows, the installer puts the app in the `pilo-app` subdirectory so the
+updater replaces only Pilo's files, not Inno Setup's uninstall files. For
+portable installations, extract the archive into its own directory and keep
+unrelated files outside it. Stage updates before shutting down the Host and
+swap them at exit (`installOnQuit`), so running local servers do not hold the
+old runtime files open during replacement.
 
 Each package includes the built WebUI in `webui/` and all four server
 runtimes in `runtime/`. These directories live in `Contents/Resources/` on

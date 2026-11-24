@@ -141,6 +141,16 @@ jobs:
         shell: bash
         run: bash scripts/build-pilo-server.sh "${{ matrix.target }}"
 
+      - name: Ad hoc sign macOS runtime
+        if: matrix.target == 'darwin-aarch64'
+        shell: bash
+        env:
+          RUNTIME: resources/${{ matrix.resource }}
+        run: |
+          set -euo pipefail
+          codesign --force --sign - --timestamp=none "$RUNTIME"
+          codesign --verify --strict "$RUNTIME"
+
       - name: Inspect runtime
         shell: bash
         run: |

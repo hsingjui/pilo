@@ -19,21 +19,25 @@ env:
 
 jobs:
   preflight:
-    name: Validate release version
+    name: Validate release metadata
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      nsh_manifest: ${{ steps.version.outputs.nsh_manifest }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Check version metadata and tag
+      - name: Check version metadata and prepare desktop update configuration
         id: version
         shell: bash
+        env:
+          NSH_UPDATE_PUBLIC_KEY: ${{ vars.NSH_UPDATE_PUBLIC_KEY }}
         run: |
           python3 - <<'PY'
+          import base64
           import json
           import os
           import re
@@ -54,7 +58,8 @@ jobs:
 
           desktop = toml("crates/pilo-desktop/Cargo.toml")["package"]
           check("crates/pilo-desktop/Cargo.toml", desktop["version"])
-          check("nsh.json", json.loads(Path("nsh.json").read_text(encoding="utf-8"))["version"])
+          nsh_manifest = json.loads(Path("nsh.json").read_text(encoding="utf-8"))
+          check("nsh.json", nsh_manifest["version"])
           check("web/nsh.json", json.loads(Path("web/nsh.json").read_text(encoding="utf-8"))["version"])
           members = [toml(f"{path}/Cargo.toml")["package"]["name"] for path in workspace["members"]]
           for path, names in [("Cargo.lock", members), ("crates/pilo-desktop/Cargo.lock", [*members, desktop["name"]])]:
@@ -65,8 +70,20 @@ jobs:
           if os.environ["GITHUB_REF_TYPE"] == "tag":
               check("Release tag", os.environ["GITHUB_REF_NAME"], f"v{version}")
 
+          public_key = os.environ["NSH_UPDATE_PUBLIC_KEY"].strip()
+          if public_key:
+              try:
+                  if len(base64.b64decode(public_key, validate=True)) != 32:
+                      raise ValueError()
+              except ValueError:
+                  raise SystemExit("NSH_UPDATE_PUBLIC_KEY must contain an nsh keygen .pub file")
+              nsh_manifest["updater"] = {"github": os.environ["GITHUB_REPOSITORY"], "publicKey": public_key}
+          elif os.environ["GITHUB_REF_TYPE"] == "tag":
+              raise SystemExit("Missing GitHub Actions variable: NSH_UPDATE_PUBLIC_KEY")
+
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               print(f"version={version}", file=output)
+              print(f"nsh_manifest={json.dumps(nsh_manifest)}", file=output)
           print(f"Building Pilo {version}")
           PY
 
@@ -162,7 +179,11 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.platform }}
-        run: nsh package --target "$TARGET" --app-version "$VERSION" --out .nsh/release
+          NSH_MANIFEST: ${{ needs.preflight.outputs.nsh_manifest }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NSH_MANIFEST" > nsh.json
+          nsh package --target "$TARGET" --app-version "$VERSION" --out .nsh/release
 
       - name: Stage app resources
         shell: bash
@@ -196,24 +217,37 @@ jobs:
             choco install innosetup --no-progress -y
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          # Rebuild both artifacts after adding Pilo's resources to the nsh output.
+          # The portable ZIP is also the update archive for the installed app.
           [IO.Compression.ZipFile]::CreateFromDirectory(
-            (Join-Path $out 'Pilo'), (Join-Path $release "$env:ASSET-portable.zip"),
+            (Join-Path $out 'Pilo'), (Join-Path $release "Pilo-Portable-$env:VERSION-windows-x86_64.zip"),
             [IO.Compression.CompressionLevel]::Optimal, $true)
-          & $iscc /Q "/O$release" "/F$env:ASSET-setup" (Join-Path $out 'Pilo.iss')
+          # nsh replaces the executable's directory. Keep Inno's uninstall files in its parent.
+          $installer = Join-Path $out 'Pilo.iss'
+          $script = (Get-Content -Raw -LiteralPath $installer).Replace('{app}', '{app}\pilo-app')
+          $script += "`r`n" + @'
+          [UninstallDelete]
+          Type: filesandordirs; Name: "{app}\pilo-app"
+          '@
+          Set-Content -LiteralPath $installer -Value $script -Encoding utf8BOM
+          & $iscc /Q "/O$release" "/F$env:ASSET-setup" $installer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Sign and archive macOS app
+      - name: Ad hoc sign and archive macOS app
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
           out=.nsh/release
           app="$out/Pilo.app"
+          # The executable in Resources is sealed as data, not verified as nested code.
+          codesign --verify --strict "$app/Contents/Resources/runtime/pilo-server-darwin-aarch64"
+          # nsh signs before Pilo stages its resources; seal the finished bundle again.
           codesign --force --sign - --timestamp=none --preserve-metadata=entitlements "$app"
           codesign --verify --deep --strict "$app"
           codesign -d --verbose=2 "$app" 2>&1 | grep -Fx 'Identifier=app.hsingjui.pilo'
           /usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$app/Contents/Info.plist"
+          # The updater needs the final signed .app, not a DMG or nsh's initial archive.
+          COPYFILE_DISABLE=1 tar -czf "release-assets/Pilo-$VERSION-macos-aarch64.tar.gz" -C "$out" Pilo.app
           mkdir "$out/dmg"
           mv "$app" "$out/dmg/"
           hdiutil create -format UDZO -volname Pilo -srcfolder "$out/dmg" "release-assets/$ASSET.dmg"
@@ -221,7 +255,7 @@ jobs:
       - name: Archive Linux app
         if: runner.os == 'Linux'
         shell: bash
-        run: tar -czf "release-assets/$ASSET.tar.gz" -C .nsh/release Pilo
+        run: tar -czf "release-assets/Pilo-$VERSION-linux-x86_64.tar.gz" -C .nsh/release Pilo
 
       - name: Upload desktop packages
         uses: actions/upload-artifact@v7
@@ -234,19 +268,89 @@ jobs:
   publish:
     name: Create GitHub Release draft
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: build
+    needs: [preflight, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
       - name: Download desktop packages
         uses: actions/download-artifact@v8
         with:
           pattern: Pilo-v*
           path: release-assets
           merge-multiple: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install release signer
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pilo-release-signer" --ignore-scripts --no-audit --no-fund @tauri-apps/cli@2.11.4
+
+      - name: Sign release packages
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${TAURI_SIGNING_PRIVATE_KEY:?Missing GitHub Actions secret: TAURI_SIGNING_PRIVATE_KEY}"
+          for package in release-assets/*; do
+            test -s "$package"
+            "$RUNNER_TEMP/pilo-release-signer/node_modules/.bin/tauri" signer sign "$package"
+            test -s "$package.sig"
+          done
+
+      - name: Setup nsh manifest signer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          asset=nsh-linux-x86_64.tar.gz
+          gh release download "v$NSH_VERSION" --repo longbridge/nsh \
+            --pattern "$asset" --pattern "$asset.sha256"
+          sha256sum -c "$asset.sha256"
+          tar -xzf "$asset"
+          echo "$PWD/nsh/bin" >> "$GITHUB_PATH"
+
+      - name: Generate and sign nsh update manifest
+        shell: bash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          NSH_MANIFEST: ${{ needs.preflight.outputs.nsh_manifest }}
+          NSH_UPDATE_PRIVATE_KEY: ${{ secrets.NSH_UPDATE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          : "${NSH_UPDATE_PRIVATE_KEY:?Missing GitHub Actions secret: NSH_UPDATE_PRIVATE_KEY}"
+          printf '%s\n' "$NSH_MANIFEST" > nsh.json
+          key=$(mktemp "$RUNNER_TEMP/nsh-update-key.XXXXXX")
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$NSH_UPDATE_PRIVATE_KEY" > "$key"
+          unset NSH_UPDATE_PRIVATE_KEY
+          # nsh parses the bare version from archive names; the base URL uses the tag.
+          archives=(
+            "release-assets/Pilo-Portable-$VERSION-windows-x86_64.zip"
+            "release-assets/Pilo-$VERSION-macos-aarch64.tar.gz"
+            "release-assets/Pilo-$VERSION-linux-x86_64.tar.gz"
+          )
+          for archive in "${archives[@]}"; do test -s "$archive"; done
+          nsh update-manifest --entry . --key "$key" --out release-assets \
+            --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" \
+            "${archives[@]}"
+          test -s release-assets/latest.json
+          test -s release-assets/latest.json.sig
 
       - name: Create draft
         shell: bash

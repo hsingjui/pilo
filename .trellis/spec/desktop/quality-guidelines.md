@@ -11,12 +11,15 @@
 ## nsh 发布打包
 
 - **触发**：`.github/workflows/release.yml` 支持手动构建与 `v*` tag 推送。手动操作只上传 Artifacts；版本匹配的 tag 在三个构建全部成功后创建草稿。
-- **入口**：`nsh package --target <macos|windows|linux> --out .nsh/release`。该命令只生成 nsh 应用；发布包还需要 `pnpm build` 的 `dist/` 和同次 run 的 `pilo-server-runtimes` artifact。
+- **入口**：`nsh package --target <macos|windows|linux> --out .nsh/release`。该命令只生成 nsh 应用；发布包还需要 `scripts/build-nsh-web.mjs` 的 `dist/` 和同次 run 的 `pilo-server-runtimes` artifact。
 - **资源布局**：macOS 在 `Pilo.app/Contents/Resources/`，Windows/Linux 在 `Pilo/` 内与可执行文件同级。WebUI 放 `webui/`，四个运行时放 `runtime/`，Unix 打包保留可执行权限。
-- **失败条件**：版本文件不一致、tag 不匹配、`dist/index.html` 或任一运行时文件缺失时，不产出 Release 草稿。
-- **预期结果**：手动构建可以下载各平台包但不创建 Release；tag 构建的草稿包含和 Artifacts 相同的包，不包含 Tauri 更新文件。
+- **失败条件**：版本文件不一致、tag 不匹配、`dist/index.html` 或任一运行时文件缺失、发布或更新签名密钥缺失或签名失败时，不产出 Release 草稿。
+- **发布签名**：手动构建只上传各平台包，不生成 `.sig`；tag 构建在创建草稿前用原 Tauri 签名密钥给每个最终下载包生成同名 `.sig`。这些签名用于下载验签，不替代 macOS 应用的 ad hoc 签名。旧 Tauri 用户手动安装一次 nsh 版，不提供旧版更新清单。
+- **nsh 更新**：同一份注入了 `NSH_UPDATE_PUBLIC_KEY` 和 GitHub 更新源的 `nsh.json` 用于打包及生成清单。用 `NSH_UPDATE_PRIVATE_KEY` 签 `latest.json.sig`；清单只引用最终的 Windows 便携 ZIP、macOS `.app` tarball 和 Linux tarball，不引用安装器或 DMG。三个更新包的文件名用不带 `v` 的版本（如 `Pilo-0.4.1-linux-x86_64.tar.gz`），下载基址用带 `v` 的 tag。否则 `nsh update-manifest` 无法解析包名。默认更新源不提供草稿或预发行版本。
+- **Windows 更新布局**：nsh 会替换可执行文件所在目录。Inno Setup 将应用文件放在 `pilo-app` 子目录，卸载器留在父目录。更新顺序是 `downloadUpdate()` → `installOnQuit()` → 等待 `client.shutdown()` → `Application.restart()`；暂存或关闭 Host 失败时不继续重启。在有本地会话的 Windows 安装版上确认重启后已换成新版。
+- **更新说明与重试**：桌面 JS 只获准对 `https://api.github.com/repos/hsingjui/pilo/releases/tags/` 发 `GET`；失败时仍显示清单提供的说明。重新检查更新先关闭旧弹窗，再清空旧版本；只有找到更新才重新打开，避免无弹窗时仍禁用快捷键。
 - **验收**：检查安装或解压后的应用能启动 Local、发布 Remote WebUI，并从安装版验证局域网 SSH。macOS 确认最终 `Info.plist` 含 `NSLocalNetworkUsageDescription`，签名标识为 `app.hsingjui.pilo`；只有 Rust 链接器临时签名时，局域网授权记录可能无法匹配，表现为终端能连而应用报 `No route to host`。
-- **打包顺序**：先把资源放入应用目录，再重新归档，并在 macOS 上对修改后的 `.app` 重新签名。直接上传 nsh 初次生成的 ZIP、安装器或 tarball 会遗漏资源。
+- **打包顺序**：共用运行时构建先对 macOS 的 `pilo-server` 做 ad hoc 签名，三端复制同一份产物。`nsh package` 对初始 `.app` 签名；Pilo 加入资源后单独验证 macOS 运行时签名，保留 entitlements 重新签名整个 `.app`，再生成 DMG 和更新 tarball。直接上传 nsh 初次生成的 ZIP、安装器或 tarball 会遗漏资源。
 
 ## 测试组织
 
