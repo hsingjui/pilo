@@ -12,7 +12,7 @@ use crate::{
     pi_events::PiEventAdapter,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
     server_pi_events::{
-        adapt_pi_rpc, dispatch_runtime_event, dispatch_runtime_events, flush_runtime_events,
+        adapt_pi_rpc, dispatch_pi_rpc, dispatch_runtime_event, flush_runtime_events,
         trace_pi_transport_event,
     },
 };
@@ -193,10 +193,12 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
                     let data = event.data.clone();
                     observe_pi_event(&state, &data, generation, &agent_start_observer);
                     trace_pi_transport_event(&stream_id, &data);
-                    dispatch_runtime_events(
+                    dispatch_pi_rpc(
                         &sink,
                         &mut buffered_runtime_events,
-                        adapt_pi_rpc(&mut adapter, generation, data),
+                        &mut adapter,
+                        generation,
+                        data,
                     );
                 }
                 "pi.rpc_json" => {
@@ -213,10 +215,12 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
                         Ok(data) => {
                             observe_pi_event(&state, &data, generation, &agent_start_observer);
                             trace_pi_transport_event(&stream_id, &data);
-                            dispatch_runtime_events(
+                            dispatch_pi_rpc(
                                 &sink,
                                 &mut buffered_runtime_events,
-                                adapt_pi_rpc(&mut adapter, generation, data),
+                                &mut adapter,
+                                generation,
+                                data,
                             );
                         }
                         Err(error) => {

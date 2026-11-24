@@ -36,6 +36,7 @@ function CopiedIcon() {
 
 export function ChatCopyButton(props: {
 	text: () => string;
+	compact?: boolean;
 	visible?: boolean;
 	testID?: string;
 }) {
@@ -69,6 +70,7 @@ export function ChatCopyButton(props: {
 
 	return (
 		<ChatMessageAction
+			compact={props.compact}
 			testID={props.testID ?? "chat-copy-message"}
 			label={t(status() ?? "chat.copy")}
 			visible={props.visible}

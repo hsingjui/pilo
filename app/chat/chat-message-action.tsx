@@ -11,12 +11,15 @@ export function ChatMessageAction(props: {
 	label: string;
 	testID?: string;
 	disabled?: boolean;
+	compact?: boolean;
 	visible?: boolean;
 	onPress: () => void;
 	children?: JSX.Element;
 }) {
 	const hover = createHover();
 	const size = platform.desktop ? chatPx(28) : 44;
+	const width =
+		props.compact && platform.os === "web" ? Math.min(size, 32) : size;
 	return (
 		<Button
 			testID={props.testID}
@@ -24,7 +27,7 @@ export function ChatMessageAction(props: {
 			size="icon"
 			class="rounded-(--pilo-radius-md) transition-opacity duration-100"
 			style={{
-				width: size,
+				width,
 				height: size,
 				opacity: props.visible === false ? 0 : 1,
 			}}

@@ -10,15 +10,32 @@ use super::pi_event_adapters::{
 };
 use super::token_usage::TokenUsage;
 
+pub(super) fn turn_completed_at_ms(entry: &Value) -> Option<i64> {
+    if entry.get("type").and_then(Value::as_str) != Some("custom")
+        || entry.get("customType").and_then(Value::as_str) != Some("pilo.turn-completed.v1")
+    {
+        return None;
+    }
+    entry
+        .pointer("/data/completedAtMs")
+        .and_then(Value::as_i64)
+        .filter(|timestamp| *timestamp > 0)
+}
+
 #[derive(Default)]
 pub struct PiEventAdapter {
     finalized_text: String,
     stop_reason: Option<String>,
     error_message: Option<String>,
     usage: Option<TokenUsage>,
+    completed_at_ms: Option<i64>,
 }
 
 impl PiEventAdapter {
+    pub(super) fn take_completed_at_ms(&mut self) -> Option<i64> {
+        self.completed_at_ms.take()
+    }
+
     pub fn adapt(&mut self, generation: u64, message: &Value) -> Vec<RuntimeEvent> {
         match message.get("type").and_then(Value::as_str) {
             Some("message_start") => self.adapt_message_start(generation, message),
@@ -40,6 +57,12 @@ impl PiEventAdapter {
             }
             Some("summarization_retry_finished") => {
                 vec![RuntimeEvent::SummarizationRetryFinished { generation }]
+            }
+            Some("entry_appended") => {
+                if let Some(timestamp) = message.get("entry").and_then(turn_completed_at_ms) {
+                    self.completed_at_ms = Some(timestamp);
+                }
+                Vec::new()
             }
             Some("extension_ui_request") => adapt_extension_ui_request(generation, message),
             Some("extension_error") => adapt_extension_error(generation, message),

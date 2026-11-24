@@ -692,8 +692,9 @@ mod tests {
     use super::*;
     use crate::{
         chat_sessions::event_sink::ChatEventSink,
-        events::{RuntimeEventEnvelope, RuntimeEventSink, RuntimeLogStream},
-        host_events::RecordingEvents,
+        events::{
+            EventBatch, EventQueueLimits, RuntimeEventEnvelope, RuntimeEventSink, RuntimeLogStream,
+        },
     };
 
     static FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1236,10 +1237,12 @@ mod tests {
         let sink = sink(true);
         prepare(&sink, &file).await;
         let reference = RuntimeEventBus::default();
-        let wired_host = Arc::new(RecordingEvents::default());
-        let reference_host = Arc::new(RecordingEvents::default());
-        sink.events.subscribe("wired", 1, wired_host.clone());
-        reference.subscribe("reference", 1, reference_host.clone());
+        let limits = EventQueueLimits {
+            max_events: 32,
+            max_bytes: 256 * 1024,
+        };
+        let mut wired_stream = sink.events.subscribe_events(limits);
+        let mut reference_stream = reference.subscribe_events(limits);
         let mut wired_web = sink.events.subscribe_web();
         let mut reference_web = reference.subscribe_web();
         for event in [
@@ -1265,11 +1268,17 @@ mod tests {
                 serde_json::to_vec(reference_web.try_recv().unwrap().as_ref()).unwrap()
             );
         }
+        let Some(EventBatch::Events(wired_events)) = wired_stream.try_next_batch(32) else {
+            panic!("expected wired stream events");
+        };
+        let Some(EventBatch::Events(reference_events)) = reference_stream.try_next_batch(32) else {
+            panic!("expected reference stream events");
+        };
         assert_eq!(
-            serde_json::to_vec(&*wired_host.events.lock().unwrap()).unwrap(),
-            serde_json::to_vec(&*reference_host.events.lock().unwrap()).unwrap()
+            serde_json::to_vec(&wired_events).unwrap(),
+            serde_json::to_vec(&reference_events).unwrap()
         );
-        assert_eq!(wired_host.events.lock().unwrap().len(), 7);
+        assert_eq!(wired_events.len(), 7);
     }
 
     #[tokio::test]

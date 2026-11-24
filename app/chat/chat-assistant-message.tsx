@@ -19,6 +19,7 @@ import { ChatCopyButton } from "./chat-copy-button";
 import { ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
 import { ChatMessageAction } from "./chat-message-action";
+import { ChatReplyTime } from "./chat-reply-time";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
@@ -201,38 +202,45 @@ export function ChatAssistantMessage(props: {
 						}}
 						focusWithinStyle={{ opacity: 1 }}
 					>
-						{() => (hasCopyText() ? <ChatCopyButton text={copyText} /> : null)}
-						{() =>
-							canFork() ? (
-								<ChatMessageAction
-									testID={`fork:${message().id}`}
-									disabled={
-										(props.forkDisabled?.() ?? false) ||
-										(props.forking?.() ?? false)
-									}
-									label={t(
-										props.forking?.() ? "chat.forking" : "chat.forkNewSession",
-									)}
-									onPress={() => props.onFork?.(message().id)}
-								>
-									{() =>
-										props.forking?.() ? (
-											<Spinner size={chatPx(14)} />
-										) : (
-											<Icon name="GitFork" size={chatPx(14)} />
-										)
-									}
-								</ChatMessageAction>
-							) : null
-						}
+						<View
+							class="flex-row items-center"
+							style={{ display: hasCopyText() || canFork() ? "flex" : "none" }}
+						>
+							{() =>
+								hasCopyText() ? (
+									<ChatCopyButton compact text={copyText} />
+								) : null
+							}
+							{() =>
+								canFork() ? (
+									<ChatMessageAction
+										compact
+										testID={`fork:${message().id}`}
+										disabled={
+											(props.forkDisabled?.() ?? false) ||
+											(props.forking?.() ?? false)
+										}
+										label={t(
+											props.forking?.()
+												? "chat.forking"
+												: "chat.forkNewSession",
+										)}
+										onPress={() => props.onFork?.(message().id)}
+									>
+										{() =>
+											props.forking?.() ? (
+												<Spinner size={chatPx(14)} />
+											) : (
+												<Icon name="GitFork" size={chatPx(14)} />
+											)
+										}
+									</ChatMessageAction>
+								) : null
+							}
+						</View>
 						{() =>
 							time() ? (
-								<Text
-									class="font-sans tabular-nums text-muted-foreground"
-									style={chatMetadataText}
-								>
-									{time}
-								</Text>
+								<ChatReplyTime time={time()} endedAtMs={message().endedAtMs} />
 							) : null
 						}
 						{() => (time() && duration() ? <FooterSeparator /> : null)}

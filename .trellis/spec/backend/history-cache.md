@@ -4,7 +4,8 @@
 
 Apply to history reads, window serialization and lazy image lookup in
 `runtime/session_history/`. Desktop and WebUI use the same Host cache for
-Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
+Local/WSL/SSH; Pi JSONL in its original environment remains authoritative. This
+also covers assistant completion times shared by live and saved transcripts.
 
 ## 2. Signatures
 
@@ -13,12 +14,21 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
   message_limit, include_message_index) -> Result<Vec<u8>, String>`
 - `read_history_image_bytes(..., image_id, expected_fingerprint)` reads source
   ranges using the image-location index, not cached base64 payloads.
+- Completed turn record: Pi JSONL `custom` entry with
+  `customType: "pilo.turn-completed.v1"` and `data: { completedAtMs }` (Unix ms).
 - Fingerprint: `{ fileSize, fileMtimeNs }`. History windows retain the existing
   `windowStartMessage`, `windowMessageCount`, `totalMessages`, optional
   `messageIndex`, and fingerprint fields. Limits clamp to 1–256 messages.
 
 ## 3. Contracts
 
+- StreamGuard appends the completion entry at `agent_settled` for runs with
+  an assistant message. Pi emits `entry_appended` before the RPC `agent_settled`;
+  the Host publishes the recorded time as `assistant_message_end.timestampMs`.
+  History uses the same entry to close the current assistant turn or update
+  its timestamp when Pi compacted after the reply. The record does not
+  contribute a row or model content. Keep StreamGuard ahead of the
+  built-ins that snapshot the session leaf at settlement.
 - Cache keys include project ID and source path. Merge overlapping
   loads with a per-key lock, then recheck fingerprinted caches inside the lock.
   A client fingerprint can hit the cache directly. If it misses an existing
@@ -61,7 +71,8 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
 - Checkpoint: the last user message or `compaction` on the active branch whose
   line is newline-terminated and has a non-empty id. Both close the previous turn
   and start their own projected message, so messages before them never change
-  while the checkpoint stays on the branch. It records the branch state before
+  while the checkpoint stays on the branch, except when a settlement record
+  updates a reply before a compaction checkpoint. It records the branch state before
   it, running stats over all earlier source entries (kept in source order so the
   float cost sum matches), and the branch context tokens before it.
 - Verification: the parser hashes newline-terminated lines with SHA-256 from offset
@@ -89,6 +100,8 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
 
 | Condition | Behavior |
 | --- | --- |
+| No completion entry | Live uses the Host receipt time; history retains the last related Pi entry time |
+| Completion belongs to a reply before the cached compaction | Full cold read, so the reply timestamp in the prefix is also updated |
 | Matching fingerprint | Reuse memory or disk projection without cold-load admission |
 | Two other cold scans are running | Wait for a global slot; do not allocate another parser |
 | Cold-load HTTP caller cancels during blocking work | Keep its slot until that blocking work ends |
@@ -107,6 +120,7 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
 
 ## 5. Good / Base / Bad Cases
 
+- Good: the completed reply has the same timestamp live and after reopening.
 - Good: repeatedly page a large history without rescanning the remote JSONL.
 - Good: after a turn, read only the bytes from the last user message onward.
 - Base: small histories stay in memory with the existing window contract.
@@ -121,6 +135,8 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
 Existing WSL history tests have passed. These additional assertion points await
 targeted regression coverage; no new repository tests have been added:
 
+- A settled reply keeps the same time through live delivery, reconnect replay
+  and history reload, including after tools or an automatic retry.
 - Concurrent distinct-key cold loads stay within two slots; cached pages do not
   wait behind them. Cancellation keeps a slot while blocking parse/serialize/write
   continues. User-image data is not retained in parser entries and lazy image
@@ -145,6 +161,8 @@ targeted regression coverage; no new repository tests have been added:
 
 ## 7. Wrong vs Correct
 
+- Wrong: use a browser receipt time or the prompt timestamp as the finished
+  reply time. Correct: use the completion timestamp persisted by Pi.
 - Wrong: bypass the cache whenever a source exceeds the memory LRU budget, so
   every page rescans and replays the entire file.
 - Correct: keep an eligible disposable projection plus message-range index,

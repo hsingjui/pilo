@@ -190,7 +190,7 @@ impl HistoryParser {
             .map(|checkpoint| checkpoint.state.clone())
             .unwrap_or_default();
         let (mut history, checkpoint_state) =
-            project_branch(&mut entries, &branch, start, checkpoint);
+            project_branch(&mut entries, &branch, start, checkpoint, base.is_some())?;
         history.header_missing = header_missing;
         history.stats = stats;
         history.image_locations = std::mem::take(&mut self.image_locations);
@@ -257,7 +257,8 @@ fn parse_entry(
 }
 
 /// User messages and compactions close the previous turn and start their own
-/// projected message, so nothing projected before them depends on later entries.
+/// projected message. A completion record that reaches behind a compaction
+/// checkpoint forces a full read.
 fn is_checkpoint_candidate(entry: &Value) -> bool {
     entry
         .get("id")

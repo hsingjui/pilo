@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::super::token_usage::TokenUsage;
+use super::super::{pi_events::turn_completed_at_ms, token_usage::TokenUsage};
 use super::incremental::ProjectionState;
 use super::parser_fields::{
     entry_id, entry_timestamp_ms, fallback_text, normalize_thinking, tool_result_payload,
@@ -24,7 +24,8 @@ pub(super) fn project_branch(
     branch: &[usize],
     start: ProjectionState,
     checkpoint: Option<usize>,
-) -> (SessionHistory, Option<ProjectionState>) {
+    resumed: bool,
+) -> Option<(SessionHistory, Option<ProjectionState>)> {
     let mut history = SessionHistory {
         model: start.model,
         thinking_level: start.thinking_level,
@@ -95,6 +96,28 @@ pub(super) fn project_branch(
                     source_entry_id: entry_id(&entry),
                 });
             }
+            Some("custom") => {
+                if let Some(completed_at_ms) = turn_completed_at_ms(&entry) {
+                    if turn.has_assistant {
+                        turn.updated_at_ms = Some(completed_at_ms);
+                        finish_turn(&mut history.events, &mut turn, false);
+                    } else {
+                        // Pi may compact after the final reply but before settling.
+                        match history.events.iter_mut().rev().find(|event| {
+                            !matches!(event, ConversationEventDto::CompactionMarker { .. })
+                        }) {
+                            Some(ConversationEventDto::AssistantTurnEnd {
+                                timestamp_ms, ..
+                            }) => {
+                                *timestamp_ms = Some(completed_at_ms);
+                            }
+                            // The reply is before the compaction checkpoint. Rebuild its prefix.
+                            None if resumed => return None,
+                            _ => {}
+                        }
+                    }
+                }
+            }
             Some("custom_message")
                 if entry.get("display").and_then(Value::as_bool) != Some(false) =>
             {
@@ -122,7 +145,7 @@ pub(super) fn project_branch(
     }
 
     finish_turn(&mut history.events, &mut turn, true);
-    (history, checkpoint_state)
+    Some((history, checkpoint_state))
 }
 
 fn project_message(

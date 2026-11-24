@@ -1,5 +1,6 @@
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 const ERROR_PREFIX = "PILO_STREAM_STALLED:";
+const TURN_COMPLETED = "pilo.turn-completed.v1";
 
 function clearTimer(current) {
 	clearTimeout(current.timer);
@@ -15,6 +16,7 @@ export default function (pi) {
 			? configured
 			: DEFAULT_IDLE_TIMEOUT_MS;
 	let running = false;
+	let sawAssistant = false;
 	let watch;
 
 	function stopWatching() {
@@ -61,6 +63,7 @@ export default function (pi) {
 	pi.on("message_update", touch);
 	pi.on("message_end", (event) => {
 		if (event.message.role !== "assistant") return;
+		sawAssistant = true;
 		const timedOut = watch?.timedOut;
 		stopWatching();
 		if (!timedOut || event.message.stopReason !== "aborted") return;
@@ -73,14 +76,22 @@ export default function (pi) {
 			},
 		};
 	});
-	for (const event of [
-		"agent_end",
-		"session_start",
-		"session_switch",
-		"session_shutdown",
-	]) {
+	pi.on("agent_settled", (_event, ctx) => {
+		const hasAssistant = sawAssistant;
+		sawAssistant = false;
+		if (hasAssistant && ctx.mode === "rpc") {
+			// Pi emits entry_appended for this record before forwarding agent_settled.
+			pi.appendEntry(TURN_COMPLETED, { completedAtMs: Date.now() });
+		}
+	});
+	pi.on("agent_end", () => {
+		running = false;
+		stopWatching();
+	});
+	for (const event of ["session_start", "session_switch", "session_shutdown"]) {
 		pi.on(event, () => {
 			running = false;
+			sawAssistant = false;
 			stopWatching();
 		});
 	}

@@ -412,6 +412,10 @@ impl RuntimeEventBus {
 
 pub trait RuntimeEventSink: Clone + Send + Sync + 'static {
     fn send(&self, event: RuntimeEvent);
+
+    fn send_at(&self, event: RuntimeEvent, _timestamp_ms: i64) {
+        self.send(event);
+    }
 }
 
 #[cfg(test)]

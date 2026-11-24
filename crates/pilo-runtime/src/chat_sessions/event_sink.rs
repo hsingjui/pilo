@@ -32,6 +32,16 @@ pub(super) struct ChatEventSink {
 
 impl RuntimeEventSink for ChatEventSink {
     fn send(&self, event: RuntimeEvent) {
+        self.publish(event, None);
+    }
+
+    fn send_at(&self, event: RuntimeEvent, timestamp_ms: i64) {
+        self.publish(event, Some(timestamp_ms));
+    }
+}
+
+impl ChatEventSink {
+    fn publish(&self, event: RuntimeEvent, timestamp_ms: Option<i64>) {
         if self.closed.load(Ordering::Acquire) {
             return;
         }
@@ -187,14 +197,13 @@ impl RuntimeEventSink for ChatEventSink {
                     .record_session_completion(self.project_id.clone(), path);
             }
         }
-        self.events.send_observed(
-            RuntimeEventEnvelope::session(self.session_key.clone(), self.project_id.clone(), event),
-            |event| self.turn.observe(event),
-        );
+        let mut envelope =
+            RuntimeEventEnvelope::session(self.session_key.clone(), self.project_id.clone(), event);
+        envelope.timestamp_ms = timestamp_ms;
+        self.events
+            .send_observed(envelope, |event| self.turn.observe(event));
     }
-}
 
-impl ChatEventSink {
     fn fail_pending_initialization(&self, fallback: &str) {
         let Some(sender) = self
             .control_reply

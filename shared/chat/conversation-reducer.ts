@@ -208,6 +208,7 @@ function endTurn(
 			timestampMs === undefined
 				? current.time
 				: context.formatTime(timestampMs),
+		...(timestampMs !== undefined && { endedAtMs: timestampMs }),
 		content: finishContent(current.content),
 		activity: current.activity?.map((item) =>
 			item.type === "thinking"

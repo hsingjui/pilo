@@ -208,12 +208,22 @@ pub(super) fn dispatch_runtime_event<S: RuntimeEventSink>(
     sink.send(event);
 }
 
-pub(super) fn dispatch_runtime_events<S: RuntimeEventSink>(
+pub(super) fn dispatch_pi_rpc<S: RuntimeEventSink>(
     sink: &S,
     buffer: &mut Vec<RuntimeEvent>,
-    events: impl IntoIterator<Item = RuntimeEvent>,
+    adapter: &mut PiEventAdapter,
+    generation: u64,
+    data: Value,
 ) {
-    for event in events {
-        dispatch_runtime_event(sink, buffer, event);
+    for event in adapt_pi_rpc(adapter, generation, data) {
+        if matches!(&event, RuntimeEvent::AssistantMessageEnd { .. }) {
+            let timestamp_ms = adapter
+                .take_completed_at_ms()
+                .unwrap_or_else(|| crate::storage::now_ms() as i64);
+            flush_runtime_events(sink, buffer);
+            sink.send_at(event, timestamp_ms);
+        } else {
+            dispatch_runtime_event(sink, buffer, event);
+        }
     }
 }

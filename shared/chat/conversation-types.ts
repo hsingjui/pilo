@@ -38,6 +38,7 @@ export type ChatMessage =
 			text: string;
 			time: string;
 			timestampMs?: number;
+			endedAtMs?: number;
 			content?: AssistantContentItem[];
 			activity?: AssistantActivity[];
 			streaming?: boolean;
