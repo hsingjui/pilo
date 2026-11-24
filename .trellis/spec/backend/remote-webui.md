@@ -351,6 +351,26 @@ headless hosts can inject their own asset resolver. Missing assets retain the ex
 SPA fallback, content-type and cache-control behavior. Tests serve an in-memory
 index file through the same response path.
 
+- **Scope:** Only `.wasm`, `.js`, `.css` and `.bin` assets with a fingerprint in
+  a path segment negotiate compression. This includes `browser.<hash>/bootstrap.js`.
+  HTML, SPA fallback and API routes are unchanged.
+- **Signature:** `WebAssets::get_precompressed(path, extension)` is optional;
+  it returns sidecar bytes with the original asset's MIME type.
+- **Contract:** Use the `Accept-Encoding` weights to select the `.br` or `.gz`
+  sidecar, preferring Brotli on ties. Keep the original URL and cache policy;
+  set `Content-Encoding` for the sidecar and `Vary: Accept-Encoding` for either
+  successful representation.
+- **Fallback:** A missing sidecar falls back to the next accepted encoding or the
+  original file. A missing asset stays 404; an existing asset with no acceptable
+  representation returns 406.
+- **Examples:** `br, gzip` prefers Brotli; `br;q=0, gzip` can use gzip; a request
+  without `Accept-Encoding` receives the original file.
+- **Verification:** Request the same fingerprinted WASM URL with Brotli, gzip
+  and identity. Check `Content-Encoding`, `Vary`, `application/wasm`, and that
+  decoding either sidecar yields the original bytes.
+- **Do not** rewrite the browser URL to the sidecar or compress live API
+  responses. Serve nsh's precompressed bytes only for the matching static asset.
+
 ### WebSocket protocol
 
 - Subprotocols: `pilo`, `pilo-token.<token>`.

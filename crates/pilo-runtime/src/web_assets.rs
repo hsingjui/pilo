@@ -5,4 +5,9 @@ pub struct WebAsset {
 
 pub trait WebAssets: Send + Sync {
     fn get(&self, path: &str) -> Option<WebAsset>;
+
+    /// Returns a precompressed sidecar with the MIME type of the original asset.
+    fn get_precompressed(&self, _path: &str, _extension: &str) -> Option<WebAsset> {
+        None
+    }
 }

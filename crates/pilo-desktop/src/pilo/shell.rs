@@ -366,6 +366,16 @@ pub(super) fn server_resource_name() -> &'static str {
 
 impl WebAssets for ShellWebAssets {
     fn get(&self, path: &str) -> Option<WebAsset> {
+        self.read_asset(path, path)
+    }
+
+    fn get_precompressed(&self, path: &str, extension: &str) -> Option<WebAsset> {
+        self.read_asset(&format!("{path}.{extension}"), path)
+    }
+}
+
+impl ShellWebAssets {
+    fn read_asset(&self, path: &str, mime_path: &str) -> Option<WebAsset> {
         let path = Path::new(path);
         if !path
             .components()
@@ -380,7 +390,7 @@ impl WebAssets for ShellWebAssets {
         }
         Some(WebAsset {
             bytes: std::fs::read(file).ok()?,
-            mime_type: mime_guess::from_path(path)
+            mime_type: mime_guess::from_path(mime_path)
                 .first_or_octet_stream()
                 .to_string(),
         })

@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, FromRequestParts},
-    http::{StatusCode, Uri, header, request::Parts},
+    http::{HeaderMap, HeaderValue, StatusCode, Uri, header, request::Parts},
     middleware::{from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -19,7 +19,11 @@ use tokio::sync::watch;
 use tower_http::timeout::TimeoutLayer;
 
 use crate::{
-    Runtime, connection_diagnostics::request_failure_reason, host_paths::HostPaths, storage,
+    Runtime,
+    connection_diagnostics::request_failure_reason,
+    host_paths::HostPaths,
+    storage,
+    web_assets::{WebAsset, WebAssets},
 };
 use pilo_domain::{Project, RemoteDevice};
 
@@ -285,11 +289,89 @@ fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
     "no-cache"
 }
 
-async fn asset(state: RemoteHttpState, uri: Uri) -> Response {
-    serve_asset(state.runtime.web_assets(), uri)
+async fn asset(state: RemoteHttpState, uri: Uri, headers: HeaderMap) -> Response {
+    let assets = state.runtime.web_assets();
+    let path = uri.path().trim_start_matches('/');
+    let name = path.rsplit('/').next().unwrap_or_default();
+    // A fingerprint can be in the filename or a parent directory.
+    if path.starts_with("api/")
+        || !path.split('/').any(has_content_hash_segment)
+        || !matches!(
+            name.rsplit_once('.'),
+            Some((_, "wasm" | "js" | "css" | "bin"))
+        )
+    {
+        return serve_asset(assets, uri);
+    }
+
+    let [br, gzip, identity, wildcard] = encoding_qualities(&headers);
+    let mut encodings = [
+        ("br", "br", br.or(wildcard).unwrap_or(0.0)),
+        ("gzip", "gz", gzip.or(wildcard).unwrap_or(0.0)),
+    ];
+    if encodings[1].2 > encodings[0].2 {
+        encodings.swap(0, 1);
+    }
+    let compressed = assets.and_then(|assets| {
+        encodings
+            .into_iter()
+            .find_map(|(coding, extension, quality)| {
+                if quality == 0.0 || quality < identity.unwrap_or(0.0) {
+                    return None;
+                }
+                let asset = assets.get_precompressed(path, extension)?;
+                let mut response = asset_response(asset, asset_cache_control(path, false));
+                response
+                    .headers_mut()
+                    .insert(header::CONTENT_ENCODING, HeaderValue::from_static(coding));
+                Some(response)
+            })
+    });
+    let mut response = compressed.unwrap_or_else(|| {
+        let response = serve_asset(assets, uri);
+        if response.status().is_success() && identity.or(wildcard) == Some(0.0) {
+            return StatusCode::NOT_ACCEPTABLE.into_response();
+        }
+        response
+    });
+    if response.status().is_success() || response.status() == StatusCode::NOT_ACCEPTABLE {
+        response
+            .headers_mut()
+            .append(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+    }
+    response
 }
 
-fn serve_asset(assets: Option<&dyn crate::web_assets::WebAssets>, uri: Uri) -> Response {
+fn encoding_qualities(headers: &HeaderMap) -> [Option<f32>; 4] {
+    let mut qualities = [None; 4];
+    for entry in headers
+        .get_all(header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+    {
+        let (coding, parameter) = entry
+            .split_once(';')
+            .map_or((entry, None), |(coding, param)| (coding, Some(param)));
+        let Some(index) = ["br", "gzip", "identity", "*"]
+            .iter()
+            .position(|name| coding.trim().eq_ignore_ascii_case(name))
+        else {
+            continue;
+        };
+        qualities[index] = Some(parameter.map_or(1.0, |param| {
+            param
+                .split_once('=')
+                .filter(|(key, _)| key.trim().eq_ignore_ascii_case("q"))
+                .and_then(|(_, value)| value.trim().parse::<f32>().ok())
+                .filter(|quality| (0.0..=1.0).contains(quality))
+                .unwrap_or(0.0)
+        }));
+    }
+    qualities
+}
+
+fn serve_asset(assets: Option<&dyn WebAssets>, uri: Uri) -> Response {
     let requested_path = uri.path().trim_start_matches('/');
     if requested_path.starts_with("api/") {
         return StatusCode::NOT_FOUND.into_response();
@@ -310,13 +392,14 @@ fn serve_asset(assets: Option<&dyn crate::web_assets::WebAssets>, uri: Uri) -> R
     let Some(asset) = asset else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    asset_response(asset, asset_cache_control(path, spa_fallback))
+}
+
+fn asset_response(asset: WebAsset, cache_control: &'static str) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, asset.mime_type)
-        .header(
-            header::CACHE_CONTROL,
-            asset_cache_control(path, spa_fallback),
-        )
+        .header(header::CACHE_CONTROL, cache_control)
         .body(Body::from(asset.bytes))
         .unwrap_or_else(|error| {
             api_error(
