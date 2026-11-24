@@ -111,11 +111,12 @@ export function AboutPane(props: { client: SettingsClient }) {
 		<View class="gap-3">
 			<SettingsSection>
 				<View class="flex-row items-center gap-4 px-4 py-4">
-					<View class="size-16 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background">
+					<View class="size-16 shrink-0 overflow-hidden rounded-2xl border border-border/60">
 						<Image
 							src={appIcon}
 							testID="about-app-icon"
-							class="size-14 rounded-xl"
+							class="size-full"
+							style={{ objectFit: "cover" }}
 						/>
 					</View>
 					<View class="min-w-0 gap-1">

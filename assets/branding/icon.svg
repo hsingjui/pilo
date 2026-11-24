@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="512" height="512" rx="114" />
+    </clipPath>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F1F4F8" />
+    </linearGradient>
+    <pattern id="grid" width="72" height="72" x="40" y="40" patternUnits="userSpaceOnUse">
+      <path d="M 72 0 V 72 M 0 72 H 72" stroke="#1E293B" stroke-opacity="0.065" stroke-width="1.2" />
+    </pattern>
+    <linearGradient id="coral" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F67969" />
+      <stop offset="100%" stop-color="#E45E4F" />
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3B93C8" />
+      <stop offset="100%" stop-color="#2773A5" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F7C248" />
+      <stop offset="100%" stop-color="#E5A223" />
+    </linearGradient>
+    <filter id="block-shadow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1E293B" flood-opacity="0.16" />
+    </filter>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="512" height="512" fill="url(#bg)" />
+    <rect x="0" y="0" width="512" height="512" fill="url(#grid)" />
+    <g filter="url(#block-shadow)">
+      <path fill="url(#coral)" d="M112 112 H328 V256 H256 V184 H112 Z" />
+      <path fill="url(#blue)" d="M112 184 H184 V256 H256 V328 H184 V400 H112 Z" />
+      <rect x="328" y="256" width="72" height="144" fill="url(#gold)" />
+      <path d="M112 113.5 H328 M184 257.5 H256 M328 257.5 H400" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="2" />
+    </g>
+  </g>
+</svg>
