@@ -98,6 +98,7 @@ type BrowserGlobal = {
 		href?: string;
 		assign?: (url: string) => void;
 		replace?: (url: string) => void;
+		reload?: () => void;
 	};
 	navigator?: { onLine?: boolean; userAgent?: string };
 	crypto?: { getRandomValues?: (array: Uint8Array) => Uint8Array };
@@ -256,6 +257,10 @@ export function navigateToUrl(
 	} catch {
 		// Ignore when running outside a browser host.
 	}
+}
+
+export function reloadRemotePage(): void {
+	browserPageLocation()?.reload?.();
 }
 
 export function browserSessionStorage(): BrowserStorage | undefined {

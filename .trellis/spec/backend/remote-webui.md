@@ -613,6 +613,14 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   that a desktop-created background chat appears in WebUI without manual refresh.
 - **Online WebUI**: the remote workspace does not require a Service Worker,
   an offline app shell, or a PWA update prompt.
+- **Web startup**: `web/WebApp.tsx` keeps pairing and manual token entry in the
+  initial bundle. Only the non-pairing route with a device token imports
+  `mobile-remote-workspace.tsx`; keep that import dynamic so chat, the composer,
+  and their stores stay off the pairing path. On chunk failure, Retry reloads
+  the outer page, not the nsh iframe or the same chunk URL, so it picks up a new
+  chunk map without clearing the device token. Check a cold `/pair` and signed-out
+  `/` do not request the workspace chunk, that pairing into `/` loads it, and
+  that Retry recovers when a newer deployment has removed the old chunk.
 
 ---
 
