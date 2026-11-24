@@ -6,7 +6,7 @@ export type IconName = keyof typeof icons;
 
 export interface IconProps extends Pick<
 	CanvasProps,
-	"class" | "testID" | "ref"
+	"class" | "style" | "testID" | "ref"
 > {
 	name: IconName;
 	size?: number;
@@ -36,11 +36,14 @@ export function Icon(props: IconProps) {
 			class={props.class}
 			testID={props.testID}
 			ref={props.ref}
-			style={{
-				width: props.size ?? 16,
-				height: props.size ?? 16,
-				flexShrink: 0,
-			}}
+			style={[
+				{
+					width: props.size ?? 16,
+					height: props.size ?? 16,
+					flexShrink: 0,
+				},
+				props.style,
+			]}
 			accessible={!!props.accessibilityLabel}
 			accessibilityLabel={props.accessibilityLabel}
 			accessibilityElementsHidden={!props.accessibilityLabel}

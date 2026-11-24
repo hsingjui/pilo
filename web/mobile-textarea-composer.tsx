@@ -229,9 +229,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 				part?.toLowerCase().includes(needle),
 			);
 		if (active.trigger === "/") {
-			return [...piSessionSuggestions(t), ...store.commands()]
-				.filter(matches)
-				.slice(0, 9);
+			return [...piSessionSuggestions(t), ...store.commands()].filter(matches);
 		}
 		const candidates =
 			mentionTab() === "session"

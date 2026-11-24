@@ -22,7 +22,11 @@ import {
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import { type ChatExpansion, chatToolExpansionKey } from "./chat-expansion";
 import type { ChatWorkPreferences } from "./chat-message-types";
-import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
+import {
+	ChatReadingFont,
+	readingIconStyle,
+	readingTextStyle,
+} from "./chat-reading-font";
 import { ChatThinkingActivity } from "./chat-thinking-activity";
 import { ChatToolActivity } from "./chat-tool-activity";
 
@@ -105,7 +109,11 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 				onPress={() => expansion.setOpen(groupKey(), !open())}
 			>
 				{() => (
-					<Icon name={open() ? "ChevronDown" : "ChevronRight"} size={14} />
+					<Icon
+						name={open() ? "ChevronDown" : "ChevronRight"}
+						size={14}
+						style={readingIconStyle(readingFont())}
+					/>
 				)}
 				<View class="min-w-0 flex-1 flex-row items-center">
 					{() =>
@@ -133,7 +141,13 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 						{label}
 					</Text>
 				</View>
-				{() => (running() ? <Spinner size={14} /> : null)}
+				{() =>
+					running() ? (
+						<View class="shrink-0" style={readingIconStyle(readingFont())}>
+							<Spinner size={14} />
+						</View>
+					) : null
+				}
 			</ChatDisclosureRow>
 			{() =>
 				open() ? (

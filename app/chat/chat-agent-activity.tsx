@@ -8,7 +8,11 @@ import {
 	View,
 } from "nsh";
 
-import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
+import {
+	ChatReadingFont,
+	readingIconStyle,
+	readingTextStyle,
+} from "./chat-reading-font";
 
 // The WebUI's `ease-in-out`.
 const easeInOut: Easing = [0.42, 0, 0.58, 1];
@@ -99,6 +103,7 @@ export function ChatAgentActivityIndicator(props: {
 		<View testID={props.testID} class="flex-row items-center gap-1.5">
 			<View
 				class="size-3.5 shrink-0 items-center justify-center"
+				style={readingIconStyle(readingFont())}
 				accessible={false}
 				accessibilityElementsHidden
 			>

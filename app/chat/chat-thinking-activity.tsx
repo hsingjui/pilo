@@ -10,7 +10,11 @@ import { workDurationText } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
-import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
+import {
+	ChatReadingFont,
+	readingIconStyle,
+	readingTextStyle,
+} from "./chat-reading-font";
 
 // How much thinking renders at first, and how much more each press shows.
 const THINKING_REVEAL_CHARS = 8_000;
@@ -94,7 +98,9 @@ export function ChatThinkingActivity(props: {
 						<Tooltip class="max-w-80" delay={300} margin={16}>
 							<Text class="line-clamp-24 font-sans">
 								{() => {
-									const { text } = activity();
+									const text = activity()
+										.text.replace(/^\s*[\r\n]/, "")
+										.replace(/(\S[^\S\r\n]*)[\r\n]\s*$/, "$1");
 									return text.length > THINKING_REVEAL_CHARS
 										? `${text.slice(0, THINKING_REVEAL_CHARS)}\n…`
 										: text;
@@ -105,7 +111,11 @@ export function ChatThinkingActivity(props: {
 				}
 				onPress={() => props.expansion.setOpen(props.expansionKey(), !open())}
 			>
-				<Icon name="Sparkles" size={14} />
+				<Icon
+					name="Sparkles"
+					size={14}
+					style={readingIconStyle(readingFont())}
+				/>
 				<Text
 					class="shrink-0 font-sans font-medium leading-snug text-muted-foreground"
 					style={readingTextStyle(readingFont())}

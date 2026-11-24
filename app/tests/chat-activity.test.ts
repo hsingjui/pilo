@@ -1,4 +1,9 @@
 import { expect, open, test } from "nsh/test";
+import {
+	chatReadingFont,
+	readingIconOpticalOffset,
+	readingIconStyle,
+} from "../chat/chat-reading-font";
 
 const desktop = { platform: "macos", width: 1100, height: 720 } as const;
 
@@ -137,4 +142,17 @@ test("a task list tool shows its progress and opens to its tasks", async () => {
 	await app.press(TASKS);
 	await app.waitFor("text:Change x");
 	expect(app.shows("text:Read the file")).toBe(true);
+});
+
+test("activity row icons nudge downward to match reading text optical midline", () => {
+	expect(readingIconOpticalOffset(16, "windows")).toBe(1.5);
+	expect(readingIconOpticalOffset(16, "macos")).toBe(1);
+	expect(readingIconOpticalOffset(16, "web")).toBe(1);
+	expect(readingIconOpticalOffset(20, "windows")).toBe(2);
+	expect(readingIconOpticalOffset(12, "macos")).toBe(0.5);
+	expect(
+		readingIconStyle(chatReadingFont({ readingFontSize: 16 }), "windows"),
+	).toEqual({
+		transform: [{ translateY: 1.5 }],
+	});
 });

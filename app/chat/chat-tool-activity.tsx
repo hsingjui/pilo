@@ -27,7 +27,11 @@ import { toolIconName, toolLabel, toolSkillName } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMediaActions } from "./chat-media-actions";
-import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
+import {
+	ChatReadingFont,
+	readingIconStyle,
+	readingTextStyle,
+} from "./chat-reading-font";
 import { ChatToolDetail } from "./chat-tool-detail";
 
 /**
@@ -171,6 +175,7 @@ export function ChatToolActivity(props: {
 											skillName() !== null,
 										)}
 										size={14}
+										style={readingIconStyle(readingFont())}
 									/>
 									<Text
 										class={
@@ -188,6 +193,7 @@ export function ChatToolActivity(props: {
 									ref={linkBlur.ref}
 									onMouseUp={linkBlur.onMouseUp}
 									class="min-w-0 shrink rounded-sm bg-muted/50 px-1.5 py-0.5 hover:bg-muted focus-visible:outline-hidden"
+									style={readingIconStyle(readingFont())}
 									focusVisibleStyle={focusRingStyle(token("ring"))}
 									accessibilityLabel={t("chat.openFile", { path })}
 									tooltip={
@@ -214,9 +220,18 @@ export function ChatToolActivity(props: {
 								>
 									{() =>
 										status() === "failed" ? (
-											<Icon name="CircleAlert" size={14} />
+											<Icon
+												name="CircleAlert"
+												size={14}
+												style={readingIconStyle(readingFont())}
+											/>
 										) : status() === "running" ? (
-											<Spinner size={14} />
+											<View
+												class="shrink-0"
+												style={readingIconStyle(readingFont())}
+											>
+												<Spinner size={14} />
+											</View>
 										) : null
 									}
 								</BaseButton>
@@ -251,6 +266,7 @@ export function ChatToolActivity(props: {
 							<Icon
 								name={toolIconName(activity().toolName, skillName() !== null)}
 								size={14}
+								style={readingIconStyle(readingFont())}
 							/>
 						)}
 						<Text
@@ -274,9 +290,15 @@ export function ChatToolActivity(props: {
 						</Text>
 						{() =>
 							status() === "failed" ? (
-								<Icon name="CircleAlert" size={14} />
+								<Icon
+									name="CircleAlert"
+									size={14}
+									style={readingIconStyle(readingFont())}
+								/>
 							) : status() === "running" ? (
-								<Spinner size={14} />
+								<View class="shrink-0" style={readingIconStyle(readingFont())}>
+									<Spinner size={14} />
+								</View>
 							) : null
 						}
 					</ChatDisclosureRow>
