@@ -15,6 +15,7 @@ import {
 } from "nsh";
 
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
+import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import {
 	AppToaster,
@@ -275,7 +276,10 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		openMarkdownFileLink(fileOpenContext, link);
 	const mediaActions = {
 		openImage: fileOpenContext.openImage,
-		openFile: (path: string) => openToolFilePath(fileOpenContext, path),
+		project,
+		onFileLink: handleFileLink,
+		openFile: (path: string, lineRange?: WorkspaceLineRange) =>
+			openToolFilePath(fileOpenContext, path, lineRange),
 		sessionMentions: () => composer.sessionsByValue(),
 		readUserImage: (image: ChatConversationImage) => {
 			const session = store.state().navigation.session;

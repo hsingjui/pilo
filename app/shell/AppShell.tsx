@@ -217,6 +217,8 @@ export function AppShell(props: AppShellProps) {
 					: null,
 			);
 		},
+		project,
+		onFileLink: handleFileLink,
 		openFile: fileOpenContext
 			? (path: string, lineRange?: WorkspaceLineRange) =>
 					openToolFilePath(fileOpenContext, path, lineRange)

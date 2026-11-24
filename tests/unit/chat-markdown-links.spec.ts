@@ -3,8 +3,15 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
+	annotateMarkdownDocumentFileLinks,
+	extractTrailingLineRange,
+	fileLinkPreviewKind,
+	formatChatFileLinkHref,
+	resolveChatFileLink,
+	resolveInlineCodeFileLink,
 	resolveMarkdownFileLink,
 	resolveMarkdownFileUrl,
+	splitPlainTextFileLinks,
 } from "../../shared/chat/chat-markdown-links.ts";
 
 test("file links support HTML reports, Unicode, spaces and Windows drive paths", () => {
@@ -159,4 +166,288 @@ test("oversized dotted hrefs are rejected without blocking the Markdown plugin",
 	);
 	assert.ifError(result.error);
 	assert.equal(result.status, 0, result.stderr);
+});
+
+test("chat file links support :L line syntax, Windows paths, and expanded preview types", () => {
+	assert.deepEqual(resolveChatFileLink("src/main.ts:L12", "/repo"), {
+		url: "file:///repo/src/main.ts",
+		lineRange: { start: 12, end: 12 },
+	});
+	assert.deepEqual(resolveChatFileLink("src/main.ts:L12-L18", "/repo"), {
+		url: "file:///repo/src/main.ts",
+		lineRange: { start: 12, end: 18 },
+	});
+	assert.deepEqual(
+		resolveChatFileLink("app\\chat\\chat-markdown.tsx:42-50", "D:\\Code\\pilo"),
+		{
+			url: "file:///D:/Code/pilo/app/chat/chat-markdown.tsx",
+			lineRange: { start: 42, end: 50 },
+		},
+	);
+	assert.deepEqual(resolveChatFileLink("\\\\?\\D:\\Code\\pilo\\App.tsx:9"), {
+		url: "file:///D:/Code/pilo/App.tsx",
+		lineRange: { start: 9, end: 9 },
+	});
+	assert.equal(
+		formatChatFileLinkHref({
+			url: "file:///repo/src/main.ts",
+			lineRange: { start: 12, end: 12 },
+		}),
+		"file:///repo/src/main.ts#L12",
+	);
+	assert.equal(
+		formatChatFileLinkHref({
+			url: "file:///repo/src/main.ts",
+			lineRange: { start: 12, end: 18 },
+		}),
+		"file:///repo/src/main.ts#L12-L18",
+	);
+	assert.equal(fileLinkPreviewKind("proto/pilo.proto"), "code");
+	assert.equal(fileLinkPreviewKind("styles/theme.scss"), "code");
+	assert.equal(fileLinkPreviewKind(".editorconfig"), "code");
+	assert.equal(fileLinkPreviewKind(".env.local"), "code");
+	assert.equal(fileLinkPreviewKind("Dockerfile.dev"), "code");
+	assert.equal(fileLinkPreviewKind("justfile"), "code");
+	assert.equal(fileLinkPreviewKind("report.html"), null);
+	assert.equal(fileLinkPreviewKind("data.csv"), null);
+});
+
+test("inline code file links detect file paths and reject code identifiers", () => {
+	assert.deepEqual(
+		resolveInlineCodeFileLink("app/chat/chat-markdown.tsx:274-290", "/repo"),
+		{
+			url: "file:///repo/app/chat/chat-markdown.tsx",
+			lineRange: { start: 274, end: 290 },
+		},
+	);
+	assert.deepEqual(resolveInlineCodeFileLink("App.tsx", "/repo"), {
+		url: "file:///repo/App.tsx",
+	});
+	assert.deepEqual(resolveInlineCodeFileLink("Cargo.toml:15", "/repo"), {
+		url: "file:///repo/Cargo.toml",
+		lineRange: { start: 15, end: 15 },
+	});
+	assert.deepEqual(resolveInlineCodeFileLink("Dockerfile", "/repo"), {
+		url: "file:///repo/Dockerfile",
+	});
+	assert.deepEqual(resolveInlineCodeFileLink(".env.local", "/repo"), {
+		url: "file:///repo/.env.local",
+	});
+	assert.deepEqual(resolveInlineCodeFileLink("logs/app.log", "/repo"), {
+		url: "file:///repo/logs/app.log",
+	});
+	assert.deepEqual(resolveInlineCodeFileLink("app.log:42", "/repo"), {
+		url: "file:///repo/app.log",
+		lineRange: { start: 42, end: 42 },
+	});
+	assert.deepEqual(
+		resolveInlineCodeFileLink("D:\\Code\\pilo\\App.tsx:9", "/repo"),
+		{
+			url: "file:///D:/Code/pilo/App.tsx",
+			lineRange: { start: 9, end: 9 },
+		},
+	);
+	for (const nonFile of [
+		"inline code",
+		"console.log",
+		"process.env",
+		"props.text",
+		"v1.2.3",
+		"example.com",
+		"image/png",
+		"application/json",
+		"Desktop/WebUI",
+		"@shared/chat/chat-markdown-links.ts",
+		"https://example.com/main.ts",
+		"git diff src/main.ts",
+		"../secret.ts",
+		"~/notes.md",
+	]) {
+		assert.equal(resolveInlineCodeFileLink(nonFile, "/repo"), null, nonFile);
+	}
+});
+
+test("trailing line ranges parse direct suffixes and prose annotations", () => {
+	assert.deepEqual(extractTrailingLineRange(":42."), {
+		lineRange: { start: 42, end: 42 },
+		consumeLength: 3,
+	});
+	assert.deepEqual(extractTrailingLineRange(":42-50 and more"), {
+		lineRange: { start: 42, end: 50 },
+		consumeLength: 6,
+	});
+	assert.deepEqual(extractTrailingLineRange("#L10-L20,"), {
+		lineRange: { start: 10, end: 20 },
+		consumeLength: 8,
+	});
+	assert.deepEqual(extractTrailingLineRange(" (line 42) has the fix"), {
+		lineRange: { start: 42, end: 42 },
+		consumeLength: 0,
+	});
+	assert.deepEqual(extractTrailingLineRange(" (lines 12-18)"), {
+		lineRange: { start: 12, end: 18 },
+		consumeLength: 0,
+	});
+	assert.deepEqual(extractTrailingLineRange("（第 12-18 行）"), {
+		lineRange: { start: 12, end: 18 },
+		consumeLength: 0,
+	});
+	assert.deepEqual(extractTrailingLineRange(" 第 274 行"), {
+		lineRange: { start: 274, end: 274 },
+		consumeLength: 0,
+	});
+	assert.equal(extractTrailingLineRange(":0"), null);
+	assert.equal(extractTrailingLineRange(":50-10"), null);
+	assert.equal(extractTrailingLineRange(" is a file"), null);
+});
+
+test("plain text file links detect paths and line locations while skipping URLs and prose", () => {
+	const segments = splitPlainTextFileLinks(
+		"Check app/chat/chat-markdown.tsx:274-290, App.tsx:9, and https://example.com/src/main.ts:10 or Node.js.",
+		"/repo",
+	);
+	assert.deepEqual(segments, [
+		{ type: "text", text: "Check " },
+		{
+			type: "link",
+			text: "app/chat/chat-markdown.tsx:274-290",
+			link: {
+				url: "file:///repo/app/chat/chat-markdown.tsx",
+				lineRange: { start: 274, end: 290 },
+			},
+		},
+		{ type: "text", text: ", " },
+		{
+			type: "link",
+			text: "App.tsx:9",
+			link: {
+				url: "file:///repo/App.tsx",
+				lineRange: { start: 9, end: 9 },
+			},
+		},
+		{
+			type: "text",
+			text: ", and https://example.com/src/main.ts:10 or Node.js.",
+		},
+	]);
+
+	const cjk = splitPlainTextFileLinks(
+		"修改了src/main.ts:12（并参考file:///repo/README.md#L3）和app/chat/chat-markdown.tsx（第 274-290 行）以及docs/设计文档.md:5。",
+		"/repo",
+	);
+	assert.deepEqual(
+		cjk
+			.filter((part) => part.type === "link")
+			.map((part) => ({ text: part.text, link: part.link })),
+		[
+			{
+				text: "src/main.ts:12",
+				link: {
+					url: "file:///repo/src/main.ts",
+					lineRange: { start: 12, end: 12 },
+				},
+			},
+			{
+				text: "file:///repo/README.md#L3",
+				link: {
+					url: "file:///repo/README.md",
+					lineRange: { start: 3, end: 3 },
+				},
+			},
+			{
+				text: "app/chat/chat-markdown.tsx",
+				link: {
+					url: "file:///repo/app/chat/chat-markdown.tsx",
+					lineRange: { start: 274, end: 290 },
+				},
+			},
+			{
+				text: "docs/设计文档.md:5",
+				link: {
+					url: "file:///repo/docs/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3.md",
+					lineRange: { start: 5, end: 5 },
+				},
+			},
+		],
+	);
+
+	assert.deepEqual(
+		splitPlainTextFileLinks("修改了app/a.ts和app/b.ts", "/repo")
+			.filter((part) => part.type === "link")
+			.map((part) => part.text),
+		["app/a.ts", "app/b.ts"],
+	);
+
+	assert.deepEqual(
+		splitPlainTextFileLinks(
+			"Compare Desktop/WebUI at 12:30 with v0.6.1 and localhost:3000.",
+			"/repo",
+		),
+		[
+			{
+				type: "text",
+				text: "Compare Desktop/WebUI at 12:30 with v0.6.1 and localhost:3000.",
+			},
+		],
+	);
+});
+
+test("document annotation wraps inline code and plain text file refs without touching code blocks or nesting links", () => {
+	const doc = annotateMarkdownDocumentFileLinks(
+		{
+			blocks: [
+				{
+					type: "paragraph",
+					content: [
+						{ type: "text", text: "Updated " },
+						{ type: "code", code: "src/main.ts" },
+						{ type: "text", text: " (lines 12-18) and " },
+						{ type: "code", code: "App.tsx" },
+						{ type: "text", text: ":9 plus " },
+						{ type: "code", code: "console.log" },
+						{ type: "text", text: " and " },
+						{
+							type: "link",
+							url: "src/main.ts",
+							content: [{ type: "code", code: "src/main.ts:25" }],
+						},
+					],
+				},
+				{
+					type: "codeBlock",
+					language: "ts",
+					code: "import './src/main.ts'; // src/main.ts:42",
+				},
+			],
+		},
+		"/repo",
+	);
+	const para = doc.blocks[0] as { type: "paragraph"; content: unknown[] };
+	assert.deepEqual(para.content, [
+		{ type: "text", text: "Updated " },
+		{
+			type: "link",
+			url: "file:///repo/src/main.ts#L12-L18",
+			content: [{ type: "text", text: "src/main.ts" }],
+		},
+		{ type: "text", text: " (lines 12-18) and " },
+		{
+			type: "link",
+			url: "file:///repo/App.tsx#L9",
+			content: [{ type: "text", text: "App.tsx:9" }],
+		},
+		{ type: "text", text: " plus " },
+		{ type: "code", code: "console.log" },
+		{ type: "text", text: " and " },
+		{
+			type: "link",
+			url: "file:///repo/src/main.ts#L25",
+			content: [{ type: "text", text: "src/main.ts:25" }],
+		},
+	]);
+	assert.deepEqual(doc.blocks[1], {
+		type: "codeBlock",
+		language: "ts",
+		code: "import './src/main.ts'; // src/main.ts:42",
+	});
 });

@@ -11,21 +11,17 @@ function openFixture() {
 	return open("./file-preview-fixture.tsx", desktop);
 }
 
-test("clicking a code link opens a preview tab with line range, copies, reuses on new line, and isolates projects", async () => {
+test("clicking a code link opens a preview tab at the target line, reuses on new line, and isolates projects", async () => {
 	const app = await openFixture();
 	await app.waitFor("text:main lines");
 	await app.press("text:main lines");
 
 	await app.waitFor("id:file-tab:/work/demo/src/main.ts");
 	await app.waitFor("id:file-preview-editor");
-	expect(app.shows("text:src/main.ts")).toBe(true);
-	expect(app.shows("id:file-preview-line-range >> text:L15-L18")).toBe(true);
+	expect(app.shows("id:file-preview-path")).toBe(false);
+	expect(app.shows("id:file-preview-copy")).toBe(false);
 	expect(app.shows("text:15")).toBe(true);
 	expect(app.shows("text:export const line15 = 15;")).toBe(true);
-
-	await app.press("id:file-preview-copy");
-	await app.waitFor("text:Copied");
-	expect(await app.clipboard()).toContain("export const line15 = 15;");
 
 	// Switch to project p2: p1's file tabs do not leak into p2.
 	await app.press("id:switch-project");
@@ -38,7 +34,7 @@ test("clicking a code link opens a preview tab with line range, copies, reuses o
 	await app.press("id:session-header");
 	await app.waitFor("text:line three");
 	await app.press("text:line three");
-	await app.waitFor("id:file-preview-line-range >> text:L3");
+	await app.waitFor("text:export const line3 = 3;");
 	expect(app.texts().find((text) => text.startsWith("calls:"))).toBe(
 		"calls:preview:file:///work/demo/src/main.ts",
 	);
@@ -49,7 +45,7 @@ test("clicking a code link opens a preview tab with line range, copies, reuses o
 	expect(app.shows("text:main lines")).toBe(true);
 });
 
-test("markdown files render as Markdown by default and switch to source with line numbers on toggle or line link", async () => {
+test("markdown files render as Markdown by default and switch to source with line numbers on line link", async () => {
 	const app = await openFixture();
 	await app.waitFor("text:notes doc");
 	await app.press("text:notes doc");
@@ -57,18 +53,18 @@ test("markdown files render as Markdown by default and switch to source with lin
 	await app.waitFor("id:file-preview-markdown");
 	await app.waitFor("text:Release Notes");
 
-	await app.press("id:file-preview-toggle-source");
-	await app.waitFor("id:file-preview-editor");
-
-	await app.press("id:file-preview-toggle-source");
-	await app.waitFor("id:file-preview-markdown");
-
 	// Returning to chat and clicking a line-targeted markdown link jumps into source view.
 	await app.press("id:session-header");
 	await app.waitFor("text:notes line");
 	await app.press("text:notes line");
 	await app.waitFor("id:file-preview-editor");
-	expect(app.shows("id:file-preview-line-range >> text:L3")).toBe(true);
+	await app.waitFor("text:Line three detail with ![diagram](./shot.png).");
+
+	// Clicking a plain markdown link returns to rendered Markdown view.
+	await app.press("id:session-header");
+	await app.waitFor("text:notes doc");
+	await app.press("text:notes doc");
+	await app.waitFor("id:file-preview-markdown");
 });
 
 test("html links delegate to the system app and missing files show an error toast", async () => {
@@ -95,4 +91,26 @@ test("clicking tool row file paths opens text files in tabs and project images i
 	await app.press("id:chat-tool-file-link >> text:shot.png");
 	await app.waitFor("id:lightbox-title");
 	expect(app.shows("text:shot.png")).toBe(true);
+});
+
+test("clicking inline code, plain text, and thinking file references opens and jumps to the target line", async () => {
+	const app = await openFixture();
+	await app.waitFor("text:src/main.ts:88-90");
+	await app.press("text:src/main.ts:88-90");
+
+	await app.waitFor("id:file-tab:/work/demo/src/main.ts");
+	await app.waitFor("id:file-preview-editor");
+	await app.waitFor("text:export const line88 = 88;");
+
+	await app.press("id:session-header");
+	await app.waitFor("text:src/main.ts:105");
+	await app.press("text:src/main.ts:105");
+	await app.waitFor("text:export const line105 = 105;");
+
+	await app.press("id:session-header");
+	await app.waitFor("id:chat-thinking");
+	await app.press("id:chat-thinking");
+	await app.waitFor("text:src/main.ts:95");
+	await app.press("text:src/main.ts:95");
+	await app.waitFor("text:export const line95 = 95;");
 });

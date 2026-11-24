@@ -43,8 +43,20 @@ test("a press on a project file link reports the resolved file URL", async () =>
 	const app = await openChat("reply");
 	await app.waitFor("text:Reply heading");
 	await app.press("text:the project file");
-	await app.waitFor("text:file:file:///work/demo/src/main.ts#10");
+	await app.waitFor("text:file:file:///work/demo/src/main.ts#10-10");
 	expect(app.openedUrls()).toEqual([]);
+
+	await app.press("text:app/plain.ts:3");
+	await app.waitFor("text:file:file:///work/demo/app/plain.ts#3-3");
+
+	await app.press("text:src/other.ts:20-25");
+	await app.waitFor("text:file:file:///work/demo/src/other.ts#20-25");
+
+	await app.press("text:src/prose.ts");
+	await app.waitFor("text:file:file:///work/demo/src/prose.ts#7-7");
+
+	await app.press("text:src/coded.ts:14");
+	await app.waitFor("text:file:file:///work/demo/src/coded.ts#14-14");
 });
 
 test("a press on a web link opens it outside the app", async () => {
@@ -76,4 +88,21 @@ test("a code block's copy button copies the code and shows a toast", async () =>
 	await app.press("label:Copy code");
 	expect(app.clipboard()).toContain("const answer: number = 42;");
 	await app.waitFor("text:Copied");
+});
+
+test("inline code renders with a theme-adaptive pill background", async () => {
+	const light = await openChat("reply");
+	await light.waitFor("text:Reply heading");
+	const lightCode = light.spanStyle("text:inline code");
+	expect(lightCode.backgroundColor).toBeTruthy();
+
+	const dark = await open("./chat-markdown-fixture.tsx", {
+		...desktop,
+		colorScheme: "dark",
+		storage: { "fixture.scenario": "reply" },
+	});
+	await dark.waitFor("text:Reply heading");
+	const darkCode = dark.spanStyle("text:inline code");
+	expect(darkCode.backgroundColor).toBeTruthy();
+	expect(darkCode.backgroundColor).not.toBe(lightCode.backgroundColor);
 });

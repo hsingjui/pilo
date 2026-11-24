@@ -41,7 +41,11 @@ const doc = [
 	"",
 	"Below the image",
 	"",
-	"[the project file](./src/main.ts#L10)",
+	"[the project file](./src/main.ts#L10) and [`src/coded.ts:14`](src/coded.ts)",
+	"",
+	"Inline code `src/other.ts:20-25` and `src/prose.ts`（第 7 行）and plain text app/plain.ts:3.",
+	"",
+	"Non-file `console.log` stays code.",
 	"",
 	"[the site](https://example.com/docs)",
 	"",
@@ -98,7 +102,9 @@ async function run() {
 											return pngBytes();
 										}}
 										onFileLink={(link: ChatMarkdownFileLink) =>
-											file.set(`file:${link.url}#${link.lineRange?.start}`)
+											file.set(
+												`file:${link.url}#${link.lineRange ? `${link.lineRange.start}-${link.lineRange.end}` : "none"}`,
+											)
 										}
 									/>
 								),

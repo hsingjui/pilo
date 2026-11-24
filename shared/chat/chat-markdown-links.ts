@@ -42,9 +42,22 @@ export function resolveMarkdownFileUrl(value: string): string | null {
 
 // Split at the first dot to avoid backtracking across dotted filenames.
 const ROOT_FILE_LINE_REFERENCE =
-	/^(?:[^/:.]*\.[^/:]+|dockerfile|makefile|license|readme):\d+(?::\d+)?(?:-\d+(?::\d+)?)?(?:#.*)?$/i;
-const FILE_LINE_SUFFIX = /:(\d+)(?::\d+)?(?:-(\d+)(?::\d+)?)?$/;
+	/^(?:[^/:.]*\.[^/:]+|dockerfile|makefile|justfile|license|readme):L?\d+(?::\d+)?(?:-L?\d+(?::\d+)?)?(?:#.*)?$/i;
+const FILE_LINE_SUFFIX = /:L?(\d+)(?::\d+)?(?:-L?(\d+)(?::\d+)?)?$/i;
 const FILE_LINE_FRAGMENT = /^L(\d+)(?:C\d+)?(?:-L?(\d+)(?:C\d+)?)?$/i;
+
+export type ChatFileLink = {
+	url: string;
+	lineRange?: WorkspaceLineRange;
+};
+
+export function formatChatFileLinkHref(link: ChatFileLink): string {
+	if (!link.lineRange) return link.url;
+	const { start, end } = link.lineRange;
+	return start === end
+		? `${link.url}#L${start}`
+		: `${link.url}#L${start}-L${end}`;
+}
 
 function markdownFileLocation(value: string): {
 	path: string;
@@ -101,19 +114,34 @@ export function resolveLiteralFileLink(
 	}
 }
 
-/** The assistant may write an absolute path directly instead of a file URL. */
+/** The assistant may write an absolute path or Windows-style path directly instead of a file URL. */
 export function resolveChatFileLink(
 	value: string,
 	projectPath?: string,
-): ReturnType<typeof resolveMarkdownFileLink> {
-	if (value.startsWith("~/")) return null;
-	if (value.startsWith("/") && !value.startsWith("//")) {
-		return resolveMarkdownFileLink(`file://${value}`);
+): ChatFileLink | null {
+	if (!value || value.length > 4096 || value.startsWith("~/")) return null;
+	if (/^file:/i.test(value)) {
+		return resolveMarkdownFileLink(value, projectPath);
 	}
-	if (/^[a-z]:[\\/]/i.test(value)) {
-		return resolveMarkdownFileLink(`file:///${value.replaceAll("\\", "/")}`);
+	const strippedVerbatim = value.replace(/^\\\\\?\\([a-z]:[\\/])/i, "$1");
+	if (strippedVerbatim.startsWith("/") && !strippedVerbatim.startsWith("//")) {
+		return resolveMarkdownFileLink(`file://${strippedVerbatim}`);
 	}
-	return resolveMarkdownFileLink(value, projectPath);
+	if (/^[a-z]:[\\/]/i.test(strippedVerbatim)) {
+		return resolveMarkdownFileLink(
+			`file:///${strippedVerbatim.replaceAll("\\", "/")}`,
+		);
+	}
+	if (
+		strippedVerbatim.startsWith("//") ||
+		strippedVerbatim.startsWith("\\\\")
+	) {
+		return null;
+	}
+	const normalized = strippedVerbatim.includes("\\")
+		? strippedVerbatim.replaceAll("\\", "/")
+		: strippedVerbatim;
+	return resolveMarkdownFileLink(normalized, projectPath);
 }
 
 function relativeMarkdownFilePath(value: string): string | null {
@@ -210,55 +238,653 @@ export function resolveMarkdownFileLink(
 	};
 }
 
+const CODE_PREVIEW_EXTENSIONS = new Set([
+	"c",
+	"h",
+	"cc",
+	"cpp",
+	"cxx",
+	"hpp",
+	"cs",
+	"java",
+	"kt",
+	"kts",
+	"swift",
+	"m",
+	"mm",
+	"rb",
+	"php",
+	"vue",
+	"svelte",
+	"astro",
+	"sql",
+	"toml",
+	"xml",
+	"svg",
+	"ini",
+	"conf",
+	"cfg",
+	"txt",
+	"rst",
+	"log",
+	"env",
+	"gitignore",
+	"gitattributes",
+	"editorconfig",
+	"npmrc",
+	"dockerignore",
+	"fish",
+	"ps1",
+	"psm1",
+	"bat",
+	"cmd",
+	"pl",
+	"r",
+	"lua",
+	"dart",
+	"scss",
+	"sass",
+	"less",
+	"styl",
+	"jsonc",
+	"json5",
+	"jsonl",
+	"zig",
+	"proto",
+	"graphql",
+	"gql",
+	"ex",
+	"exs",
+	"erl",
+	"hs",
+	"ml",
+	"scala",
+	"wgsl",
+	"glsl",
+	"pyi",
+	"pyw",
+	"lock",
+	"properties",
+	"tsv",
+]);
+
+const SPECIAL_CODE_FILENAMES = new Set([
+	"dockerfile",
+	"makefile",
+	"justfile",
+	"license",
+	"readme",
+	".gitignore",
+	".gitattributes",
+	".editorconfig",
+	".npmrc",
+	".dockerignore",
+	".env",
+]);
+
+const SYSTEM_OPENABLE_EXTENSIONS = new Set([
+	"html",
+	"htm",
+	"pdf",
+	"csv",
+	"png",
+	"jpg",
+	"jpeg",
+	"gif",
+	"webp",
+	"bmp",
+	"ico",
+	"tif",
+	"tiff",
+	"avif",
+]);
+
+// Bare single-segment code tokens like `console.log` or `process.env` should not auto-link without a path or line suffix.
+const AMBIGUOUS_BARE_EXTENSIONS = new Set(["log", "env", "r", "m", "c", "h"]);
+
+function isSpecialCodeFileName(name: string): boolean {
+	return (
+		SPECIAL_CODE_FILENAMES.has(name) ||
+		name.startsWith(".env.") ||
+		name.startsWith("dockerfile.")
+	);
+}
+
 export function fileLinkPreviewKind(path: string): "markdown" | "code" | null {
 	const name = path.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
-	const extension = name.split(".").at(-1) ?? "";
-	if (["md", "markdown"].includes(extension)) return "markdown";
+	if (!name) return null;
+	if (isSpecialCodeFileName(name)) return "code";
+	const dot = name.lastIndexOf(".");
+	const extension = dot > 0 ? name.slice(dot + 1) : "";
+	if (extension === "md" || extension === "markdown") return "markdown";
 	// HTML stays in the browser; MDX is source, never evaluated.
-	if (["html", "htm"].includes(extension)) return null;
+	if (extension === "html" || extension === "htm") return null;
 	if (
-		languageForPath(name) ||
-		[
-			"c",
-			"h",
-			"cc",
-			"cpp",
-			"cxx",
-			"hpp",
-			"cs",
-			"java",
-			"kt",
-			"kts",
-			"swift",
-			"rb",
-			"php",
-			"vue",
-			"svelte",
-			"sql",
-			"toml",
-			"xml",
-			"ini",
-			"conf",
-			"cfg",
-			"txt",
-			"log",
-			"env",
-			"gitignore",
-			"dockerignore",
-			"fish",
-			"ps1",
-			"psm1",
-			"bat",
-			"cmd",
-			"pl",
-			"r",
-			"lua",
-			"dart",
-		].includes(extension) ||
-		["dockerfile", "makefile", "license", "readme"].includes(name)
+		(extension && languageForPath(name)) ||
+		(extension && CODE_PREVIEW_EXTENSIONS.has(extension))
 	)
 		return "code";
 	return null;
+}
+
+function isKnownOpenableFilePath(
+	filePath: string,
+	hasLineRange: boolean,
+): boolean {
+	const normalized = filePath.replaceAll("\\", "/");
+	const hasSlash = normalized.includes("/");
+	const name = normalized.split("/").at(-1)?.toLowerCase() ?? "";
+	if (!name) return false;
+	const isSpecial = isSpecialCodeFileName(name);
+	if (isSpecial) return true;
+	const dot = name.lastIndexOf(".");
+	const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot + 1) : "";
+	const openable =
+		fileLinkPreviewKind(name) !== null ||
+		(Boolean(extension) && SYSTEM_OPENABLE_EXTENSIONS.has(extension));
+	if (openable) {
+		if (
+			!hasSlash &&
+			!hasLineRange &&
+			AMBIGUOUS_BARE_EXTENSIONS.has(extension)
+		) {
+			return false;
+		}
+		return true;
+	}
+	// Extensionless file under a directory with an explicit line number (e.g. `scripts/deploy:12`).
+	if (
+		hasSlash &&
+		hasLineRange &&
+		/^[a-z0-9._-]+$/i.test(name) &&
+		/[a-z]/i.test(name)
+	) {
+		return true;
+	}
+	return false;
+}
+
+function parseLineRangePair(
+	startText: string | undefined,
+	endText: string | undefined,
+): WorkspaceLineRange | null {
+	const start = Number(startText);
+	const end = Number(endText ?? startText);
+	if (
+		!Number.isSafeInteger(start) ||
+		!Number.isSafeInteger(end) ||
+		start < 1 ||
+		end < start
+	)
+		return null;
+	return { start, end };
+}
+
+/** Resolve an inline-code token like `` `src/main.ts:42` `` or `` `Cargo.toml` `` into a file link. */
+export function resolveInlineCodeFileLink(
+	code: string,
+	projectPath?: string,
+): ChatFileLink | null {
+	if (
+		!code ||
+		code.length > 4096 ||
+		/\s/.test(code) ||
+		code.startsWith("@") ||
+		/^(?:https?|mailto|wss?|ftp|data|javascript):/i.test(code)
+	)
+		return null;
+	const resolved = resolveChatFileLink(code, projectPath);
+	if (!resolved) return null;
+	if (/^file:/i.test(code)) return resolved;
+	const normalized = code
+		.replace(/^\\\\\?\\([a-z]:[\\/])/i, "$1")
+		.replaceAll("\\", "/");
+	const location = markdownFileLocation(normalized);
+	if (!location) return null;
+	return isKnownOpenableFilePath(
+		location.path,
+		resolved.lineRange !== undefined,
+	)
+		? resolved
+		: null;
+}
+
+const DIRECT_TRAILING_LINE_SUFFIX =
+	/^(:L?(\d+)(?::\d+)?(?:-L?(\d+)(?::\d+)?)?|#L(\d+)(?:C\d+)?(?:-L?(\d+)(?:C\d+)?)?)(?![A-Za-z0-9_/-])/i;
+const PROSE_TRAILING_LINE_PATTERNS = [
+	/^\s*\(\s*(?:lines?|L)\s*(\d+)(?:\s*[-–~]\s*L?(\d+))?\s*\)/i,
+	/^\s*[（(]\s*第\s*(\d+)(?:\s*(?:行\s*)?[-–~到至]\s*(?:第\s*)?(\d+))?\s*行\s*[）)]/,
+	/^\s*第\s*(\d+)(?:\s*(?:行\s*)?[-–~到至]\s*(?:第\s*)?(\d+))?\s*行/,
+	/^\s+(?:lines?\s+|L)(\d+)(?:\s*[-–~]\s*L?(\d+))?(?![A-Za-z0-9_])/i,
+];
+
+/** Extract a line range immediately following an inline-code file token (e.g. `` `a.ts`:42 `` or `` `a.ts` (line 42) ``). */
+export function extractTrailingLineRange(text: string): {
+	lineRange: WorkspaceLineRange;
+	consumeLength: number;
+} | null {
+	const direct = DIRECT_TRAILING_LINE_SUFFIX.exec(text);
+	if (direct) {
+		const lineRange = parseLineRangePair(
+			direct[2] ?? direct[4],
+			direct[3] ?? direct[5],
+		);
+		if (lineRange) return { lineRange, consumeLength: direct[1].length };
+		return null;
+	}
+	for (const pattern of PROSE_TRAILING_LINE_PATTERNS) {
+		const match = pattern.exec(text);
+		if (!match) continue;
+		const lineRange = parseLineRangePair(match[1], match[2]);
+		if (lineRange) return { lineRange, consumeLength: 0 };
+		return null;
+	}
+	return null;
+}
+
+export type PlainTextFileLinkSegment =
+	| { type: "text"; text: string }
+	| { type: "link"; text: string; link: ChatFileLink };
+
+const PLAIN_TEXT_TOKEN_PATTERN =
+	/(?:https?|mailto|wss?|ftp):\/\/[^\s<>()[\]{}"'\u3000-\u303F\uFF00-\uFFEF]+|mailto:[^\s<>()[\]{}"'\u3000-\u303F\uFF00-\uFFEF]+|file:\/\/[^\s<>()[\]{}"'`\u3000-\u303F\uFF00-\uFFEF]+|(?:\\\\\?\\)?[a-zA-Z]:[\\/][^\s<>()[\]{}"'`\u3000-\u303F\uFF00-\uFFEF]+|(?<![A-Za-z0-9_@:])(?:(?:\.{1,2}[\\/]|[\\/])?[A-Za-z0-9._+-]+(?:[\\/][A-Za-z0-9._+-]+)*(?:[\\/](?:[^\s<>()[\]{}"'`/\\:#,\u3000-\u303F\uFF00-\uFFEF]+\.[A-Za-z0-9]+|[A-Za-z0-9._+-]+))(?::L?\d+(?::\d+)?(?:-L?\d+(?::\d+)?)?|#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?)?|(?:[A-Za-z0-9._+-]*\.[A-Za-z0-9._+-]+|dockerfile|makefile|justfile|license|readme)(?::L?\d+(?::\d+)?(?:-L?\d+(?::\d+)?)?|#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?))/gi;
+
+const TRAILING_PUNCTUATION = /[.,;:!?）)】」》"'，。；：、]+$/;
+
+/** Split plain prose text into ordinary text and unambiguous file-path link segments. */
+export function splitPlainTextFileLinks(
+	text: string,
+	projectPath?: string,
+): PlainTextFileLinkSegment[] {
+	if (!text) return [];
+	const segments: PlainTextFileLinkSegment[] = [];
+	let cursor = 0;
+	PLAIN_TEXT_TOKEN_PATTERN.lastIndex = 0;
+	for (const match of text.matchAll(PLAIN_TEXT_TOKEN_PATTERN)) {
+		const raw = match[0];
+		const start = match.index;
+		if (/^(?:https?|mailto|wss?|ftp):/i.test(raw) || raw.startsWith("@")) {
+			continue;
+		}
+		const trimmed = raw.replace(TRAILING_PUNCTUATION, "");
+		if (!trimmed) continue;
+		// Require a clean left boundary for absolute POSIX paths or relative tokens.
+		if (start > 0) {
+			const prev = text[start - 1];
+			if (prev && /[A-Za-z0-9_@]/.test(prev)) continue;
+		}
+		const isFileUrl = /^file:/i.test(trimmed);
+		let resolved = resolveChatFileLink(trimmed, projectPath);
+		if (!resolved) continue;
+		if (!isFileUrl) {
+			const normalized = trimmed
+				.replace(/^\\\\\?\\([a-z]:[\\/])/i, "$1")
+				.replaceAll("\\", "/");
+			const location = markdownFileLocation(normalized);
+			if (!location) continue;
+			const hasSlash = location.path.includes("/");
+			// Plain-text single filenames require an explicit line location to avoid matching prose like `Node.js`.
+			if (!hasSlash && !resolved.lineRange) continue;
+			if (
+				!isKnownOpenableFilePath(
+					location.path,
+					resolved.lineRange !== undefined,
+				)
+			) {
+				continue;
+			}
+		}
+		if (
+			!resolved.lineRange &&
+			fileLinkPreviewKind(
+				decodeURIComponent(new URL(resolved.url).pathname),
+			) !== null
+		) {
+			const trailing = extractTrailingLineRange(
+				text.slice(start + trimmed.length),
+			);
+			if (trailing && trailing.consumeLength === 0) {
+				resolved = { ...resolved, lineRange: trailing.lineRange };
+			}
+		}
+		if (start > cursor) {
+			segments.push({ type: "text", text: text.slice(cursor, start) });
+		}
+		segments.push({ type: "link", text: trimmed, link: resolved });
+		cursor = start + trimmed.length;
+	}
+	if (cursor === 0) return [{ type: "text", text }];
+	if (cursor < text.length) {
+		segments.push({ type: "text", text: text.slice(cursor) });
+	}
+	return segments;
+}
+
+export type MarkdownInlineLike = {
+	readonly type: string;
+	readonly text?: string;
+	readonly code?: string;
+	readonly url?: string;
+	readonly title?: string;
+	readonly content?: readonly MarkdownInlineLike[];
+	readonly children?: readonly MarkdownBlockLike[];
+};
+
+export type MarkdownBlockLike = {
+	readonly type: string;
+	readonly content?: readonly MarkdownInlineLike[];
+	readonly children?: readonly MarkdownBlockLike[];
+	readonly summary?: readonly MarkdownInlineLike[];
+	readonly items?: readonly {
+		readonly checked?: boolean;
+		readonly children: readonly MarkdownBlockLike[];
+	}[];
+	readonly head?: readonly {
+		readonly content: readonly MarkdownInlineLike[];
+		readonly colspan?: number;
+	}[];
+	readonly rows?: readonly (readonly {
+		readonly content: readonly MarkdownInlineLike[];
+		readonly colspan?: number;
+	}[])[];
+};
+
+export type MarkdownDocumentLike = {
+	readonly blocks: readonly MarkdownBlockLike[];
+	readonly footnotes?: readonly {
+		readonly label: string;
+		readonly index: number;
+		readonly children: readonly MarkdownBlockLike[];
+	}[];
+};
+
+function plainInlineText(inlines: readonly MarkdownInlineLike[]): string {
+	let out = "";
+	for (const node of inlines) {
+		if (node.type === "text" && typeof node.text === "string") {
+			out += node.text;
+		} else if (node.type === "code" && typeof node.code === "string") {
+			out += node.code;
+		} else if (Array.isArray(node.content)) {
+			out += plainInlineText(node.content);
+		}
+	}
+	return out;
+}
+
+function unwrapCodeInFileLink(
+	inlines: readonly MarkdownInlineLike[],
+): MarkdownInlineLike[] {
+	const result: MarkdownInlineLike[] = [];
+	for (const node of inlines) {
+		if (node.type === "code" && typeof node.code === "string") {
+			result.push({ type: "text", text: node.code });
+		} else if (Array.isArray(node.content)) {
+			result.push({
+				...node,
+				content: unwrapCodeInFileLink(node.content),
+			});
+		} else {
+			result.push(node);
+		}
+	}
+	return result;
+}
+
+function annotateInlines(
+	inlines: readonly MarkdownInlineLike[],
+	projectPath?: string,
+): MarkdownInlineLike[] {
+	const result: MarkdownInlineLike[] = [];
+	for (let index = 0; index < inlines.length; index += 1) {
+		const node = inlines[index];
+		if (
+			node.type === "link" &&
+			typeof node.url === "string" &&
+			Array.isArray(node.content)
+		) {
+			if (!/^(?:https?:|mailto:|#)/i.test(node.url)) {
+				const resolved = resolveChatFileLink(node.url, projectPath);
+				if (resolved) {
+					let target = resolved;
+					if (!resolved.lineRange) {
+						const labelText = plainInlineText(node.content).trim();
+						const labelResolved = labelText
+							? resolveChatFileLink(labelText, projectPath)
+							: null;
+						if (
+							labelResolved &&
+							labelResolved.lineRange &&
+							labelResolved.url === resolved.url
+						) {
+							target = labelResolved;
+						}
+					}
+					// nsh TextView only attaches link press handlers to text spans, not `code` leaves inside links.
+					result.push({
+						...node,
+						url: formatChatFileLinkHref(target),
+						content: unwrapCodeInFileLink(node.content),
+					});
+					continue;
+				}
+			}
+			result.push(node);
+			continue;
+		}
+		if (node.type === "code" && typeof node.code === "string") {
+			const resolved = resolveInlineCodeFileLink(node.code, projectPath);
+			if (resolved) {
+				let link = resolved;
+				let trailingCodeSuffix = "";
+				const next = inlines[index + 1];
+				const canHaveLineRange =
+					fileLinkPreviewKind(
+						decodeURIComponent(new URL(resolved.url).pathname),
+					) !== null;
+				if (
+					!resolved.lineRange &&
+					canHaveLineRange &&
+					next &&
+					next.type === "text" &&
+					typeof next.text === "string"
+				) {
+					const trailing = extractTrailingLineRange(next.text);
+					if (trailing) {
+						link = { ...resolved, lineRange: trailing.lineRange };
+						if (trailing.consumeLength > 0) {
+							trailingCodeSuffix = next.text.slice(0, trailing.consumeLength);
+							const remainder = next.text.slice(trailing.consumeLength);
+							if (remainder) {
+								// Replace the consumed prefix before processing the remainder on the next turn.
+								const mutable = [...inlines];
+								mutable[index + 1] = { ...next, text: remainder };
+								inlines = mutable;
+							} else {
+								index += 1;
+							}
+						}
+					}
+				}
+				result.push({
+					type: "link",
+					url: formatChatFileLinkHref(link),
+					content: [{ type: "text", text: node.code + trailingCodeSuffix }],
+				});
+				continue;
+			}
+			result.push(node);
+			continue;
+		}
+		if (node.type === "text" && typeof node.text === "string") {
+			const segments = splitPlainTextFileLinks(node.text, projectPath);
+			if (segments.length === 1 && segments[0]?.type === "text") {
+				result.push(node);
+			} else {
+				for (const segment of segments) {
+					if (segment.type === "text") {
+						result.push({ type: "text", text: segment.text });
+					} else {
+						result.push({
+							type: "link",
+							url: formatChatFileLinkHref(segment.link),
+							content: [{ type: "text", text: segment.text }],
+						});
+					}
+				}
+			}
+			continue;
+		}
+		if (
+			(node.type === "strong" ||
+				node.type === "emphasis" ||
+				node.type === "strikethrough" ||
+				node.type === "underline" ||
+				node.type === "superscript" ||
+				node.type === "subscript" ||
+				node.type === "small" ||
+				node.type === "highlight") &&
+			Array.isArray(node.content)
+		) {
+			result.push({
+				...node,
+				content: annotateInlines(node.content, projectPath),
+			});
+			continue;
+		}
+		result.push(node);
+	}
+	return result;
+}
+
+function annotateTableCells(
+	cells: readonly {
+		readonly content: readonly MarkdownInlineLike[];
+		readonly colspan?: number;
+	}[],
+	projectPath?: string,
+) {
+	const result: { content: MarkdownInlineLike[]; colspan?: number }[] = [];
+	for (const cell of cells) {
+		result.push({
+			...cell,
+			content: annotateInlines(cell.content, projectPath),
+		});
+	}
+	return result;
+}
+
+function annotateBlocks(
+	blocks: readonly MarkdownBlockLike[],
+	projectPath?: string,
+): MarkdownBlockLike[] {
+	const result: MarkdownBlockLike[] = [];
+	for (const block of blocks) {
+		switch (block.type) {
+			case "paragraph":
+			case "heading": {
+				if (Array.isArray(block.content)) {
+					result.push({
+						...block,
+						content: annotateInlines(block.content, projectPath),
+					});
+					break;
+				}
+				result.push(block);
+				break;
+			}
+			case "blockquote": {
+				if (Array.isArray(block.children)) {
+					result.push({
+						...block,
+						children: annotateBlocks(block.children, projectPath),
+					});
+					break;
+				}
+				result.push(block);
+				break;
+			}
+			case "list": {
+				if (Array.isArray(block.items)) {
+					const items: {
+						checked?: boolean;
+						children: MarkdownBlockLike[];
+					}[] = [];
+					for (const item of block.items) {
+						items.push({
+							...item,
+							children: annotateBlocks(item.children, projectPath),
+						});
+					}
+					result.push({ ...block, items });
+					break;
+				}
+				result.push(block);
+				break;
+			}
+			case "table": {
+				if (Array.isArray(block.head)) {
+					const rows = block.rows
+						? block.rows.map((row) => annotateTableCells(row, projectPath))
+						: undefined;
+					result.push({
+						...block,
+						head: annotateTableCells(block.head, projectPath),
+						...(rows ? { rows } : {}),
+					});
+					break;
+				}
+				result.push(block);
+				break;
+			}
+			case "details": {
+				if (Array.isArray(block.summary) && Array.isArray(block.children)) {
+					result.push({
+						...block,
+						summary: annotateInlines(block.summary, projectPath),
+						children: annotateBlocks(block.children, projectPath),
+					});
+					break;
+				}
+				result.push(block);
+				break;
+			}
+			case "custom": {
+				result.push({
+					...block,
+					...(Array.isArray(block.children)
+						? { children: annotateBlocks(block.children, projectPath) }
+						: {}),
+					...(Array.isArray(block.content)
+						? { content: annotateInlines(block.content, projectPath) }
+						: {}),
+				});
+				break;
+			}
+			default:
+				result.push(block);
+				break;
+		}
+	}
+	return result;
+}
+
+/** Annotate a parsed Markdown document (`TextView.parse`) with clickable file links from inline code and plain text. */
+export function annotateMarkdownDocumentFileLinks<
+	T extends MarkdownDocumentLike,
+>(document: T, projectPath?: string): T {
+	const footnotes = document.footnotes
+		? document.footnotes.map((footnote) =>
+				Object.assign({}, footnote, {
+					children: annotateBlocks(footnote.children, projectPath),
+				}),
+			)
+		: undefined;
+	return {
+		...document,
+		blocks: annotateBlocks(document.blocks, projectPath),
+		...(footnotes ? { footnotes } : {}),
+	} as T;
 }
 
 type LinkNode = {
@@ -313,7 +939,7 @@ function visitFileLinks(node: LinkNode) {
 			];
 		}
 		props["data-pilo-file-url"] = props.href;
-		// Never let the WebView navigate to a file, even with modifier clicks.
+		// Never let the browser navigate directly to a file URL, even with modifier clicks.
 		props.href = "https://pilo.invalid/file-link";
 	}
 	const children = node.children ?? [];

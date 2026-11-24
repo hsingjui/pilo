@@ -1,10 +1,9 @@
 import {
-	Clipboard,
+	cleanup,
 	computed,
 	effect,
 	Scroll,
 	signal,
-	Text,
 	token,
 	untracked,
 	View,
@@ -17,10 +16,9 @@ import { fileLinkPreviewKind } from "@shared/chat/chat-markdown-links";
 import { fileBasename } from "@shared/chat/chat-tool-result";
 import { getMonospaceFontFamilyStack } from "@shared/font-settings";
 import type { HostPreferenceValues } from "@shared/host-preferences-types";
-import {
-	workspaceFileKey,
-	type WorkspaceFile,
-	type WorkspaceLineRange,
+import type {
+	WorkspaceFile,
+	WorkspaceLineRange,
 } from "@shared/project-workspace";
 
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
@@ -28,30 +26,27 @@ import type {
 	ActiveWorkspaceFile,
 	WorkspaceStore,
 } from "../state/workspace-store";
-import { Button } from "../ui/button";
-import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
-import { Tooltip } from "../ui/tooltip";
-import { AppToaster, showToast } from "./app-toasts";
-import { t } from "./i18n";
 
-function displayFilePath(
-	filePath: string,
-	projectPath: string | undefined,
-): string {
-	if (!projectPath) return filePath;
-	const root = workspaceFileKey(projectPath).replace(/\/+$/, "");
-	const normalized = workspaceFileKey(filePath);
-	if (normalized.startsWith(`${root}/`)) {
-		return filePath.slice(root.length + 1);
+const DEFAULT_CODE_FONT_SIZE = 12;
+
+function resolveCodeFontSize(
+	preferences: HostPreferenceValues | undefined,
+): number {
+	const fromPrefs = preferences?.codeFontSize;
+	if (
+		typeof fromPrefs === "number" &&
+		Number.isFinite(fromPrefs) &&
+		fromPrefs > 0
+	) {
+		return fromPrefs;
 	}
-	return filePath;
-}
-
-function formatLineRangeBadge(range: WorkspaceLineRange): string {
-	return range.start === range.end
-		? `L${range.start}`
-		: `L${range.start}-L${range.end}`;
+	const fromToken = token("pilo-code-font-size");
+	return typeof fromToken === "number" &&
+		Number.isFinite(fromToken) &&
+		fromToken > 0
+		? fromToken
+		: DEFAULT_CODE_FONT_SIZE;
 }
 
 function clampLineIndex(content: string, oneBasedLine: number): number {
@@ -94,42 +89,76 @@ function FilePreviewPanel(props: {
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
 }) {
-	const toasts = AppToaster();
 	const isMarkdown = fileLinkPreviewKind(props.file.path) === "markdown";
 	// Markdown opens in rendered view, but jumps to source view with line numbers when targeted by lineRange.
 	const showSource = signal(!isMarkdown || props.lineRange() !== undefined);
 	let editorRef: EditorRef | undefined;
 	let lastNavToken = -1;
+	let pendingRevealFrame: number | null = null;
+
+	const cancelPendingReveal = () => {
+		if (pendingRevealFrame !== null) {
+			cancelAnimationFrame(pendingRevealFrame);
+			pendingRevealFrame = null;
+		}
+	};
 
 	const revealTargetLine = (
 		ref: EditorRef | undefined,
 		range: WorkspaceLineRange | undefined,
+		expectedNavToken?: number,
 	) => {
 		if (!ref || !range) return;
 		const line = clampLineIndex(props.file.content, range.start);
 		ref.goToLine(line);
+		cancelPendingReveal();
+		// Also scroll after layout settles (e.g. first mount or switching from `display: none`).
+		pendingRevealFrame = requestAnimationFrame(() => {
+			pendingRevealFrame = null;
+			if (!untracked(props.visible)) return;
+			if (
+				expectedNavToken !== undefined &&
+				untracked(props.navigationToken) !== expectedNavToken
+			)
+				return;
+			if (editorRef !== ref) return;
+			ref.goToLine(line);
+		});
 	};
+
+	cleanup(cancelPendingReveal);
+
+	effect(() => {
+		if (!showSource()) {
+			editorRef = undefined;
+			cancelPendingReveal();
+		}
+	});
 
 	effect(() => {
 		const visible = props.visible();
 		const range = props.lineRange();
 		const navToken = props.navigationToken();
-		if (!visible || navToken === lastNavToken) return;
+		if (!visible) return;
+		if (isMarkdown) {
+			const wantSource = range !== undefined;
+			if (untracked(showSource) !== wantSource) {
+				showSource.set(wantSource);
+			}
+		}
+		if (navToken === lastNavToken) return;
 		lastNavToken = navToken;
 		if (range) {
-			if (isMarkdown && !untracked(showSource)) {
-				showSource.set(true);
-			}
-			untracked(() => revealTargetLine(editorRef, range));
+			untracked(() => revealTargetLine(editorRef, range, navToken));
 		}
 	});
 
 	const decorations = computed(() =>
 		lineRangeDecorations(props.file.content, props.lineRange()),
 	);
-	const labelPath = computed(() =>
-		displayFilePath(props.file.path, props.project()?.path),
-	);
+	const fontSize = computed(() => resolveCodeFontSize(props.preferences()));
+	const lineHeight = computed(() => Math.max(22, Math.round(fontSize() * 1.7)));
+	const lineNumberFontSize = computed(() => Math.max(11, fontSize() - 2));
 	const imageBaseDirectory = computed(() => {
 		const current = props.project();
 		if (!current) return undefined;
@@ -140,82 +169,12 @@ function FilePreviewPanel(props: {
 	});
 	const fileName = fileBasename(props.file.path) || props.file.path;
 
-	const copyContent = () => {
-		void Clipboard.writeText(props.file.content)
-			.then(() =>
-				showToast(toasts, { variant: "success", title: t("chat.copied") }),
-			)
-			.catch(() =>
-				showToast(toasts, { variant: "error", title: t("chat.copyFailed") }),
-			);
-	};
-
 	return (
 		<View
 			testID={`file-preview:${props.file.path}`}
 			class="absolute inset-0 flex-col bg-background"
 			style={{ display: props.visible() ? "flex" : "none" }}
 		>
-			<View class="h-9 shrink-0 flex-row items-center justify-between gap-2 border-b border-border/70 px-3">
-				<View class="min-w-0 flex-1 flex-row items-center gap-2">
-					<Text
-						testID="file-preview-path"
-						class="min-w-0 shrink truncate font-mono text-xs text-muted-foreground"
-					>
-						{labelPath}
-					</Text>
-					{() => {
-						const range = props.lineRange();
-						return range ? (
-							<View
-								testID="file-preview-line-range"
-								class="shrink-0 rounded-sm bg-muted px-1.5 py-0.5"
-							>
-								<Text class="font-mono text-xs tabular-nums text-foreground">
-									{formatLineRangeBadge(range)}
-								</Text>
-							</View>
-						) : null;
-					}}
-				</View>
-				<View class="shrink-0 flex-row items-center gap-1">
-					{isMarkdown ? (
-						<Button
-							testID="file-preview-toggle-source"
-							variant="ghost"
-							size="sm"
-							class="h-7 px-2"
-							onPress={() => showSource.update((value) => !value)}
-						>
-							<Icon
-								name={showSource() ? "Eye" : "Code2"}
-								size={14}
-								color={token("muted-foreground")}
-							/>
-							<Text class="font-sans text-xs text-muted-foreground">
-								{() =>
-									t(showSource() ? "file.previewMarkdown" : "file.viewSource")
-								}
-							</Text>
-						</Button>
-					) : null}
-					<Button
-						testID="file-preview-copy"
-						variant="ghost"
-						size="icon"
-						class="size-7"
-						accessibilityLabel={t("chat.copy")}
-						tooltip={
-							<Tooltip>
-								<Text class="font-sans">{() => t("chat.copy")}</Text>
-							</Tooltip>
-						}
-						onPress={copyContent}
-					>
-						<Icon name="Copy" size={14} color={token("muted-foreground")} />
-					</Button>
-				</View>
-			</View>
 			{() =>
 				showSource() ? (
 					<Editor
@@ -223,7 +182,11 @@ function FilePreviewPanel(props: {
 						ref={(node) => {
 							editorRef = node;
 							if (untracked(props.visible)) {
-								revealTargetLine(node, untracked(props.lineRange));
+								revealTargetLine(
+									node,
+									untracked(props.lineRange),
+									untracked(props.navigationToken),
+								);
 							}
 						}}
 						class="min-h-0 flex-1 bg-background"
@@ -232,8 +195,14 @@ function FilePreviewPanel(props: {
 						readOnly
 						lineNumbers
 						classes={{
-							gutter: "bg-muted/50",
-							lineNumber: "text-muted-foreground",
+							// nsh already offsets the gutter rows by the content's top padding.
+							gutter: "bg-background pl-4 pr-3",
+							lineNumber: "text-muted-foreground/40",
+							activeLineNumber: "text-muted-foreground/80",
+							content: "pl-2 pr-6 py-3",
+						}}
+						styles={{
+							lineNumber: { fontSize: lineNumberFontSize() },
 						}}
 						folding={false}
 						activeLine={false}
@@ -241,7 +210,8 @@ function FilePreviewPanel(props: {
 						fontFamily={getMonospaceFontFamilyStack(
 							props.preferences()?.codeFontFamily ?? "system-mono",
 						)}
-						fontSize={token("pilo-code-font-size")}
+						fontSize={fontSize()}
+						lineHeight={lineHeight()}
 						decorations={decorations()}
 						accessibilityLabel={fileName}
 					/>

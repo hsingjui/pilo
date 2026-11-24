@@ -337,6 +337,9 @@ function WorkspaceHeaderTab(props: {
 		<View
 			testID={props.tab.testID}
 			{...hover.props}
+			onMouseUp={({ button }) => {
+				if (button === "middle") props.tab.onClose();
+			}}
 			class={classNames(
 				"h-7 max-w-44 shrink-0 flex-row items-center rounded-(--pilo-radius-md) border transition-colors",
 				active()

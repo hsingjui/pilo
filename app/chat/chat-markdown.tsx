@@ -11,6 +11,7 @@ import {
 import { TextView } from "nsh/base";
 import type {
 	TextViewCodeActionEvent,
+	TextViewDocument,
 	TextViewImage,
 	TextViewLinkPressEvent,
 	TextViewStyles,
@@ -18,7 +19,10 @@ import type {
 
 import type { Project } from "@shared/api/projects-types";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
-import { resolveChatFileLink } from "@shared/chat/chat-markdown-links";
+import {
+	annotateMarkdownDocumentFileLinks,
+	resolveChatFileLink,
+} from "@shared/chat/chat-markdown-links";
 import { bytesToBase64 } from "@shared/base64";
 import {
 	MAX_CHAT_IMAGE_BYTES,
@@ -111,10 +115,14 @@ function markdownStyles(
 		root: { fontFamily, ...text(1, compact ? 1.5 : 1.75) },
 		...headings,
 		code: { fontSize: codeSize },
+		keyboard: { fontSize: codeSize },
 		codeBlock: { fontSize: codeSize, lineHeight: codeSize * 1.4 },
 		table: text(0.92, 1.5),
 	};
 }
+
+const INLINE_CODE_CLASS =
+	"font-mono px-1.5 py-0.5 rounded-(--pilo-radius-sm) bg-foreground/[0.06] dark:bg-foreground/[0.09]";
 
 type ProjectImageState =
 	| { type: "loading" }
@@ -204,7 +212,17 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 		),
 	);
 	const textKey = computed(() => props.textKey?.());
-	const projectId = computed(() => props.project?.()?.id);
+	const activeProject = computed(
+		() => props.project?.() ?? media.project?.() ?? null,
+	);
+	const projectId = computed(() => activeProject()?.id);
+	const projectPath = computed(() => activeProject()?.path);
+	const fileLinkHandler = () => props.onFileLink ?? media.onFileLink;
+	const document = computed<TextViewDocument>(() => {
+		const parsed = TextView.parse(props.text(), { streaming: true });
+		if (!fileLinkHandler()) return parsed;
+		return annotateMarkdownDocumentFileLinks(parsed, projectPath());
+	});
 	// Keep a path's first read while streaming, not across recycled rows.
 	const imageCache = computed(() => {
 		textKey();
@@ -272,8 +290,8 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			void openUrl(url);
 			return;
 		}
-		const link = resolveChatFileLink(url, props.project?.()?.path);
-		if (link) props.onFileLink?.(link);
+		const link = resolveChatFileLink(url, projectPath());
+		if (link) fileLinkHandler()?.(link);
 	};
 
 	const openImagePreview = (preview: ChatImagePreview) => {
@@ -302,7 +320,7 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 				resolveChatImageMimeType({ name: src, type: "" })
 			) {
 				const link = resolveChatFileLink(src);
-				if (link) props.onFileLink?.(link);
+				if (link) fileLinkHandler()?.(link);
 			}
 			return;
 		}
@@ -367,18 +385,18 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 	return (
 		<TextView
 			class={props.class ?? "text-foreground"}
-			// The root's font reaches every part: code keeps the bundled mono.
+			// The root's font reaches every part: code keeps the bundled mono,
+			// with pill padding and theme-adaptive tint (`nsh`'s default has no padding).
 			classes={{
-				code: "font-mono",
+				code: INLINE_CODE_CLASS,
 				codeBlockCode: "font-mono",
-				keyboard: "font-mono",
+				keyboard: INLINE_CODE_CLASS,
 			}}
 			styles={styles()}
 			selectable
 			links="report"
 			codeBlockActions={[{ id: "copy", label: t("chat.copyCode") }]}
-			markdown={props.text()}
-			options={{ streaming: true }}
+			document={document()}
 			onLinkPress={pressLink}
 			onImagePress={(event) => pressImage(event.image)}
 			onCodeBlockAction={handleCodeBlockAction}

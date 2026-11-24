@@ -1,5 +1,7 @@
 import { context } from "nsh";
 
+import type { Project } from "@shared/api/projects-types";
+import type { ChatFileLink } from "@shared/chat/chat-markdown-links";
 import type { ChatImageAttachment } from "@shared/chat/chat-submission";
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import type { SessionMention } from "@shared/chat/session-mentions";
@@ -32,6 +34,10 @@ export interface ChatMediaActionsValue {
 	readUserImage?: (image: ChatConversationImage) => Promise<string>;
 	/** Saved sessions by their `@` mention token, for mention badges. */
 	sessionMentions?: () => ReadonlyMap<string, SessionMention>;
+	/** Active project context for resolving relative file links in nested Markdown (e.g. thinking blocks). */
+	project?: () => Pick<Project, "id" | "path"> | null;
+	/** Opens a resolved Markdown file link (used as default by `ChatMarkdown` when `onFileLink` is omitted). */
+	onFileLink?: (link: ChatFileLink) => void;
 	openFile?: (path: string, lineRange?: WorkspaceLineRange) => void;
 	canOpenFile?: (path: string) => boolean;
 }

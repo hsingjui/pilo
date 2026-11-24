@@ -37,7 +37,7 @@ function pngBytes(): Uint8Array {
 }
 
 const mainTsContent = Array.from(
-	{ length: 30 },
+	{ length: 120 },
 	(_, index) => `export const line${index + 1} = ${index + 1};`,
 ).join("\n");
 
@@ -66,6 +66,12 @@ const messages: ChatMessage[] = [
 		time: "09:01",
 		content: [
 			{
+				type: "thinking",
+				id: "think-1",
+				text: "Checking `src/main.ts:95` before editing.",
+				status: "complete",
+			},
+			{
 				type: "tool",
 				id: "tool-edit",
 				toolName: "edit",
@@ -88,6 +94,7 @@ const messages: ChatMessage[] = [
 					"Check [main lines](./src/main.ts#L15-L18), [line three](./src/main.ts#L3),",
 					"[notes doc](./docs/notes.md), [notes line](./docs/notes.md#L3),",
 					"[html report](./report.html), and [missing file](./missing.ts).",
+					"Also inspect `src/main.ts:88-90` and plain src/main.ts:105.",
 				].join(" "),
 			},
 		],
@@ -138,8 +145,13 @@ async function run() {
 		toasts,
 	};
 
+	const openLink = (link: Parameters<typeof openMarkdownFileLink>[1]) =>
+		openMarkdownFileLink(fileContext, link);
+
 	const media = {
 		openImage: (image: ChatImagePreview) => previewImage.set(image),
+		project,
+		onFileLink: openLink,
 		canOpenFile: (path: string) => canOpenToolFilePath(fileContext, path),
 		openFile: (path: string) => openToolFilePath(fileContext, path),
 	};
@@ -210,7 +222,7 @@ async function run() {
 									textKey={textKey}
 									project={project}
 									readProjectImage={readProjectImage}
-									onFileLink={(link) => openMarkdownFileLink(fileContext, link)}
+									onFileLink={openLink}
 								/>
 							)}
 						/>
@@ -220,7 +232,7 @@ async function run() {
 							projectFor={(id) => projects[id] ?? null}
 							preferences={() => undefined}
 							readProjectImage={readProjectImage}
-							onFileLink={(link) => openMarkdownFileLink(fileContext, link)}
+							onFileLink={openLink}
 						/>
 					</View>
 					<View class="border-t border-border px-2 py-1">
