@@ -46,7 +46,22 @@ impl PiEventAdapter {
             Some("tool_execution_end") => adapt_tool_execution_end(generation, message),
             Some("queue_update") => adapt_queue_update(generation, message),
             Some("compaction_start") => adapt_compaction_start(generation, message),
-            Some("compaction_end") => adapt_compaction_end(generation, message),
+            Some("compaction_end") => {
+                let events = adapt_compaction_end(generation, message);
+                if events.iter().any(|event| {
+                    matches!(
+                        event,
+                        RuntimeEvent::CompactionEnd {
+                            aborted: false,
+                            result: Some(_),
+                            ..
+                        }
+                    )
+                }) {
+                    self.finalized_text.clear();
+                }
+                events
+            }
             Some("auto_retry_start") => adapt_auto_retry_start(generation, message),
             Some("auto_retry_end") => adapt_auto_retry_end(generation, message),
             Some("summarization_retry_scheduled") => {

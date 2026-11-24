@@ -639,6 +639,53 @@ fn maps_compaction_and_retry_events() {
 }
 
 #[test]
+fn compaction_end_resets_finalized_text_for_subsequent_snapshots() {
+    let mut adapter = PiEventAdapter::default();
+    assert_eq!(
+        adapter.adapt(
+            3,
+            &serde_json::json!({
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{ "type": "text", "text": "before compaction" }]
+                }
+            })
+        ),
+        [RuntimeEvent::AssistantTextSnapshot {
+            generation: 3,
+            text: "before compaction".to_owned(),
+        }]
+    );
+    let _ = adapter.adapt(
+        3,
+        &serde_json::json!({
+            "type": "compaction_end",
+            "reason": "threshold",
+            "result": { "summary": "summary", "tokensBefore": 1000 },
+            "aborted": false,
+            "willRetry": false
+        }),
+    );
+    assert_eq!(
+        adapter.adapt(
+            3,
+            &serde_json::json!({
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{ "type": "text", "text": "after compaction" }]
+                }
+            })
+        ),
+        [RuntimeEvent::AssistantTextSnapshot {
+            generation: 3,
+            text: "after compaction".to_owned(),
+        }]
+    );
+}
+
+#[test]
 fn maps_extension_ui_request_fields() {
     let mut adapter = PiEventAdapter::default();
     assert_eq!(

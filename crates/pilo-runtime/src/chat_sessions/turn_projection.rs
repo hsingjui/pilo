@@ -78,6 +78,8 @@ struct TurnState {
     revision: u64,
     running: bool,
     awaiting_agent_start: bool,
+    step_has_output: bool,
+    last_text_snapshot: String,
     expected_users: VecDeque<Option<String>>,
     prompt_id: Option<String>,
 }
@@ -96,6 +98,8 @@ impl TurnState {
         self.projection.settle();
         self.running = false;
         self.awaiting_agent_start = false;
+        self.step_has_output = false;
+        self.last_text_snapshot.clear();
         self.expected_users.clear();
         self.prompt_id = None;
         self.revision = self.revision.wrapping_add(1);
@@ -334,6 +338,8 @@ impl SessionTurn {
                 revision: 0,
                 running: false,
                 awaiting_agent_start: false,
+                step_has_output: false,
+                last_text_snapshot: String::new(),
                 expected_users: VecDeque::new(),
                 prompt_id: None,
             }),
@@ -548,21 +554,50 @@ impl SessionTurn {
             }
             RuntimeEvent::UserMessageStart { .. } => {
                 state.running = true;
+                state.step_has_output = false;
+                state.last_text_snapshot.clear();
                 if state.expected_users.pop_front().is_none() {
                     state.projection.truncate();
                     return;
                 }
             }
-            RuntimeEvent::AssistantMessageStart { .. }
-            | RuntimeEvent::AssistantTextDelta { .. }
-            | RuntimeEvent::AssistantTextSnapshot { .. }
-            | RuntimeEvent::AssistantThinkingStart { .. }
-            | RuntimeEvent::AssistantThinkingDelta { .. }
+            RuntimeEvent::AssistantMessageStart { .. } => {
+                state.running = true;
+                state.step_has_output = false;
+                if !state.active() {
+                    state.projection.truncate();
+                    return;
+                }
+            }
+            RuntimeEvent::AssistantTextSnapshot { text, .. } => {
+                state.running = true;
+                if text != &state.last_text_snapshot {
+                    state.step_has_output = true;
+                    state.last_text_snapshot.clone_from(text);
+                }
+                if !state.active() {
+                    state.projection.truncate();
+                    return;
+                }
+            }
+            RuntimeEvent::AssistantTextDelta { delta, .. }
+            | RuntimeEvent::AssistantThinkingDelta { delta, .. } => {
+                state.running = true;
+                if !delta.is_empty() {
+                    state.step_has_output = true;
+                }
+                if !state.active() {
+                    state.projection.truncate();
+                    return;
+                }
+            }
+            RuntimeEvent::AssistantThinkingStart { .. }
             | RuntimeEvent::AssistantThinkingEnd { .. }
             | RuntimeEvent::ToolExecutionStart { .. }
             | RuntimeEvent::ToolExecutionUpdate { .. }
             | RuntimeEvent::ToolExecutionEnd { .. } => {
                 state.running = true;
+                state.step_has_output = true;
                 if !state.active() {
                     state.projection.truncate();
                     return;
@@ -570,7 +605,17 @@ impl SessionTurn {
             }
             RuntimeEvent::AutoRetryStart { .. } => {
                 state.running = true;
-                state.projection.truncate();
+                // Transient errors before any visible output (e.g. 503/429 with
+                // empty content) leave no rolled-back content in the projection,
+                // so accept the retry's next agent_start instead of truncating.
+                if state.active() && !state.step_has_output {
+                    state.awaiting_agent_start = true;
+                } else {
+                    state.projection.truncate();
+                }
+                return;
+            }
+            RuntimeEvent::CompactionStart { .. } => {
                 return;
             }
             RuntimeEvent::CompactionEnd {
@@ -581,8 +626,19 @@ impl SessionTurn {
                 }
                 return;
             }
-            RuntimeEvent::CompactionStart { .. }
-            | RuntimeEvent::RuntimeError { .. }
+            RuntimeEvent::CompactionEnd {
+                will_retry: false,
+                aborted: false,
+                result: Some(_),
+                ..
+            } => {
+                state.step_has_output = false;
+                state.last_text_snapshot.clear();
+            }
+            RuntimeEvent::CompactionEnd { .. } => {
+                return;
+            }
+            RuntimeEvent::RuntimeError { .. }
             | RuntimeEvent::ProcessState {
                 state: PiProcessState::Failed | PiProcessState::Stopped,
                 ..
@@ -998,38 +1054,103 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retry_and_compaction_invalidate_a_previously_recorded_turn() {
+    async fn retry_after_output_and_retrying_compaction_invalidate_a_recorded_turn() {
         let file = Jsonl::new(b"{}\n");
-        for event in [
-            RuntimeEvent::AutoRetryStart {
-                generation: 1,
-                attempt: 1,
-                max_attempts: 3,
-                delay_ms: 10,
-                error_message: "retry".to_owned(),
-            },
-            RuntimeEvent::CompactionStart {
-                generation: 1,
-                reason: "auto".to_owned(),
-            },
-            RuntimeEvent::CompactionEnd {
-                generation: 1,
-                reason: "auto".to_owned(),
-                result: None,
-                aborted: false,
-                will_retry: true,
-                error_message: None,
-            },
+        for (preceding, event) in [
+            (
+                Some(text("partial output before error")),
+                RuntimeEvent::AutoRetryStart {
+                    generation: 1,
+                    attempt: 1,
+                    max_attempts: 3,
+                    delay_ms: 10,
+                    error_message: "retry".to_owned(),
+                },
+            ),
+            (
+                None,
+                RuntimeEvent::CompactionEnd {
+                    generation: 1,
+                    reason: "auto".to_owned(),
+                    result: None,
+                    aborted: false,
+                    will_retry: true,
+                    error_message: None,
+                },
+            ),
         ] {
             let sink = sink(true);
             prepare(&sink, &file).await;
             agent_start(&sink);
             sink.send(user());
+            sink.send(RuntimeEvent::AssistantMessageStart { generation: 1 });
+            if let Some(preceding) = preceding {
+                sink.send(preceding);
+            }
             sink.send(event);
             assert_eq!(live(&sink), TurnLive::Truncated);
             sink.send(settled());
             assert_eq!(live(&sink), TurnLive::Idle);
         }
+    }
+
+    #[tokio::test]
+    async fn empty_step_auto_retry_and_mid_turn_compaction_stay_active() {
+        let file = Jsonl::new(b"{}\n");
+        let sink = sink(true);
+        prepare(&sink, &file).await;
+        agent_start(&sink);
+        sink.send(user());
+        sink.send(RuntimeEvent::AssistantMessageStart { generation: 1 });
+        sink.send(text("step one"));
+        sink.send(RuntimeEvent::AssistantTextSnapshot {
+            generation: 1,
+            text: "step one".to_owned(),
+        });
+        // Step 2 fails with 503 before emitting any content; its message_end
+        // echoes the same finalized text snapshot, then Pi retries.
+        sink.send(RuntimeEvent::AssistantMessageStart { generation: 1 });
+        sink.send(RuntimeEvent::AssistantTextSnapshot {
+            generation: 1,
+            text: "step one".to_owned(),
+        });
+        sink.send(RuntimeEvent::AutoRetryStart {
+            generation: 1,
+            attempt: 1,
+            max_attempts: 3,
+            delay_ms: 10,
+            error_message: "503".to_owned(),
+        });
+        assert!(matches!(live(&sink), TurnLive::Active { .. }));
+        // The retry's agent_start is accepted without truncating.
+        agent_start(&sink);
+        assert!(matches!(live(&sink), TurnLive::Active { .. }));
+        sink.send(RuntimeEvent::AssistantMessageStart { generation: 1 });
+        sink.send(text(" after retry"));
+
+        // Mid-turn compaction without will_retry keeps the projection active
+        // and records the compaction marker in the live events.
+        sink.send(RuntimeEvent::CompactionStart {
+            generation: 1,
+            reason: "threshold".to_owned(),
+        });
+        let compaction_end = RuntimeEvent::CompactionEnd {
+            generation: 1,
+            reason: "threshold".to_owned(),
+            result: Some(json!({ "summary": "compacted", "tokensBefore": 2000 })),
+            aborted: false,
+            will_retry: false,
+            error_message: None,
+        };
+        sink.send(compaction_end.clone());
+        match live(&sink) {
+            TurnLive::Active { events } => {
+                assert!(events.iter().any(|event| event.as_ref() == &compaction_end));
+            }
+            other => panic!("expected active projection after compaction, got {other:?}"),
+        }
+        sink.send(settled());
+        assert_eq!(live(&sink), TurnLive::Idle);
     }
 
     #[tokio::test]

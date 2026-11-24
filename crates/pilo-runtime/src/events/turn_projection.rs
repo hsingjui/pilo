@@ -65,13 +65,81 @@ impl TurnProjection {
         self.snapshot.clone()
     }
 
-    /// Only adjacent deltas of the same kind and generation merge. Input without
-    /// a recorded begin invalidates the projection rather than losing a prefix.
+    /// Only adjacent deltas of the same kind and generation merge; tool execution
+    /// updates replace earlier updates for the same tool call in the current
+    /// assistant segment, and tool execution ends reclaim redundant updates when
+    /// a matching start already carries the arguments. Input without a recorded
+    /// begin invalidates the projection rather than losing a prefix.
     pub fn push(&mut self, event: RuntimeEvent) {
         let TurnLive::Active { events } = &mut self.snapshot.live else {
             self.truncate();
             return;
         };
+        if let RuntimeEvent::ToolExecutionUpdate {
+            generation,
+            tool_call_id,
+            ..
+        } = &event
+            && let Some(index) = find_segment_tool_update(events, *generation, tool_call_id)
+        {
+            let Some(old_bytes) = json_size(events[index].as_ref()) else {
+                self.truncate();
+                return;
+            };
+            let Some(new_bytes) = json_size(&event) else {
+                self.truncate();
+                return;
+            };
+            let Some(next_bytes) = self
+                .bytes
+                .checked_sub(old_bytes)
+                .and_then(|bytes| bytes.checked_add(new_bytes))
+            else {
+                self.truncate();
+                return;
+            };
+            if next_bytes > self.limits.max_bytes {
+                self.truncate();
+                return;
+            }
+            Arc::make_mut(events)[index] = Arc::new(event);
+            self.bytes = next_bytes;
+            return;
+        }
+        if let RuntimeEvent::ToolExecutionEnd {
+            generation,
+            tool_call_id,
+            ..
+        } = &event
+            && let Some(update_index) =
+                find_reclaimable_tool_update(events, *generation, tool_call_id)
+        {
+            let Some(old_bytes) = json_size(events[update_index].as_ref()) else {
+                self.truncate();
+                return;
+            };
+            let Some(new_bytes) = json_size(&event) else {
+                self.truncate();
+                return;
+            };
+            let Some(next_bytes) = self
+                .bytes
+                .checked_sub(old_bytes)
+                .and_then(|bytes| bytes.checked_add(new_bytes))
+            else {
+                self.truncate();
+                return;
+            };
+            if next_bytes > self.limits.max_bytes || events.len() > self.limits.max_events {
+                self.truncate();
+                return;
+            }
+            let events = Arc::make_mut(events);
+            events.remove(update_index);
+            events.push(Arc::new(event));
+            self.bytes = next_bytes;
+            return;
+        }
         let incoming_delta = match (events.last().map(AsRef::as_ref), &event) {
             (
                 Some(RuntimeEvent::AssistantTextDelta {
@@ -132,6 +200,123 @@ impl TurnProjection {
         self.snapshot.live = TurnLive::Idle;
         self.bytes = 0;
     }
+}
+
+fn event_generation(event: &RuntimeEvent) -> Option<u64> {
+    match event {
+        RuntimeEvent::ProcessState { generation, .. }
+        | RuntimeEvent::RpcMessage { generation, .. }
+        | RuntimeEvent::UserMessageStart { generation, .. }
+        | RuntimeEvent::AssistantMessageStart { generation }
+        | RuntimeEvent::AssistantUsageUpdate { generation, .. }
+        | RuntimeEvent::AssistantTextDelta { generation, .. }
+        | RuntimeEvent::AssistantTextSnapshot { generation, .. }
+        | RuntimeEvent::AssistantThinkingStart { generation }
+        | RuntimeEvent::AssistantThinkingDelta { generation, .. }
+        | RuntimeEvent::AssistantThinkingEnd { generation }
+        | RuntimeEvent::ToolExecutionStart { generation, .. }
+        | RuntimeEvent::ToolExecutionUpdate { generation, .. }
+        | RuntimeEvent::ToolExecutionEnd { generation, .. }
+        | RuntimeEvent::PiReattached { generation, .. }
+        | RuntimeEvent::AssistantMessageEnd { generation, .. }
+        | RuntimeEvent::QueueUpdate { generation, .. }
+        | RuntimeEvent::CompactionStart { generation, .. }
+        | RuntimeEvent::CompactionEnd { generation, .. }
+        | RuntimeEvent::AutoRetryStart { generation, .. }
+        | RuntimeEvent::AutoRetryEnd { generation, .. }
+        | RuntimeEvent::SummarizationRetryScheduled { generation, .. }
+        | RuntimeEvent::SummarizationRetryAttemptStart { generation, .. }
+        | RuntimeEvent::SummarizationRetryFinished { generation }
+        | RuntimeEvent::ExtensionUiRequest { generation, .. }
+        | RuntimeEvent::RuntimeLog { generation, .. }
+        | RuntimeEvent::RuntimeError { generation, .. } => Some(*generation),
+        _ => None,
+    }
+}
+
+fn is_segment_boundary(event: &RuntimeEvent, generation: u64) -> bool {
+    matches!(
+        event,
+        RuntimeEvent::UserMessageStart { .. } | RuntimeEvent::CompactionEnd { .. }
+    ) || event_generation(event).is_some_and(|existing| existing != generation)
+}
+
+fn find_segment_tool_update(
+    events: &[Arc<RuntimeEvent>],
+    generation: u64,
+    tool_call_id: &str,
+) -> Option<usize> {
+    for (index, existing) in events.iter().enumerate().rev() {
+        if is_segment_boundary(existing.as_ref(), generation) {
+            break;
+        }
+        match existing.as_ref() {
+            RuntimeEvent::ToolExecutionUpdate {
+                generation: prev_gen,
+                tool_call_id: prev_id,
+                ..
+            } if *prev_gen == generation && prev_id == tool_call_id => {
+                return Some(index);
+            }
+            RuntimeEvent::ToolExecutionStart {
+                generation: prev_gen,
+                tool_call_id: prev_id,
+                ..
+            }
+            | RuntimeEvent::ToolExecutionEnd {
+                generation: prev_gen,
+                tool_call_id: prev_id,
+                ..
+            } if *prev_gen == generation && prev_id == tool_call_id => {
+                break;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Finds a `ToolExecutionUpdate` in the current assistant segment that can be
+/// removed when `ToolExecutionEnd` arrives without losing tool arguments.
+fn find_reclaimable_tool_update(
+    events: &[Arc<RuntimeEvent>],
+    generation: u64,
+    tool_call_id: &str,
+) -> Option<usize> {
+    let mut update: Option<(usize, &serde_json::Value)> = None;
+    for (index, existing) in events.iter().enumerate().rev() {
+        if is_segment_boundary(existing.as_ref(), generation) {
+            break;
+        }
+        match existing.as_ref() {
+            RuntimeEvent::ToolExecutionUpdate {
+                generation: prev_gen,
+                tool_call_id: prev_id,
+                args,
+                ..
+            } if *prev_gen == generation && prev_id == tool_call_id && update.is_none() => {
+                update = Some((index, args));
+            }
+            RuntimeEvent::ToolExecutionStart {
+                generation: prev_gen,
+                tool_call_id: prev_id,
+                args,
+                ..
+            } if *prev_gen == generation && prev_id == tool_call_id => {
+                let (update_index, update_args) = update?;
+                return (args == update_args).then_some(update_index);
+            }
+            RuntimeEvent::ToolExecutionEnd {
+                generation: prev_gen,
+                tool_call_id: prev_id,
+                ..
+            } if *prev_gen == generation && prev_id == tool_call_id => {
+                break;
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn json_size<T: Serialize + ?Sized>(value: &T) -> Option<usize> {
@@ -539,15 +724,48 @@ mod tests {
     }
 
     #[test]
-    fn tool_start_updates_and_end_stay_in_order() {
-        let raw = tools();
-        let snapshot = assert_replay(&raw);
+    fn tool_updates_coalesce_in_place_and_reclaim_on_end() {
+        let mut raw = vec![
+            RuntimeEvent::ToolExecutionStart {
+                generation: 1,
+                tool_call_id: "call-1".to_owned(),
+                tool_name: "bash".to_owned(),
+                args: json!({"command": "pwd"}),
+            },
+            RuntimeEvent::ToolExecutionUpdate {
+                generation: 1,
+                tool_call_id: "call-1".to_owned(),
+                tool_name: "bash".to_owned(),
+                args: json!({"command": "pwd"}),
+                partial_result: json!({"content": "part-1"}),
+            },
+            RuntimeEvent::ToolExecutionUpdate {
+                generation: 1,
+                tool_call_id: "call-1".to_owned(),
+                tool_name: "bash".to_owned(),
+                args: json!({"command": "pwd"}),
+                partial_result: json!({"content": "part-2"}),
+            },
+        ];
+        let mid = assert_replay(&raw);
         assert_eq!(
-            retained(&snapshot)
+            retained(&mid).iter().map(AsRef::as_ref).collect::<Vec<_>>(),
+            vec![&raw[0], &raw[2]]
+        );
+        raw.push(RuntimeEvent::ToolExecutionEnd {
+            generation: 1,
+            tool_call_id: "call-1".to_owned(),
+            tool_name: "bash".to_owned(),
+            result: json!({"content": "/project"}),
+            is_error: false,
+        });
+        let finished = assert_replay(&raw);
+        assert_eq!(
+            retained(&finished)
                 .iter()
                 .map(AsRef::as_ref)
                 .collect::<Vec<_>>(),
-            raw.iter().collect::<Vec<_>>()
+            vec![&raw[0], &raw[3]]
         );
     }
 
