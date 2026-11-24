@@ -197,7 +197,7 @@ export function ChatToolActivity(props: {
 									focusVisibleStyle={focusRingStyle(token("ring"))}
 									accessibilityLabel={t("chat.openFile", { path })}
 									tooltip={
-										<Tooltip class="max-w-96" delay={300} margin={16}>
+										<Tooltip class="max-w-96" delay={600} margin={16}>
 											<Text class="font-mono text-xs">{path}</Text>
 										</Tooltip>
 									}
@@ -251,7 +251,7 @@ export function ChatToolActivity(props: {
 						}
 						tooltip={
 							preview() ? (
-								<Tooltip class="max-w-80" delay={300} margin={16}>
+								<Tooltip class="max-w-80" delay={600} margin={16}>
 									<Text class="line-clamp-24 font-sans">
 										{() => preview() ?? ""}
 									</Text>

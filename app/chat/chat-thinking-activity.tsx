@@ -95,7 +95,7 @@ export function ChatThinkingActivity(props: {
 				class={open() ? "bg-hover" : undefined}
 				tooltip={
 					showPreview() ? (
-						<Tooltip class="max-w-80" delay={300} margin={16}>
+						<Tooltip class="max-w-80" delay={600} margin={16}>
 							<Text class="line-clamp-24 font-sans">
 								{() => {
 									const text = activity()
