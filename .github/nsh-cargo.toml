@@ -1,0 +1,8 @@
+# nsh normally optimizes dependencies for its dev host. CI only runs the
+# generated describe program to obtain native bindings; keep release builds unchanged.
+[profile.dev.package."*"]
+opt-level = 0
+debug = 0
+
+[profile.dev.package.pilo-desktop]
+debug = 0

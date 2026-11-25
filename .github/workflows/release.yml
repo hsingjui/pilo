@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.ref_type == 'tag' && github.ref || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -92,9 +92,39 @@ jobs:
     needs: preflight
     uses: ./.github/workflows/server-runtimes.yml
 
+  webui:
+    name: Package WebUI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Setup nsh
+        uses: ./.github/actions/setup-nsh
+        with:
+          version: ${{ env.NSH_VERSION }}
+
+      - name: Build nsh WebUI
+        run: node scripts/build-nsh-web.mjs
+
+      - name: Upload WebUI
+        uses: actions/upload-artifact@v7
+        with:
+          name: pilo-webui
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: Package ${{ matrix.platform }}-${{ matrix.arch }}
-    needs: [preflight, runtimes]
+    needs: [preflight, runtimes, webui]
     strategy:
       fail-fast: false
       matrix:
@@ -123,11 +153,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -140,31 +165,26 @@ jobs:
             libgstreamer-plugins-base1.0-dev libgtk-4-dev libssl-dev \
             libwayland-dev libwebkitgtk-6.0-dev pkg-config rpm
 
-      - name: Setup nsh
+      - name: Configure Cargo for native binding generation
         shell: bash
-        env:
-          NSH_ASSET: ${{ matrix.nsh_asset }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP"
-          gh release download "v$NSH_VERSION" --repo longbridge/nsh \
-            --pattern "$NSH_ASSET" --pattern "$NSH_ASSET.sha256"
-          if command -v sha256sum >/dev/null; then
-            sha256sum -c "$NSH_ASSET.sha256"
-          else
-            shasum -a 256 -c "$NSH_ASSET.sha256"
-          fi
-          case "$NSH_ASSET" in
-            *.zip) unzip -q "$NSH_ASSET" ;;
-            *.tar.gz) tar -xzf "$NSH_ASSET" ;;
-          esac
-          ./nsh/bin/nsh --version
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cygpath -w "$PWD/nsh/bin" >> "$GITHUB_PATH"
-          else
-            echo "$PWD/nsh/bin" >> "$GITHUB_PATH"
-          fi
+          cat .github/nsh-cargo.toml >> "$CARGO_HOME/config.toml"
+          mkdir -p .nsh/rust
+
+      - name: Cache Cargo dependencies for the generated nsh workspace
+        uses: Swatinem/rust-cache@v2
+        with:
+          # nsh writes this workspace during packaging, but builds into the root target/.
+          workspaces: .nsh/rust -> ../../target
+          key: nsh-${{ env.NSH_VERSION }}-${{ hashFiles('crates/pilo-desktop/Cargo.lock', '.github/nsh-cargo.toml') }}
+          cache-bin: false
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Setup nsh
+        uses: ./.github/actions/setup-nsh
+        with:
+          version: ${{ env.NSH_VERSION }}
+          asset: ${{ matrix.nsh_asset }}
 
       - name: Download server runtimes
         uses: actions/download-artifact@v8
@@ -172,8 +192,11 @@ jobs:
           name: pilo-server-runtimes
           path: resources
 
-      - name: Build nsh WebUI
-        run: node scripts/build-nsh-web.mjs
+      - name: Download WebUI
+        uses: actions/download-artifact@v8
+        with:
+          name: pilo-webui
+          path: dist
 
       - name: Package desktop
         shell: bash
@@ -419,18 +442,9 @@ jobs:
           done
 
       - name: Setup nsh manifest signer
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP"
-          asset=nsh-linux-x86_64.tar.gz
-          gh release download "v$NSH_VERSION" --repo longbridge/nsh \
-            --pattern "$asset" --pattern "$asset.sha256"
-          sha256sum -c "$asset.sha256"
-          tar -xzf "$asset"
-          echo "$PWD/nsh/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-nsh
+        with:
+          version: ${{ env.NSH_VERSION }}
 
       - name: Generate and sign nsh update manifest
         shell: bash

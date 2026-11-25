@@ -1,0 +1,37 @@
+name: Setup nsh
+description: Download and verify the prebuilt nsh CLI
+inputs:
+  version:
+    description: nsh release version
+    required: true
+  asset:
+    description: nsh release archive for the runner
+    default: nsh-linux-x86_64.tar.gz
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        NSH_VERSION: ${{ inputs.version }}
+        NSH_ASSET: ${{ inputs.asset }}
+      run: |
+        set -euo pipefail
+        cd "$RUNNER_TEMP"
+        gh release download "v$NSH_VERSION" --repo longbridge/nsh \
+          --pattern "$NSH_ASSET" --pattern "$NSH_ASSET.sha256"
+        if command -v sha256sum >/dev/null; then
+          sha256sum -c "$NSH_ASSET.sha256"
+        else
+          shasum -a 256 -c "$NSH_ASSET.sha256"
+        fi
+        case "$NSH_ASSET" in
+          *.zip) unzip -q "$NSH_ASSET" ;;
+          *.tar.gz) tar -xzf "$NSH_ASSET" ;;
+        esac
+        ./nsh/bin/nsh --version
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          cygpath -w "$PWD/nsh/bin" >> "$GITHUB_PATH"
+        else
+          echo "$PWD/nsh/bin" >> "$GITHUB_PATH"
+        fi
