@@ -130,6 +130,12 @@ try {
 	if (process.argv.includes("--web")) {
 		start("nsh", ["dev", "--target", "web", "web"]);
 	} else {
+		if (!process.env.PILO_SERVER_BINARY) {
+			const code = await new Promise((resolve) => {
+				start("cargo", ["build", "-p", "pilo-server"], resolve);
+			});
+			if (code !== 0) shutdown(code);
+		}
 		startDesktopWithWeb();
 	}
 } catch (error) {

@@ -62,12 +62,12 @@ Pilo 默认从 `PATH` 自动发现 `pi`。也可以在 Settings 中为每个 Con
 
 ```bash
 pnpm install
-pnpm dev          # 同时启动 nsh 桌面端和 WebUI 开发服务
+pnpm dev          # 启动 nsh 桌面端并监听 WebUI 改动
 ```
 
-WebUI 开发服务会启动 Vite（`http://localhost:1420`），并持续重建 Host 提供 WebUI 用的 `dist/`。只跑 WebUI 用 `pnpm dev --frontend`；只跑桌面则进入 `desktop/` 运行 `nsh dev`。
+`pnpm dev` 在启动桌面端前构建本机 debug 版 `pilo-server` 和 Host 提供 WebUI 用的 `dist/`。将 `PILO_SERVER_BINARY` 设为已有 server 的绝对路径可跳过 Cargo 构建。WebUI 改动只会重建 `dist/`，不会重新编译 server。只跑独立 WebUI 用 `pnpm dev:web`，它不提供 Pilo Host API。
 
-Local 使用 `target/debug/pilo-server`（`cargo build -p pilo-server`）。WSL/SSH 请先为远程目标构建开发 server，再启动或重启 Pilo：
+若直接在仓库根目录运行 `nsh dev`，请先用 `cargo build -p pilo-server` 构建本机 server。WSL/SSH 请先为远程目标构建开发 server，再启动或重启 Pilo：
 
 ```bash
 pnpm server:build

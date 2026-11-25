@@ -146,8 +146,11 @@ Dev startup, manual server/extension builds and deployment isolation.
 
 #### 2. Signatures
 
-- `pnpm server:build [target]` runs `scripts/build-server.mjs` for manual local
-  development builds. There is no separate `:dev` command.
+- `pnpm dev` runs `cargo build -p pilo-server` once before starting the WebUI
+  build and desktop Host, unless `PILO_SERVER_BINARY` selects a prebuilt server.
+  WebUI rebuilds and `pnpm dev:web` do not invoke Cargo.
+- `pnpm server:build [target]` runs `scripts/build-server.mjs` for manual
+  WSL/SSH development builds. There is no separate `:dev` command.
 - Release CI still calls `bash scripts/build-pilo-server.sh [target]` without
   `--dev` and stages production resources; do not replace it with the dev entry.
 - `bash scripts/build-pilo-server.sh --dev [target]` builds a debug runtime in
@@ -183,9 +186,10 @@ Dev startup, manual server/extension builds and deployment isolation.
 
 #### 4. Validation / Error Matrix
 
+- Local startup build failure: propagate nonzero exit; do not start the Host.
 - Manual build failure: propagate nonzero exit; do not deploy or restart Pi.
-- Missing debug target: explicit error directing users to `pnpm server:build`.
-- No WSL on Windows: manual remote build fails; Local can still run its separately built server.
+- Missing remote debug target: explicit error directing users to `pnpm server:build`.
+- No WSL on Windows: manual remote build fails; Local still builds natively.
 
 #### 5. Good / Base / Bad Cases
 
@@ -208,8 +212,8 @@ are not end-to-end runtime validation.
 #### 7. Wrong vs Correct
 
 Wrong: dev startup automatically builds remote servers, or dev binaries overwrite
-`resources/`. Correct: explicit dev builds and isolated runtime roots;
-startup only deploys an already built server and its embedded plugins.
+`resources/`. Correct: `pnpm dev` builds only the local server; remote builds are
+explicit and deployment uses isolated runtime roots.
 
 ### Release server runtime set cache
 
