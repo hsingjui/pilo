@@ -15,6 +15,7 @@ import {
 import { Button } from "nsh/base";
 
 import { summarizeProjectSessions } from "@shared/sidebar/session-list";
+import { chatSessionKey } from "@shared/api/chat-session-key";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import { displayProjectPath } from "@shared/project-path";
 import { activeProject } from "../state/app-state";
@@ -66,9 +67,13 @@ export function ProjectSection(props: {
 	const selected = computed(() => {
 		const state = store.state();
 		const open = state.navigation.session;
+		if (open === null) return activeProject(state)?.id === id();
+		// Once the draft has its own sidebar row, only that row is selected.
 		return (
-			(open?.projectId === id() && open.sessionId !== undefined) ||
-			(open === null && activeProject(state)?.id === id())
+			open.projectId === id() &&
+			open.sessionId !== undefined &&
+			store.startedDraft() === null &&
+			!state.pendingDrafts.has(chatSessionKey(open.projectId, open.sessionId))
 		);
 	});
 	// Reading the sessions again, as the WebUI row's `refreshing`.
@@ -361,6 +366,7 @@ function ProjectSessions(props: {
 		() => store.state().externalActivity[props.projectId()],
 	);
 	const chatSessions = computed(() => store.state().chatSessions);
+	const pendingDrafts = computed(() => store.state().pendingDrafts);
 	const runningSince = computed(() => store.state().runningSince);
 	const readStates = computed(() => store.state().readStates);
 	// Switching between saved sessions never changes this project's unsaved draft row.
@@ -378,6 +384,7 @@ function ProjectSessions(props: {
 		index();
 		externalActivity();
 		chatSessions();
+		pendingDrafts();
 		runningSince();
 		readStates();
 		openDraftId();
