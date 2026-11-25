@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-
-#[cfg(windows)]
-use std::process::Stdio;
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use pilo_protocol::{EnvironmentInfo, PiExecutableInfo};
 use serde::Deserialize;
@@ -643,25 +643,15 @@ pub(crate) fn process_command(program: &str, args: &[String], path: &str) -> Com
     command
 }
 
-#[cfg(windows)]
 async fn command_text(
     program: &str,
     args: &[&str],
     cwd: Option<&Path>,
     path: &str,
 ) -> Result<String, String> {
-    let program = program.to_owned();
-    let args = args
-        .iter()
-        .map(|value| (*value).to_owned())
-        .collect::<Vec<_>>();
-    let cwd = cwd.map(Path::to_path_buf);
-    let path = path.to_owned();
-    tokio::task::spawn_blocking(move || {
-        use std::os::windows::process::CommandExt;
-
-        let invocation = std::iter::once(&program)
-            .chain(args.iter())
+    let mut command = if cfg!(windows) {
+        let invocation = std::iter::once(program)
+            .chain(args.iter().copied())
             .map(|value| format!("'{}'", value.replace('\'', "''")))
             .collect::<Vec<_>>()
             .join(" ");
@@ -672,79 +662,33 @@ async fn command_text(
              $OutputEncoding = [Console]::OutputEncoding; \
              & {invocation}; exit $LASTEXITCODE"
         );
-        let mut command = std::process::Command::new("powershell.exe");
-        command.creation_flags(0x0800_0000);
-        command
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &script,
-            ])
-            .env("PATH", path)
-            .env("COREPACK_ENABLE_NETWORK", "0")
-            .env("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(cwd) = cwd {
-            command.current_dir(cwd);
-        }
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("failed to run '{program}': {error}"))?;
-        let started = std::time::Instant::now();
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if started.elapsed() < std::time::Duration::from_secs(8) => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                Ok(None) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!(
-                        "timed out while running '{program} {}'",
-                        args.join(" ")
-                    ));
-                }
-                Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!("failed to wait for '{program}': {error}"));
-                }
-            }
-        }
-        let output = child
-            .wait_with_output()
-            .map_err(|error| format!("failed to collect '{program}' output: {error}"))?;
-        command_output_text(&output.stdout, &output.stderr, output.status.success())
-    })
-    .await
-    .map_err(|error| format!("tool probe task failed: {error}"))?
-}
-
-#[cfg(not(windows))]
-async fn command_text(
-    program: &str,
-    args: &[&str],
-    cwd: Option<&Path>,
-    path: &str,
-) -> Result<String, String> {
-    let args = args
-        .iter()
-        .map(|value| (*value).to_owned())
-        .collect::<Vec<_>>();
-    let mut command = process_command(program, &args, path);
+        process_command(
+            "powershell.exe",
+            &[
+                "-NoLogo".to_owned(),
+                "-NoProfile".to_owned(),
+                "-NonInteractive".to_owned(),
+                "-Command".to_owned(),
+                script,
+            ],
+            path,
+        )
+    } else {
+        let args = args
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect::<Vec<_>>();
+        process_command(program, &args, path)
+    };
     command
         .env("COREPACK_ENABLE_NETWORK", "0")
         .env("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
-        .stdin(std::process::Stdio::null())
+        .stdin(Stdio::null())
         .kill_on_drop(true);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    // Drain both output streams while the child runs; waiting first can fill a pipe.
     let output = tokio::time::timeout(std::time::Duration::from_secs(8), command.output())
         .await
         .map_err(|_| format!("timed out while running '{program} {}'", args.join(" ")))?
