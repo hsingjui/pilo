@@ -90,8 +90,10 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 		waitForStartupApproval: (sessionKey) =>
 			extensionUi.waitForStartupApproval(sessionKey),
 		catalog,
-		beforeSend: (sessionKey) => runConfig.prepareToSend(sessionKey),
+		beforeSend: (sessionKey, ensureReady) =>
+			runConfig.prepareToSend(sessionKey, ensureReady),
 		transcript: chat,
+		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
 		onPromptStarted: createSessionAutoTitle(client, (target, error) =>
 			composer.setStatus(
 				`${t("settings.automaticNamingFailed")}: ${

@@ -237,8 +237,8 @@ function initialRunConfig(catalog: ModelCatalogStore, projectId: string) {
 
 /**
  * Keeps `runConfig` on the session that is open in `store` and `catalog` on
- * its project: a saved session's config seeds from history and Pi, a new one
- * starts from the project's Scope default.
+ * its project: a saved session's config seeds from history and Pi, and only
+ * a fresh draft starts from the project's Scope default.
  */
 export function followRunConfig(
 	store: AppStore,
@@ -264,11 +264,19 @@ export function followRunConfig(
 				// Opening it again would drop the selection a send is applying.
 				runConfig.adoptSessionPath(next.sessionPath);
 			} else if (next) {
+				const state = store.state();
+				const readLiveDraft =
+					state.pendingDrafts.has(next.sessionKey) ||
+					state.chatSessions.some(
+						(chat) => chat.sessionKey === next.sessionKey && chat.initialized,
+					);
 				void runConfig.open(
 					next,
 					next.sessionPath
 						? { skipHistoryLoad: Boolean(chat) }
-						: initialRunConfig(catalog, next.projectId),
+						: readLiveDraft
+							? { readLiveDraft }
+							: initialRunConfig(catalog, next.projectId),
 				);
 				const meta = chat ? untracked(chat.historyMetadata) : null;
 				if (meta && meta.sessionKey === next.sessionKey) {

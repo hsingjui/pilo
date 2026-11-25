@@ -122,6 +122,15 @@ Frontend controller eviction alone is not backend process cleanup.
 - Never evict an active turn, compaction, uninitialized process, `no_session`
   session, or a session without a resolved JSONL path. A cloned `ChatProcess` Arc
   or a locked session protects in-flight startup/RPC work from eviction.
+- Switching sessions during a regular new chat's first prompt does not cancel
+  startup, run-config preparation or delivery. `ComposerStore` keeps the
+  original session key, and `ChatRunConfigStore` captures that chat's selection
+  before awaiting startup. Keep the unindexed draft in the sidebar by session
+  key until the send settles, even before a runtime exists or while MCP approval
+  is pending. Reopening it waits for the original config preparation, or reads
+  live Pi state if preparation is done; never reapply Scope defaults to it.
+  Config results for the old chat do not update the newly selected chat.
+  Explicit stop or a failed send still restores unsent input.
 - WebUI explicit navigation away from a temporary chat (new draft, project
   change or session selection) stops its old session key. A late temporary start
   or MCP approval completion checks the active key and stops an abandoned runtime.
@@ -412,7 +421,9 @@ The following targeted regressions remain to be added with explicit authorizatio
 - Prompt/UI regressions: rejected preflight releases optimistic activity; `handled`
   removes its pending user and permits the next send; extension-started activity
   survives `handled`; responses without disposition remain compatible. Verify
-  desktop and WebUI, including mobile WebUI session switching while awaiting ACK.
+  desktop and WebUI. On mobile WebUI, switch away before startup resolves,
+  during model selection, and while awaiting the prompt ACK; the first prompt
+  must reach only its original session without reappearing in the composer.
 - Explicit detach returns without waiting for startup/RPC locks, eventually emits
   stopped for the removed generation, and never notifies an existing replacement.
   Stopped/failed/disappeared Host runtimes do not create completion unread dots.

@@ -94,12 +94,20 @@ export type Navigation = {
 	session: SessionSelection | null;
 };
 
+type PendingDraft = {
+	projectId: string;
+	title: string;
+	startedAt: number;
+};
+
 export type AppState = {
 	status: StartupStatus;
 	/** Event cut of the last bootstrap. */
 	latestSequence: number;
 	projects: Project[];
 	chatSessions: ChatSessionRuntimeState[];
+	/** Drafts whose first prompt is still being sent, keyed by session key. */
+	pendingDrafts: ReadonlyMap<string, PendingDraft>;
 	/**
 	 * When each running chat (by session key) was first seen running, so the
 	 * sidebar keeps running sessions in a stable order as their files change.
@@ -165,6 +173,7 @@ export function createAppState(): AppState {
 		latestSequence: 0,
 		projects: [],
 		chatSessions: [],
+		pendingDrafts: new Map(),
 		runningSince: {},
 		externalActivity: {},
 		preferences: null,

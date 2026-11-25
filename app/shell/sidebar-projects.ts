@@ -171,7 +171,7 @@ function savedSession(
 
 /**
  * New chats of the project that Pi has not saved to an indexed file yet:
- * the open one once a prompt was sent, and others still running a turn.
+ * the open one once a prompt was sent, and others sending or running a turn.
  * Their `sessionPath` is empty; their `id` is the draft's session id.
  */
 function unsavedSessions(
@@ -187,43 +187,57 @@ function unsavedSessions(
 		open?.projectId === projectId && open.sessionId !== undefined
 			? chatSessionKey(projectId, open.sessionId)
 			: null;
-	if (openKey && open?.sessionId && draft) {
+	const pending = openKey ? state.pendingDrafts.get(openKey) : undefined;
+	const openDraft = draft ?? pending;
+	if (openKey && open?.sessionId && openDraft) {
 		const chat = state.chatSessions.find((held) => held.sessionKey === openKey);
-		const since = state.runningSince[openKey] ?? draft.startedAt;
+		const since = state.runningSince[openKey] ?? openDraft.startedAt;
 		rows.push({
 			id: open.sessionId,
-			title: draft.title || untitled,
+			title: openDraft.title || untitled,
 			preview: null,
 			sessionPath: "",
 			projectId,
-			latestMessageAt: new Date(draft.startedAt),
-			active: draft.active || chatRuntimeShowsActivity(chat),
+			latestMessageAt: new Date(openDraft.startedAt),
+			active: !!pending || !!draft?.active || chatRuntimeShowsActivity(chat),
 			runningSince: new Date(since),
 		});
 	}
+	const chats = new Map(
+		state.chatSessions
+			.filter(
+				(chat) =>
+					chat.projectId === projectId &&
+					(chatRuntimeShowsActivity(chat) ||
+						state.pendingDrafts.has(chat.sessionKey)),
+			)
+			.map((chat) => [chat.sessionKey, chat]),
+	);
+	const keys = new Set(chats.keys());
+	for (const [key, draft] of state.pendingDrafts) {
+		if (draft.projectId === projectId) keys.add(key);
+	}
 	let indexed: Set<string> | undefined;
-	for (const chat of state.chatSessions) {
-		if (
-			chat.projectId !== projectId ||
-			chat.sessionKey === openKey ||
-			!chatRuntimeShowsActivity(chat)
-		) {
-			continue;
-		}
-		const sessionId = runtimeSessionIdFromKey(chat.sessionKey, projectId);
+	for (const key of keys) {
+		if (key === openKey) continue;
+		const pendingDraft = state.pendingDrafts.get(key);
+		const chat = chats.get(key);
+		const sessionId = runtimeSessionIdFromKey(key, projectId);
 		if (!sessionId || !isDraftSessionId(sessionId)) continue;
 		indexed ??= new Set(
 			entries.map((entry) => runtimeSessionPathKey(entry.sessionPath)),
 		);
 		if (
-			chat.sessionPath &&
+			chat?.sessionPath &&
 			indexed.has(runtimeSessionPathKey(chat.sessionPath))
 		)
 			continue;
-		const since = new Date(state.runningSince[chat.sessionKey] ?? 0);
+		const since = new Date(
+			state.runningSince[key] ?? pendingDraft?.startedAt ?? 0,
+		);
 		rows.push({
 			id: sessionId,
-			title: untitled,
+			title: pendingDraft?.title || untitled,
 			preview: null,
 			sessionPath: "",
 			projectId,

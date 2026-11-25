@@ -135,6 +135,11 @@ export type ComposerQueue = {
 	) => Promise<void>;
 };
 
+type PrepareToSend = (
+	sessionKey: string,
+	ensureReady?: () => Promise<boolean>,
+) => Promise<boolean>;
+
 type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
 
 type ComposerDraftTextStorage = {
@@ -189,12 +194,16 @@ export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly app: Accessor<AppState>;
 	private readonly catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
-	private readonly beforeSend?: (sessionKey: string) => Promise<boolean>;
+	private readonly beforeSend?: PrepareToSend;
 	private readonly waitForStartupApproval?: (
 		sessionKey: string,
 	) => Promise<boolean>;
 	private readonly queue?: ComposerQueue;
 	private readonly transcript?: ComposerTranscript;
+	private readonly onPendingDraft?: (
+		target: ComposerTarget,
+		text: string | null,
+	) => void;
 	private readonly onPromptStarted?: (
 		target: ComposerTarget,
 		text: string,
@@ -271,11 +280,13 @@ export class ComposerStore {
 		draftTextStorage?: ComposerDraftTextStorage;
 		/** The active project's model and command catalog, for `/` suggestions. */
 		catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
-		beforeSend?: (sessionKey: string) => Promise<boolean>;
+		beforeSend?: PrepareToSend;
 		waitForStartupApproval?: (sessionKey: string) => Promise<boolean>;
 		queue?: ComposerQueue;
 		/** Shows a prompt that starts a turn at once, before Pi takes it. */
 		transcript?: ComposerTranscript;
+		/** Keeps a background send's draft navigable until the prompt settles. */
+		onPendingDraft?: (target: ComposerTarget, text: string | null) => void;
 		/** Called once Pi started a turn for a prompt (not a steer or follow-up). */
 		onPromptStarted?: (target: ComposerTarget, text: string) => void;
 		/** Starts a new chat when the user submits `/new`. */
@@ -293,6 +304,7 @@ export class ComposerStore {
 		this.waitForStartupApproval = deps.waitForStartupApproval;
 		this.queue = deps.queue;
 		this.transcript = deps.transcript;
+		this.onPendingDraft = deps.onPendingDraft;
 		this.onPromptStarted = deps.onPromptStarted;
 		this.onNewChat = deps.onNewChat;
 		this.onCompacted = deps.onCompacted;
@@ -974,50 +986,55 @@ export class ComposerStore {
 		target: ComposerTarget,
 		submit: { stopped: boolean },
 		onStarting?: () => void,
+		inBackground = false,
+	): Promise<boolean> {
+		const canSend = () =>
+			!submit.stopped &&
+			(inBackground || this.targetSignal()?.sessionKey === target.sessionKey);
+		const ensureReady = () => this.ensureStarted(target, canSend, onStarting);
+		if (inBackground && this.beforeSend) {
+			// Capture the original chat's config before startup yields to navigation.
+			return (
+				(await this.beforeSend(target.sessionKey, ensureReady)) && canSend()
+			);
+		}
+		if (!(await ensureReady())) return false;
+		return (
+			(!this.beforeSend || (await this.beforeSend(target.sessionKey))) &&
+			canSend()
+		);
+	}
+
+	private async ensureStarted(
+		target: ComposerTarget,
+		canSend: () => boolean,
+		onStarting?: () => void,
 	): Promise<boolean> {
 		const chat = await this.client.chatState(target.sessionKey);
-		const current = this.targetSignal();
-		if (current?.sessionKey !== target.sessionKey || submit.stopped) {
-			return false;
-		}
+		if (!canSend()) return false;
 		if (!chat?.initialized) {
 			onStarting?.();
+			const current = this.targetSignal();
+			const { projectId, sessionKey, sessionPath } =
+				current?.sessionKey === target.sessionKey ? current : target;
 			const input = {
-				projectId: current.projectId,
-				sessionKey: current.sessionKey,
-				...(current.sessionPath ? { sessionPath: current.sessionPath } : {}),
-				...(isTemporarySessionKey(current.sessionKey)
-					? { noSession: true }
-					: {}),
+				projectId,
+				sessionKey,
+				...(sessionPath ? { sessionPath } : {}),
+				...(isTemporarySessionKey(sessionKey) ? { noSession: true } : {}),
 			};
 			for (;;) {
 				try {
 					await this.client.startChat(input);
 					break;
 				} catch (error) {
-					if (!(await this.waitForStartupApproval?.(target.sessionKey)))
-						throw error;
+					if (!(await this.waitForStartupApproval?.(sessionKey))) throw error;
 					// Retry only startup, never a prompt that may already have reached Pi.
-					if (
-						this.targetSignal()?.sessionKey !== target.sessionKey ||
-						submit.stopped
-					)
-						return false;
+					if (!canSend()) return false;
 				}
 			}
 		}
-		if (
-			this.targetSignal()?.sessionKey !== target.sessionKey ||
-			submit.stopped
-		) {
-			return false;
-		}
-		if (this.beforeSend && !(await this.beforeSend(target.sessionKey))) {
-			return false;
-		}
-		return (
-			this.targetSignal()?.sessionKey === target.sessionKey && !submit.stopped
-		);
+		return canSend();
 	}
 
 	private async fetchLiveSessionCommands(
@@ -1234,6 +1251,10 @@ export class ComposerStore {
 			!knownExtensionCommand &&
 			!needsExtensionCheck &&
 			this.queue !== undefined;
+		const inBackground =
+			nonBlockingStart &&
+			!target.sessionPath &&
+			!isTemporarySessionKey(target.sessionKey);
 		let resolveSettled: ((ok: boolean) => void) | undefined;
 		const submit = { dispatched: false, stopped: false };
 		if (nonBlockingStart) {
@@ -1288,6 +1309,7 @@ export class ComposerStore {
 		let isExtensionCommand = knownExtensionCommand;
 		let failure: string | undefined;
 		try {
+			if (inBackground) this.onPendingDraft?.(target, message);
 			const pendingStart = running
 				? this.startingPrompts.get(target.sessionKey)
 				: undefined;
@@ -1316,8 +1338,11 @@ export class ComposerStore {
 					));
 			if (!stillRunning) {
 				if (
-					!(await this.ensureStartedForSubmit(target, submit, () =>
-						localStatus("starting"),
+					!(await this.ensureStartedForSubmit(
+						target,
+						submit,
+						() => localStatus("starting"),
+						inBackground,
 					))
 				) {
 					return;
@@ -1464,6 +1489,7 @@ export class ComposerStore {
 					isExtensionCommand && this.onNotice ? undefined : failure,
 				);
 			}
+			if (inBackground) this.onPendingDraft?.(target, null);
 			if (nonBlockingStart) {
 				this.setStartingPrompt(target.sessionKey, null);
 				resolveSettled?.(sent && !submit.stopped);

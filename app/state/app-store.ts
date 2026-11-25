@@ -23,7 +23,10 @@ import {
 	readStateKey,
 	reduceAppState,
 } from "./app-state";
-import type { ChatTranscriptStore } from "./chat-transcript-store";
+import type {
+	ChatTranscriptStore,
+	ChatTranscriptTarget,
+} from "./chat-transcript-store";
 
 export type AppStoreClient = Partial<
 	// Optional: a client without the probe shows no external Pi turns.
@@ -342,7 +345,27 @@ export class AppStore {
 		const active = state.chatSessions.some(
 			(chat) => chat.sessionKey === sessionKey && chat.activeTurn,
 		);
-		return !hasMessages && !active;
+		return !hasMessages && !active && !state.pendingDrafts.has(sessionKey);
+	}
+
+	/** Keeps the draft navigable before Pi has accepted its first prompt. */
+	setPendingDraft(
+		{ sessionKey, projectId }: ChatTranscriptTarget,
+		text: string | null,
+	) {
+		this.current.update((state) => {
+			if (text === null && !state.pendingDrafts.has(sessionKey)) return state;
+			const pendingDrafts = new Map(state.pendingDrafts);
+			if (text === null) pendingDrafts.delete(sessionKey);
+			else {
+				pendingDrafts.set(sessionKey, {
+					projectId,
+					title: text.replace(/\s+/g, " ").trim(),
+					startedAt: Date.now(),
+				});
+			}
+			return { ...state, pendingDrafts };
+		});
 	}
 
 	/** Opens again a new chat Pi has not saved yet, by its draft session id. */

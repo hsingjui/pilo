@@ -65,6 +65,7 @@ test("the state starts empty and a bootstrap makes it ready", () => {
 		latestSequence: 0,
 		projects: [],
 		chatSessions: [],
+		pendingDrafts: new Map(),
 		runningSince: {},
 		externalActivity: {},
 		preferences: null,

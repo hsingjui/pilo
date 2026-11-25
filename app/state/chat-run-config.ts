@@ -39,6 +39,8 @@ export type ChatRunConfigOptions = {
 	/** A new chat's scope-resolved defaults; absent while a scope is pending. */
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
+	/** This unindexed draft already has an initialized Pi; read its live selection. */
+	readLiveDraft?: boolean;
 	/** Skip a separate `loadHistory` call when the transcript store supplies history metadata. */
 	skipHistoryLoad?: boolean;
 };
@@ -64,6 +66,17 @@ export type ChatRunConfigState = {
 	error: string | null;
 };
 
+type InitialSelection = {
+	model: PiModel | null;
+	level: PiThinkingLevel | null;
+};
+
+type BackgroundSend = {
+	open: number;
+	state: ChatRunConfigState;
+	initial: InitialSelection | null;
+};
+
 const RPC_TIMEOUT_MS = 10_000;
 
 /**
@@ -85,12 +98,15 @@ export class ChatRunConfigStore {
 	private opens = 0;
 	private requests = 0;
 	private statsRequests = 0;
-	private applying: Promise<void> | undefined;
+	private applying:
+		| { promise: Promise<void>; inBackground: boolean }
+		| undefined;
+	private readonly backgroundSends = new Map<
+		string,
+		BackgroundSend & { ready: Promise<boolean> }
+	>();
 	/** A new chat's initial config, pushed on the first agent state. */
-	private pendingInitial: {
-		model: PiModel | null;
-		level: PiThinkingLevel | null;
-	} | null = null;
+	private pendingInitial: InitialSelection | null = null;
 
 	constructor(
 		client: ChatRunConfigClient,
@@ -109,25 +125,32 @@ export class ChatRunConfigStore {
 		this.disconnect?.();
 		this.disconnect = undefined;
 		this.applying = undefined;
-		this.pendingInitial = target.sessionPath
-			? null
-			: {
-					model: options.initialModel ?? null,
-					level: options.initialThinkingLevel ?? null,
-				};
+		const background = this.backgroundSends.get(target.sessionKey);
+		const model = background
+			? background.state.model
+			: (options.initialModel ?? null);
+		this.pendingInitial =
+			target.sessionPath || background || options.readLiveDraft
+				? null
+				: {
+						model: options.initialModel ?? null,
+						level: options.initialThinkingLevel ?? null,
+					};
 		this.current.set({
 			sessionKey: target.sessionKey,
 			projectId: target.projectId,
 			sessionPath: target.sessionPath ?? undefined,
-			model: options.initialModel ?? null,
-			thinkingLevel: options.initialThinkingLevel ?? null,
-			thinkingLevels: [...getPiModelThinkingLevels(options.initialModel)],
+			model,
+			thinkingLevel: background
+				? background.state.thinkingLevel
+				: (options.initialThinkingLevel ?? null),
+			thinkingLevels: [...getPiModelThinkingLevels(model)],
 			modelDirty: false,
 			thinkingDirty: false,
 			session: null,
 			headerMissing: false,
 			compacting: false,
-			changing: false,
+			changing: !!background,
 			ready: false,
 			error: null,
 		});
@@ -148,7 +171,23 @@ export class ChatRunConfigStore {
 		if (target.sessionPath && !options.skipHistoryLoad) {
 			void this.applyHistoryMetadata(open, target);
 		}
-		await this.refresh(open);
+		if (background) {
+			// The original send owns Pi's selection even if this chat is reopened.
+			const ready = await background.ready.catch(() => false);
+			if (open !== this.opens) return;
+			if (!ready) {
+				this.pendingInitial = background.initial;
+				this.update({
+					model: background.state.model,
+					thinkingLevel: background.state.thinkingLevel,
+					thinkingLevels: background.state.thinkingLevels,
+					modelDirty: background.state.modelDirty,
+					thinkingDirty: background.state.thinkingDirty,
+				});
+			}
+			this.update({ changing: false });
+		}
+		await this.refresh(open, !background);
 	}
 
 	/**
@@ -316,6 +355,8 @@ export class ChatRunConfigStore {
 		const state = this.current();
 		if (!state || open !== this.opens) return;
 		const { sessionKey } = state;
+		const background = this.backgroundSends.get(sessionKey);
+		if (background && background.open !== open) return;
 		const request = ++this.requests;
 		const runtime = await this.client
 			.chatState(state.sessionKey)
@@ -417,11 +458,30 @@ export class ChatRunConfigStore {
 	}
 
 	/** Waits for the target Pi to confirm the selection before sending. */
-	async prepareToSend(sessionKey: string): Promise<boolean> {
+	async prepareToSend(
+		sessionKey: string,
+		ensureReady?: () => Promise<boolean>,
+	): Promise<boolean> {
 		const open = this.opens;
-		if (this.current()?.sessionKey !== sessionKey) return false;
-		await this.applySelection();
-		return open === this.opens;
+		const state = this.current();
+		if (state?.sessionKey !== sessionKey) return false;
+		if (!ensureReady) {
+			await this.applySelection();
+			return open === this.opens;
+		}
+		const background = { open, state, initial: this.pendingInitial };
+		const ready = Promise.resolve().then(async () => {
+			if (!(await ensureReady())) return false;
+			await this.applySelection(false, background);
+			return true;
+		});
+		this.backgroundSends.set(sessionKey, { ...background, ready });
+		try {
+			return await ready;
+		} finally {
+			if (this.backgroundSends.get(sessionKey)?.ready === ready)
+				this.backgroundSends.delete(sessionKey);
+		}
 	}
 
 	/** Picks a model; pushed to a live chat, kept local for a saved session. */
@@ -475,19 +535,27 @@ export class ChatRunConfigStore {
 	}
 
 	/** Startup refresh and sending share one config write for the open chat. */
-	private async applySelection(start = false): Promise<void> {
-		if (this.applying) return this.applying;
-		const state = this.current();
+	private async applySelection(
+		start = false,
+		background?: BackgroundSend,
+	): Promise<void> {
+		const open = background?.open ?? this.opens;
+		const isOpen = () => open === this.opens;
+		if (isOpen() && this.applying) {
+			if (background) this.applying.inBackground = true;
+			return this.applying.promise;
+		}
+		const state = isOpen() ? this.current() : background?.state;
 		if (!state) return;
-		const initial = this.pendingInitial;
+		const initial = isOpen() ? this.pendingInitial : background?.initial;
 		const model = state.modelDirty ? state.model : initial?.model;
 		const level = state.thinkingDirty ? state.thinkingLevel : initial?.level;
 		if (!model && !level) return;
-		const open = this.opens;
 		const { projectId, sessionKey, sessionPath } = state;
-		this.applying = Promise.resolve()
+		const canApply = () => application.inBackground || isOpen();
+		const promise = Promise.resolve()
 			.then(async () => {
-				if (open !== this.opens) return;
+				if (!canApply()) return;
 				if (start)
 					await this.client.startChat({
 						projectId,
@@ -495,11 +563,11 @@ export class ChatRunConfigStore {
 						sessionPath,
 						...(isTemporarySessionKey(sessionKey) ? { noSession: true } : {}),
 					});
-				if (open !== this.opens) return;
+				if (!canApply()) return;
 				const agent = await this.rpc<PiAgentState>(sessionKey, {
 					type: "get_state",
 				});
-				if (open !== this.opens) return;
+				if (!canApply()) return;
 				if (!agent) throw new Error("Pi did not return its run configuration");
 				const modelChanged =
 					model &&
@@ -511,16 +579,15 @@ export class ChatRunConfigStore {
 						provider: model.provider,
 						modelId: model.id,
 					});
-					if (open !== this.opens) return;
+					if (!canApply()) return;
 				}
 				if (level && (modelChanged || agent.thinkingLevel !== level)) {
 					await this.rpcOrThrow(sessionKey, {
 						type: "set_thinking_level",
 						level,
 					});
-					if (open !== this.opens) return;
 				}
-				if (initial) {
+				if (initial && isOpen()) {
 					this.pendingInitial = null;
 					this.update({
 						modelDirty: state.modelDirty || initial.model !== null,
@@ -529,19 +596,24 @@ export class ChatRunConfigStore {
 				}
 			})
 			.catch((error: unknown) => {
-				if (open !== this.opens) return;
-				this.update({
-					error: error instanceof Error ? error.message : String(error),
-				});
-				throw error;
+				if (isOpen()) {
+					this.update({
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+				if (canApply()) throw error;
 			})
 			.finally(() => {
-				if (open !== this.opens) return;
+				if (!isOpen()) return;
 				this.applying = undefined;
 				this.update({ changing: false });
 			});
-		this.update({ changing: true, error: null });
-		return this.applying;
+		const application = { promise, inBackground: !!background };
+		if (isOpen()) {
+			this.applying = application;
+			this.update({ changing: true, error: null });
+		}
+		return promise;
 	}
 
 	private rpc<T>(
