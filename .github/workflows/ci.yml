@@ -2,26 +2,35 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+    tags:
+      - "**"
   pull_request:
+    # If main gains required checks, keep their workflow running for docs PRs
+    # and skip the expensive jobs instead of filtering out the entire workflow.
+    paths-ignore:
+      - "**/README*.md"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A shared group can replace pending runs even with cancel-in-progress: false.
+  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
+  NSH_VERSION: "0.7.0"
 
 jobs:
   frontend:
-    name: Shared, desktop & WebUI checks
+    name: Shared & WebUI checks
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      NSH_VERSION: "0.7.0"
 
     steps:
       - name: Checkout
@@ -53,34 +62,54 @@ jobs:
       - name: Node tests
         run: pnpm test
 
+      - name: Setup nsh
+        uses: ./.github/actions/setup-nsh
+        with:
+          version: ${{ env.NSH_VERSION }}
+
+      - name: Package WebUI
+        run: pnpm build:web
+
+  nsh-desktop:
+    name: Desktop nsh check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential clang libclang-dev libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev libgtk-4-dev libssl-dev \
-            libwayland-dev libwebkitgtk-6.0-dev pkg-config
+          sudo apt-get install -y --no-install-recommends libssl-dev libwayland-dev
+
+      - name: Configure Cargo for native binding generation
+        run: |
+          mkdir -p "$CARGO_HOME"
+          cat .github/nsh-cargo.toml >> "$CARGO_HOME/config.toml"
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/pilo-desktop -> target
+          key: nsh-${{ env.NSH_VERSION }}-${{ hashFiles('.github/nsh-cargo.toml') }}
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
 
       - name: Setup nsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd "$RUNNER_TEMP"
-          asset=nsh-linux-x86_64.tar.gz
-          gh release download "v$NSH_VERSION" --repo longbridge/nsh \
-            --pattern "$asset" --pattern "$asset.sha256"
-          sha256sum -c "$asset.sha256"
-          tar -xzf "$asset"
-          echo "$PWD/nsh/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-nsh
+        with:
+          version: ${{ env.NSH_VERSION }}
 
       - name: Check nsh apps
+        # Both nsh's cargo check and its generated describe program use this cache.
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/crates/pilo-desktop/target
         run: nsh check
-
-      - name: Package WebUI
-        run: pnpm build:web
 
   backend:
     name: Backend checks
@@ -96,41 +125,58 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            curl \
-            file \
-            libssl-dev \
-            libwayland-dev \
-            pkg-config \
-            wget
-
-      - name: Cache Cargo
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> target
-            crates/pilo-desktop -> crates/pilo-desktop/target
-
       - name: Check Rust formatting
         run: |
           cargo fmt --all --check
           cargo fmt --manifest-path crates/pilo-desktop/Cargo.toml --all --check
 
-      - name: Cargo check
+      - name: Install Linux system dependencies
         run: |
-          cargo check --workspace --all-targets --all-features
-          cargo check --manifest-path crates/pilo-desktop/Cargo.toml --all-targets
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libssl-dev pkg-config wget
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
 
       - name: Clippy
-        run: |
-          cargo clippy --workspace --all-targets --all-features -- -D warnings
-          cargo clippy --manifest-path crates/pilo-desktop/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Rust unit tests
+        run: cargo test -p pilo-domain -p pilo-runtime
+
+  desktop-rust:
+    name: Desktop Rust checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux system dependencies
         run: |
-          cargo test -p pilo-domain -p pilo-runtime
-          cargo test --manifest-path crates/pilo-desktop/Cargo.toml
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libssl-dev libwayland-dev pkg-config
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/pilo-desktop -> target
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+
+      - name: Clippy
+        run: cargo clippy --manifest-path crates/pilo-desktop/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust unit tests
+        run: cargo test --manifest-path crates/pilo-desktop/Cargo.toml
