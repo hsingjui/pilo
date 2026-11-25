@@ -95,11 +95,14 @@ import {
 	type SessionForker,
 } from "./session-fork";
 import { createSidebarLayout } from "./sidebar-layout";
-import { SidebarPanel, StartupSidebar } from "./sidebar-panel";
+import {
+	SidebarPanel,
+	sidebarSurface,
+	StartupSidebar,
+	TITLE_BAR_HEIGHT,
+	windowTitleBarOptions,
+} from "./sidebar-panel";
 import { SidebarSettingsStore } from "./sidebar-settings";
-
-/** The title bar's height; the system centers its window controls in it. */
-const TITLE_BAR_HEIGHT = 44;
 
 export interface AppShellProps {
 	/** The app state the shell shows; whoever mounts the shell starts it. */
