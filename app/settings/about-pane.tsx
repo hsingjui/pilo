@@ -88,9 +88,7 @@ export function AboutPane(props: {
 			</SettingsSection>
 			<SettingsSection title={t("settings.application")}>
 				<SettingsRow label={t("settings.version")}>
-					<Text class="font-mono text-xs text-muted-foreground">
-						{version}
-					</Text>
+					<Text class="font-mono text-xs text-muted-foreground">{version}</Text>
 				</SettingsRow>
 				<SettingsRow label={t("settings.repository")} ghostEdge="both">
 					<SettingsActionButton
