@@ -81,8 +81,7 @@ export function ConnectionsPane(props: {
 	const sshItems = signal<SshConnectionInfo[]>([]);
 	const loading = signal(true);
 	const testing = signal<Set<string>>(new Set());
-	/** Persistent per-connection diagnostics. */
-	const results = signal<Record<string, string>>({});
+	const sshLoadFailed = signal(false);
 	const removing = signal<Connection | null>(null);
 	const busy = signal(false);
 	let alive = true;
@@ -96,9 +95,6 @@ export function ConnectionsPane(props: {
 		else next.delete(id);
 		testing.set(next);
 	};
-
-	const setResult = (id: string, text: string) =>
-		results.set({ ...results(), [id]: text });
 
 	const projects = computed(() => props.state().projects);
 	const projectCount = (id: string, fallback: number) => {
@@ -119,7 +115,7 @@ export function ConnectionsPane(props: {
 		if (!alive || revision !== refreshRevision) return;
 		if (localResult.status === "fulfilled") local.set(localResult.value);
 		if (sshResult.status === "fulfilled") sshItems.set(sshResult.value);
-		else setResult("ssh-list", t("connection.sshLoadFailed"));
+		sshLoadFailed.set(sshResult.status === "rejected");
 		if (wslResult.status === "fulfilled") wslItems.set(wslResult.value);
 		loading.set(false);
 	};
@@ -131,13 +127,8 @@ export function ConnectionsPane(props: {
 		void refresh();
 	});
 
-	const sshEditor = createSshEditor({ client, refresh, setResult });
-	const configureDialog = createConfigureDialog({
-		client,
-		refresh,
-		setResult,
-		connectionLabel,
-	});
+	const sshEditor = createSshEditor({ client, refresh, toasts });
+	const configureDialog = createConfigureDialog({ client, refresh, toasts });
 	const addedDistros = () =>
 		new Set(
 			wslItems().flatMap((info) =>
@@ -146,12 +137,7 @@ export function ConnectionsPane(props: {
 					: [],
 			),
 		);
-	const wslPicker = createWslPicker({
-		client,
-		refresh,
-		setResult,
-		addedDistros,
-	});
+	const wslPicker = createWslPicker({ client, refresh, toasts, addedDistros });
 
 	const testConnection = async (connection: Connection) => {
 		const id = connection.id;
@@ -177,14 +163,15 @@ export function ConnectionsPane(props: {
 			await client.setConnectionShownInHome(connection.id, shown);
 			await refresh();
 		} catch (caught) {
-			setResult(
-				connection.id,
-				`${t("connection.saveFailed")} · ${userErrorMessage(caught)}`,
-			);
+			toasts.show({
+				variant: "error",
+				title: t("connection.saveFailed"),
+				description: userErrorMessage(caught),
+			});
 		}
 	};
 
-	const removeConnection = async () => {
+	const removeConnection = async (dialogToasts: AppToasts) => {
 		const connection = removing();
 		if (!connection || busy() || connection.kind.type === "local") return;
 		busy.set(true);
@@ -196,16 +183,16 @@ export function ConnectionsPane(props: {
 			}
 			await refresh();
 			removing.set(null);
-			/* The row is gone by now; the pane-level line carries the result. */
-			setResult(
-				"list",
-				t("connection.removed", { name: connectionLabel(connection) }),
-			);
+			toasts.show({
+				variant: "success",
+				title: t("connection.removed", { name: connectionLabel(connection) }),
+			});
 		} catch (caught) {
-			setResult(
-				connection.id,
-				`${t("connection.removeFailed")} · ${userErrorMessage(caught)}`,
-			);
+			dialogToasts.show({
+				variant: "error",
+				title: t("connection.removeFailed"),
+				description: userErrorMessage(caught),
+			});
 		} finally {
 			busy.set(false);
 		}
@@ -227,7 +214,6 @@ export function ConnectionsPane(props: {
 				shownInHome={connection.shownInHome ?? true}
 				testing={() => testing().has(connection.id)}
 				busy={() => busy() || configureDialog.probing()}
-				result={() => results()[connection.id]}
 				onToggleShown={(shown) => void toggleShown(connection, shown)}
 				onTest={() => void testConnection(connection)}
 				onConfigure={() => configureDialog.openSettings(connection)}
@@ -250,7 +236,6 @@ export function ConnectionsPane(props: {
 				shownInHome={connection.shownInHome ?? false}
 				testing={() => testing().has(connection.id)}
 				busy={() => busy() || configureDialog.probing()}
-				result={() => results()[connection.id]}
 				onToggleShown={(shown) => void toggleShown(connection, shown)}
 				onTest={() => void testConnection(connection)}
 				onConfigure={() => configureDialog.openSettings(connection)}
@@ -295,7 +280,6 @@ export function ConnectionsPane(props: {
 				shownInHome={connection.shownInHome ?? false}
 				testing={() => testing().has(connection.id)}
 				busy={() => busy() || configureDialog.probing()}
-				result={() => results()[connection.id]}
 				onToggleShown={(shown) => void toggleShown(connection, shown)}
 				onTest={() => void testConnection(connection)}
 				onConfigure={() => configureDialog.openSettings(connection)}
@@ -347,26 +331,16 @@ export function ConnectionsPane(props: {
 
 	const removeDialog = () => {
 		const connection = removing();
+		if (!connection) return null;
+		const dialogToasts = new AppToasts();
 		return (
 			<SettingsConfirmDialog
 				testID="settings-conn-remove-dialog"
-				open={connection !== null}
-				title={
-					connection
-						? `${t("connection.removeQuestion")} · ${connectionLabel(connection)}`
-						: t("connection.removeQuestion")
-				}
-				description={
-					connection
-						? `${t("connection.removeDescription", {
-								name: connectionLabel(connection),
-							})}${
-								connection.kind.type === "ssh"
-									? t("connection.sshCredentialsDeleted")
-									: ""
-							}`
-						: null
-				}
+				open={true}
+				title={`${t("connection.removeQuestion")} · ${connectionLabel(connection)}`}
+				description={`${t("connection.removeDescription", {
+					name: connectionLabel(connection),
+				})}${connection.kind.type === "ssh" ? t("connection.sshCredentialsDeleted") : ""}`}
 				confirmLabel={t("connection.confirmRemove")}
 				busyLabel={t("connection.removing")}
 				busy={busy()}
@@ -374,8 +348,10 @@ export function ConnectionsPane(props: {
 				onOpenChange={(open) => {
 					if (!open) removing.set(null);
 				}}
-				onConfirm={() => void removeConnection()}
-			/>
+				onConfirm={() => void removeConnection(dialogToasts)}
+			>
+				<AppToastStack toasts={dialogToasts} />
+			</SettingsConfirmDialog>
 		);
 	};
 
@@ -396,16 +372,9 @@ export function ConnectionsPane(props: {
 							{wslItems().map(wslRow)}
 							{sshItems().map(sshRow)}
 							{() =>
-								results()["ssh-list"] || results()["wsl-add"] ? (
+								sshLoadFailed() ? (
 									<SettingsSectionMessage tone="error" size="2xs">
-										{results()["ssh-list"] ?? results()["wsl-add"]}
-									</SettingsSectionMessage>
-								) : null
-							}
-							{() =>
-								results()["list"] ? (
-									<SettingsSectionMessage size="2xs">
-										{results()["list"]}
+										{t("connection.sshLoadFailed")}
 									</SettingsSectionMessage>
 								) : null
 							}

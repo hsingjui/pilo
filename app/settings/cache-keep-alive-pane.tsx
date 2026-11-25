@@ -7,6 +7,7 @@ import {
 } from "@shared/cache-keep-alive";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { AppState } from "../state/app-state";
+import { AppToaster, showToast } from "../shell/app-toasts";
 import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import { Command } from "../ui/command";
@@ -49,6 +50,7 @@ export function CacheKeepAlivePane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
 }) {
+	const toasts = AppToaster();
 	const lists = new ConnectionModelLists(props.client);
 	const connections = signal<Connection[]>([]);
 	const catalogError = signal<string | null>(null);
@@ -158,7 +160,12 @@ export function CacheKeepAlivePane(props: {
 					setError(connectionId, null);
 					return true;
 				} catch (error) {
-					if (alive) setError(connectionId, userErrorMessage(error));
+					if (alive)
+						showToast(toasts, {
+							variant: "error",
+							title: t("settings.preferencesSaveFailed"),
+							description: userErrorMessage(error),
+						});
 					return false;
 				} finally {
 					if (alive)

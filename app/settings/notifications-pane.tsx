@@ -22,7 +22,6 @@ import {
 	SettingsIconButton,
 	SettingsRow,
 	SettingsSection,
-	SettingsSectionMessage,
 	SettingsStatus,
 } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
@@ -43,8 +42,7 @@ const PERMISSION_KEYS: Record<
 /**
  * System notifications: the toggle, the OS permission, and a test send, as
  * the WebUI `NotificationSettings`. Its Windows-only "Managed by system"
- * status has no nsh counterpart (the permission is always queryable here),
- * and its failure toasts show inline instead.
+ * status has no nsh counterpart (the permission is always queryable here).
  */
 export function NotificationsPane(props: {
 	state: Accessor<AppState>;
@@ -56,11 +54,6 @@ export function NotificationsPane(props: {
 	const permission = signal<NotificationPermission | null>(null);
 	const checking = signal(false);
 	const testing = signal(false);
-	const failure = signal<
-		| "settings.enableNotificationsFailed"
-		| "settings.testNotificationFailed"
-		| null
-	>(null);
 	let alive = true;
 	cleanup(() => {
 		alive = false;
@@ -108,7 +101,6 @@ export function NotificationsPane(props: {
 		);
 	};
 	const changeEnabled = (enabled: boolean) => {
-		failure.set(null);
 		if (!enabled) {
 			save(false);
 			return;
@@ -117,13 +109,15 @@ export function NotificationsPane(props: {
 			if (!alive) return;
 			save(granted);
 			if (!granted) {
-				failure.set("settings.enableNotificationsFailed");
+				showToast(toasts, {
+					variant: "error",
+					title: t("settings.enableNotificationsFailed"),
+				});
 			}
 			refresh();
 		});
 	};
 	const sendTest = () => {
-		failure.set(null);
 		testing.set(true);
 		void ensurePermission()
 			.then(async (granted) => {
@@ -138,7 +132,11 @@ export function NotificationsPane(props: {
 					.catch(() => false);
 			})
 			.then((sent) => {
-				if (alive && !sent) failure.set("settings.testNotificationFailed");
+				if (alive && !sent)
+					showToast(toasts, {
+						variant: "error",
+						title: t("settings.testNotificationFailed"),
+					});
 			})
 			.finally(() => {
 				if (!alive) return;
@@ -202,13 +200,6 @@ export function NotificationsPane(props: {
 						</SettingsActionButton>
 					)}
 				</SettingsRow>
-				{() =>
-					failure() ? (
-						<SettingsSectionMessage tone="error">
-							{t(failure() ?? "settings.testNotificationFailed")}
-						</SettingsSectionMessage>
-					) : null
-				}
 			</SettingsSection>
 		</View>
 	);

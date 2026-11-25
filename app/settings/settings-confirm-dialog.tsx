@@ -26,6 +26,7 @@ export function SettingsConfirmDialog(props: {
 	onOpenChange: (open: boolean) => void;
 	onConfirm: () => void;
 	testID?: string;
+	children?: JSX.Element;
 }) {
 	const busy = () => props.busy ?? false;
 	return (
@@ -74,6 +75,7 @@ export function SettingsConfirmDialog(props: {
 					</Text>
 				</Button>
 			</DialogFooter>
+			{props.children}
 		</Dialog>
 	);
 }

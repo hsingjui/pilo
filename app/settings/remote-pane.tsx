@@ -129,12 +129,10 @@ export function RemotePane(props: {
 	});
 
 	const fail = (caught: unknown) => {
-		const message = userErrorMessage(caught);
-		error.set(message);
 		showToast(toasts, {
 			variant: "error",
 			title: t("settings.remoteActionFailed"),
-			description: message,
+			description: userErrorMessage(caught),
 		});
 	};
 

@@ -4,6 +4,7 @@ import type { Connection } from "@shared/api/pi-runtime-types";
 import type { ConnectionNamingModel } from "@shared/api/sessions-types";
 import { userErrorMessage } from "@shared/app-error";
 import type { AppState } from "../state/app-state";
+import { AppToaster, showToast } from "../shell/app-toasts";
 import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import {
@@ -27,19 +28,18 @@ export function SessionNamingPane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
 }) {
+	const toasts = AppToaster();
 	const lists = new ConnectionModelLists(props.client);
 	const connections = signal<Connection[]>([]);
 	const loading = signal(true);
 	const selections = signal<Record<string, ConnectionNamingModel>>({});
 	const busy = signal<Record<string, boolean>>({});
-	const errors = signal<Record<string, string | undefined>>({});
+	const catalogError = signal<string | null>(null);
 	let alive = true;
 	cleanup(() => {
 		alive = false;
 	});
 
-	const setError = (connectionId: string, error: string | null) =>
-		errors.set({ ...errors(), [connectionId]: error ?? undefined });
 	const load = async () => {
 		const [catalog, models] = await Promise.all([
 			paneConnectionCatalog(props.client),
@@ -54,7 +54,7 @@ export function SessionNamingPane(props: {
 	};
 	void load()
 		.catch((error: unknown) => {
-			if (alive) errors.set({ __catalog: userErrorMessage(error) });
+			if (alive) catalogError.set(userErrorMessage(error));
 		})
 		.finally(() => {
 			if (alive) loading.set(false);
@@ -82,10 +82,14 @@ export function SessionNamingPane(props: {
 				if (model) next[connectionId] = model;
 				else delete next[connectionId];
 				selections.set(next);
-				setError(connectionId, null);
 			})
 			.catch((error: unknown) => {
-				if (alive) setError(connectionId, userErrorMessage(error));
+				if (alive)
+					showToast(toasts, {
+						variant: "error",
+						title: t("settings.preferencesSaveFailed"),
+						description: userErrorMessage(error),
+					});
 			})
 			.finally(() => {
 				if (alive) busy.set({ ...busy(), [connectionId]: false });
@@ -102,19 +106,19 @@ export function SessionNamingPane(props: {
 						</SettingsSectionMessage>
 					);
 				if (connections().length === 0) {
-					const catalogError = errors()["__catalog"];
+					const error = catalogError();
 					return (
 						<SettingsSectionMessage
 							padded="roomy"
-							tone={catalogError ? "error" : "muted"}
+							tone={error ? "error" : "muted"}
 						>
-							{catalogError ?? t("settings.noConnections")}
+							{error ?? t("settings.noConnections")}
 						</SettingsSectionMessage>
 					);
 				}
-				return connections().flatMap((connection) => {
+				return connections().map((connection) => {
 					const selected = () => selections()[connection.id];
-					const row = (
+					return (
 						<SettingsRow label={connectionLabel(connection)}>
 							<ConnectionModelSelect
 								testID={`settings-naming-model-${connection.id}`}
@@ -138,15 +142,6 @@ export function SessionNamingPane(props: {
 							/>
 						</SettingsRow>
 					);
-					const error = errors()[connection.id];
-					return error
-						? [
-								row,
-								<SettingsSectionMessage tone="error" bordered>
-									{error}
-								</SettingsSectionMessage>,
-							]
-						: [row];
 				});
 			}}
 		</SettingsSection>

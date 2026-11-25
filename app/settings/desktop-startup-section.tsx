@@ -1,42 +1,41 @@
-import { cleanup, signal, Text, View } from "nsh";
+import { cleanup, signal } from "nsh";
 import { Application } from "nsh/desktop";
 
+import { AppToaster, showToast } from "../shell/app-toasts";
 import type { DesktopShell } from "../shell/desktop-shell";
 import { t } from "../shell/i18n";
 import { Switch } from "../ui/switch";
 import { SettingsRetryInline, SettingsRow, SettingsSection } from "./layout";
 
 export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
+	const toasts = AppToaster();
 	const enabled = signal<boolean | null>(null);
 	const saving = signal(false);
-	const startupError = signal<
-		"desktop.loadFailed" | "desktop.saveFailed" | null
-	>(null);
-	const closeFailed = signal(false);
+	const loadFailed = signal(false);
 	let alive = true;
 	cleanup(() => {
 		alive = false;
 	});
 	const load = async () => {
-		startupError.set(null);
+		loadFailed.set(false);
 		try {
 			const next = await Application.launchAtLogin();
 			if (alive) enabled.set(next);
 		} catch {
-			if (alive) startupError.set("desktop.loadFailed");
+			if (alive) loadFailed.set(true);
 		}
 	};
 	void load();
 	const change = async (next: boolean) => {
 		if (saving()) return;
 		saving.set(true);
-		startupError.set(null);
 		try {
 			await Application.setLaunchAtLogin(next);
 			const refreshed = await Application.launchAtLogin();
 			if (alive) enabled.set(refreshed);
 		} catch {
-			if (alive) startupError.set("desktop.saveFailed");
+			if (alive)
+				showToast(toasts, { variant: "error", title: t("desktop.saveFailed") });
 		} finally {
 			if (alive) saving.set(false);
 		}
@@ -44,36 +43,32 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 	const changeClose = async (next: boolean) => {
 		const desktop = props.desktop;
 		if (!desktop || desktop.savingClose()) return;
-		closeFailed.set(false);
 		try {
 			await desktop.saveExitOnClose(next);
 		} catch {
-			if (alive) closeFailed.set(true);
+			if (alive)
+				showToast(toasts, {
+					variant: "error",
+					title: t("desktop.closeSaveFailed"),
+				});
 		}
 	};
 	return (
 		<SettingsSection title={t("desktop.startupAndTray")}>
 			<SettingsRow label={t("desktop.autostart")}>
 				{() =>
-					startupError() === "desktop.loadFailed" ? (
+					loadFailed() ? (
 						<SettingsRetryInline
 							message={t("desktop.loadFailed")}
 							onRetry={() => void load()}
 						/>
 					) : (
-						<View class="flex-row flex-wrap items-center gap-2">
-							<Switch
-								testID="settings-launch-at-login"
-								checked={enabled() ?? false}
-								disabled={enabled() === null || saving()}
-								onChange={({ checked }) => void change(checked)}
-							/>
-							{startupError() === "desktop.saveFailed" ? (
-								<Text class="font-sans text-xs text-destructive">
-									{t("desktop.saveFailed")}
-								</Text>
-							) : null}
-						</View>
+						<Switch
+							testID="settings-launch-at-login"
+							checked={enabled() ?? false}
+							disabled={enabled() === null || saving()}
+							onChange={({ checked }) => void change(checked)}
+						/>
 					)
 				}
 			</SettingsRow>
@@ -86,21 +81,14 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 								onRetry={() => void props.desktop?.load()}
 							/>
 						) : (
-							<View class="flex-row flex-wrap items-center gap-2">
-								<Switch
-									testID="settings-exit-on-close"
-									checked={props.desktop?.settings()?.exitOnClose ?? false}
-									disabled={
-										!props.desktop?.settings() || props.desktop.savingClose()
-									}
-									onChange={({ checked }) => void changeClose(checked)}
-								/>
-								{closeFailed() ? (
-									<Text class="font-sans text-xs text-destructive">
-										{t("desktop.closeSaveFailed")}
-									</Text>
-								) : null}
-							</View>
+							<Switch
+								testID="settings-exit-on-close"
+								checked={props.desktop?.settings()?.exitOnClose ?? false}
+								disabled={
+									!props.desktop?.settings() || props.desktop.savingClose()
+								}
+								onChange={({ checked }) => void changeClose(checked)}
+							/>
 						)
 					}
 				</SettingsRow>

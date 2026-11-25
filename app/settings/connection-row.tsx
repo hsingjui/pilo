@@ -46,7 +46,7 @@ function rowButton(button: {
 	);
 }
 
-/** One connection list row: icon, name, description, actions, result line. */
+/** One connection list row: icon, name, description and actions. */
 export function ConnectionRow(props: {
 	connection: Connection;
 	label: string;
@@ -55,7 +55,6 @@ export function ConnectionRow(props: {
 	shownInHome: boolean;
 	testing: Accessor<boolean>;
 	busy: Accessor<boolean>;
-	result: Accessor<string | undefined>;
 	onToggleShown: (shown: boolean) => void;
 	onTest: () => void;
 	onConfigure: () => void;
@@ -135,16 +134,6 @@ export function ConnectionRow(props: {
 						: null}
 				</View>
 			</View>
-			{() =>
-				props.result() ? (
-					<Text
-						testID={`settings-conn-result-${connection.id}`}
-						class="font-sans mt-1.5 text-[11px] text-muted-foreground"
-					>
-						{props.result()}
-					</Text>
-				) : null
-			}
 		</View>
 	);
 }

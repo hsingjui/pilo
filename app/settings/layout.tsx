@@ -153,7 +153,7 @@ export function SettingsRow(props: {
 						{controls()}
 					</>
 				) : (
-					<View class="flex-row items-center gap-4">
+					<View class="flex-row items-center justify-between gap-4">
 						{label}
 						{controls()}
 					</View>

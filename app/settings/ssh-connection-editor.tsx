@@ -39,7 +39,7 @@ import type { ConnectionsClient } from "./connections-pane";
 export function createSshEditor(deps: {
 	client: ConnectionsClient;
 	refresh: () => Promise<void>;
-	setResult: (id: string, text: string) => void;
+	toasts: AppToasts;
 }) {
 	const client = deps.client;
 	let sshDraft: SshDraft | null = null;
@@ -50,7 +50,6 @@ export function createSshEditor(deps: {
 	const formRev = signal(0);
 	const busy = signal(false);
 	const testing = signal(false);
-	const status = signal<string | null>(null);
 	const fieldErrorState = signal<SshFieldError | null>(null);
 	const passwordRevealed = signal(false);
 	/** `undefined` while loading, `null` when the agent could not be read. */
@@ -68,7 +67,6 @@ export function createSshEditor(deps: {
 
 	const openEdit = async (info: SshConnectionInfo) => {
 		fieldErrorState.set(null);
-		status.set(null);
 		passwordRevealed.set(false);
 		const form = draftFromInfo(info);
 		/* 编辑时直接回填已保存的密码，无需在输入框里提示“已保存”。 */
@@ -86,7 +84,6 @@ export function createSshEditor(deps: {
 
 	const openNew = () => {
 		fieldErrorState.set(null);
-		status.set(null);
 		passwordRevealed.set(false);
 		sshDraft = emptyDraft();
 		open.set(true);
@@ -134,7 +131,7 @@ export function createSshEditor(deps: {
 			: t("connection.sshAgentEmpty");
 	};
 
-	const save = async () => {
+	const save = async (toasts: AppToasts) => {
 		const base = sshDraft;
 		if (!base || !base.name.trim() || !base.hostname.trim()) return;
 		if (
@@ -157,7 +154,6 @@ export function createSshEditor(deps: {
 		}
 		const draft = { ...base, agentPublicKey: agentPublicKey() };
 		busy.set(true);
-		status.set(null);
 		try {
 			await client.saveSshConnection(
 				connectionFromDraft(draft),
@@ -168,15 +164,15 @@ export function createSshEditor(deps: {
 			);
 			close();
 			await deps.refresh();
-			deps.setResult(draft.id, t("connection.sshSaved"));
+			deps.toasts.show({ variant: "success", title: t("connection.sshSaved") });
 		} catch (caught) {
-			status.set(
-				`${t("connection.sshSaveFailed")} · ${
-					String(caught).includes("SSH_LOCAL_PI_RESOURCES_BUSY")
-						? t("connection.localPiResourcesBusy")
-						: userErrorMessage(caught)
-				}`,
-			);
+			(sshDraft === base ? toasts : deps.toasts).show({
+				variant: "error",
+				title: t("connection.sshSaveFailed"),
+				description: String(caught).includes("SSH_LOCAL_PI_RESOURCES_BUSY")
+					? t("connection.localPiResourcesBusy")
+					: userErrorMessage(caught),
+			});
 		} finally {
 			busy.set(false);
 		}
@@ -208,7 +204,6 @@ export function createSshEditor(deps: {
 		formRev,
 		busy,
 		testing,
-		status,
 		fieldErrorState,
 		passwordRevealed,
 		agentIdentities,
@@ -574,16 +569,6 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						)
 					: null;
 			}}
-			{() =>
-				editor.status() ? (
-					<Text
-						testID="settings-ssh-error"
-						class="font-sans text-xs text-muted-foreground"
-					>
-						{editor.status()}
-					</Text>
-				) : null
-			}
 			{() => {
 				void editor.formRev();
 				const busyNow = editor.busy();
@@ -622,7 +607,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 									!draft.name.trim() ||
 									!draft.hostname.trim()
 								}
-								onPress={() => void editor.save()}
+								onPress={() => void editor.save(toasts)}
 							>
 								<Text class="font-sans">
 									{busyNow ? t("common.saving") : t("common.save")}

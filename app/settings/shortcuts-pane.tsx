@@ -27,6 +27,7 @@ import type { PreferencePatch } from "@shared/host-preferences-types";
 import { isReservedSendShortcut, nshAppShortcut } from "../shortcuts";
 import type { AppState } from "../state/app-state";
 import type { DesktopShell } from "../shell/desktop-shell";
+import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
 import { styleVar } from "../ui/theme-style";
@@ -117,14 +118,13 @@ function keyEventParts(event: {
 }
 
 type ShortcutNotice = {
-	kind: "modifier" | "conflict" | "default" | "unavailable" | "save";
+	kind: "modifier" | "conflict" | "default" | "unavailable";
 	label?: string;
 };
 
 /** The validation feedback the WebUI raises as a toast; nsh surfaces it inline. */
 function noticeText(notice: ShortcutNotice): string {
 	if (notice.kind === "unavailable") return t("shortcuts.unavailable");
-	if (notice.kind === "save") return t("settings.preferencesSaveFailed");
 	if (notice.kind === "modifier")
 		return `${t("shortcuts.modifierRequired")} ${t("shortcuts.modifierDescription")}`;
 	if (notice.kind === "default")
@@ -205,6 +205,7 @@ export function ShortcutsPane(props: {
 	client: Pick<SettingsClient, "savePreferences">;
 	desktop?: DesktopShell;
 }) {
+	const toasts = AppToaster();
 	const map = () => props.state().preferences?.values.keyboardShortcuts;
 	const sendShortcut = () =>
 		props.state().preferences?.values.sendMessageShortcut ?? "enter";
@@ -221,7 +222,10 @@ export function ShortcutsPane(props: {
 		notice.set(null);
 		void props.client.savePreferences(patch).catch((error: unknown) => {
 			console.error(t("settings.preferencesSaveFailed"), error);
-			notice.set({ kind: "save" });
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.preferencesSaveFailed"),
+			});
 		});
 	};
 
@@ -421,21 +425,23 @@ function GlobalShortcutSetting(props: {
 	recording: Accessor<boolean>;
 	onRecordingChange: (recording: boolean) => void;
 }) {
+	const toasts = AppToaster();
 	const saving = () => props.desktop.savingShortcut();
-	const failed = signal(false);
 	const notice = signal<ShortcutNotice | null>(null);
 	const saved = () => props.desktop.settings()?.showShortcut ?? "";
 
 	const save = async (shortcut: string) => {
 		if (saving() || !props.desktop.settings() || !shortcut) return;
-		failed.set(false);
 		notice.set(null);
 		try {
 			await props.desktop.saveShortcut(shortcut);
 			props.onRecordingChange(false);
 		} catch (error) {
 			console.warn("Failed to save Pilo global shortcut", error);
-			failed.set(true);
+			showToast(toasts, {
+				variant: "error",
+				title: t("desktop.shortcutSaveFailed"),
+			});
 		}
 	};
 
@@ -502,11 +508,7 @@ function GlobalShortcutSetting(props: {
 								{noticeText(notice()!)}
 							</SettingsSectionMessage>
 						) : null}
-						{failed() ? (
-							<SettingsSectionMessage tone="error">
-								{t("desktop.shortcutSaveFailed")}
-							</SettingsSectionMessage>
-						) : !props.desktop.registered() ? (
+						{!props.desktop.registered() ? (
 							<SettingsRetryInline
 								class="px-3 py-2"
 								fill

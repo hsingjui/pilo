@@ -7,6 +7,7 @@ import type {
 import { userErrorMessage } from "@shared/app-error";
 import type { NextPromptSettings } from "@shared/next-prompt-types";
 import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
+import { AppToaster, showToast } from "../shell/app-toasts";
 import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import { Switch } from "../ui/switch";
@@ -35,6 +36,7 @@ export function ConnectionPromptSettingsPane(props: {
 	) => Promise<PromptSettings>;
 	readEvent: (event: PiloRuntimeEvent) => PromptSettings | undefined;
 }) {
+	const toasts = AppToaster();
 	const lists = new ConnectionModelLists(props.client);
 	const connections = signal<Connection[]>([]);
 	const catalogError = signal<string | null>(null);
@@ -102,7 +104,12 @@ export function ConnectionPromptSettingsPane(props: {
 				setError(connectionId, null);
 			})
 			.catch((error: unknown) => {
-				if (alive) setError(connectionId, userErrorMessage(error));
+				if (alive)
+					showToast(toasts, {
+						variant: "error",
+						title: t("settings.preferencesSaveFailed"),
+						description: userErrorMessage(error),
+					});
 			})
 			.finally(() => {
 				if (alive) busy.set({ ...busy(), [connectionId]: false });

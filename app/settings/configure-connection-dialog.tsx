@@ -3,6 +3,7 @@ import { signal, Text, View } from "nsh";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
 import { AppToasts, AppToastStack } from "../shell/app-toasts";
+import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -23,8 +24,7 @@ import type { ConnectionsClient } from "./connections-pane";
 export function createConfigureDialog(deps: {
 	client: ConnectionsClient;
 	refresh: () => Promise<void>;
-	setResult: (id: string, text: string) => void;
-	connectionLabel: (connection: Connection) => string;
+	toasts: AppToasts;
 }) {
 	const client = deps.client;
 	let configureDraft: ConfigureDraft | null = null;
@@ -34,11 +34,9 @@ export function createConfigureDialog(deps: {
 	/** Re-read the draft for the probed Pi path. */
 	const piRev = signal(0);
 	const probing = signal(false);
-	const error = signal<string | null>(null);
 	const busy = signal(false);
 
 	const openSettings = (connection: Connection) => {
-		error.set(null);
 		configureDraft = {
 			connection,
 			name: connection.name,
@@ -52,11 +50,10 @@ export function createConfigureDialog(deps: {
 		open.set(false);
 	};
 
-	const save = async () => {
+	const save = async (toasts: AppToasts) => {
 		const draft = configureDraft;
 		if (!draft?.name.trim()) return;
 		busy.set(true);
-		error.set(null);
 		try {
 			await client.updateConnectionSettings(
 				draft.connection.id,
@@ -65,9 +62,16 @@ export function createConfigureDialog(deps: {
 			);
 			close();
 			await deps.refresh();
-			deps.setResult(draft.connection.id, t("connection.connectionSaved"));
+			deps.toasts.show({
+				variant: "success",
+				title: t("connection.connectionSaved"),
+			});
 		} catch (caught) {
-			error.set(`${t("connection.saveFailed")} · ${userErrorMessage(caught)}`);
+			(configureDraft === draft ? toasts : deps.toasts).show({
+				variant: "error",
+				title: t("connection.saveFailed"),
+				description: userErrorMessage(caught),
+			});
 		} finally {
 			busy.set(false);
 		}
@@ -89,7 +93,7 @@ export function createConfigureDialog(deps: {
 			toasts.show({
 				variant: "success",
 				title: t("connection.piAvailable", {
-					name: deps.connectionLabel(draft.connection),
+					name: connectionLabel(draft.connection),
 				}),
 				description: [info.executable, info.version]
 					.filter(Boolean)
@@ -99,7 +103,7 @@ export function createConfigureDialog(deps: {
 			toasts.show({
 				variant: "error",
 				title: t("connection.piUnavailable", {
-					name: deps.connectionLabel(draft.connection),
+					name: connectionLabel(draft.connection),
 				}),
 				description: userErrorMessage(caught),
 			});
@@ -114,7 +118,6 @@ export function createConfigureDialog(deps: {
 		formRev,
 		piRev,
 		probing,
-		error,
 		busy,
 		openSettings,
 		close,
@@ -212,16 +215,6 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 							</View>,
 						);
 			}}
-			{() =>
-				dialog.error() ? (
-					<Text
-						testID="settings-conn-configure-error"
-						class="font-sans text-[11px] text-destructive"
-					>
-						{dialog.error()}
-					</Text>
-				) : null
-			}
 			{() => {
 				void dialog.formRev();
 				return (
@@ -239,7 +232,7 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 							testID="settings-conn-save"
 							size="sm"
 							disabled={dialog.busy() || !draft.name.trim()}
-							onPress={() => void dialog.save()}
+							onPress={() => void dialog.save(toasts)}
 						>
 							<Text class="font-sans">
 								{dialog.busy() ? t("common.saving") : t("common.save")}

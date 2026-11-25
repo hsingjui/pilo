@@ -2,6 +2,7 @@ import { platform, Scroll, signal, Text, token, View } from "nsh";
 
 import type { WslDistribution } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
+import { AppToasts, AppToastStack } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -17,16 +18,19 @@ const IS_WINDOWS = platform.os === "windows";
 export function createWslPicker(deps: {
 	client: ConnectionsClient;
 	refresh: () => Promise<void>;
-	setResult: (id: string, text: string) => void;
+	toasts: AppToasts;
 	addedDistros: () => Set<string>;
 }) {
 	const client = deps.client;
 	const open = signal(false);
 	/** `null` until the platform reports the distro list. */
 	const distros = signal<WslDistribution[] | null>(null);
+	const loadError = signal<string | null>(null);
 	const busy = signal(false);
+	let pickerRevision = 0;
 
 	const openPicker = () => {
+		pickerRevision += 1;
 		open.set(true);
 		if (IS_WINDOWS && distros() === null) {
 			client
@@ -34,15 +38,15 @@ export function createWslPicker(deps: {
 				.then((items) => distros.set(items))
 				.catch((caught) => {
 					distros.set([]);
-					deps.setResult(
-						"wsl-add",
-						`${t("connection.loadWslFailed")} · ${userErrorMessage(caught)}`,
-					);
+					loadError.set(userErrorMessage(caught));
 				});
 		}
 	};
 
-	const add = async (distro: string) => {
+	const add = async (distro: string, dialogToasts: AppToasts) => {
+		const revision = pickerRevision;
+		const toasts = () =>
+			open() && revision === pickerRevision ? dialogToasts : deps.toasts;
 		busy.set(true);
 		try {
 			await client.saveWslConnection({
@@ -51,15 +55,16 @@ export function createWslPicker(deps: {
 				kind: { type: "wsl", distro },
 			});
 			await deps.refresh();
-			deps.setResult(
-				`wsl:${distro}`,
-				t("connection.wslAdded", { name: distro }),
-			);
+			toasts().show({
+				variant: "success",
+				title: t("connection.wslAdded", { name: distro }),
+			});
 		} catch (caught) {
-			deps.setResult(
-				"wsl-add",
-				`${t("connection.wslAddFailed")} · ${userErrorMessage(caught)}`,
-			);
+			toasts().show({
+				variant: "error",
+				title: t("connection.wslAddFailed"),
+				description: userErrorMessage(caught),
+			});
 		} finally {
 			busy.set(false);
 		}
@@ -68,6 +73,7 @@ export function createWslPicker(deps: {
 	return {
 		open,
 		distros,
+		loadError,
 		busy,
 		openPicker,
 		add,
@@ -79,6 +85,7 @@ export type WslPicker = ReturnType<typeof createWslPicker>;
 
 export function WslPickerDialog(props: { picker: WslPicker }) {
 	const picker = props.picker;
+	const toasts = new AppToasts();
 	return (
 		<Dialog
 			testID="settings-wsl-picker"
@@ -97,6 +104,13 @@ export function WslPickerDialog(props: { picker: WslPicker }) {
 				bounces={false}
 			>
 				{() => {
+					const error = picker.loadError();
+					if (error !== null)
+						return (
+							<Text class="font-sans px-3 py-4 text-xs text-destructive">
+								{`${t("connection.loadWslFailed")} · ${error}`}
+							</Text>
+						);
 					const items = picker.distros();
 					return items === null ? (
 						<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
@@ -124,7 +138,7 @@ export function WslPickerDialog(props: { picker: WslPicker }) {
 										variant="outline"
 										size="sm"
 										disabled={picker.busy() || added}
-										onPress={() => void picker.add(distro.name)}
+										onPress={() => void picker.add(distro.name, toasts)}
 									>
 										<Text class="font-sans">
 											{added ? t("common.added") : t("common.add")}
@@ -140,6 +154,7 @@ export function WslPickerDialog(props: { picker: WslPicker }) {
 				accessibilityLabel={t("common.close")}
 				onPress={() => picker.open.set(false)}
 			/>
+			<AppToastStack toasts={toasts} />
 		</Dialog>
 	);
 }
