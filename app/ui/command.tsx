@@ -7,6 +7,7 @@ import {
 import { classNames } from "./class-names";
 import { Foreground } from "./foreground";
 import { Icon } from "./icon";
+import { tactileTransition } from "./motion";
 
 export type {
 	CommandEntry,
@@ -38,6 +39,7 @@ export function Command(props: CommandProps) {
 		"searchClass",
 		"listClass",
 		"itemClass",
+		"itemStyle",
 		"groupClass",
 		"separatorClass",
 		"renderItem",
@@ -68,6 +70,10 @@ export function Command(props: CommandProps) {
 					"group flex-col items-stretch justify-center min-h-(--pilo-command-item-height) rounded-(--pilo-radius-md) px-2.5 py-2 text-sm text-(length:--pilo-ui-text-sm) text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50",
 					local.itemClass,
 				)}
+				itemStyle={[
+					tactileTransition("background-color, color"),
+					local.itemStyle,
+				]}
 				groupClass={classNames(
 					"px-2 py-1.5 text-xs text-(length:--pilo-ui-text-xs) font-medium text-muted-foreground",
 					local.groupClass,

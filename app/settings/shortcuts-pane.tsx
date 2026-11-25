@@ -30,6 +30,7 @@ import type { DesktopShell } from "../shell/desktop-shell";
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
+import { MOTION, tactileTransition } from "../ui/motion";
 import { styleVar } from "../ui/theme-style";
 import type { SettingsClient } from "./settings-dialog";
 import {
@@ -159,6 +160,7 @@ function ShortcutRecorder(props: {
 					? `${SHORTCUT_BOX_RECORDING_CLASS} w-40`
 					: `${SHORTCUT_BOX_IDLE_CLASS} justify-center hover:bg-hover focus-visible:border-ring`
 			} disabled:opacity-50`}
+			style={tactileTransition("background-color, border-color, opacity")}
 			accessibilityLabel={props.label}
 			onPress={() => {
 				if (!props.recording()) props.onStart();

@@ -6,6 +6,7 @@ import {
 import { Icon } from "./icon";
 import { classNames } from "./class-names";
 import { menuRowClass } from "./menu-row";
+import { tactileTransition } from "./motion";
 
 export interface SubmenuProps extends BaseSubmenuProps {
 	label?: string;
@@ -18,7 +19,10 @@ export function Submenu(props: SubmenuProps) {
 			{...rest}
 			trigger={
 				local.trigger ?? (
-					<View class={classNames(menuRowClass, "justify-between")}>
+					<View
+						class={classNames(menuRowClass, "justify-between")}
+						style={tactileTransition("background-color, color")}
+					>
 						<Text class="font-sans">{local.label}</Text>
 						<Icon
 							name="ChevronRight"

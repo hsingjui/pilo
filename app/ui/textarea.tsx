@@ -1,13 +1,20 @@
 import { split } from "nsh";
 import { Input as BaseInput, type InputProps } from "nsh/base";
 import { classNames } from "./class-names";
+import { tactileTransition } from "./motion";
 
 export interface TextareaProps extends Omit<InputProps, "multiline"> {
 	rows?: number;
 }
 
 export function Textarea(props: TextareaProps) {
-	const [local, rest] = split(props, ["rows", "class", "disabled", "readonly"]);
+	const [local, rest] = split(props, [
+		"rows",
+		"class",
+		"style",
+		"disabled",
+		"readonly",
+	]);
 	const rows = () => {
 		const value = Math.floor(local.rows ?? 2);
 		return Number.isFinite(value) && value > 0 ? value : 2;
@@ -23,6 +30,12 @@ export function Textarea(props: TextareaProps) {
 				`h-[${rows() * 20 + 18}px]`,
 				local.class,
 			)}
+			style={[
+				tactileTransition(
+					"border-color, background-color, box-shadow, opacity",
+				),
+				local.style,
+			]}
 		/>
 	);
 }

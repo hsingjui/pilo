@@ -6,6 +6,7 @@ import {
 import { classNames } from "./class-names";
 import { Icon } from "./icon";
 import type { fieldSizes } from "./input";
+import { popupMotionStyles, tactileTransition } from "./motion";
 import { SelectTrigger } from "./select-trigger";
 import { styleVar } from "./theme-style";
 
@@ -42,9 +43,14 @@ export function Select(props: SelectProps) {
 		"value",
 		"defaultValue",
 		"onChange",
+		"open",
+		"defaultOpen",
+		"onOpenChange",
 		"trigger",
 		"popupClass",
 		"popupStyle",
+		"popupStartingStyle",
+		"popupEndingStyle",
 		"listClass",
 		"listStyle",
 		"itemClass",
@@ -55,9 +61,13 @@ export function Select(props: SelectProps) {
 		"size",
 	]);
 	const value = signal(local.defaultValue ?? null);
+	const ownOpen = signal(local.defaultOpen ?? false);
 	const current = () => (local.value === undefined ? value() : local.value);
+	const isOpen = () =>
+		local.open === undefined ? ownOpen() : Boolean(local.open);
 	const title = () =>
 		props.items?.find((item) => item.value === current())?.title;
+	const motion = () => popupMotionStyles();
 	return (
 		<BaseSelect
 			cover={false}
@@ -65,6 +75,12 @@ export function Select(props: SelectProps) {
 			{...rest}
 			class={classNames("min-w-0 max-w-full", local.class)}
 			value={current()}
+			open={local.open}
+			defaultOpen={local.defaultOpen}
+			onOpenChange={(event) => {
+				if (local.open === undefined) ownOpen.set(event.open);
+				local.onOpenChange?.(event);
+			}}
 			onChange={(event) => {
 				value.set(event.value);
 				local.onChange?.(event);
@@ -73,6 +89,7 @@ export function Select(props: SelectProps) {
 				local.trigger ?? (
 					<SelectTrigger
 						size={local.size}
+						open={isOpen()}
 						disabled={props.disabled}
 						value={title()}
 						placeholder={props.placeholder}
@@ -102,7 +119,11 @@ export function Select(props: SelectProps) {
 				"group flex-col items-stretch justify-center min-w-0 min-h-(--pilo-select-item-height) rounded-(--pilo-select-item-radius) px-2 py-1.5 text-sm text-(length:--pilo-ui-text-sm) font-sans focus:bg-hover focus:text-hover-foreground selected:bg-(--pilo-select-checked-background) disabled:opacity-50",
 				local.itemClass,
 			)}
-			itemStyle={[selectItemSpacing(), local.itemStyle]}
+			itemStyle={[
+				selectItemSpacing(),
+				tactileTransition("background-color, color"),
+				local.itemStyle,
+			]}
 			groupClass={classNames(
 				"px-2 py-1.5 text-xs text-(length:--pilo-ui-text-xs) font-medium text-muted-foreground",
 				local.groupClass,
@@ -120,6 +141,7 @@ export function Select(props: SelectProps) {
 							name="Check"
 							size={14}
 							class="shrink-0 opacity-0 group-selected:opacity-100"
+							style={tactileTransition("opacity")}
 							color={token("popover-foreground")}
 						/>
 					</View>

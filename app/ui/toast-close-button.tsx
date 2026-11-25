@@ -5,6 +5,7 @@ import { classNames } from "./class-names";
 import { blurOnPointerPress, focusRingStyle } from "./focus-ring-style";
 import { Foreground } from "./foreground";
 import { Icon } from "./icon";
+import { tactileTransition } from "./motion";
 
 export function ToastCloseButton(props: ButtonProps) {
 	const [local, rest] = split(props, [
@@ -34,6 +35,9 @@ export function ToastCloseButton(props: ButtonProps) {
 						local.class,
 					),
 				})}
+				style={tactileTransition(
+					"color, background-color, border-color, box-shadow, opacity, scale",
+				)}
 				focusVisibleStyle={focusRingStyle(
 					token("ring"),
 					undefined,

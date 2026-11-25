@@ -3,6 +3,7 @@ import { split, token, View, type ViewProps } from "nsh";
 import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
+import { tactileTransition } from "../ui/motion";
 import { ChatDisclosureAction } from "./chat-expansion";
 
 export interface ChatDisclosureRowProps extends Omit<ViewProps, "onPress"> {
@@ -49,6 +50,7 @@ export function ChatDisclosureRow(props: ChatDisclosureRowProps) {
 					local.disabled ? undefined : "hover:bg-hover",
 					local.class,
 				)}
+				style={[tactileTransition("background-color"), rest.style]}
 				focusVisibleStyle={focusRingStyle(token("ring"), undefined, undefined, {
 					width: 2,
 				})}

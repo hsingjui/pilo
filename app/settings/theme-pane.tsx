@@ -13,6 +13,7 @@ import { t } from "../shell/i18n";
 import { classNames } from "../ui/class-names";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
+import { springTransition, tactileTransition } from "../ui/motion";
 import { Select } from "../ui/select";
 import { SettingsRow, SettingsSection } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
@@ -57,9 +58,10 @@ function ThemeOption(props: {
 			selected={props.selected}
 			accessibilityLabel={props.label}
 			class={classNames(
-				"h-(--pilo-button-sm-height) flex-row items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 transition-colors hover:bg-hover focus-visible:outline-hidden",
+				"h-(--pilo-button-sm-height) flex-row items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 hover:bg-hover active:scale-[0.97] focus-visible:outline-hidden",
 				props.selected && "border-ring",
 			)}
+			style={tactileTransition("background-color, border-color, scale")}
 			focusVisibleStyle={focusRingStyle(token("ring"))}
 			onPress={props.onSelect}
 		>

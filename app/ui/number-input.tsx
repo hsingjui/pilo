@@ -1,10 +1,12 @@
-import { split, Text, View, type ViewProps } from "nsh";
+import { split, Text, token, View, type ViewProps } from "nsh";
 import {
 	NumberInput as BaseNumberInput,
 	type NumberInputProps as BaseNumberInputProps,
 } from "nsh/base";
 import { classNames } from "./class-names";
+import { focusRingStyle } from "./focus-ring-style";
 import type { fieldSizes } from "./input";
+import { tactileTransition } from "./motion";
 import { styleVar } from "./theme-style";
 
 export interface NumberInputProps extends Omit<
@@ -46,7 +48,16 @@ export function NumberInput(props: NumberInputProps) {
 				rest.disabled && "bg-muted opacity-60",
 				local.class,
 			)}
-			style={{ boxShadow: styleVar("pilo-field-shadow") }}
+			style={[
+				tactileTransition(
+					"border-color, background-color, box-shadow, opacity",
+				),
+				{ boxShadow: styleVar("pilo-field-shadow") },
+			]}
+			focusWithinStyle={focusRingStyle(
+				token("ring"),
+				styleVar("pilo-field-shadow"),
+			)}
 			onKeyDown={local.onKeyDown}
 		>
 			<BaseNumberInput

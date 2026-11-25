@@ -3,6 +3,7 @@ import { classNames } from "./class-names";
 import { focusRingStyle } from "./focus-ring-style";
 import { Icon, type IconName } from "./icon";
 import { fieldSizes } from "./input";
+import { chevronRotateStyle, tactileTransition } from "./motion";
 import { styleVar } from "./theme-style";
 
 type SelectTriggerProps = Pick<
@@ -11,6 +12,8 @@ type SelectTriggerProps = Pick<
 > & {
 	value?: string | null;
 	placeholder?: string | null;
+	/** Whether the attached select/popover is currently open. */
+	open?: boolean;
 	/** The trailing icon's name; a ChevronDown when unset. */
 	icon?: IconName;
 	/** The height, as Input's: `sm` for compact rows such as settings. */
@@ -18,6 +21,7 @@ type SelectTriggerProps = Pick<
 };
 
 export function SelectTrigger(props: SelectTriggerProps) {
+	const isChevron = () => !props.icon || props.icon === "ChevronDown";
 	return (
 		<View
 			testID={props.testID}
@@ -29,7 +33,12 @@ export function SelectTrigger(props: SelectTriggerProps) {
 				fieldSizes[props.size ?? "default"],
 				props.class ?? "w-full",
 			)}
-			style={{ boxShadow: styleVar("pilo-field-shadow") }}
+			style={[
+				tactileTransition(
+					"border-color, background-color, box-shadow, opacity",
+				),
+				{ boxShadow: styleVar("pilo-field-shadow") },
+			]}
 			focusVisibleStyle={focusRingStyle(
 				token("ring"),
 				styleVar("pilo-field-shadow"),
@@ -43,10 +52,19 @@ export function SelectTrigger(props: SelectTriggerProps) {
 			>
 				{() => props.value ?? props.placeholder ?? ""}
 			</Text>
-			<Icon
-				name={props.icon ?? "ChevronDown"}
-				color={token("input-foreground")}
-			/>
+			<View
+				class="shrink-0 items-center justify-center"
+				style={
+					isChevron()
+						? chevronRotateStyle(Boolean(props.open), 0, 180)
+						: undefined
+				}
+			>
+				<Icon
+					name={props.icon ?? "ChevronDown"}
+					color={token("input-foreground")}
+				/>
+			</View>
 		</View>
 	);
 }

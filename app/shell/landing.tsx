@@ -17,6 +17,7 @@ import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
+import { chevronRotateStyle, tactileTransition } from "../ui/motion";
 import { Skeleton } from "../ui/skeleton";
 import { displayFontFamily } from "./appearance";
 import { connectionLabel } from "./connection-label";
@@ -65,6 +66,7 @@ export function SessionLanding(
 						layout().narrow ? "text-2xl" : "text-3xl"
 					}`}
 					style={{
+						...tactileTransition("opacity"),
 						fontFamily: displayFontFamily(),
 						opacity: loading ? 0 : 1,
 					}}
@@ -136,6 +138,7 @@ function LandingProjectPicker(props: {
 					class={`min-h-(--pilo-button-sm-height) max-w-full flex-row items-center gap-1.5 rounded-lg px-2 hover:bg-hover focus-visible:outline-hidden ${
 						open() ? "bg-hover" : ""
 					}`}
+					style={tactileTransition("background-color")}
 					focusVisibleStyle={focusRingStyle(token("ring"))}
 					accessibilityLabel={accessibilityLabel()}
 				>
@@ -159,11 +162,16 @@ function LandingProjectPicker(props: {
 							</>
 						);
 					}}
-					<Icon
-						name="ChevronDown"
-						size={14}
-						color={token("muted-foreground")}
-					/>
+					<View
+						class="shrink-0 items-center justify-center"
+						style={chevronRotateStyle(open(), 0, 180)}
+					>
+						<Icon
+							name="ChevronDown"
+							size={14}
+							color={token("muted-foreground")}
+						/>
+					</View>
 				</BaseButton>
 			}
 		>

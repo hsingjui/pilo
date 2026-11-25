@@ -1,5 +1,6 @@
 import { View } from "nsh";
 import { Icon } from "./icon";
+import { springTransition } from "./motion";
 
 /**
  * A trailing check slot for a menu row that hides MenuItem's leading
@@ -8,8 +9,16 @@ import { Icon } from "./icon";
  */
 export function MenuCheck(props: { checked: () => boolean }) {
 	return (
-		<View class="size-4 shrink-0 items-center justify-center">
-			{() => (props.checked() ? <Icon name="Check" size={14} /> : null)}
+		<View
+			class="size-4 shrink-0 items-center justify-center"
+			style={[
+				springTransition("opacity, transform", "crisp"),
+				props.checked()
+					? { opacity: 1, transform: [{ scale: 1 }] }
+					: { opacity: 0, transform: [{ scale: 0.7 }] },
+			]}
+		>
+			<Icon name="Check" size={14} />
 		</View>
 	);
 }

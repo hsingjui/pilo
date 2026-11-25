@@ -3,6 +3,7 @@ import { type JSX, signal, Text, token, View } from "nsh";
 import { Button } from "./button";
 import { classNames } from "./class-names";
 import { Icon } from "./icon";
+import { Spinner } from "./spinner";
 
 type StateText = string | (() => string);
 
@@ -127,6 +128,7 @@ export function ErrorState(
 						disabled={retrying()}
 						onPress={() => void retry()}
 					>
+						{() => (retrying() ? <Spinner size={14} /> : null)}
 						<Text class="font-sans">{props.retryLabel ?? "Retry"}</Text>
 					</Button>
 				) : undefined

@@ -5,6 +5,7 @@ import {
 } from "nsh/base";
 import { styleVar } from "./theme-style";
 import { focusRingStyle } from "./focus-ring-style";
+import { tactileTransition } from "./motion";
 
 /** Single-line field heights: `sm` matches Button's `sm`, for compact rows such as settings. */
 export const fieldSizes = {
@@ -60,6 +61,9 @@ export function Input(props: InputProps) {
 				.filter(Boolean)
 				.join(" ")}
 			style={[
+				tactileTransition(
+					"border-color, background-color, box-shadow, opacity",
+				),
 				{ boxShadow: styleVar("pilo-field-shadow") },
 				windowsMonoInputStyle(local.class),
 				local.style,

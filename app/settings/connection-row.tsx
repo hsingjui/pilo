@@ -3,6 +3,7 @@ import { type Accessor, type JSX, Text, token, View } from "nsh";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
+import { tactileTransition } from "../ui/motion";
 import { Spinner } from "../ui/spinner";
 import { SettingsIconButton } from "./layout";
 
@@ -64,7 +65,10 @@ export function ConnectionRow(props: {
 	const connection = props.connection;
 	const rowBusy = () => props.busy() || props.testing();
 	return (
-		<View class="border-b border-border/60 px-3 py-2.5 hover:bg-hover/30 last:border-b-0">
+		<View
+			class="border-b border-border/60 px-3 py-2.5 hover:bg-hover/30 last:border-b-0"
+			style={tactileTransition("background-color")}
+		>
 			<View class="flex-row items-center gap-2.5">
 				<View class="size-6 shrink-0 items-center justify-center">
 					{connectionIcon(connection)}

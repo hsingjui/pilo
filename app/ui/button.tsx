@@ -7,6 +7,7 @@ import { styleVar } from "./theme-style";
 import { Foreground } from "./foreground";
 import { classNames } from "./class-names";
 import { blurOnPointerPress, focusRingStyle } from "./focus-ring-style";
+import { tactileTransition } from "./motion";
 
 const variants = {
 	default: "bg-primary text-primary-foreground hover:bg-button-hover",
@@ -45,7 +46,7 @@ export function buttonVariants(
 	props: Pick<ButtonProps, "variant" | "size" | "class"> = {},
 ) {
 	return classNames(
-		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm text-(length:--pilo-ui-text-sm) font-medium font-sans text-foreground transition-[color,background-color,border-color,scale] active:scale-[0.96] focus-visible:outline-hidden disabled:opacity-50",
+		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm text-(length:--pilo-ui-text-sm) font-medium font-sans text-foreground active:scale-[0.96] focus-visible:outline-hidden disabled:opacity-50",
 		variants[props.variant ?? "default"],
 		sizes[props.size ?? "default"],
 		props.class,
@@ -80,7 +81,13 @@ export function Button(props: ButtonProps) {
 				ref={pointerBlur.ref}
 				onMouseUp={pointerBlur.onMouseUp}
 				class={buttonVariants(local)}
-				style={[{ boxShadow: shadow(local.variant) }, local.style]}
+				style={[
+					tactileTransition(
+						"color, background-color, border-color, box-shadow, opacity, scale",
+					),
+					{ boxShadow: shadow(local.variant) },
+					local.style,
+				]}
 				focusVisibleStyle={focusRingStyle(
 					token("ring"),
 					shadow(local.variant),

@@ -7,6 +7,7 @@ import { Foreground } from "./foreground";
 import { Icon } from "./icon";
 import { classNames } from "./class-names";
 import { menuRowClass } from "./menu-row";
+import { tactileTransition } from "./motion";
 
 export interface MenuItemProps extends BaseMenuItemProps {
 	icon?: JSX.Element;
@@ -17,12 +18,14 @@ export interface MenuItemProps extends BaseMenuItemProps {
 export function MenuItem(props: MenuItemProps) {
 	const [local, rest] = split(props, [
 		"class",
+		"style",
 		"children",
 		"icon",
 		"shortcut",
 		"variant",
 		"indicator",
 		"indicatorClass",
+		"indicatorStyle",
 	]);
 	const foreground = () =>
 		token(local.variant === "destructive" ? "destructive" : "foreground");
@@ -40,10 +43,12 @@ export function MenuItem(props: MenuItemProps) {
 						"text-destructive hover:text-destructive focus:text-destructive hover:bg-destructive/10 focus:bg-destructive/10",
 					local.class,
 				)}
+				style={[tactileTransition("background-color, color"), local.style]}
 				indicatorClass={classNames(
 					"size-3.5 opacity-0 checked:opacity-100",
 					local.indicatorClass,
 				)}
+				indicatorStyle={[tactileTransition("opacity"), local.indicatorStyle]}
 				indicator={local.indicator ?? <Icon name="Check" size={14} />}
 			>
 				{local.icon ? (

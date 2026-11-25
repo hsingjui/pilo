@@ -4,6 +4,7 @@ import type { ChatTodoItem, ChatTodoStatus } from "@shared/chat/chat-todos";
 
 import { t } from "../shell/i18n";
 import { Icon, type IconName } from "../ui/icon";
+import { tactileTransition } from "../ui/motion";
 
 const statusIcons: Record<ChatTodoStatus, IconName> = {
 	pending: "Circle",
@@ -57,6 +58,7 @@ export function ChatTodoList(props: {
 									? "min-w-0 flex-1 font-sans text-xs leading-snug text-muted-foreground line-through"
 									: "min-w-0 flex-1 font-sans text-xs leading-snug text-foreground"
 							}
+							style={tactileTransition("color, opacity")}
 						>
 							{() => item().text}
 						</Text>

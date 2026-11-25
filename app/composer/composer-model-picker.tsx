@@ -24,8 +24,11 @@ import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { MenuCheck } from "../ui/menu-check";
 import { MenuItem } from "../ui/menu-item";
-import { scrollbarLook } from "../ui/scrollbar";
+import { tactileTransition } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
+import { Tab } from "../ui/tab";
+import { Tabs } from "../ui/tabs";
 import { styleVar } from "../ui/theme-style";
 
 export interface ComposerModelPickerProps {
@@ -311,20 +314,17 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 	const browsing = () => (
 		<>
 			<View class="flex-row items-center gap-2 p-1 pb-2">
-				<View class="min-w-0 flex-1 flex-row gap-0.5 rounded-(--pilo-radius-md) bg-muted p-0.5">
+				<Tabs
+					orientation="horizontal"
+					class="h-auto min-w-0 flex-1 gap-0.5 rounded-(--pilo-radius-md) bg-muted p-0.5"
+					indicatorClass="inset-y-0.5 rounded-(--pilo-radius-sm) bg-popover"
+					indicatorStyle={{ boxShadow: styleVar("pilo-shadow-xs") }}
+				>
 					{(["scope", "all"] as const).map((option) => (
-						<Button
+						<Tab
 							testID={`run-config-view:${option}`}
-							variant="ghost"
-							size="sm"
-							class={classNames(
-								"h-7 min-w-0 flex-1 rounded-[max(0px,calc(var(--pilo-radius-md)-0.125rem))] px-3",
-								view() === option && "bg-popover hover:bg-popover",
-							)}
-							style={{
-								boxShadow:
-									view() === option ? styleVar("pilo-shadow-xs") : undefined,
-							}}
+							class="h-7 min-w-0 flex-1 rounded-(--pilo-radius-sm) px-3 py-0"
+							style={tactileTransition("color")}
 							selected={view() === option}
 							onPress={() => view.set(option)}
 						>
@@ -342,9 +342,9 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 										: t("chat.allModels")
 								}
 							</Text>
-						</Button>
+						</Tab>
 					))}
-				</View>
+				</Tabs>
 				{refreshButton()}
 			</View>
 			{searchField()}
@@ -354,7 +354,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 				class="max-h-56 min-h-0"
 				contentClass="gap-1 pb-1"
 				bounces={false}
-				scrollbar={{ vertical: scrollbarLook() }}
+				scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 			>
 				{() => (showModels() ? visibleModels().map(modelRow) : null)}
 				{() =>

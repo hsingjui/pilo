@@ -1,5 +1,6 @@
 import { View } from "nsh";
 import { Icon } from "./icon";
+import { tactileTransition } from "./motion";
 
 /** The ✕ in a dialog's top-right corner, as React's DialogContent close button; callers pass the label. */
 export function DialogClose(props: {
@@ -11,7 +12,8 @@ export function DialogClose(props: {
 		<View
 			testID={props.testID}
 			accessibilityLabel={props.accessibilityLabel}
-			class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100"
+			class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100 active:scale-[0.94]"
+			style={tactileTransition("opacity, scale")}
 			onPress={() => props.onPress()}
 		>
 			<Icon name="X" size={16} />
