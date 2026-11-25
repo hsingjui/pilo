@@ -4,6 +4,7 @@ import {
 	computed,
 	effect,
 	openUrl as defaultOpenUrl,
+	platform,
 	signal,
 	untracked,
 } from "nsh";
@@ -16,6 +17,7 @@ import {
 	type UpdateCheckOptions,
 	type UpdateProgress,
 } from "nsh/updater";
+import process from "process";
 
 import { userErrorMessage } from "@shared/app-error";
 import { appLocale, t } from "./i18n";
@@ -222,7 +224,10 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 			availableVersion.set(update.version);
 			releaseNotes.set(update.notes ?? null);
 			updateUrl.set(update.url);
-			canInstall.set(update.canInstall);
+			// AppImage's extract-and-run directory is writable, but is not the installed image.
+			const isAppImage =
+				platform.os === "linux" && process.env.PILO_APPIMAGE === "1";
+			canInstall.set(update.canInstall && !isAppImage);
 			status.set("available");
 			if (openOnAvailable) dialogOpen.set(true);
 		} catch (caught) {
@@ -262,7 +267,8 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 		const version = availableVersion();
 		if (!version || checking || installing) return;
 		if (!canInstall()) {
-			const url = updateUrl() ?? releasePageUrl(version);
+			// nsh's url is the update archive; read-only installs (deb, rpm, AppImage) need their own package.
+			const url = releasePageUrl(version);
 			try {
 				await updater.openUrl(url);
 			} catch (caught) {

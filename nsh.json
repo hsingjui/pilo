@@ -33,6 +33,7 @@
 		"picker": true,
 		"notifications": true,
 		"statusBar": true,
+		"process": { "env": ["PILO_APPIMAGE"] },
 		"network": {
 			"http": [
 				{

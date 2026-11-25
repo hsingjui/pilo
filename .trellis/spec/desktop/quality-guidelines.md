@@ -16,6 +16,7 @@
 - **失败条件**：版本文件不一致、tag 不匹配、`dist/index.html` 或任一运行时文件缺失、发布或更新签名密钥缺失或签名失败时，不产出 Release 草稿。
 - **发布签名**：手动构建只上传各平台包，不生成 `.sig`；tag 构建在创建草稿前用原 Tauri 签名密钥给每个最终下载包生成同名 `.sig`。这些签名用于下载验签，不替代 macOS 应用的 ad hoc 签名。旧 Tauri 用户手动安装一次 nsh 版，不提供旧版更新清单。
 - **nsh 更新**：同一份注入了 `NSH_UPDATE_PUBLIC_KEY` 和 GitHub 更新源的 `nsh.json` 用于打包及生成清单。用 `NSH_UPDATE_PRIVATE_KEY` 签 `latest.json.sig`；清单只引用最终的 Windows 便携 ZIP、macOS `.app` tarball 和 Linux tarball，不引用安装器或 DMG。三个更新包的文件名用不带 `v` 的版本（如 `Pilo-0.4.1-linux-x86_64.tar.gz`），下载基址用带 `v` 的 tag。否则 `nsh update-manifest` 无法解析包名。默认更新源不提供草稿或预发行版本。
+- **Linux AppImage**：发布流程固定 `appimagetool` 和 Type 2 runtime 的版本及 SHA-256，任一校验失败即停止打包；用 `--runtime-file` 传入已校验的 runtime，不允许工具自行下载。`AppRun` 设置 `PILO_APPIMAGE=1`，通过 `nsh.json` 的 `capabilities.process.env` 提供给桌面更新逻辑。挂载或 `--appimage-extract-and-run` 启动时，发现新版本都只打开 Release 页面，不下载或原地替换；不能依赖目录不可写来识别 AppImage。普通 tarball 不设此标记，保留 nsh 的更新判断。
 - **Windows 更新布局**：nsh 会替换可执行文件所在目录。Inno Setup 将应用文件放在 `pilo-app` 子目录，卸载器留在父目录。更新顺序是 `downloadUpdate()` → `installOnQuit()` → 等待 `client.shutdown()` → `Application.restart()`；暂存或关闭 Host 失败时不继续重启。在有本地会话的 Windows 安装版上确认重启后已换成新版。
 - **更新说明与重试**：桌面 JS 只获准对 `https://api.github.com/repos/hsingjui/pilo/releases/tags/` 发 `GET`；失败时仍显示清单提供的说明。重新检查更新先关闭旧弹窗，再清空旧版本；只有找到更新才重新打开，避免无弹窗时仍禁用快捷键。
 - **验收**：检查安装或解压后的应用能启动 Local、发布 Remote WebUI，并从安装版验证局域网 SSH。macOS 确认最终 `Info.plist` 含 `NSLocalNetworkUsageDescription`，签名标识为 `app.hsingjui.pilo`；只有 Rust 链接器临时签名时，局域网授权记录可能无法匹配，表现为终端能连而应用报 `No route to host`。
