@@ -36,6 +36,7 @@ import { Spinner } from "../app/ui/spinner";
 import { styleVar } from "../app/ui/theme-style";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
 import { MOBILE_TEXT, mobileSelectedRingStyle } from "./mobile-typography";
+import { MobileViewport } from "./mobile-viewport";
 
 export interface MobileDrawerProps {
 	store: AppStore;
@@ -95,6 +96,7 @@ function connectionStatusLabel(state: WebRemoteConnectionState): string {
  */
 export function MobileDrawer(props: MobileDrawerProps) {
 	const { store } = props;
+	const viewport = MobileViewport();
 	const toasts = AppToaster();
 	const mode = signal<DrawerTab>("projects");
 	const sectionOverrides = signal<Record<string, boolean>>({});
@@ -471,7 +473,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									borderTopRightRadius: dockedSidebar() ? 0 : 12,
 									borderBottomRightRadius: dockedSidebar() ? 0 : 12,
 									boxShadow: styleVar("pilo-shadow-popover"),
-									paddingTop: safeArea().top,
+									paddingTop: viewport.safeAreaTop(),
 									paddingBottom: Math.max(8, safeArea().bottom),
 									paddingLeft: safeArea().left,
 									transform: [{ translateX: translateX() }],

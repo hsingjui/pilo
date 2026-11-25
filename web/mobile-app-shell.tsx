@@ -15,6 +15,7 @@ import {
 } from "nsh";
 
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
+import { resolveMobileComposerBottomPadding } from "@shared/mobile-viewport";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import {
@@ -82,6 +83,7 @@ import {
 	MobileTextareaComposer,
 } from "./mobile-textarea-composer";
 import { MOBILE_TEXT } from "./mobile-typography";
+import { MobileViewport } from "./mobile-viewport";
 
 export { MobileAuthRequiredView } from "./mobile-auth-required-view";
 
@@ -352,11 +354,15 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		onPanResponderTerminationRequest: () => false,
 	});
 
-	const composerBottomPadding = computed(() => {
-		const kb = keyboardFrame().height;
-		if (kb > 0) return kb + 8;
-		return Math.max(16, safeArea().bottom + 8);
-	});
+	const viewport = MobileViewport();
+	const composerBottomPadding = computed(() =>
+		resolveMobileComposerBottomPadding({
+			managed: viewport.managed(),
+			keyboardOpen: viewport.keyboardOpen(),
+			keyboardHeight: viewport.managed() ? 0 : keyboardFrame().height,
+			safeAreaBottom: safeArea().bottom,
+		}),
+	);
 
 	const runConfigProps = props.runConfig
 		? {
@@ -654,7 +660,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 							testID="mobile-app"
 							class="relative flex-1 flex-col bg-background"
 							style={{
-								paddingTop: safeArea().top,
+								paddingTop: viewport.safeAreaTop(),
 								paddingLeft: safeArea().left,
 								paddingRight: safeArea().right,
 							}}

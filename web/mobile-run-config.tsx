@@ -16,6 +16,7 @@ import {
 import { Button as BaseButton } from "nsh/base";
 
 import type { PiModel } from "@shared/api/pi-runtime-types";
+import { resolveMobileSheetMaxHeight } from "@shared/mobile-viewport";
 import {
 	piModelsMatch,
 	piThinkingLevelLabel,
@@ -34,6 +35,7 @@ import { Skeleton } from "../app/ui/skeleton";
 import { Spinner } from "../app/ui/spinner";
 import { styleVar } from "../app/ui/theme-style";
 import { MOBILE_TEXT } from "./mobile-typography";
+import { MobileViewport } from "./mobile-viewport";
 
 function identity(provider: string, id: string) {
 	return JSON.stringify([provider, id]);
@@ -144,12 +146,21 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 		);
 	};
 
+	const viewport = MobileViewport();
 	const narrowToolbar = computed(() => props.toolbarWidth() < 384);
 	const sheetMaxHeight = computed(() =>
-		Math.max(320, Math.round(windowSize().height * 0.85)),
+		resolveMobileSheetMaxHeight(viewport.availableHeight()),
+	);
+	const sheetMarginBottom = computed(() =>
+		viewport.managed() ? 0 : keyboardFrame().height,
+	);
+	const sheetPaddingBottom = computed(() =>
+		viewport.managed() && viewport.keyboardOpen()
+			? 12
+			: Math.max(12, safeArea().bottom),
 	);
 	const listMaxHeight = computed(() =>
-		Math.min(256, Math.max(140, Math.round(windowSize().height * 0.35))),
+		Math.min(256, Math.max(140, Math.round(viewport.availableHeight() * 0.35))),
 	);
 	const reasoningGridColumns = computed(() =>
 		windowSize().width >= 300 ? "repeat(4, 1fr)" : "repeat(2, 1fr)",
@@ -384,20 +395,20 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 							/>
 							<View
 								testID="mobile-run-config-sheet"
-								class="relative w-full max-w-lg self-center overflow-hidden border-t border-border/70 bg-popover"
+								class="relative min-h-0 w-full max-w-lg shrink self-center overflow-hidden border-t border-border/70 bg-popover"
 								style={{
-									marginBottom: keyboardFrame().height,
+									marginBottom: sheetMarginBottom(),
 									maxHeight: sheetMaxHeight(),
 									borderTopLeftRadius: token("pilo-sheet-radius"),
 									borderTopRightRadius: token("pilo-sheet-radius"),
 									boxShadow: styleVar("pilo-shadow-floating"),
-									paddingBottom: Math.max(12, safeArea().bottom),
+									paddingBottom: sheetPaddingBottom(),
 									opacity: progress,
 									transform: [{ translateY: sheetTranslateY }],
 								}}
 							>
 								{/* Sheet header */}
-								<View class="flex-row items-center justify-between pl-4 pr-2 pt-2">
+								<View class="shrink-0 flex-row items-center justify-between pl-4 pr-2 pt-2">
 									<Text
 										class="font-sans font-medium text-popover-foreground"
 										style={MOBILE_TEXT.sm}
@@ -421,152 +432,159 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 									</Button>
 								</View>
 
-								{/* Model picker toolbar */}
-								<View class="flex-row items-center gap-2 px-3 py-2">
-									<View class="flex-row gap-0.5 rounded-[10px] bg-muted/60 p-0.5">
-										{(["scope", "all"] as const).map((option) => (
-											<BaseButton
-												testID={`run-config-view:${option}`}
-												class={classNames(
-													"min-h-11 min-w-20 items-center justify-center rounded-(--pilo-sheet-item-radius) px-3",
-													view() === option && "bg-popover",
-												)}
-												style={{
-													boxShadow:
-														view() === option
-															? styleVar("pilo-shadow-xs")
-															: undefined,
-												}}
-												accessibilityLabel={
-													option === "scope"
-														? t("chat.scopedModels")
-														: t("chat.allModels")
-												}
-												onPress={() => view.set(option)}
-											>
-												<Text
+								<Scroll class="min-h-0 shrink" bounces={false}>
+									{/* Model picker toolbar */}
+									<View class="flex-row items-center gap-2 px-3 py-2">
+										<View class="flex-row gap-0.5 rounded-[10px] bg-muted/60 p-0.5">
+											{(["scope", "all"] as const).map((option) => (
+												<BaseButton
+													testID={`run-config-view:${option}`}
 													class={classNames(
-														"font-sans",
-														view() === option
-															? "text-popover-foreground"
-															: "text-muted-foreground",
+														"min-h-11 min-w-20 items-center justify-center rounded-(--pilo-sheet-item-radius) px-3",
+														view() === option && "bg-popover",
 													)}
-													style={MOBILE_TEXT.sm}
-												>
-													{() =>
+													style={{
+														boxShadow:
+															view() === option
+																? styleVar("pilo-shadow-xs")
+																: undefined,
+													}}
+													accessibilityLabel={
 														option === "scope"
 															? t("chat.scopedModels")
 															: t("chat.allModels")
 													}
-												</Text>
-											</BaseButton>
-										))}
-									</View>
-									<View class="ml-auto shrink-0">{renderRefreshButton()}</View>
-								</View>
-
-								{renderSearchBox()}
-								{renderError}
-								{renderLoading}
-
-								{/* Scrollable model list */}
-								<Scroll
-									class="min-h-0"
-									contentClass="gap-0.5 px-2 pb-2"
-									style={{ maxHeight: listMaxHeight() }}
-									bounces={false}
-								>
-									{() => {
-										const models = showModels() ? visibleModels() : [];
-										return (
-											<>
-												{models.map(renderModelRow)}
-												{!props.loading() &&
-												!listError() &&
-												(!showModels() || models.length === 0)
-													? renderEmpty(
-															!showModels()
-																? t("chat.scopeNotResolved")
-																: search()
-																	? t("chat.noModelMatches")
-																	: view() === "scope"
-																		? t("chat.emptyScope")
-																		: t("chat.noModels"),
-														)
-													: null}
-											</>
-										);
-									}}
-								</Scroll>
-
-								{/* Reasoning level grid */}
-								<View class="border-t border-border/60 px-3 pt-3 pb-1">
-									<View class="mb-2 flex-row items-center gap-2">
-										<Text
-											class="font-sans font-medium text-muted-foreground"
-											style={MOBILE_TEXT.sm}
-										>
-											{() => t("chat.reasoning")}
-										</Text>
-										{() =>
-											thinkingPending() ? (
-												<Spinner size={14} color={token("muted-foreground")} />
-											) : null
-										}
-									</View>
-									{() => {
-										const levels = props.config()?.thinkingLevels ?? [];
-										if (levels.length === 0) {
-											return (
-												<Text
-													class="py-2 font-sans text-muted-foreground"
-													style={MOBILE_TEXT.sm}
+													onPress={() => view.set(option)}
 												>
-													{props.config()?.ready
-														? t("chat.noReasoning")
-														: t("chat.readingReasoning")}
-												</Text>
+													<Text
+														class={classNames(
+															"font-sans",
+															view() === option
+																? "text-popover-foreground"
+																: "text-muted-foreground",
+														)}
+														style={MOBILE_TEXT.sm}
+													>
+														{() =>
+															option === "scope"
+																? t("chat.scopedModels")
+																: t("chat.allModels")
+														}
+													</Text>
+												</BaseButton>
+											))}
+										</View>
+										<View class="ml-auto shrink-0">
+											{renderRefreshButton()}
+										</View>
+									</View>
+
+									{renderSearchBox()}
+									{renderError}
+									{renderLoading}
+
+									{/* Scrollable model list */}
+									<Scroll
+										class="mx-2 min-h-0 shrink-0"
+										contentClass="gap-0.5 pb-2"
+										style={{ maxHeight: listMaxHeight() }}
+										bounces={false}
+									>
+										{() => {
+											const models = showModels() ? visibleModels() : [];
+											return (
+												<>
+													{models.map(renderModelRow)}
+													{!props.loading() &&
+													!listError() &&
+													(!showModels() || models.length === 0)
+														? renderEmpty(
+																!showModels()
+																	? t("chat.scopeNotResolved")
+																	: search()
+																		? t("chat.noModelMatches")
+																		: view() === "scope"
+																			? t("chat.emptyScope")
+																			: t("chat.noModels"),
+															)
+														: null}
+												</>
 											);
-										}
-										return (
-											<View
-												style={{
-													display: "grid",
-													gridTemplateColumns: reasoningGridColumns(),
-													gap: 4,
-												}}
+										}}
+									</Scroll>
+
+									{/* Reasoning level grid */}
+									<View class="border-t border-border/60 px-3 pt-3 pb-1">
+										<View class="mb-2 flex-row items-center gap-2">
+											<Text
+												class="font-sans font-medium text-muted-foreground"
+												style={MOBILE_TEXT.sm}
 											>
-												{levels.map((level) => {
-													const active = () => thinking() === level;
-													return (
-														<Button
-															testID={`run-config-thinking:${level}`}
-															variant={active() ? "secondary" : "ghost"}
-															size="sm"
-															class="min-h-11 w-full rounded-(--pilo-sheet-item-radius) px-2 font-normal"
-															style={{ boxShadow: "none" }}
-															disabled={props.savingScope()}
-															selected={active()}
-															onPress={() => props.onThinking(level)}
-														>
-															<Text
-																class={classNames(
-																	"font-sans",
-																	active()
-																		? "font-medium text-foreground"
-																		: "text-popover-foreground",
-																)}
-																style={MOBILE_TEXT.sm}
+												{() => t("chat.reasoning")}
+											</Text>
+											{() =>
+												thinkingPending() ? (
+													<Spinner
+														size={14}
+														color={token("muted-foreground")}
+													/>
+												) : null
+											}
+										</View>
+										{() => {
+											const levels = props.config()?.thinkingLevels ?? [];
+											if (levels.length === 0) {
+												return (
+													<Text
+														class="py-2 font-sans text-muted-foreground"
+														style={MOBILE_TEXT.sm}
+													>
+														{props.config()?.ready
+															? t("chat.noReasoning")
+															: t("chat.readingReasoning")}
+													</Text>
+												);
+											}
+											return (
+												<View
+													style={{
+														display: "grid",
+														gridTemplateColumns: reasoningGridColumns(),
+														gap: 4,
+													}}
+												>
+													{levels.map((level) => {
+														const active = () => thinking() === level;
+														return (
+															<Button
+																testID={`run-config-thinking:${level}`}
+																variant={active() ? "secondary" : "ghost"}
+																size="sm"
+																class="min-h-11 w-full rounded-(--pilo-sheet-item-radius) px-2 font-normal"
+																style={{ boxShadow: "none" }}
+																disabled={props.savingScope()}
+																selected={active()}
+																onPress={() => props.onThinking(level)}
 															>
-																{piThinkingLevelLabel(level)}
-															</Text>
-														</Button>
-													);
-												})}
-											</View>
-										);
-									}}
-								</View>
+																<Text
+																	class={classNames(
+																		"font-sans",
+																		active()
+																			? "font-medium text-foreground"
+																			: "text-popover-foreground",
+																	)}
+																	style={MOBILE_TEXT.sm}
+																>
+																	{piThinkingLevelLabel(level)}
+																</Text>
+															</Button>
+														);
+													})}
+												</View>
+											);
+										}}
+									</View>
+								</Scroll>
 							</View>
 						</View>
 					</Overlay>

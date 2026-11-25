@@ -14,7 +14,6 @@ import {
 	untracked,
 	View,
 	type ViewRef,
-	windowSize,
 } from "nsh";
 import { Button as BaseButton, Input as BaseInput } from "nsh/base";
 
@@ -49,6 +48,7 @@ import { menuRowClass } from "../app/ui/menu-row";
 import { Skeleton } from "../app/ui/skeleton";
 import { styleVar } from "../app/ui/theme-style";
 import { MobileRunConfig } from "./mobile-run-config";
+import { MobileViewport } from "./mobile-viewport";
 
 const MAX_ROWS = 10;
 const MIN_INPUT_HEIGHT = 48;
@@ -139,6 +139,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const store = props.store;
 	const readingFont = ChatReadingFont();
 	const media = ChatMediaActions();
+	const { availableHeight } = MobileViewport();
 	const surfaceWidth = signal(0);
 	const toolbarWidth = signal(0);
 	const surface = signal<ViewRef | undefined>(undefined);
@@ -298,7 +299,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 		clampInputHeight(
 			state().value && !readOnly() ? contentHeight() : 0,
 			leading(),
-			windowSize().height,
+			availableHeight(),
 		);
 
 	// On phones/tablets, Return always inserts a newline to prevent accidental
@@ -651,7 +652,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 							<Scroll
 								bounces={false}
 								contentClass="gap-1"
-								style={{ maxHeight: Math.min(220, windowSize().height * 0.35) }}
+								style={{ maxHeight: Math.min(220, availableHeight() * 0.35) }}
 							>
 								{() => {
 									const entries = suggestionItems();
