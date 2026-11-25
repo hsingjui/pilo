@@ -1,6 +1,5 @@
 import {
 	type Accessor,
-	Clipboard,
 	computed,
 	effect,
 	keyboardFrame,
@@ -68,6 +67,7 @@ import type { ChatRunConfigStore } from "../app/state/chat-run-config";
 import type { ChatTranscriptStore } from "../app/state/chat-transcript-store";
 import type { ModelCatalogStore } from "../app/state/model-catalog";
 import { Button } from "../app/ui/button";
+import { writeClipboardText } from "../app/ui/clipboard";
 import { Icon } from "../app/ui/icon";
 import { Spinner } from "../app/ui/spinner";
 import { ErrorState } from "../app/ui/state-view";
@@ -259,7 +259,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 	);
 
 	const copyText = (text: string) => {
-		void Clipboard.writeText(text)
+		void writeClipboardText(text)
 			.then(() =>
 				showToast(toasts, { variant: "success", title: t("chat.copied") }),
 			)

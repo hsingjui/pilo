@@ -1,6 +1,5 @@
 import {
 	cleanup,
-	Clipboard,
 	computed,
 	createMotion,
 	reduceMotion,
@@ -9,6 +8,7 @@ import {
 } from "nsh";
 
 import { t } from "../shell/i18n";
+import { writeClipboardText } from "../ui/clipboard";
 import { Icon } from "../ui/icon";
 import { ChatMessageAction } from "./chat-message-action";
 import { chatPx } from "./layout";
@@ -57,7 +57,7 @@ export function ChatCopyButton(props: {
 		const text = props.text();
 		let status: Status;
 		try {
-			await Clipboard.writeText(text);
+			await writeClipboardText(text);
 			status = "chat.copied";
 		} catch {
 			status = "chat.copyFailed";

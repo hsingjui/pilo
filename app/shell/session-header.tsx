@@ -1,4 +1,4 @@
-import { Clipboard, computed, type JSX, signal, Text, token, View } from "nsh";
+import { computed, type JSX, signal, Text, token, View } from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
 import { fileBasename } from "@shared/chat/chat-tool-result";
@@ -15,6 +15,7 @@ import { AppToaster, showToast } from "./app-toasts";
 import { PiLogo } from "./pi-logo";
 import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
+import { writeClipboardText } from "../ui/clipboard";
 import { Dialog } from "../ui/dialog";
 import { DialogDescription } from "../ui/dialog-description";
 import { DialogFooter } from "../ui/dialog-footer";
@@ -469,7 +470,7 @@ function SessionHeaderMenu(props: {
 	const renameOpen = signal(false);
 	const toasts = AppToaster();
 	const copy = (text: string) =>
-		void Clipboard.writeText(text)
+		void writeClipboardText(text)
 			.then(() =>
 				showToast(toasts, { variant: "success", title: t("chat.copied") }),
 			)

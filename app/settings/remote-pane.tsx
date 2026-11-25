@@ -2,7 +2,6 @@ import {
 	cleanup,
 	computed,
 	effect,
-	Clipboard,
 	type InputRef,
 	signal,
 	Text,
@@ -21,6 +20,7 @@ import {
 import { randomId } from "@shared/random-id";
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
+import { writeClipboardText } from "../ui/clipboard";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
@@ -263,7 +263,7 @@ export function RemotePane(props: {
 	const copyToClipboard = async (value: string | null | undefined) => {
 		if (!value) return;
 		try {
-			await Clipboard.writeText(value);
+			await writeClipboardText(value);
 			showToast(toasts, {
 				variant: "success",
 				title: t("settings.remoteLinkCopied"),
