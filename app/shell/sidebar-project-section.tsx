@@ -3,7 +3,10 @@ import {
 	type Bounds,
 	cleanup,
 	computed,
+	createMotion,
+	effect,
 	Overlay,
+	reduceMotion,
 	type Signal,
 	signal,
 	Text,
@@ -12,7 +15,7 @@ import {
 	View,
 	type ViewRef,
 } from "nsh";
-import { Button } from "nsh/base";
+import { Button, Collapsible } from "nsh/base";
 
 import { summarizeProjectSessions } from "@shared/sidebar/session-list";
 import { chatSessionKey } from "@shared/api/chat-session-key";
@@ -24,6 +27,12 @@ import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
+import {
+	chevronRotateStyle,
+	collapsibleRevealProps,
+	MOTION,
+	tactileTransition,
+} from "../ui/motion";
 import { Spinner } from "../ui/spinner";
 import { tooltipStyle } from "../ui/tooltip";
 import { connectionLabel } from "./connection-label";
@@ -104,6 +113,14 @@ export function ProjectSection(props: {
 			? token("sidebar-hover-foreground")
 			: sidebarForeground();
 	};
+	// A project that starts expanded has not read its sessions yet.
+	effect(() => {
+		if (collapsed()) return;
+		const projectId = id();
+		if (!untracked(() => store.state().sessionIndexes[projectId])) {
+			void store.loadSessions(projectId);
+		}
+	});
 	const toggle = () => {
 		const expand = collapsed();
 		void settings.setSectionCollapsed(section(), !expand);
@@ -112,7 +129,7 @@ export function ProjectSection(props: {
 	};
 	const rowClass = () => {
 		const classes = [
-			"group relative w-full min-w-0 flex-row items-center gap-1.5 rounded-md border border-transparent px-2 py-0.5 transition-colors",
+			"group relative w-full min-w-0 flex-row items-center gap-1.5 rounded-md border border-transparent px-2 py-0.5",
 		];
 		if (selected()) {
 			classes.push(
@@ -148,6 +165,7 @@ export function ProjectSection(props: {
 						}}
 						class={rowClass()}
 						style={{
+							...tactileTransition("background-color, border-color"),
 							minHeight: sidebarRowHeight("pilo-sidebar-project-height"),
 						}}
 						focusVisibleStyle={sidebarFocusRing()}
@@ -174,18 +192,21 @@ export function ProjectSection(props: {
 							}
 							onPress={toggle}
 						>
-							<Icon
-								name="Folder"
-								size={14}
-								class="absolute opacity-80 transition-opacity duration-100 group-hover:opacity-0"
-							/>
-							<Icon
-								name="ChevronDown"
-								size={14}
-								class={`absolute opacity-0 transition duration-150 ease-out group-hover:opacity-100 ${
-									collapsed() ? "-rotate-90" : ""
-								}`}
-							/>
+							<View
+								class="absolute opacity-80 group-hover:opacity-0"
+								style={tactileTransition("opacity")}
+							>
+								<Icon name="Folder" size={14} />
+							</View>
+							<View
+								class="absolute opacity-0 group-hover:opacity-100"
+								style={[
+									tactileTransition("opacity"),
+									chevronRotateStyle(!collapsed(), -90, 0),
+								]}
+							>
+								<Icon name="ChevronDown" size={14} />
+							</View>
 						</Button>
 						<Text
 							class="min-w-0 flex-1 truncate font-sans font-semibold"
@@ -231,8 +252,23 @@ export function ProjectSection(props: {
 					</Button>
 				</View>
 			</Foreground.Provider>
-			{() =>
-				detailsOpen() && !menuOpen() && row() ? (
+			{() => {
+				if (!detailsOpen() || menuOpen() || !row()) return null;
+				const detailsMotion = createMotion({
+					enter: reduceMotion()
+						? {
+								keyframes: { opacity: [0, 1] },
+								duration: 80,
+								easing: MOTION.easing.standardTuple,
+							}
+						: {
+								keyframes: { opacity: [0, 1], scale: [0.97, 1] },
+								duration: MOTION.duration.surfaceIn,
+								easing: MOTION.easing.standardTuple,
+							},
+				});
+				cleanup(() => detailsMotion.stop());
+				return (
 					<Overlay
 						anchor={row()}
 						placement="right"
@@ -245,7 +281,7 @@ export function ProjectSection(props: {
 					>
 						<View
 							class="max-w-[420px] gap-0.5 overflow-hidden rounded-(--pilo-radius-md) border border-(--pilo-tooltip-border) px-3 py-1.5"
-							style={tooltipStyle()}
+							style={[tooltipStyle(), detailsMotion.style]}
 							onMouseEnter={cancelDetailsTimer}
 							onMouseLeave={scheduleCloseDetails}
 						>
@@ -259,10 +295,12 @@ export function ProjectSection(props: {
 							</View>
 						</View>
 					</Overlay>
-				) : null
-			}
-			{() =>
-				collapsed() ? null : (
+				);
+			}}
+			<Collapsible
+				open={!collapsed()}
+				{...collapsibleRevealProps()}
+				content={
 					<ProjectSessions
 						store={store}
 						projectId={id}
@@ -272,8 +310,8 @@ export function ProjectSection(props: {
 							void store.loadSessions(id());
 						}}
 					/>
-				)
-			}
+				}
+			/>
 		</View>
 	);
 }
@@ -375,10 +413,6 @@ function ProjectSessions(props: {
 		return open?.projectId === props.projectId() && open.sessionId !== undefined
 			? open.sessionId
 			: null;
-	});
-	// A project that starts expanded has not read its sessions yet.
-	untracked(() => {
-		if (!index()) void store.loadSessions(props.projectId());
 	});
 	const listed = computed(() => {
 		index();

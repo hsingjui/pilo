@@ -7,6 +7,7 @@ import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { createHover } from "../ui/hover";
+import { springTransition, tactileTransition } from "../ui/motion";
 import { t } from "./i18n";
 
 /**
@@ -75,10 +76,10 @@ export function SidebarAction(props: SidebarActionProps) {
 			{...rest}
 			{...hover.props}
 			class={classNames(
-				"size-6 shrink-0 items-center justify-center rounded-sm duration-100 hover:bg-sidebar-hover",
+				"size-6 shrink-0 items-center justify-center rounded-sm hover:bg-sidebar-hover",
 				local.class,
 			)}
-			style={[{ transitionProperty: "opacity, background-color" }, local.style]}
+			style={[tactileTransition("opacity, background-color"), local.style]}
 			focusVisibleStyle={sidebarFocusRing()}
 			accessibilityLabel={local.label}
 		>
@@ -102,14 +103,16 @@ export function MiniSwitch(props: { checked: boolean; testID?: string }) {
 	return (
 		<View
 			testID={props.testID}
-			class={`relative h-4 w-7 shrink-0 flex-row items-center rounded-full transition-colors ${
+			class={`relative h-4 w-7 shrink-0 flex-row items-center rounded-full ${
 				props.checked ? "bg-primary" : "bg-switch-track"
 			}`}
+			style={tactileTransition("background-color")}
 		>
 			<View
-				class={`absolute left-0.5 size-3 rounded-full bg-background shadow-sm transition-transform ${
+				class={`absolute left-0.5 size-3 rounded-full bg-background shadow-sm ${
 					props.checked ? "translate-x-3" : ""
 				}`}
+				style={springTransition("transform", "crisp")}
 			/>
 		</View>
 	);

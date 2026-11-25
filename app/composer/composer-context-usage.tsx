@@ -1,7 +1,10 @@
 import {
 	Canvas,
 	computed,
+	createAnimatedValue,
+	effect,
 	keyboardFrame,
+	reduceMotion,
 	Scroll,
 	Text,
 	token,
@@ -26,6 +29,7 @@ import { classNames } from "../ui/class-names";
 import { Foreground } from "../ui/foreground";
 import { HoverCard } from "../ui/hover-card";
 import { Icon } from "../ui/icon";
+import { MOTION, tactileTransition } from "../ui/motion";
 import { Popover } from "../ui/popover";
 import { composerToolbarGap } from "./composer-layout";
 
@@ -44,10 +48,15 @@ function formatPercent(value: number | undefined) {
 	return `${Math.round(Math.max(0, value) * 10) / 10}%`;
 }
 
-/** The usage ring: a faint track and the used arc from the top. */
-function ContextRing(props: { percent: () => number; size?: number }) {
+/** The usage ring: a faint track and the used arc from the top, driven natively. */
+function ContextRing(props: {
+	percent: () => number;
+	animatedRatio: ReturnType<typeof createAnimatedValue>;
+	size?: number;
+}) {
 	const color = Foreground();
 	const size = () => props.size ?? chatPx(16);
+	const endAngle = props.animatedRatio.mul(Math.PI * 2).add(-Math.PI / 2);
 	return (
 		<Canvas
 			style={{ width: size(), height: size() }}
@@ -64,13 +73,7 @@ function ContextRing(props: { percent: () => number; size?: number }) {
 				if (props.percent() <= 0) return;
 				cx.globalAlpha = 0.7;
 				cx.beginPath();
-				cx.arc(
-					12,
-					12,
-					10,
-					-Math.PI / 2,
-					-Math.PI / 2 + (Math.PI * 2 * props.percent()) / 100,
-				);
+				cx.arc(12, 12, 10, -Math.PI / 2, endAngle);
 				cx.stroke();
 			}}
 		/>
@@ -128,6 +131,18 @@ export function ComposerContextUsage(props: {
 	const stale = () => props.usage()?.contextStale === true;
 	const percent = () => context().contextPercent;
 	const ringPercent = () => Math.min(100, Math.max(0, percent() ?? 0));
+	const animatedRatio = createAnimatedValue(ringPercent() / 100);
+	effect(() => {
+		const target = ringPercent() / 100;
+		if (reduceMotion()) {
+			animatedRatio.set(target);
+		} else {
+			void animatedRatio.timing(target, {
+				duration: MOTION.duration.calm,
+				easing: MOTION.easing.standardTuple,
+			});
+		}
+	});
 	const breakdown = () => {
 		const tokens = props.usage()?.tokens;
 		return (
@@ -175,7 +190,11 @@ export function ComposerContextUsage(props: {
 				>
 					{() => formatPercent(percent())}
 				</Text>
-				<ContextRing percent={ringPercent} size={touch ? 16 : undefined} />
+				<ContextRing
+					percent={ringPercent}
+					animatedRatio={animatedRatio}
+					size={touch ? 16 : undefined}
+				/>
 			</>
 		);
 	const trigger = touch ? (
@@ -185,6 +204,7 @@ export function ComposerContextUsage(props: {
 				accessibilityLabel={summary()}
 				class="relative shrink-0 flex-row items-center justify-center rounded-(--pilo-mobile-radius-md) hover:bg-hover active:bg-hover"
 				style={{
+					...tactileTransition("background-color, opacity"),
 					height: 40,
 					minWidth: 40,
 					paddingHorizontal: 6,
@@ -203,6 +223,7 @@ export function ComposerContextUsage(props: {
 				accessibilityLabel={summary()}
 				class="relative shrink-0 flex-row items-center rounded-(--pilo-radius-md) hover:bg-hover active:bg-hover"
 				style={{
+					...tactileTransition("background-color, opacity"),
 					height: chatPx(28),
 					left: chatPx(4),
 					marginLeft: -composerToolbarGap(),
@@ -252,8 +273,11 @@ export function ComposerContextUsage(props: {
 					)}
 				>
 					<View
-						class="h-full rounded-full bg-foreground/70"
-						style={{ width: `${ringPercent()}%` }}
+						class="h-full w-full rounded-full bg-foreground/70"
+						style={{
+							transformOrigin: "left center",
+							transform: [{ scaleX: animatedRatio }],
+						}}
 					/>
 				</View>
 				{() =>

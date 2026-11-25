@@ -16,7 +16,7 @@ export function CommandDialog(props: DialogProps) {
 	return (
 		<BaseDialog
 			{...rest}
-			animation={local.animation ?? "none"}
+			animation={local.animation ?? "fade"}
 			class={classNames(
 				"self-center mb-auto overflow-hidden rounded-(--pilo-radius-xl) border border-border bg-popover text-popover-foreground font-sans",
 				local.class,

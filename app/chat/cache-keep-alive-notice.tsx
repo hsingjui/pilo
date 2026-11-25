@@ -1,4 +1,13 @@
-import { effect, signal, Text, token, View } from "nsh";
+import {
+	cleanup,
+	createMotion,
+	effect,
+	reduceMotion,
+	signal,
+	Text,
+	token,
+	View,
+} from "nsh";
 
 import {
 	cacheKeepAliveNoticeDelay,
@@ -9,6 +18,7 @@ import {
 import { appLocale, t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { MOTION } from "../ui/motion";
 import { chatPx } from "./layout";
 
 const noticeText =
@@ -35,10 +45,25 @@ export function CacheKeepAliveNotice(props: {
 	return () => {
 		const status = props.status();
 		if (!status || dismissed() || !visible()) return null;
+		const enter = createMotion({
+			enter: reduceMotion()
+				? {
+						keyframes: { opacity: [0, 1] },
+						duration: 80,
+						easing: MOTION.easing.standardTuple,
+					}
+				: {
+						keyframes: { opacity: [0, 1], translateY: [4, 0] },
+						duration: MOTION.duration.surfaceIn,
+						easing: MOTION.easing.standardTuple,
+					},
+		});
+		cleanup(() => enter.stop());
 		return (
 			<View
 				testID="chat-cache-keep-alive-notice"
 				class="mb-1 min-w-0 shrink-0 flex-row items-start gap-2.5 rounded-xl border border-border/60 bg-muted px-3 py-2"
+				style={enter.style}
 				onLayout={({ bounds }) => width.set(bounds.size.width)}
 			>
 				<Icon

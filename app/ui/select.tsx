@@ -104,12 +104,18 @@ export function Select(props: SelectProps) {
 				local.popupClass,
 			)}
 			popupStyle={[
+				motion().popupStyle,
 				{
 					boxShadow: styleVar("pilo-shadow-floating"),
 					zIndex: token("z-popover"),
 				},
 				local.popupStyle,
 			]}
+			popupStartingStyle={[
+				motion().popupStartingStyle,
+				local.popupStartingStyle,
+			]}
+			popupEndingStyle={[motion().popupEndingStyle, local.popupEndingStyle]}
 			listClass={classNames(
 				props.searchable && "m-(--pilo-select-padding)",
 				local.listClass,

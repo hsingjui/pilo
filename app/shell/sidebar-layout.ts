@@ -3,10 +3,12 @@ import {
 	effect,
 	type GestureResponderEvent,
 	type KeyEvent,
+	reduceMotion,
 	signal,
 	type ViewRef,
 } from "nsh";
 
+import { MOTION } from "../ui/motion";
 import {
 	MAX_SIDEBAR_WIDTH,
 	MIN_SIDEBAR_WIDTH,
@@ -20,10 +22,13 @@ const RESIZE_STEP = 16;
  * pressing the handle at the minimum and jittering does not collapse it.
  */
 const COLLAPSE_AT = MIN_SIDEBAR_WIDTH - 8;
-/** The WebUI sidebar's `transition-[width,opacity] duration-200 ease-out`. */
-const COLLAPSE_TRANSITION = { type: "easeOut", duration: 200 } as const;
+/** Critically damped spring for sidebar collapse/expand, matching app motion. */
+const COLLAPSE_TRANSITION = {
+	type: "spring",
+	...MOTION.spring.smooth,
+} as const;
 /** When the collapse has finished, a little after its transition. */
-const SETTLE_MS = 220;
+const SETTLE_MS = MOTION.duration.calm;
 
 export interface SidebarLayout {
 	collapsed: Accessor<boolean>;
@@ -38,6 +43,8 @@ export interface SidebarLayout {
 	setCollapsed(collapsed: boolean): void;
 	/** The sidebar's frame, whose width the collapse animates. */
 	bindAside(node: ViewRef): void;
+	/** The main title bar, whose leading traffic-light inset animates in sync. */
+	bindTitleBar(node: ViewRef): void;
 	/** The resize handle's responder and keys. */
 	handle: {
 		onStartShouldSetResponder: () => boolean;
@@ -62,19 +69,26 @@ export function createSidebarLayout(
 	const settledCollapsed = signal(false);
 	const resizing = signal(false);
 	let aside: ViewRef | null = null;
+	let titleBar: ViewRef | null = null;
 	let drag: { startX: number; startWidth: number } | null = null;
 
 	// Collapsing hides the header's actions at once; opening shows them once
 	// the width has finished growing.
 	effect(() => {
 		const next = collapsed();
-		const timer = setTimeout(() => settledCollapsed.set(next), SETTLE_MS);
+		const timer = setTimeout(
+			() => settledCollapsed.set(next),
+			reduceMotion() ? 0 : SETTLE_MS,
+		);
 		return () => clearTimeout(timer);
 	});
 
 	const setCollapsed = (next: boolean) => {
 		if (collapsed() === next) return;
-		aside?.animateLayout(COLLAPSE_TRANSITION);
+		if (!reduceMotion()) {
+			aside?.animateLayout(COLLAPSE_TRANSITION);
+			titleBar?.animateLayout(COLLAPSE_TRANSITION);
+		}
 		collapsed.set(next);
 	};
 
@@ -93,6 +107,9 @@ export function createSidebarLayout(
 		setCollapsed,
 		bindAside: (node) => {
 			aside = node;
+		},
+		bindTitleBar: (node) => {
+			titleBar = node;
 		},
 		handle: {
 			onStartShouldSetResponder: () => !collapsed(),

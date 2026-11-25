@@ -1,11 +1,22 @@
-import { type Accessor, safeArea, signal, Text, token, View } from "nsh";
+import {
+	type Accessor,
+	keyboardFrame,
+	safeArea,
+	signal,
+	Text,
+	token,
+	View,
+} from "nsh";
+import { Collapsible } from "nsh/base";
 
 import { t } from "../app/shell/i18n";
 import { Button } from "../app/ui/button";
 import { Icon } from "../app/ui/icon";
 import { Input } from "../app/ui/input";
+import { collapsibleRevealProps } from "../app/ui/motion";
 import { styleVar } from "../app/ui/theme-style";
 import { MOBILE_TEXT } from "./mobile-typography";
+import { MobileViewport } from "./mobile-viewport";
 
 /**
  * Shown when no valid paired device token is present in browser storage.
@@ -16,6 +27,7 @@ export function MobileAuthRequiredView(props: {
 	error?: Accessor<string | null>;
 	onSubmitToken: (token: string) => void;
 }) {
+	const viewport = MobileViewport();
 	const tokenDraft = signal("");
 	const showTokenInput = signal(false);
 
@@ -25,49 +37,60 @@ export function MobileAuthRequiredView(props: {
 		props.onSubmitToken(trimmed);
 	};
 
+	const bottomInset = () =>
+		viewport.managed()
+			? Math.max(24, safeArea().bottom + 16)
+			: Math.max(24, safeArea().bottom + 16) + keyboardFrame().height;
+
 	return (
 		<View
 			testID="mobile-auth-required"
 			class="flex-1 items-center justify-center bg-background p-6"
 			style={{
-				paddingTop: Math.max(24, safeArea().top + 16),
-				paddingBottom: Math.max(24, safeArea().bottom + 16),
+				paddingTop: Math.max(24, viewport.safeAreaTop() + 16),
+				paddingBottom: bottomInset(),
+				paddingLeft: Math.max(24, safeArea().left + 16),
+				paddingRight: Math.max(24, safeArea().right + 16),
 			}}
 		>
 			<View
-				class="w-full max-w-sm gap-4 rounded-2xl border border-border bg-card p-6"
+				class="w-full max-w-sm rounded-2xl border border-border bg-card p-6"
 				style={{ boxShadow: styleVar("pilo-shadow-sm") }}
 			>
-				<View class="items-center">
-					<Icon name="WifiOff" size={24} color={token("muted-foreground")} />
-					<Text
-						class="mt-4 text-center font-sans font-semibold text-foreground"
-						style={MOBILE_TEXT.base}
+				<View class="gap-4">
+					<View class="items-center">
+						<Icon name="WifiOff" size={24} color={token("muted-foreground")} />
+						<Text
+							class="mt-4 text-center font-sans font-semibold text-foreground"
+							style={MOBILE_TEXT.base}
+						>
+							Pilo Remote
+						</Text>
+						<Text
+							class="mt-2 text-center font-sans text-muted-foreground"
+							style={MOBILE_TEXT.smRelaxed}
+						>
+							{() => props.error?.() || t("settings.remotePairRequired")}
+						</Text>
+					</View>
+
+					<Button
+						testID="mobile-toggle-token-input"
+						variant="outline"
+						class="min-h-11 w-full"
+						onPress={() => showTokenInput.update((v) => !v)}
 					>
-						Pilo Remote
-					</Text>
-					<Text
-						class="mt-2 text-center font-sans text-muted-foreground"
-						style={MOBILE_TEXT.smRelaxed}
-					>
-						{() => props.error?.() || t("settings.remotePairRequired")}
-					</Text>
+						<Text class="font-sans text-foreground" style={MOBILE_TEXT.sm}>
+							{() => (showTokenInput() ? t("common.cancel") : "Device Token")}
+						</Text>
+					</Button>
 				</View>
 
-				<Button
-					testID="mobile-toggle-token-input"
-					variant="outline"
-					class="min-h-11 w-full"
-					onPress={() => showTokenInput.update((v) => !v)}
-				>
-					<Text class="font-sans text-foreground" style={MOBILE_TEXT.sm}>
-						{() => (showTokenInput() ? t("common.cancel") : "Device Token")}
-					</Text>
-				</Button>
-
-				{() =>
-					showTokenInput() ? (
-						<View class="gap-2">
+				<Collapsible
+					open={showTokenInput()}
+					{...collapsibleRevealProps()}
+					content={
+						<View class="gap-2 pt-4">
 							<Input
 								testID="mobile-token-input"
 								value={tokenDraft()}
@@ -93,8 +116,8 @@ export function MobileAuthRequiredView(props: {
 								</Text>
 							</Button>
 						</View>
-					) : null
-				}
+					}
+				/>
 			</View>
 		</View>
 	);

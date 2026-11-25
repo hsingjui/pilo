@@ -24,6 +24,7 @@ export function SettingsConfirmDialog(props: {
 	busy?: boolean;
 	destructive?: boolean;
 	onOpenChange: (open: boolean) => void;
+	onClose?: () => void;
 	onConfirm: () => void;
 	testID?: string;
 	children?: JSX.Element;
@@ -41,6 +42,7 @@ export function SettingsConfirmDialog(props: {
 				if (busy() && !open) return;
 				props.onOpenChange(open);
 			}}
+			onClose={props.onClose}
 			backdropClass="bg-black/20"
 			backdropStyle={{ zIndex: token("z-dialog") }}
 		>

@@ -1,4 +1,16 @@
-import { computed, Scroll, signal, Text, token, View, windowSize } from "nsh";
+import {
+	cleanup,
+	computed,
+	createMotion,
+	reduceMotion,
+	Scroll,
+	signal,
+	Text,
+	token,
+	View,
+	windowSize,
+} from "nsh";
+import { Collapsible } from "nsh/base";
 
 import {
 	buildChatTodoProgress,
@@ -13,7 +25,13 @@ import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
-import { scrollbarLook } from "../ui/scrollbar";
+import {
+	chevronRotateStyle,
+	collapsibleRevealProps,
+	MOTION,
+	tactileTransition,
+} from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { ChatTodoList } from "./chat-todo-list";
 
 type TodoSnapshot = {
@@ -86,6 +104,20 @@ export function ChatTodoCapsule(props: {
 					complete()
 						? t("chat.todoAllCompleted")
 						: (progress().current?.text ?? t("chat.todos"));
+				const enterMotion = createMotion({
+					enter: reduceMotion()
+						? {
+								keyframes: { opacity: [0, 1] },
+								duration: 80,
+								easing: MOTION.easing.standardTuple,
+							}
+						: {
+								keyframes: { opacity: [0, 1], translateY: [6, 0] },
+								duration: MOTION.duration.surfaceIn,
+								easing: MOTION.easing.standardTuple,
+							},
+				});
+				cleanup(() => enterMotion.stop());
 				return (
 					<View
 						testID="chat-todo-capsule"
@@ -93,6 +125,7 @@ export function ChatTodoCapsule(props: {
 							"mb-1 w-full min-w-0 shrink-0 overflow-hidden rounded-xl border bg-muted",
 							complete() ? "border-status-success/30" : "border-border/70",
 						)}
+						style={[enterMotion.style, tactileTransition("border-color")]}
 					>
 						<View class="min-w-0 flex-row items-center gap-2 py-1 pl-3 pr-1">
 							{/* React's plain toggle: no hover background, unlike a work row. */}
@@ -121,6 +154,7 @@ export function ChatTodoCapsule(props: {
 										"shrink-0 rounded px-1.5 py-0.5",
 										complete() ? "bg-status-success/15" : "bg-background/80",
 									)}
+									style={tactileTransition("background-color")}
 								>
 									<Text
 										class={classNames(
@@ -141,11 +175,16 @@ export function ChatTodoCapsule(props: {
 								>
 									{current}
 								</Text>
-								<Icon
-									name={expanded() ? "ChevronDown" : "ChevronUp"}
-									size={14}
-									color={token("muted-foreground")}
-								/>
+								<View
+									class="shrink-0 items-center justify-center"
+									style={chevronRotateStyle(expanded(), 0, 180)}
+								>
+									<Icon
+										name="ChevronUp"
+										size={14}
+										color={token("muted-foreground")}
+									/>
+								</View>
 							</View>
 							<Button
 								variant="ghost"
@@ -157,19 +196,21 @@ export function ChatTodoCapsule(props: {
 								<Icon name="X" size={14} color={token("muted-foreground")} />
 							</Button>
 						</View>
-						{() =>
-							expanded() ? (
+						<Collapsible
+							open={expanded()}
+							{...collapsibleRevealProps()}
+							content={
 								<Scroll
 									class="min-h-0 border-t border-border/60"
 									contentClass="px-3 py-2"
 									style={{ maxHeight: Math.min(240, windowSize().height / 4) }}
 									bounces={false}
-									scrollbar={{ vertical: scrollbarLook() }}
+									scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 								>
 									<ChatTodoList items={() => progress().items} />
 								</Scroll>
-							) : null
-						}
+							}
+						/>
 					</View>
 				);
 			}}

@@ -2,10 +2,12 @@ import {
 	batch,
 	cleanup,
 	computed,
+	createMotion,
 	List,
 	type ListRef,
 	type ListSlot,
 	platform,
+	reduceMotion,
 	type ScrollEvent,
 	signal,
 	Text,
@@ -341,7 +343,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 		list?.scrollToIndex({
 			index: entry.messageIndex,
 			viewPosition: 0,
-			animated: false,
+			animated: !reduceMotion(),
 		});
 	};
 	return (
@@ -384,11 +386,10 @@ export function ChatMessages(props: ChatMessagesProps) {
 					</ChatDisclosureAction.Provider>
 				)}
 			</List>
-			{() =>
-				scrolled() ? (
-					<View class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-background to-transparent" />
-				) : null
-			}
+			<View
+				class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-background to-transparent"
+				style={[tactileTransition("opacity"), { opacity: scrolled() ? 1 : 0 }]}
+			/>
 			{() =>
 				showOutline() ? (
 					<ConversationOutlineRail
@@ -398,9 +399,31 @@ export function ChatMessages(props: ChatMessagesProps) {
 					/>
 				) : null
 			}
-			{() =>
-				away() ? (
-					<View class="pointer-events-none absolute inset-x-0 bottom-6">
+			{() => {
+				if (!away()) return null;
+				const latestMotion = createMotion({
+					enter: reduceMotion()
+						? {
+								keyframes: { opacity: [0, 1] },
+								duration: 80,
+								easing: MOTION.easing.standardTuple,
+							}
+						: {
+								keyframes: {
+									opacity: [0, 1],
+									translateY: [8, 0],
+									scale: [0.94, 1],
+								},
+								duration: MOTION.duration.surfaceIn,
+								easing: MOTION.easing.standardTuple,
+							},
+				});
+				cleanup(() => latestMotion.stop());
+				return (
+					<View
+						class="pointer-events-none absolute inset-x-0 bottom-6"
+						style={latestMotion.style}
+					>
 						<ConversationColumn class="items-end">
 							<Button
 								testID="chat-scroll-latest"
@@ -420,15 +443,15 @@ export function ChatMessages(props: ChatMessagesProps) {
 								onPress={() => {
 									followPaused.set(false);
 									webEnd?.setFollowing(true);
-									list?.scrollToEnd({ animated: false });
+									list?.scrollToEnd({ animated: !reduceMotion() });
 								}}
 							>
 								<Icon name="ArrowDown" />
 							</Button>
 						</ConversationColumn>
 					</View>
-				) : null
-			}
+				);
+			}}
 		</View>
 	);
 }

@@ -1,7 +1,10 @@
 import {
+	cleanup,
 	computed,
+	createMotion,
 	effect,
 	Image,
+	reduceMotion,
 	signal,
 	Text,
 	token,
@@ -14,6 +17,8 @@ import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import { t } from "../shell/i18n";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
+import { MOTION, tactileTransition } from "../ui/motion";
+import { Skeleton } from "../ui/skeleton";
 import { Tooltip } from "../ui/tooltip";
 import { ChatMediaActions } from "./chat-media-actions";
 
@@ -81,7 +86,8 @@ function ChatUserImage(props: { image: () => ChatConversationImage }) {
 			testID="chat-user-image"
 			ref={pointerBlur.ref}
 			onMouseUp={pointerBlur.onMouseUp}
-			class="size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 focus-visible:outline-hidden"
+			class="size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 hover:border-foreground/25 active:scale-[0.97] focus-visible:outline-hidden"
+			style={tactileTransition("border-color, scale")}
 			focusVisibleStyle={focusRingStyle(token("ring"))}
 			accessibilityLabel={
 				state().type === "error"
@@ -101,17 +107,35 @@ function ChatUserImage(props: { image: () => ChatConversationImage }) {
 		>
 			{() => {
 				const current = state();
-				return current.type === "ready" ? (
-					<Image
-						src={current.url}
-						accessibilityLabel={label()}
-						class="size-full"
-						style={{ objectFit: "cover" }}
-						onError={() => state.set({ type: "error" })}
-					/>
-				) : current.type === "error" ? (
-					<Icon name="ImageOff" size={16} color={token("muted-foreground")} />
-				) : null;
+				if (current.type === "ready") {
+					const fade = createMotion({
+						enter: reduceMotion()
+							? undefined
+							: {
+									keyframes: { opacity: [0, 1] },
+									duration: MOTION.duration.view,
+									easing: MOTION.easing.standardTuple,
+								},
+					});
+					cleanup(() => fade.stop());
+					return (
+						<View class="size-full" style={fade.style}>
+							<Image
+								src={current.url}
+								accessibilityLabel={label()}
+								class="size-full"
+								style={{ objectFit: "cover" }}
+								onError={() => state.set({ type: "error" })}
+							/>
+						</View>
+					);
+				}
+				if (current.type === "error") {
+					return (
+						<Icon name="ImageOff" size={16} color={token("muted-foreground")} />
+					);
+				}
+				return <Skeleton class="size-full rounded-none" />;
 			}}
 		</BaseButton>
 	);

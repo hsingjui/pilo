@@ -17,6 +17,7 @@ import { Button } from "../ui/button";
 import { blurOnPointerPress } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon, type IconName } from "../ui/icon";
+import { MOTION, tactileTransition, viewTransition } from "../ui/motion";
 import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
@@ -101,12 +102,30 @@ function themeValue(name: string): string | number | undefined {
 	);
 }
 
+/** The title bar's height; the system centers its window controls in it. */
+export const TITLE_BAR_HEIGHT = 44;
+
+/** Minimum height of the sidebar title row when seated inside a floating card. */
+const FLOATING_SIDEBAR_TITLE_BAR_HEIGHT = 36;
+
+/** Standard macOS traffic-light button height in points. */
+const MACOS_TRAFFIC_LIGHT_HEIGHT = 14;
+
+/** Minimum horizontal inset from a floating card's frame to macOS traffic lights. */
+const FLOATING_CONTROLS_MIN_INSET = 12;
+
+export interface SidebarSurfaceFrame {
+	frameTop: number;
+	frameLeft: number;
+	radius: number;
+}
+
 /**
  * The card the sidebar draws its content on (the WebUI
  * `.pilo-sidebar-surface`): a floating rounded card in Lody, the full height
  * with a right border in Claude.
  */
-function surface() {
+export function sidebarSurface() {
 	const margin = edges(themeValue("pilo-sidebar-margin"));
 	const border = edges(themeValue("pilo-sidebar-border-width"));
 	const padding = edges(themeValue("pilo-sidebar-padding"));
@@ -129,12 +148,59 @@ function surface() {
 		boxShadow: styleVar("pilo-sidebar-shadow"),
 		backgroundColor: token("sidebar-background"),
 	};
+	const frameTop = margin.top + border.top;
+	const frameLeft = margin.left + border.left;
 	return {
 		style,
 		radius,
-		top: margin.top + border.top + padding.top,
-		left: margin.left + border.left + padding.left,
+		paddingTop: padding.top,
+		frameTop,
+		frameLeft,
+		top: frameTop + padding.top,
+		left: frameLeft + padding.left,
 	};
+}
+
+/**
+ * Hidden title bar options matched to the sidebar surface: macOS floating cards
+ * inset the traffic lights into the card's safe area and center them vertically.
+ */
+export function windowTitleBarOptions(
+	card: SidebarSurfaceFrame,
+	os: string = platform.os,
+) {
+	const floating = card.frameTop > 0 || card.frameLeft > 0;
+	if (os === "macos" && floating) {
+		const height = card.frameTop * 2 + FLOATING_SIDEBAR_TITLE_BAR_HEIGHT;
+		return {
+			style: "hidden" as const,
+			height,
+			controlsOffset: {
+				x: card.frameLeft + Math.max(card.radius, FLOATING_CONTROLS_MIN_INSET),
+				y: Math.round((height - MACOS_TRAFFIC_LIGHT_HEIGHT) / 2),
+			},
+		};
+	}
+	return {
+		style: "hidden" as const,
+		height: TITLE_BAR_HEIGHT,
+		controlsOffset: null,
+	};
+}
+
+/**
+ * Height of the sidebar's own title row inside its card so floating cards keep
+ * the row within the top border and aligned with the window title bar's midpoint.
+ */
+export function sidebarTitleBarHeight(
+	windowHeight: number,
+	card: SidebarSurfaceFrame,
+) {
+	if (card.frameTop <= 0) return windowHeight;
+	return Math.max(
+		FLOATING_SIDEBAR_TITLE_BAR_HEIGHT,
+		windowHeight - card.frameTop * 2,
+	);
 }
 
 /**
@@ -146,7 +212,7 @@ function surface() {
 export function SidebarPanel(props: SidebarPanelProps) {
 	const { layout } = props;
 	const projectView = signal<string | null>(null);
-	const card = computed(surface);
+	const card = computed(sidebarSurface);
 	// Center the visible glyphs against the macOS traffic lights without moving the row.
 	const titleTextStyle =
 		platform.os === "macos" ? { transform: [{ translateY: -1 }] } : undefined;
@@ -162,13 +228,16 @@ export function SidebarPanel(props: SidebarPanelProps) {
 		<View
 			ref={(node: ViewRef) => layout.bindAside(node)}
 			testID="sidebar"
-			class={`relative h-full shrink-0 transition-opacity duration-200 ease-out ${
+			class={`relative h-full shrink-0 ${
 				layout.collapsed() ? "overflow-hidden opacity-0" : "opacity-100"
 			}`}
-			style={{
-				width: layout.collapsed() ? 0 : layout.width(),
-				pointerEvents: layout.collapsed() ? "none" : "auto",
-			}}
+			style={[
+				viewTransition("opacity", MOTION.duration.calm),
+				{
+					width: layout.collapsed() ? 0 : layout.width(),
+					pointerEvents: layout.collapsed() ? "none" : "auto",
+				},
+			]}
 			accessibilityElementsHidden={layout.collapsed()}
 		>
 			<View
@@ -181,9 +250,8 @@ export function SidebarPanel(props: SidebarPanelProps) {
 					desktop={{ windowDrag: true }}
 					class="shrink-0 flex-row items-center px-1.5"
 					style={{
-						height: props.titleBar().height,
-						// Align to the window's title bar, not the inset sidebar card.
-						marginTop: -card().top,
+						height: sidebarTitleBarHeight(props.titleBar().height, card()),
+						marginTop: -card().paddingTop,
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
@@ -199,26 +267,30 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							Pilo
 						</Text>
 					</View>
-					{() =>
-						layout.collapsed() || layout.settledCollapsed() ? null : (
-							<View class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2">
-								<SidebarAction
-									testID="sidebar-search"
-									label={t("sidebar.searchSessions")}
-									onPress={props.onSearch}
-								>
-									<Icon name="Search" size={16} />
-								</SidebarAction>
-								<SidebarAction
-									testID="sidebar-collapse"
-									label={t("sidebar.collapseSidebar")}
-									onPress={() => layout.setCollapsed(true)}
-								>
-									<Icon name="PanelLeft" size={16} />
-								</SidebarAction>
-							</View>
-						)
-					}
+					<View
+						class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2"
+						style={[
+							tactileTransition("opacity"),
+							layout.collapsed() || layout.settledCollapsed()
+								? { opacity: 0, pointerEvents: "none" }
+								: { opacity: 1, pointerEvents: "auto" },
+						]}
+					>
+						<SidebarAction
+							testID="sidebar-search"
+							label={t("sidebar.searchSessions")}
+							onPress={props.onSearch}
+						>
+							<Icon name="Search" size={16} />
+						</SidebarAction>
+						<SidebarAction
+							testID="sidebar-collapse"
+							label={t("sidebar.collapseSidebar")}
+							onPress={() => layout.setCollapsed(true)}
+						>
+							<Icon name="PanelLeft" size={16} />
+						</SidebarAction>
+					</View>
 				</View>
 				<View class="-mt-1 shrink-0 gap-1 px-1.5">
 					{() => {
@@ -320,6 +392,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 									? "bg-sidebar-ring/70"
 									: "bg-transparent group-hover:bg-sidebar-ring/50 group-focus:bg-sidebar-ring"
 							}`}
+							style={tactileTransition("background-color")}
 						/>
 					</View>
 				)
@@ -335,7 +408,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 export function StartupSidebar(
 	props: Pick<SidebarPanelProps, "titleBar"> & { width?: Accessor<number> },
 ) {
-	const card = computed(surface);
+	const card = computed(sidebarSurface);
 	/** A footer button's place: `Button size="icon"` around a 16pt icon. */
 	const footerButton = () => (
 		<View class="size-(--pilo-button-icon-size) items-center justify-center">
@@ -358,8 +431,8 @@ export function StartupSidebar(
 					desktop={{ windowDrag: true }}
 					class="shrink-0 flex-row items-center px-1.5"
 					style={{
-						height: props.titleBar().height,
-						marginTop: -card().top,
+						height: sidebarTitleBarHeight(props.titleBar().height, card()),
+						marginTop: -card().paddingTop,
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>

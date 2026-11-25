@@ -329,14 +329,20 @@ export function ConnectionsPane(props: {
 		</Menu>
 	);
 
+	const lastRemoving = signal<Connection | null>(null);
+	effect(() => {
+		const next = removing();
+		if (next) lastRemoving.set(next);
+	});
 	const removeDialog = () => {
-		const connection = removing();
+		const active = removing();
+		const connection = active ?? lastRemoving();
 		if (!connection) return null;
 		const dialogToasts = new AppToasts();
 		return (
 			<SettingsConfirmDialog
 				testID="settings-conn-remove-dialog"
-				open={true}
+				open={active !== null}
 				title={`${t("connection.removeQuestion")} · ${connectionLabel(connection)}`}
 				description={`${t("connection.removeDescription", {
 					name: connectionLabel(connection),
@@ -347,6 +353,9 @@ export function ConnectionsPane(props: {
 				destructive
 				onOpenChange={(open) => {
 					if (!open) removing.set(null);
+				}}
+				onClose={() => {
+					if (!removing()) lastRemoving.set(null);
 				}}
 				onConfirm={() => void removeConnection(dialogToasts)}
 			>
@@ -382,17 +391,9 @@ export function ConnectionsPane(props: {
 					)
 				}
 			</SettingsSection>
-			{() =>
-				sshEditor.open() ? (
-					<SshConnectionEditorDialog editor={sshEditor} />
-				) : null
-			}
-			{() =>
-				configureDialog.open() ? (
-					<ConfigureConnectionDialog dialog={configureDialog} />
-				) : null
-			}
-			{() => (wslPicker.open() ? <WslPickerDialog picker={wslPicker} /> : null)}
+			<SshConnectionEditorDialog editor={sshEditor} />
+			<ConfigureConnectionDialog dialog={configureDialog} />
+			<WslPickerDialog picker={wslPicker} />
 			{() => removeDialog()}
 			{/* Standalone fixture fallback; inside SettingsDialog the parent stack renders toasts. */}
 			{ownToasts ? <AppToastStack toasts={ownToasts} /> : null}

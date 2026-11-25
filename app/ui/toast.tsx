@@ -7,6 +7,7 @@ import { ToastCloseButton } from "./toast-close-button";
 import { classNames } from "./class-names";
 import { Foreground } from "./foreground";
 import { Icon, type IconName } from "./icon";
+import { toastMotionProps } from "./motion";
 import { styleVar } from "./theme-style";
 
 const variants = {
@@ -33,6 +34,9 @@ export function Toast(props: ToastProps) {
 	const [local, rest] = split(props, [
 		"class",
 		"style",
+		"startingClass",
+		"endingClass",
+		"swipingClass",
 		"children",
 		"variant",
 		"description",
@@ -43,6 +47,7 @@ export function Toast(props: ToastProps) {
 		"onDismissRequest",
 	]);
 	const variant = () => variants[local.variant ?? "default"];
+	const motion = () => toastMotionProps();
 	return (
 		<BaseToast
 			{...rest}
@@ -51,7 +56,14 @@ export function Toast(props: ToastProps) {
 				"group flex-row items-start gap-2.5 rounded-(--pilo-floating-radius) border border-border bg-popover text-popover-foreground px-3.5 py-3 font-sans text-sm leading-snug",
 				local.class,
 			)}
-			style={[{ boxShadow: styleVar("pilo-shadow-floating") }, local.style]}
+			style={[
+				motion().style,
+				{ boxShadow: styleVar("pilo-shadow-floating") },
+				local.style,
+			]}
+			startingClass={classNames(motion().startingClass, local.startingClass)}
+			endingClass={classNames(motion().endingClass, local.endingClass)}
+			swipingClass={classNames(motion().swipingClass, local.swipingClass)}
 		>
 			<Foreground.Provider value={() => token(variant().foreground)}>
 				{() => {

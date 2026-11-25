@@ -196,8 +196,14 @@ function ShortcutRecorder(props: {
 			}
 		</View>
 	);
+	let wasRecording = props.recording();
 	effect(() => {
-		if (props.recording()) view?.focus();
+		const rec = props.recording();
+		if (rec !== wasRecording) {
+			view?.animateLayout({ type: "spring", ...MOTION.spring.crisp });
+			wasRecording = rec;
+		}
+		if (rec) view?.focus();
 	});
 	return node;
 }

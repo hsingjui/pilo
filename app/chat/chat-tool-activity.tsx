@@ -1,5 +1,5 @@
-import { computed, Text, token, View } from "nsh";
-import { Button as BaseButton } from "nsh/base";
+import { computed, cleanup, effect, signal, Text, token, View } from "nsh";
+import { Button as BaseButton, Collapsible } from "nsh/base";
 
 import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
 import {
@@ -21,6 +21,7 @@ import { classNames } from "../ui/class-names";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
+import { collapsibleRevealProps } from "../ui/motion";
 import { Spinner } from "../ui/spinner";
 import { Tooltip } from "../ui/tooltip";
 import { toolIconName, toolLabel, toolSkillName } from "./chat-activity-labels";
@@ -114,6 +115,20 @@ export function ChatToolActivity(props: {
 	const detailKey = computed(() =>
 		hasDetails() && open() ? props.expansionKey() : null,
 	);
+	/**
+	 * The call a shown detail is mounted for: a recycled row must not carry
+	 * its scroll into another call. It clears as the detail starts to fold
+	 * away, so a long output is not laid out again while it shrinks.
+	 */
+	const shownDetailKey = signal<string | null>(null);
+	effect(() => {
+		const key = detailKey();
+		if (key !== null) {
+			shownDetailKey.set(key);
+			return;
+		}
+		cleanup(() => shownDetailKey.set(null));
+	});
 	const status = computed(() =>
 		failed() ? "failed" : running() ? "running" : null,
 	);
@@ -305,17 +320,26 @@ export function ChatToolActivity(props: {
 					</ChatDisclosureRow>
 				);
 			}}
-			{() => {
-				// A recycled row must not carry its detail scroll into another call.
-				if (detailKey() === null) return null;
-				return (
-					<ChatToolDetail
-						activity={activity}
-						writeContent={writeContent}
-						todos={todos}
-					/>
-				);
-			}}
+			<Collapsible
+				open={detailKey() !== null}
+				{...collapsibleRevealProps()}
+				content={() => {
+					const detailFor = shownDetailKey();
+					return (
+						<>
+							{() =>
+								detailFor === null ? null : (
+									<ChatToolDetail
+										activity={activity}
+										writeContent={writeContent}
+										todos={todos}
+									/>
+								)
+							}
+						</>
+					);
+				}}
+			/>
 		</View>
 	);
 }

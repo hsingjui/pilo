@@ -502,11 +502,13 @@ function GitWorkspacePanel(props: {
 			: undefined;
 	});
 
+	const fade = useEnterFade(props.visible);
+
 	return (
 		<View
 			testID={`git-workspace:${props.projectId}`}
 			class="absolute inset-0 min-h-0 min-w-0 flex-col bg-background"
-			style={{ display: props.visible() ? "flex" : "none" }}
+			style={[fade.style, { display: props.visible() ? "flex" : "none" }]}
 			onLayout={({ bounds }) => {
 				if (bounds.size.width > 0) workspaceWidth.set(bounds.size.width);
 			}}
@@ -604,7 +606,7 @@ function GitWorkspacePanel(props: {
 						axis="horizontal"
 						disabled={!wide()}
 						class="min-h-0 min-w-0 flex-1"
-						handleClass="bg-border/60 group-hover:bg-ring/60 group-active:bg-ring"
+						handleClass="bg-border/60 group-hover:bg-ring/60 group-active:bg-ring transition-colors duration-[110ms]"
 						handleAccessibilityLabel={t("file.resizePanels")}
 						onResize={({ sizes }) => {
 							const width = untracked(workspaceWidth);

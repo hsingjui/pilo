@@ -20,6 +20,11 @@ import { Foreground } from "../app/ui/foreground";
 import { Icon } from "../app/ui/icon";
 import { menuPopupStyle } from "../app/ui/menu";
 import { menuRowClass } from "../app/ui/menu-row";
+import {
+	popupMotionStyles,
+	springTransition,
+	tactileTransition,
+} from "../app/ui/motion";
 
 const DropdownClose = context<() => void>(() => undefined);
 
@@ -58,6 +63,7 @@ export function MobileDropdownMenu(props: MobileDropdownMenuProps) {
 		local.onOpenChange?.(next);
 	};
 
+	const motion = () => popupMotionStyles();
 	return (
 		<BasePopover
 			{...rest}
@@ -76,6 +82,8 @@ export function MobileDropdownMenu(props: MobileDropdownMenuProps) {
 				{ maxWidth: Math.max(200, windowSize().width - 16) },
 				local.popupStyle,
 			]}
+			popupStartingStyle={motion().popupStartingStyle}
+			popupEndingStyle={motion().popupEndingStyle}
 		>
 			<DropdownClose.Provider value={() => setOpen(false)}>
 				{local.children}
@@ -115,12 +123,12 @@ export function MobileDropdownItem(props: MobileDropdownItemProps) {
 				accessibilityLabel={props.accessibilityLabel}
 				class={classNames(
 					menuRowClass,
-					"min-h-11",
+					"min-h-11 active:bg-hover",
 					props.variant === "destructive" &&
-						"text-destructive hover:text-destructive focus:text-destructive hover:bg-destructive/10 focus:bg-destructive/10",
+						"text-destructive hover:text-destructive focus:text-destructive hover:bg-destructive/10 focus:bg-destructive/10 active:bg-destructive/15",
 					props.class,
 				)}
-				style={props.style}
+				style={[tactileTransition("background-color, color"), props.style]}
 				onPress={() => {
 					if (props.disabled) return;
 					props.onSelect?.();
@@ -129,10 +137,13 @@ export function MobileDropdownItem(props: MobileDropdownItemProps) {
 			>
 				{props.checked !== undefined ? (
 					<View
-						class={classNames(
-							"size-3.5 shrink-0 items-center justify-center",
-							props.checked ? "opacity-100" : "opacity-0",
-						)}
+						class="size-3.5 shrink-0 items-center justify-center"
+						style={[
+							springTransition("opacity, transform", "crisp"),
+							props.checked
+								? { opacity: 1, transform: [{ scale: 1 }] }
+								: { opacity: 0, transform: [{ scale: 0.7 }] },
+						]}
 					>
 						<Icon name="Check" size={14} color={foreground()} />
 					</View>

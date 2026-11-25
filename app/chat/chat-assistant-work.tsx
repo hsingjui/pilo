@@ -361,13 +361,15 @@ export function ChatAssistantWork(
 									/>
 								</View>
 							</ChatDisclosureRow>
-							{() =>
-								completedOpen() ? (
+							<Collapsible
+								open={completedOpen()}
+								{...collapsibleRevealProps()}
+								content={
 									<Scroll
 										testID="chat-compact-activity-body"
 										class="-mx-1 mt-0.5 max-h-80"
 										bounces={false}
-										scrollbar={{ vertical: scrollbarLook() }}
+										scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 									>
 										<View class="px-1 pr-3 pb-0.5">
 											<WorkSegments

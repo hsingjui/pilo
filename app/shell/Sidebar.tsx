@@ -10,7 +10,7 @@ import {
 	untracked,
 	View,
 } from "nsh";
-import { Button } from "nsh/base";
+import { Button, Collapsible } from "nsh/base";
 
 import { sortSidebarSessionsByRecency } from "@shared/sidebar/session-list";
 import type { Connection } from "@shared/api/pi-runtime-types";
@@ -22,7 +22,12 @@ import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { MenuSeparator } from "../ui/menu-separator";
-import { scrollbarLook } from "../ui/scrollbar";
+import {
+	chevronRotateStyle,
+	collapsibleRevealProps,
+	tactileTransition,
+} from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
@@ -118,7 +123,7 @@ export function Sidebar(props: SidebarProps) {
 						testID="sidebar-projects"
 						class="min-h-0 min-w-0 flex-1"
 						bounces={false}
-						scrollbar={{ vertical: scrollbarLook() }}
+						scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 					>
 						<View class="min-w-0 pt-1 pr-2.5 pb-3 pl-1.5">
 							{recent ? (
@@ -225,15 +230,19 @@ function SectionHeader(props: {
 					>
 						{props.title}
 					</Text>
-					<Icon
-						name="ChevronDown"
-						size={14}
-						class={`shrink-0 transition duration-150 ease-out ${
+					<View
+						class={`shrink-0 ${
 							props.collapsed()
-								? "-rotate-90 opacity-100"
+								? "opacity-100"
 								: "opacity-0 group-hover:opacity-100"
 						}`}
-					/>
+						style={[
+							tactileTransition("opacity"),
+							chevronRotateStyle(!props.collapsed(), -90, 0),
+						]}
+					>
+						<Icon name="ChevronDown" size={14} />
+					</View>
 				</Button>
 			</Foreground.Provider>
 			{props.children}
@@ -341,28 +350,34 @@ function RecentSection(
 					<ViewMenuItems settings={settings} />
 				</Menu>
 			</SectionHeader>
-			{() => {
-				if (!hasSessions()) return <NoSessions testID={RECENT_SECTION} />;
-				if (collapsed()) return null;
-				return (
-					<SessionGlide>
-						<Each of={sessions()} key={sessionRowKey}>
-							{(session) => (
-								<SessionRow
-									store={store}
-									onSelectChat={props.onSelectChat}
-									session={session}
-									projectName={() =>
-										settings.settings().showProjectsInRecents
-											? projectNames().get(session().projectId)
-											: undefined
-									}
-								/>
-							)}
-						</Each>
-					</SessionGlide>
-				);
-			}}
+			{() =>
+				!hasSessions() ? (
+					<NoSessions testID={RECENT_SECTION} />
+				) : (
+					<Collapsible
+						open={!collapsed()}
+						{...collapsibleRevealProps()}
+						content={
+							<SessionGlide>
+								<Each of={sessions()} key={sessionRowKey}>
+									{(session) => (
+										<SessionRow
+											store={store}
+											onSelectChat={props.onSelectChat}
+											session={session}
+											projectName={() =>
+												settings.settings().showProjectsInRecents
+													? projectNames().get(session().projectId)
+													: undefined
+											}
+										/>
+									)}
+								</Each>
+							</SessionGlide>
+						}
+					/>
+				)
+			}
 		</View>
 	);
 }
@@ -486,21 +501,25 @@ function ConnectionSection(
 					}
 				</Menu>
 			</SectionHeader>
-			{() =>
-				collapsed() ? null : (
-					<Each of={props.group().projects} key={(project) => project.id}>
-						{(project) => (
-							<ProjectSection
-								store={props.store}
-								onSelectChat={props.onSelectChat}
-								settings={props.settings}
-								onViewProject={props.onViewProject}
-								project={project}
-							/>
-						)}
-					</Each>
-				)
-			}
+			<Collapsible
+				open={!collapsed()}
+				{...collapsibleRevealProps()}
+				content={
+					<View class="w-full min-w-0 gap-(--pilo-sidebar-row-gap)">
+						<Each of={props.group().projects} key={(project) => project.id}>
+							{(project) => (
+								<ProjectSection
+									store={props.store}
+									onSelectChat={props.onSelectChat}
+									settings={props.settings}
+									onViewProject={props.onViewProject}
+									project={project}
+								/>
+							)}
+						</Each>
+					</View>
+				}
+			/>
 		</View>
 	);
 }
@@ -557,7 +576,7 @@ function AllProjectSessions(
 			contentClass="pt-1 pr-2.5 pb-3 pl-1.5"
 			contentStyle={{ gap: chatPx(token("pilo-sidebar-session-gap")) }}
 			bounces={false}
-			scrollbar={{ vertical: scrollbarLook() }}
+			scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 			each={sessions()}
 			keyExtractor={sessionRowKey}
 			estimatedItemSize={sidebarRowHeight("pilo-sidebar-session-height")}

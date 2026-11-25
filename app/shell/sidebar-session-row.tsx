@@ -6,11 +6,13 @@ import {
 	effect,
 	type InputRef,
 	Overlay,
+	reduceMotion,
 	signal,
 	Text,
 	token,
 	untracked,
 	View,
+	type ViewRef,
 } from "nsh";
 import { Button, ContextMenu } from "nsh/base";
 
@@ -21,6 +23,7 @@ import { Input } from "../ui/input";
 import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { createHover } from "../ui/hover";
+import { MOTION, tactileTransition } from "../ui/motion";
 import { AppToaster } from "./app-toasts";
 import { deleteSessionWithToast } from "./delete-session";
 import { t } from "./i18n";
@@ -45,27 +48,51 @@ function ConfirmDeleteButton(props: {
 	onConfirm: () => void;
 }) {
 	const confirming = signal(false);
+	let buttonRef: ViewRef | null = null;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	const setConfirmingAnimated = (next: boolean) => {
+		if (confirming() === next) return;
+		if (!reduceMotion()) {
+			buttonRef?.animateLayout({
+				type: "spring",
+				...MOTION.spring.crisp,
+			});
+		}
+		confirming.set(next);
+	};
 	const reset = () => {
 		if (timer !== undefined) clearTimeout(timer);
 		timer = undefined;
-		confirming.set(false);
+		setConfirmingAnimated(false);
 	};
 	effect(() => {
 		props.resetOn();
-		untracked(reset);
+		untracked(() => {
+			if (timer !== undefined) clearTimeout(timer);
+			timer = undefined;
+			confirming.set(false);
+		});
 	});
-	cleanup(reset);
+	cleanup(() => {
+		if (timer !== undefined) clearTimeout(timer);
+		timer = undefined;
+	});
 	const hover = createHover();
 	return (
 		<Button
+			ref={(node) => {
+				buttonRef = node;
+			}}
 			testID={props.testID}
 			class={`${props.class} ${
 				confirming()
 					? "z-10 h-6 min-w-10 flex-row items-center justify-center overflow-hidden rounded-full border border-destructive/20 bg-sidebar-background px-2"
-					: "size-6 items-center justify-center rounded-sm transition-opacity duration-100"
+					: "size-6 items-center justify-center rounded-sm"
 			}`}
-			style={confirming() ? { width: "max-content" } : undefined}
+			style={[
+				tactileTransition("opacity, background-color, border-color"),
+				confirming() ? { width: "max-content" } : undefined,
+			]}
 			focusVisibleStyle={sidebarFocusRing()}
 			accessibilityLabel={
 				confirming() ? t("sidebar.confirmDelete") : t("sidebar.delete")
@@ -78,10 +105,10 @@ function ConfirmDeleteButton(props: {
 			onPress={() => {
 				if (!confirming()) {
 					if (timer !== undefined) clearTimeout(timer);
-					confirming.set(true);
+					setConfirmingAnimated(true);
 					timer = setTimeout(() => {
 						timer = undefined;
-						confirming.set(false);
+						setConfirmingAnimated(false);
 					}, 3500);
 					return;
 				}
@@ -264,6 +291,7 @@ export function SessionRow(props: {
 		return classes.join(" ");
 	};
 	const rowStyle = () => ({
+		...tactileTransition("background-color, border-color"),
 		minHeight: sidebarRowHeight(
 			projectContext()
 				? "pilo-sidebar-session-context-height"

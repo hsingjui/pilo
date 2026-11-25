@@ -4,6 +4,7 @@ import { Terminal, type TerminalRef } from "nsh/base";
 import { getMonospaceFontFamilyStack } from "@shared/font-settings";
 import type { HostPreferenceValues } from "@shared/host-preferences-types";
 import type { TerminalStore, TerminalTab } from "../state/terminal-store";
+import { useEnterFade } from "../ui/motion";
 import { t } from "./i18n";
 
 function fromBase64(data: string) {
@@ -59,11 +60,12 @@ function TerminalView(props: {
 	effect(() => {
 		if (props.visible()) untracked(() => ref?.focus());
 	});
+	const fade = useEnterFade(props.visible);
 	return (
 		<View
 			testID={`terminal:${id}`}
 			class="absolute inset-0 bg-background pt-1.5 pr-1 pb-1.5 pl-3"
-			style={{ display: props.visible() ? "flex" : "none" }}
+			style={[fade.style, { display: props.visible() ? "flex" : "none" }]}
 		>
 			<Terminal
 				ref={(node) => {

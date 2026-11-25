@@ -4,6 +4,8 @@ import {
 	effect,
 	keyboardFrame,
 	Overlay,
+	PanResponder,
+	reduceMotion,
 	safeArea,
 	Scroll,
 	signal,
@@ -31,8 +33,11 @@ import { Button } from "../app/ui/button";
 import { classNames } from "../app/ui/class-names";
 import { Icon } from "../app/ui/icon";
 import { Input } from "../app/ui/input";
+import { MOTION, tactileTransition } from "../app/ui/motion";
 import { Skeleton } from "../app/ui/skeleton";
 import { Spinner } from "../app/ui/spinner";
+import { Tab } from "../app/ui/tab";
+import { Tabs } from "../app/ui/tabs";
 import { styleVar } from "../app/ui/theme-style";
 import { MOBILE_TEXT } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
@@ -61,37 +66,104 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 	const view = signal<"scope" | "all">("scope");
 	const saveError = signal<string | null>(null);
 
+	const sheetHeight = signal(380);
 	const progress = createAnimatedValue(0);
-	const sheetTranslateY = progress.interpolate({
-		inputRange: [0, 1],
-		outputRange: [48, 0],
-		extrapolate: "clamp",
-	});
+	const sheetTranslateY = computed(() =>
+		progress.interpolate({
+			inputRange: [0, 1],
+			outputRange: [Math.max(160, sheetHeight()), 0],
+			extrapolate: "clamp",
+		}),
+	);
 	const backdropOpacity = progress.interpolate({
 		inputRange: [0, 1],
 		outputRange: [0, 0.4],
 		extrapolate: "clamp",
 	});
 
+	let dismissVelocity = 0;
+
+	const settleOpen = (velocity = 0) => {
+		if (reduceMotion()) {
+			progress.set(1);
+			return;
+		}
+		void progress.spring(1, { ...MOTION.spring.smooth, velocity });
+	};
+
+	const settleClosed = (velocity = 0) => {
+		if (reduceMotion()) {
+			progress.set(0);
+			if (!open()) {
+				mounted.set(false);
+				query.set("");
+				saveError.set(null);
+			}
+			return;
+		}
+		void progress
+			.spring(0, { ...MOTION.spring.smooth, velocity })
+			.then(({ finished }) => {
+				if (finished && !open()) {
+					mounted.set(false);
+					query.set("");
+					saveError.set(null);
+				}
+			});
+	};
+
 	effect(() => {
 		const isOpen = open();
 		untracked(() => {
 			if (isOpen) {
 				mounted.set(true);
-				void progress.timing(1, { duration: 180, easing: "easeOut" });
+				settleOpen(0);
 			} else {
 				if (!mounted()) return;
-				void progress
-					.timing(0, { duration: 140, easing: "easeIn" })
-					.then(({ finished }) => {
-						if (finished && !open()) {
-							mounted.set(false);
-							query.set("");
-							saveError.set(null);
-						}
-					});
+				const velocity = dismissVelocity;
+				dismissVelocity = 0;
+				settleClosed(velocity);
 			}
 		});
+	});
+
+	const dismissPan = PanResponder.create({
+		// nsh Web activates a `panActivation` gate without asking the responder
+		// handlers, and a dismissal skips `close()`'s guard, so a save in flight
+		// holds the sheet in place and reports its error here.
+		onShouldBlockNativeResponder: () => !props.savingScope(),
+		onMoveShouldSetPanResponder: (_event, gesture) =>
+			open() &&
+			!props.savingScope() &&
+			gesture.numberActiveTouches === 1 &&
+			gesture.dy > 8 &&
+			Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
+		onPanResponderMove: (_event, gesture) => {
+			const height = Math.max(160, sheetHeight());
+			const ratio = Math.max(
+				0,
+				Math.min(1, 1 - Math.max(0, gesture.dy) / height),
+			);
+			progress.set(ratio);
+		},
+		onPanResponderRelease: (_event, gesture) => {
+			if (props.savingScope()) return;
+			const height = Math.max(160, sheetHeight());
+			const normalizedVelocity = -gesture.vy / height;
+			if (
+				gesture.dy >= Math.min(96, height * 0.25) ||
+				(gesture.dy >= 24 && gesture.vy > 350)
+			) {
+				dismissVelocity = normalizedVelocity;
+				open.set(false);
+			} else {
+				settleOpen(normalizedVelocity);
+			}
+		},
+		onPanResponderTerminate: () => {
+			if (open()) settleOpen(0);
+		},
+		onPanResponderTerminationRequest: () => false,
 	});
 
 	const close = () => {
@@ -402,6 +474,10 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 							/>
 							<View
 								testID="mobile-run-config-sheet"
+								onLayout={({ bounds }) => {
+									if (bounds.size.height > 0)
+										sheetHeight.set(bounds.size.height);
+								}}
 								class="relative min-h-0 w-full max-w-lg shrink self-center overflow-hidden border-t border-border/70 bg-popover"
 								style={{
 									marginBottom: sheetMarginBottom(),
@@ -410,52 +486,58 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 									borderTopRightRadius: token("pilo-sheet-radius"),
 									boxShadow: styleVar("pilo-shadow-floating"),
 									paddingBottom: sheetPaddingBottom(),
-									opacity: progress,
-									transform: [{ translateY: sheetTranslateY }],
+									transform: [{ translateY: sheetTranslateY() }],
 								}}
 							>
-								{/* Sheet header */}
-								<View class="shrink-0 flex-row items-center justify-between pl-4 pr-2 pt-2">
-									<Text
-										class="font-sans font-medium text-popover-foreground"
-										style={MOBILE_TEXT.sm}
-									>
-										{() => t("chat.model")}
-									</Text>
-									<Button
-										testID="mobile-run-config-close"
-										variant="ghost"
-										size="icon"
-										class="size-11 rounded-full"
-										disabled={props.savingScope()}
-										accessibilityLabel={t("common.close")}
-										onPress={close}
-									>
-										<Icon
-											name="X"
-											size={16}
-											color={token("muted-foreground")}
-										/>
-									</Button>
+								{/* Grabber + swipe-down header */}
+								<View
+									{...dismissPan.panHandlers}
+									panActivation={{ activeOffsetY: 10, failOffsetX: 16 }}
+									class="shrink-0"
+								>
+									<View class="items-center pt-2 pb-0.5">
+										<View class="h-1 w-9 rounded-full bg-muted-foreground/30" />
+									</View>
+									<View class="shrink-0 flex-row items-center justify-between pl-4 pr-2 pt-0.5">
+										<Text
+											class="font-sans font-medium text-popover-foreground"
+											style={MOBILE_TEXT.sm}
+										>
+											{() => t("chat.model")}
+										</Text>
+										<Button
+											testID="mobile-run-config-close"
+											variant="ghost"
+											size="icon"
+											class="size-11 rounded-full"
+											disabled={props.savingScope()}
+											accessibilityLabel={t("common.close")}
+											onPress={close}
+										>
+											<Icon
+												name="X"
+												size={16}
+												color={token("muted-foreground")}
+											/>
+										</Button>
+									</View>
 								</View>
 
 								<Scroll class="min-h-0 shrink" bounces={false}>
 									{/* Model picker toolbar */}
 									<View class="flex-row items-center gap-2 px-3 py-2">
-										<View class="flex-row gap-0.5 rounded-[10px] bg-muted/60 p-0.5">
+										<Tabs
+											orientation="horizontal"
+											class="h-auto gap-0.5 rounded-[10px] bg-muted/60 p-0.5"
+											indicatorClass="inset-y-0.5 rounded-(--pilo-sheet-item-radius) bg-popover"
+											indicatorStyle={{ boxShadow: styleVar("pilo-shadow-xs") }}
+										>
 											{(["scope", "all"] as const).map((option) => (
-												<BaseButton
+												<Tab
 													testID={`run-config-view:${option}`}
-													class={classNames(
-														"min-h-11 min-w-20 items-center justify-center rounded-(--pilo-sheet-item-radius) px-3",
-														view() === option && "bg-popover",
-													)}
-													style={{
-														boxShadow:
-															view() === option
-																? styleVar("pilo-shadow-xs")
-																: undefined,
-													}}
+													class="min-h-11 min-w-20 rounded-(--pilo-sheet-item-radius) px-3 py-0"
+													style={tactileTransition("color")}
+													selected={view() === option}
 													accessibilityLabel={
 														option === "scope"
 															? t("chat.scopedModels")
@@ -478,9 +560,9 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 																: t("chat.allModels")
 														}
 													</Text>
-												</BaseButton>
+												</Tab>
 											))}
-										</View>
+										</Tabs>
 										<View class="ml-auto shrink-0">
 											{renderRefreshButton()}
 										</View>

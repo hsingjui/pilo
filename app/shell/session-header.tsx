@@ -24,6 +24,7 @@ import { DialogTitle } from "../ui/dialog-title";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
+import { MOTION, tactileTransition, viewTransition } from "../ui/motion";
 import { Input } from "../ui/input";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
@@ -202,8 +203,8 @@ export function SessionHeader(props: SessionHeaderProps) {
 									/>
 								) : (
 									<View
-										class="transition-opacity duration-200"
 										style={{
+											...viewTransition("opacity", MOTION.duration.calm),
 											opacity: props.logoHidden?.()
 												? 0
 												: chatSelected()
@@ -232,9 +233,11 @@ export function SessionHeader(props: SessionHeaderProps) {
 					);
 					const tabClass = (extra: string | false) =>
 						classNames(
-							"h-7 min-w-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) border px-2 transition-colors",
+							"h-7 min-w-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) border px-2",
 							extra,
 						);
+					const tabTransition = () =>
+						tactileTransition("background-color, border-color");
 					// Beside auxiliary tabs the title becomes a matching ghost tab.
 					if (hasTabs()) {
 						const pointerBlur = blurOnPointerPress();
@@ -256,6 +259,7 @@ export function SessionHeader(props: SessionHeaderProps) {
 									),
 								)}
 								focusVisibleStyle={focusRingStyle(token("ring"))}
+								style={tabTransition()}
 								role="tab"
 								selected={chatSelected()}
 								accessibilityLabel={props.title()}
@@ -342,11 +346,12 @@ function WorkspaceHeaderTab(props: {
 				if (button === "middle") props.tab.onClose();
 			}}
 			class={classNames(
-				"h-7 max-w-44 shrink-0 flex-row items-center rounded-(--pilo-radius-md) border transition-colors",
+				"h-7 max-w-44 shrink-0 flex-row items-center rounded-(--pilo-radius-md) border",
 				active()
 					? "border-border/70 bg-secondary"
 					: "border-transparent hover:bg-hover/70",
 			)}
+			style={tactileTransition("background-color, border-color")}
 		>
 			<BaseButton
 				ref={pointerBlur.ref}
@@ -396,7 +401,7 @@ function WorkspaceHeaderTab(props: {
 				variant="ghost"
 				size="icon"
 				class={classNames(
-					"mr-0.5 size-5 shrink-0 rounded-sm transition-opacity",
+					"mr-0.5 size-5 shrink-0 rounded-sm",
 					showClose() ? "opacity-100" : "opacity-0",
 				)}
 				accessibilityLabel={props.tab.closeLabel()}

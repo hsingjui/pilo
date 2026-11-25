@@ -252,15 +252,26 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 										}
 									>
 										<View
-											class={`pointer-events-none rounded-full duration-150 ease-out ${
+											class={`pointer-events-none rounded-full ${
 												index() === hoveredIndex()
 													? "bg-muted-foreground/80"
 													: "bg-muted-foreground/45"
 											}`}
 											style={{
 												height: TICK_HEIGHT,
-												width: Math.min(trackWidth(), widthAt(tick())),
-												transitionProperty: "background-color",
+												width: trackWidth(),
+												transformOrigin: "left center",
+												transform: [
+													{
+														scaleX:
+															trackWidth() > 0
+																? Math.min(1, widthAt(tick()) / trackWidth())
+																: 1,
+													},
+												],
+												transitionProperty: "background-color, transform",
+												transitionDuration: 150,
+												transitionTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
 											}}
 										/>
 									</View>
@@ -270,18 +281,27 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 						{() =>
 							showActiveTick() && (
 								<View
-									class="pointer-events-none absolute left-0 top-0 rounded-full bg-foreground/80 duration-150 ease-out"
+									class="pointer-events-none absolute left-0 top-0 rounded-full bg-foreground/80"
 									style={{
 										height: TICK_HEIGHT,
-										width: activeWidth(),
+										width: trackWidth(),
+										transformOrigin: "left center",
 										transform: [
 											{
 												translateY:
 													(props.activeIndex() - start()) * TICK_PITCH +
 													(TICK_PITCH - TICK_HEIGHT) / 2,
 											},
+											{
+												scaleX:
+													trackWidth() > 0
+														? Math.min(1, activeWidth() / trackWidth())
+														: 1,
+											},
 										],
 										transitionProperty: "transform",
+										transitionDuration: 150,
+										transitionTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
 									}}
 								/>
 							)

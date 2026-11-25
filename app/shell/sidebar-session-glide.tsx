@@ -1,4 +1,5 @@
 import { type Bounds, context, type JSX, signal, View } from "nsh";
+import { springTransition, tactileTransition } from "../ui/motion";
 
 export const SessionGlideContext = context<{
 	show: (bounds: Bounds | null) => void;
@@ -26,12 +27,17 @@ export function SessionGlide(props: { children?: JSX.Element }) {
 			onMouseLeave={() => highlight.set(null)}
 		>
 			<View
-				class="pointer-events-none absolute inset-x-0 top-0 rounded-md bg-sidebar-hover transition duration-150 ease-out"
-				style={{
-					height: last().height,
-					opacity: highlight() ? 1 : 0,
-					transform: [{ translateY: last().top }],
-				}}
+				class="pointer-events-none absolute inset-x-0 top-0 rounded-md bg-sidebar-hover"
+				style={[
+					highlight()
+						? springTransition("transform, opacity", "crisp")
+						: tactileTransition("opacity"),
+					{
+						height: last().height,
+						opacity: highlight() ? 1 : 0,
+						transform: [{ translateY: last().top }],
+					},
+				]}
 			/>
 			<SessionGlideContext.Provider value={glide}>
 				{props.children}

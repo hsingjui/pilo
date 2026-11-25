@@ -390,24 +390,29 @@ export class ChatRunConfigStore {
 				name: agentState.sessionName,
 			},
 		};
-		if (!current.modelDirty && agentState.model) {
+		// The process can report its own defaults before the first send applies Scope.
+		const initial = this.pendingInitial;
+		if (!current.modelDirty && !initial?.model && agentState.model) {
 			patch.model = agentState.model;
 			patch.thinkingLevels = [...getPiModelThinkingLevels(agentState.model)];
 		}
-		if (!current.thinkingDirty && !current.changing) {
+		if (!current.thinkingDirty && !initial?.level && !current.changing) {
 			patch.thinkingLevel = agentState.thinkingLevel;
 		}
 		this.update(patch);
 		const [, thinking] = await Promise.all([
 			this.refreshStats(),
-			this.rpc<{ levels: PiThinkingLevel[] }>(sessionKey, {
-				type: "get_available_thinking_levels",
-			}),
+			initial?.model
+				? undefined
+				: this.rpc<{ levels: PiThinkingLevel[] }>(sessionKey, {
+						type: "get_available_thinking_levels",
+					}),
 		]);
 		if (
 			request === this.requests &&
 			open === this.opens &&
 			thinking?.levels &&
+			!this.pendingInitial?.model &&
 			!this.current()?.changing
 		) {
 			this.update({ thinkingLevels: thinking.levels });

@@ -11,6 +11,7 @@ import { DialogClose } from "../ui/dialog-close";
 import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
+import { useMountedDialog } from "../ui/motion";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
 import { field } from "./connection-form";
@@ -130,122 +131,134 @@ export type ConfigureDialog = ReturnType<typeof createConfigureDialog>;
 
 export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 	const dialog = props.dialog;
-	const draft = dialog.draft();
-	if (!draft) return null;
-	const toasts = new AppToasts();
-	const usesLocalPi =
-		draft.connection.kind.type === "ssh" &&
-		draft.connection.piRuntime === "local";
+	const mounted = useMountedDialog(dialog.open);
 	return (
 		<Dialog
 			testID="settings-conn-configure"
-			open={true}
+			open={dialog.open()}
 			accessibilityLabel={t("connection.configureTitle")}
 			class="max-w-md"
 			onOpenChange={({ open }) => {
 				if (!open) dialog.close();
 			}}
+			onClose={mounted.onClose}
 		>
-			<DialogHeader>
-				<DialogTitle>{t("connection.configureTitle")}</DialogTitle>
-			</DialogHeader>
-			{field(
-				t("connection.name"),
-				<Input
-					size="sm"
-					testID="settings-conn-name"
-					value={draft.name}
-					onChange={(event) => {
-						draft.name = event.value;
-						dialog.formRev.update((n) => n + 1);
-					}}
-				/>,
-			)}
 			{() => {
-				void dialog.piRev();
-				const probing = dialog.probing();
-				const disabled = dialog.busy() || probing;
-				return usesLocalPi
-					? field(
-							t("connection.runtimeLocation"),
-							<View class="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
-								<Text class="font-sans text-[11px] text-muted-foreground">
-									{t("connection.localPi")}
-								</Text>
-							</View>,
-						)
-					: field(
-							t("connection.piPath"),
-							<View class="flex-row gap-2">
-								<Input
-									size="sm"
-									testID="settings-conn-pi"
-									class="flex-1 font-mono"
-									value={draft.piExecutable}
-									placeholder={String(t("connection.autoDetect"))}
-									onChange={(event) => {
-										draft.piExecutable = event.value;
-										dialog.formRev.update((n) => n + 1);
-									}}
-								/>
-								<Button
-									testID="settings-conn-probe"
-									variant="outline"
-									size="sm"
-									class="shrink-0"
-									accessibilityLabel={
-										probing
-											? t("connection.detecting")
-											: t("connection.detectPi")
-									}
-									disabled={disabled}
-									onPress={() => void dialog.probePi(toasts)}
-								>
-									<View class="relative items-center justify-center">
-										<Text class={probing ? "font-sans invisible" : "font-sans"}>
-											{t("connection.detectPi")}
-										</Text>
-										{probing ? (
-											<View class="absolute inset-0 items-center justify-center">
-												<Spinner size={14} />
-											</View>
-										) : null}
-									</View>
-								</Button>
-							</View>,
-						);
-			}}
-			{() => {
-				void dialog.formRev();
+				const draft = mounted.mounted() ? dialog.draft() : null;
+				if (!draft) return null;
+				const toasts = new AppToasts();
+				const usesLocalPi =
+					draft.connection.kind.type === "ssh" &&
+					draft.connection.piRuntime === "local";
 				return (
-					<DialogFooter>
-						<Button
-							testID="settings-conn-cancel"
-							variant="outline"
-							size="sm"
-							disabled={dialog.busy()}
+					<>
+						<DialogHeader>
+							<DialogTitle>{t("connection.configureTitle")}</DialogTitle>
+						</DialogHeader>
+						{field(
+							t("connection.name"),
+							<Input
+								size="sm"
+								testID="settings-conn-name"
+								value={draft.name}
+								onChange={(event) => {
+									draft.name = event.value;
+									dialog.formRev.update((n) => n + 1);
+								}}
+							/>,
+						)}
+						{() => {
+							void dialog.piRev();
+							const probing = dialog.probing();
+							const disabled = dialog.busy() || probing;
+							return usesLocalPi
+								? field(
+										t("connection.runtimeLocation"),
+										<View class="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+											<Text class="font-sans text-[11px] text-muted-foreground">
+												{t("connection.localPi")}
+											</Text>
+										</View>,
+									)
+								: field(
+										t("connection.piPath"),
+										<View class="flex-row gap-2">
+											<Input
+												size="sm"
+												testID="settings-conn-pi"
+												class="flex-1 font-mono"
+												value={draft.piExecutable}
+												placeholder={String(t("connection.autoDetect"))}
+												onChange={(event) => {
+													draft.piExecutable = event.value;
+													dialog.formRev.update((n) => n + 1);
+												}}
+											/>
+											<Button
+												testID="settings-conn-probe"
+												variant="outline"
+												size="sm"
+												class="shrink-0"
+												accessibilityLabel={
+													probing
+														? t("connection.detecting")
+														: t("connection.detectPi")
+												}
+												disabled={disabled}
+												onPress={() => void dialog.probePi(toasts)}
+											>
+												<View class="relative items-center justify-center">
+													<Text
+														class={
+															probing ? "font-sans invisible" : "font-sans"
+														}
+													>
+														{t("connection.detectPi")}
+													</Text>
+													{probing ? (
+														<View class="absolute inset-0 items-center justify-center">
+															<Spinner size={14} />
+														</View>
+													) : null}
+												</View>
+											</Button>
+										</View>,
+									);
+						}}
+						{() => {
+							void dialog.formRev();
+							return (
+								<DialogFooter>
+									<Button
+										testID="settings-conn-cancel"
+										variant="outline"
+										size="sm"
+										disabled={dialog.busy()}
+										onPress={() => dialog.close()}
+									>
+										<Text class="font-sans">{t("common.cancel")}</Text>
+									</Button>
+									<Button
+										testID="settings-conn-save"
+										size="sm"
+										disabled={dialog.busy() || !draft.name.trim()}
+										onPress={() => void dialog.save(toasts)}
+									>
+										<Text class="font-sans">
+											{dialog.busy() ? t("common.saving") : t("common.save")}
+										</Text>
+									</Button>
+								</DialogFooter>
+							);
+						}}
+						<DialogClose
+							accessibilityLabel={t("common.close")}
 							onPress={() => dialog.close()}
-						>
-							<Text class="font-sans">{t("common.cancel")}</Text>
-						</Button>
-						<Button
-							testID="settings-conn-save"
-							size="sm"
-							disabled={dialog.busy() || !draft.name.trim()}
-							onPress={() => void dialog.save(toasts)}
-						>
-							<Text class="font-sans">
-								{dialog.busy() ? t("common.saving") : t("common.save")}
-							</Text>
-						</Button>
-					</DialogFooter>
+						/>
+						<AppToastStack toasts={toasts} />
+					</>
 				);
 			}}
-			<DialogClose
-				accessibilityLabel={t("common.close")}
-				onPress={() => dialog.close()}
-			/>
-			<AppToastStack toasts={toasts} />
 		</Dialog>
 	);
 }

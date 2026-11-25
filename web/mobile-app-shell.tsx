@@ -1,9 +1,12 @@
 import {
 	type Accessor,
+	cleanup,
 	computed,
+	createMotion,
 	effect,
 	keyboardFrame,
 	PanResponder,
+	reduceMotion,
 	safeArea,
 	signal,
 	Text,
@@ -69,6 +72,7 @@ import type { ModelCatalogStore } from "../app/state/model-catalog";
 import { Button } from "../app/ui/button";
 import { writeClipboardText } from "../app/ui/clipboard";
 import { Icon } from "../app/ui/icon";
+import { MOTION } from "../app/ui/motion";
 import { Spinner } from "../app/ui/spinner";
 import { ErrorState } from "../app/ui/state-view";
 import { MobileDrawer, mobileDrawerWidth } from "./mobile-drawer";
@@ -320,6 +324,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 
 	// Swipe right from anywhere in the left 2/3 of the workspace to drag open
 	// the session drawer live, matching React's `useMobileNavigationSwipe`.
+	const drawerDragVelocity = signal(0);
 	const updateDragProgress = (dx: number) => {
 		const width = mobileDrawerWidth(windowSize().width);
 		drawerDragProgress.set(Math.max(0, Math.min(1, dx / width)));
@@ -334,12 +339,15 @@ export function MobileAppShell(props: MobileAppShellProps) {
 			gesture.dx >= 10 &&
 			gesture.dx > Math.abs(gesture.dy) * SWIPE_OPEN_RATIO,
 		onPanResponderGrant: (_event, gesture) => {
+			drawerDragVelocity.set(0);
 			updateDragProgress(gesture.dx);
 		},
 		onPanResponderMove: (_event, gesture) => {
 			updateDragProgress(gesture.dx);
 		},
 		onPanResponderRelease: (_event, gesture) => {
+			const width = mobileDrawerWidth(windowSize().width);
+			drawerDragVelocity.set(width > 0 ? gesture.vx / width : 0);
 			drawerDragProgress.set(null);
 			if (
 				gesture.dx >= SWIPE_OPEN_DISTANCE ||
@@ -349,6 +357,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 			}
 		},
 		onPanResponderTerminate: () => {
+			drawerDragVelocity.set(0);
 			drawerDragProgress.set(null);
 		},
 		onPanResponderTerminationRequest: () => false,
@@ -404,11 +413,26 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		const recovered =
 			conn === "connected" && props.recoveryState() === "recovered";
 		const offline = conn === "offline";
+		const enter = createMotion({
+			enter: reduceMotion()
+				? {
+						keyframes: { opacity: [0, 1] },
+						duration: 80,
+						easing: MOTION.easing.standardTuple,
+					}
+				: {
+						keyframes: { opacity: [0, 1], translateY: [6, 0] },
+						duration: MOTION.duration.surfaceIn,
+						easing: MOTION.easing.standardTuple,
+					},
+		});
+		cleanup(() => enter.stop());
 		return (
 			<View
 				testID="mobile-connection-banner"
 				role="alert"
 				class="mb-1.5 min-w-0 flex-row items-center gap-2.5 rounded-xl border border-border/60 bg-muted px-3 py-2"
+				style={enter.style}
 			>
 				{recovered ? (
 					<Icon name="CircleCheck" size={14} color={token("status-success")} />
@@ -467,10 +491,25 @@ export function MobileAppShell(props: MobileAppShellProps) {
 	const renderAuthExpiryNotice = () => {
 		const reminder = props.authExpiryReminder?.();
 		if (!reminder) return null;
+		const enter = createMotion({
+			enter: reduceMotion()
+				? {
+						keyframes: { opacity: [0, 1] },
+						duration: 80,
+						easing: MOTION.easing.standardTuple,
+					}
+				: {
+						keyframes: { opacity: [0, 1], translateY: [6, 0] },
+						duration: MOTION.duration.surfaceIn,
+						easing: MOTION.easing.standardTuple,
+					},
+		});
+		cleanup(() => enter.stop());
 		return (
 			<View
 				testID="mobile-auth-expiry-banner"
 				class="mb-1.5 min-w-0 flex-row items-center gap-1 rounded-xl border border-border/60 bg-muted py-1 pl-3 pr-1"
+				style={enter.style}
 			>
 				<View class="min-w-0 flex-1 py-1">
 					<Text
@@ -494,6 +533,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 					disabled={reminder.renewing}
 					onPress={reminder.renew}
 				>
+					{reminder.renewing ? <Spinner size={14} /> : null}
 					<Text class="font-sans text-foreground" style={MOBILE_TEXT.xs}>
 						{() => t("settings.remoteAuthorizationRenew")}
 					</Text>
@@ -851,8 +891,12 @@ export function MobileAppShell(props: MobileAppShellProps) {
 							<MobileDrawer
 								store={store}
 								open={drawerOpen}
-								onOpenChange={(open) => drawerOpen.set(open)}
+								onOpenChange={(open) => {
+									if (!open) drawerDragVelocity.set(0);
+									drawerOpen.set(open);
+								}}
 								dragProgress={drawerDragProgress}
+								dragVelocity={drawerDragVelocity}
 								connectionState={props.connectionState}
 								onReconnect={props.onReconnect}
 								onOpenSearch={() => searchOpen.set(true)}
@@ -860,16 +904,13 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
 							/>
 
-							{() =>
-								searchOpen() ? (
-									<CommandPalette
-										store={store}
-										shortcuts={() => ({})}
-										searchSessions={props.searchSessions}
-										onClose={() => searchOpen.set(false)}
-									/>
-								) : null
-							}
+							<CommandPalette
+								open={searchOpen}
+								store={store}
+								shortcuts={() => ({})}
+								searchSessions={props.searchSessions}
+								onClose={() => searchOpen.set(false)}
+							/>
 
 							<ChatImageLightbox
 								image={previewImage}

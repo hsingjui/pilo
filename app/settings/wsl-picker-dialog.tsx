@@ -9,6 +9,7 @@ import { Dialog } from "../ui/dialog";
 import { DialogClose } from "../ui/dialog-close";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
+import { useMountedDialog } from "../ui/motion";
 import { Icon } from "../ui/icon";
 import type { ConnectionsClient } from "./connections-pane";
 
@@ -85,76 +86,85 @@ export type WslPicker = ReturnType<typeof createWslPicker>;
 
 export function WslPickerDialog(props: { picker: WslPicker }) {
 	const picker = props.picker;
-	const toasts = new AppToasts();
+	const mounted = useMountedDialog(picker.open);
 	return (
 		<Dialog
 			testID="settings-wsl-picker"
-			open={true}
+			open={picker.open()}
 			accessibilityLabel={t("connection.addWslTitle")}
 			class="max-w-md"
 			onOpenChange={({ open }) => {
 				if (!open) picker.open.set(false);
 			}}
+			onClose={mounted.onClose}
 		>
-			<DialogHeader>
-				<DialogTitle>{t("connection.addWslTitle")}</DialogTitle>
-			</DialogHeader>
-			<Scroll
-				class="max-h-72 rounded-md border border-border/60"
-				bounces={false}
-			>
-				{() => {
-					const error = picker.loadError();
-					if (error !== null)
-						return (
-							<Text class="font-sans px-3 py-4 text-xs text-destructive">
-								{`${t("connection.loadWslFailed")} · ${error}`}
-							</Text>
-						);
-					const items = picker.distros();
-					return items === null ? (
-						<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
-							{t("connection.loading")}
-						</Text>
-					) : items.length === 0 ? (
-						<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
-							{t("connection.noWsl")}
-						</Text>
-					) : (
-						items.map((distro) => {
-							const added = picker.addedDistros().has(distro.name);
-							return (
-								<View class="flex-row items-center gap-3 border-border/60 border-b px-3 py-2 last:border-b-0">
-									<Icon
-										name="Monitor"
-										size={16}
-										color={token("muted-foreground")}
-									/>
-									<Text class="font-sans min-w-0 flex-1 truncate text-sm">
-										{distro.name}
-									</Text>
-									<Button
-										testID={`settings-wsl-add-${distro.name}`}
-										variant="outline"
-										size="sm"
-										disabled={picker.busy() || added}
-										onPress={() => void picker.add(distro.name, toasts)}
-									>
-										<Text class="font-sans">
-											{added ? t("common.added") : t("common.add")}
+			{() => {
+				if (!mounted.mounted()) return null;
+				const toasts = new AppToasts();
+				return (
+					<>
+						<DialogHeader>
+							<DialogTitle>{t("connection.addWslTitle")}</DialogTitle>
+						</DialogHeader>
+						<Scroll
+							class="max-h-72 rounded-md border border-border/60"
+							bounces={false}
+						>
+							{() => {
+								const error = picker.loadError();
+								if (error !== null)
+									return (
+										<Text class="font-sans px-3 py-4 text-xs text-destructive">
+											{`${t("connection.loadWslFailed")} · ${error}`}
 										</Text>
-									</Button>
-								</View>
-							);
-						})
-					);
-				}}
-			</Scroll>
-			<DialogClose
-				accessibilityLabel={t("common.close")}
-				onPress={() => picker.open.set(false)}
-			/>
-			<AppToastStack toasts={toasts} />
+									);
+								const items = picker.distros();
+								return items === null ? (
+									<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
+										{t("connection.loading")}
+									</Text>
+								) : items.length === 0 ? (
+									<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
+										{t("connection.noWsl")}
+									</Text>
+								) : (
+									items.map((distro) => {
+										const added = picker.addedDistros().has(distro.name);
+										return (
+											<View class="flex-row items-center gap-3 border-border/60 border-b px-3 py-2 last:border-b-0">
+												<Icon
+													name="Monitor"
+													size={16}
+													color={token("muted-foreground")}
+												/>
+												<Text class="font-sans min-w-0 flex-1 truncate text-sm">
+													{distro.name}
+												</Text>
+												<Button
+													testID={`settings-wsl-add-${distro.name}`}
+													variant="outline"
+													size="sm"
+													disabled={picker.busy() || added}
+													onPress={() => void picker.add(distro.name, toasts)}
+												>
+													<Text class="font-sans">
+														{added ? t("common.added") : t("common.add")}
+													</Text>
+												</Button>
+											</View>
+										);
+									})
+								);
+							}}
+						</Scroll>
+						<DialogClose
+							accessibilityLabel={t("common.close")}
+							onPress={() => picker.open.set(false)}
+						/>
+						<AppToastStack toasts={toasts} />
+					</>
+				);
+			}}
 		</Dialog>
 	);
 }

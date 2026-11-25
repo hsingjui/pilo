@@ -1,4 +1,14 @@
-import { Image, Scroll, Text, token, View, windowSize } from "nsh";
+import {
+	createAnimatedValue,
+	effect,
+	Image,
+	reduceMotion,
+	Scroll,
+	Text,
+	token,
+	View,
+	windowSize,
+} from "nsh";
 import { Dialog as BaseDialog } from "nsh/base";
 
 import appIcon from "../assets/app-icon.png";
@@ -9,6 +19,7 @@ import { DialogClose } from "../ui/dialog-close";
 import { DialogDescription } from "../ui/dialog-description";
 import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
+import { MOTION, useMountedDialog } from "../ui/motion";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
@@ -57,6 +68,21 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 		return total ? formatUpdateMegabytes(total, appLocale()) : null;
 	};
 
+	const dialog = useMountedDialog(update.dialogOpen);
+	const progressRatio = createAnimatedValue(0);
+	effect(() => {
+		const pct = progress();
+		const next = pct === null ? 0 : Math.min(1, Math.max(0, pct / 100));
+		if (reduceMotion()) {
+			progressRatio.set(next);
+		} else {
+			void progressRatio.timing(next, {
+				duration: MOTION.duration.calm,
+				easing: MOTION.easing.standardTuple,
+			});
+		}
+	});
+
 	const size = () => {
 		const win = windowSize();
 		return {
@@ -72,6 +98,7 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 			animation="fade"
 			accessibilityLabel={t("settings.updateDialogTitle")}
 			onOpenChange={({ open }) => update.setDialogOpen(open)}
+			onClose={dialog.onClose}
 			class="overflow-hidden rounded-(--pilo-radius-lg) border border-border bg-background text-foreground font-sans self-center my-auto"
 			style={[
 				{
@@ -85,7 +112,7 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 			backdropStyle={{ zIndex: token("z-dialog") }}
 		>
 			{() =>
-				update.dialogOpen() ? (
+				dialog.mounted() ? (
 					<View class="relative min-h-0 flex-1">
 						<View class="shrink-0 flex-row items-center gap-3 px-6 pb-5 pr-12 pt-5">
 							<Image
@@ -213,8 +240,11 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 													class="h-1 w-full overflow-hidden rounded-full bg-muted"
 												>
 													<View
-														class="h-full rounded-full bg-primary"
-														style={{ width: `${pct}%` }}
+														class="h-full w-full rounded-full bg-primary"
+														style={{
+															transformOrigin: "left center",
+															transform: [{ scaleX: progressRatio }],
+														}}
 													/>
 												</View>
 											) : null;

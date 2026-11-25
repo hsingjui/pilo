@@ -5,6 +5,7 @@ import {
 	effect,
 	Overlay,
 	PanResponder,
+	reduceMotion,
 	Scroll,
 	safeArea,
 	signal,
@@ -33,6 +34,12 @@ import type { WebRemoteConnectionState } from "./web-remote-client";
 import type { AppStore } from "../app/state/app-store";
 import { Button } from "../app/ui/button";
 import { Icon } from "../app/ui/icon";
+import {
+	chevronRotateStyle,
+	MOTION,
+	springTransition,
+	tactileTransition,
+} from "../app/ui/motion";
 import { Spinner } from "../app/ui/spinner";
 import { styleVar } from "../app/ui/theme-style";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
@@ -45,6 +52,8 @@ export interface MobileDrawerProps {
 	onOpenChange: (open: boolean) => void;
 	/** Live 0..1 drag progress while the user is swiping open from the workspace. */
 	dragProgress?: Accessor<number | null>;
+	/** Release velocity (in progress/sec) from the open swipe gesture. */
+	dragVelocity?: Accessor<number>;
 	connectionState: Accessor<WebRemoteConnectionState>;
 	onReconnect?: () => void;
 	onOpenSearch?: () => void;
@@ -116,12 +125,12 @@ export function MobileDrawer(props: MobileDrawerProps) {
 
 	const drawerWidth = computed(() => mobileDrawerWidth(windowSize().width));
 
-	// 0 = fully closed (-drawerWidth), 1 = fully open (0).
+	// 0 = fully closed (-drawerWidth - shadow bleed), 1 = fully open (0).
 	const progress = createAnimatedValue(0);
 	const translateX = computed(() =>
 		progress.interpolate({
 			inputRange: [0, 1],
-			outputRange: [-drawerWidth(), 0],
+			outputRange: [-drawerWidth() - 24, 0],
 			extrapolate: "clamp",
 		}),
 	);
@@ -130,6 +139,37 @@ export function MobileDrawer(props: MobileDrawerProps) {
 		outputRange: [0, 0.4],
 		extrapolate: "clamp",
 	});
+
+	let closeVelocity = 0;
+
+	const settleOpen = (velocity = 0) => {
+		if (reduceMotion()) {
+			progress.set(1);
+			return;
+		}
+		void progress.spring(1, { ...MOTION.spring.smooth, velocity });
+	};
+
+	const settleClosed = (velocity = 0) => {
+		if (reduceMotion()) {
+			progress.set(0);
+			if (!props.open() && (props.dragProgress?.() ?? null) === null) {
+				mounted.set(false);
+			}
+			return;
+		}
+		void progress
+			.spring(0, { ...MOTION.spring.smooth, velocity })
+			.then(({ finished }) => {
+				if (
+					finished &&
+					!props.open() &&
+					(props.dragProgress?.() ?? null) === null
+				) {
+					mounted.set(false);
+				}
+			});
+	};
 
 	effect(() => {
 		const isOpen = props.open();
@@ -140,23 +180,16 @@ export function MobileDrawer(props: MobileDrawerProps) {
 				progress.set(Math.max(0, Math.min(1, drag)));
 				return;
 			}
+			const openVelocity = props.dragVelocity?.() ?? 0;
 			if (isOpen) {
 				mounted.set(true);
-				void progress.timing(1, { duration: 180, easing: "easeOut" });
+				settleOpen(openVelocity);
 			} else {
 				confirmingDeleteKey.set(null);
 				if (!mounted()) return;
-				void progress
-					.timing(0, { duration: 160, easing: "easeIn" })
-					.then(({ finished }) => {
-						if (
-							finished &&
-							!props.open() &&
-							(props.dragProgress?.() ?? null) === null
-						) {
-							mounted.set(false);
-						}
-					});
+				const velocity = closeVelocity !== 0 ? closeVelocity : openVelocity;
+				closeVelocity = 0;
+				settleClosed(velocity);
 			}
 		});
 	});
@@ -173,19 +206,20 @@ export function MobileDrawer(props: MobileDrawerProps) {
 			progress.set(ratio);
 		},
 		onPanResponderRelease: (_event, gesture) => {
+			const width = drawerWidth();
+			const normalizedVelocity = width > 0 ? gesture.vx / width : 0;
 			if (
 				-gesture.dx >= CLOSE_SWIPE_THRESHOLD ||
 				(-gesture.dx >= 24 && gesture.vx < -CLOSE_SWIPE_VELOCITY)
 			) {
+				closeVelocity = normalizedVelocity;
 				props.onOpenChange(false);
 			} else {
-				void progress.timing(1, { duration: 160, easing: "easeOut" });
+				settleOpen(normalizedVelocity);
 			}
 		},
 		onPanResponderTerminate: () => {
-			if (props.open()) {
-				void progress.timing(1, { duration: 160, easing: "easeOut" });
-			}
+			if (props.open()) settleOpen(0);
 		},
 		onPanResponderTerminationRequest: () => false,
 	});
@@ -556,16 +590,19 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									{() =>
 										segmentThumbWidth() > 0 ? (
 											<View
-												class="pointer-events-none absolute inset-y-1 left-1 rounded-(--pilo-segment-item-radius) bg-sidebar transition-transform duration-150 ease-out"
-												style={{
-													width: segmentThumbWidth(),
-													transform: [
-														{
-															translateX:
-																mode() === "recent" ? segmentThumbWidth() : 0,
-														},
-													],
-												}}
+												class="pointer-events-none absolute inset-y-1 left-1 rounded-(--pilo-segment-item-radius) bg-sidebar"
+												style={[
+													springTransition("transform", "crisp"),
+													{
+														width: segmentThumbWidth(),
+														transform: [
+															{
+																translateX:
+																	mode() === "recent" ? segmentThumbWidth() : 0,
+															},
+														],
+													},
+												]}
 											/>
 										) : null
 									}
@@ -594,7 +631,10 @@ export function MobileDrawer(props: MobileDrawerProps) {
 														? "text-sidebar-foreground"
 														: "text-sidebar-foreground-muted"
 												}`}
-												style={MOBILE_TEXT.segment}
+												style={[
+													tactileTransition("color"),
+													MOBILE_TEXT.segment,
+												]}
 											>
 												{tab.label}
 											</Text>
@@ -675,13 +715,16 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																	>
 																		{envName}
 																	</Text>
-																	<View class="h-5 w-4 shrink-0 items-center justify-center">
+																	<View
+																		class="h-5 w-4 shrink-0 items-center justify-center"
+																		style={chevronRotateStyle(
+																			envExpanded,
+																			0,
+																			90,
+																		)}
+																	>
 																		<Icon
-																			name={
-																				envExpanded
-																					? "ChevronDown"
-																					: "ChevronRight"
-																			}
+																			name="ChevronRight"
 																			size={14}
 																			color={token("sidebar-foreground-muted")}
 																		/>
@@ -816,13 +859,16 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																								{String(sessions.length)}
 																							</Text>
 																						) : null}
-																						<View class="h-5 w-4 shrink-0 items-center justify-center">
+																						<View
+																							class="h-5 w-4 shrink-0 items-center justify-center"
+																							style={chevronRotateStyle(
+																								projExpanded,
+																								0,
+																								90,
+																							)}
+																						>
 																							<Icon
-																								name={
-																									projExpanded
-																										? "ChevronDown"
-																										: "ChevronRight"
-																								}
+																								name="ChevronRight"
 																								size={14}
 																								color={token(
 																									"sidebar-foreground-muted",

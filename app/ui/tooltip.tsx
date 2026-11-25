@@ -3,6 +3,7 @@ import { Tooltip as BaseTooltip, type TooltipProps } from "nsh/base";
 import type { TextStyle } from "nsh/types";
 import { styleVar } from "./theme-style";
 import { classNames } from "./class-names";
+import { tooltipMotionStyles } from "./motion";
 
 export type { TooltipProps } from "nsh/base";
 
@@ -23,7 +24,13 @@ export function tooltipStyle(): TextStyle {
 }
 
 export function Tooltip(props: TooltipProps) {
-	const [local, rest] = split(props, ["class", "style"]);
+	const [local, rest] = split(props, [
+		"class",
+		"style",
+		"startingStyle",
+		"endingStyle",
+	]);
+	const motion = () => tooltipMotionStyles();
 	return (
 		<BaseTooltip
 			{...rest}
@@ -31,7 +38,14 @@ export function Tooltip(props: TooltipProps) {
 				"overflow-hidden rounded-(--pilo-radius-md) border border-(--pilo-tooltip-border) px-3 py-1.5 text-xs font-sans",
 				local.class,
 			)}
-			style={[tooltipStyle(), { zIndex: token("z-tooltip") }, local.style]}
+			style={[
+				motion().style,
+				tooltipStyle(),
+				{ zIndex: token("z-tooltip") },
+				local.style,
+			]}
+			startingStyle={[motion().startingStyle, local.startingStyle]}
+			endingStyle={[motion().endingStyle, local.endingStyle]}
 		/>
 	);
 }

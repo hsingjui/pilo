@@ -1,12 +1,14 @@
 import {
 	cleanup,
 	computed,
+	createMotion,
 	effect,
 	Image,
 	type InputRef,
 	Overlay,
 	Picker,
 	platform,
+	reduceMotion,
 	Scroll,
 	signal,
 	Text,
@@ -43,6 +45,7 @@ import type { ComposerStore } from "../app/composer/composer-store";
 import { Button } from "../app/ui/button";
 import { FileTypeIcon } from "../app/ui/file-type-icon";
 import { Icon, type IconName } from "../app/ui/icon";
+import { MOTION, tactileTransition } from "../app/ui/motion";
 import { menuPopupClass, menuPopupStyle } from "../app/ui/menu";
 import { menuRowClass } from "../app/ui/menu-row";
 import { Skeleton } from "../app/ui/skeleton";
@@ -346,6 +349,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						: "relative w-full border border-(--pilo-composer-border) bg-(--pilo-composer-background)"
 				}
 				style={{
+					...tactileTransition("border-color, box-shadow, background-color"),
 					borderColor:
 						focused() && !readOnly()
 							? token("pilo-composer-focus-border")
@@ -608,8 +612,27 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 			</View>
 
 			{/* `@` / `/` suggestions popup */}
-			{() =>
-				menuOpen() ? (
+			{() => {
+				if (!menuOpen()) return null;
+				const suggestMotion = createMotion({
+					enter: reduceMotion()
+						? {
+								keyframes: { opacity: [0, 1] },
+								duration: 80,
+								easing: MOTION.easing.standardTuple,
+							}
+						: {
+								keyframes: {
+									opacity: [0, 1],
+									translateY: [4, 0],
+									scale: [0.98, 1],
+								},
+								duration: MOTION.duration.surfaceIn,
+								easing: MOTION.easing.standardTuple,
+							},
+				});
+				cleanup(() => suggestMotion.stop());
+				return (
 					<Overlay
 						anchor={surface()}
 						placement="top"
@@ -622,6 +645,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 							class={`${menuPopupClass} min-w-0 overflow-hidden`}
 							style={[
 								menuPopupStyle(),
+								suggestMotion.style,
 								{ width: Math.min(surfaceWidth() || 320, 480) },
 							]}
 						>
@@ -679,9 +703,10 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 										<View class="gap-0.5">
 											{entries.map((entry, idx) => (
 												<BaseButton
-													class={`${menuRowClass} min-h-11 ${
+													class={`${menuRowClass} min-h-11 active:bg-hover ${
 														selectedIndex() === idx ? "bg-hover" : ""
 													}`}
+													style={tactileTransition("background-color, color")}
 													onPress={() => pickSuggestion(entry)}
 												>
 													<Icon
@@ -707,8 +732,8 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 							</Scroll>
 						</View>
 					</Overlay>
-				) : null
-			}
+				);
+			}}
 		</View>
 	);
 }

@@ -9,6 +9,7 @@ import {
 import { DesktopNotifications } from "app/native";
 
 import type { DesktopNotificationsApi } from "../shell/desktop-notifications";
+import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { initializeI18n } from "../shell/i18n";
 import { NotificationsPane } from "../settings/notifications-pane";
 import { AppStore } from "../state/app-store";
@@ -58,23 +59,29 @@ async function run() {
 		},
 	});
 	const store = new AppStore(runtime.client);
-	mount(() => (
-		<View class="flex-1 bg-background p-4 gap-3">
-			<NotificationsPane
-				state={store.state}
-				client={runtime.client}
-				notifications={notifications}
-			/>
-			<Text testID="enabled-probe">
-				{() =>
-					`enabled:${String(
-						store.state().preferences?.values.desktopNotifications ?? false,
-					)}`
-				}
-			</Text>
-			<Text testID="shown-probe">{() => `shown:${shownCount()}`}</Text>
-		</View>
-	));
+	mount(() => {
+		const toasts = new AppToasts();
+		return (
+			<AppToaster.Provider value={toasts}>
+				<View class="flex-1 bg-background p-4 gap-3">
+					<NotificationsPane
+						state={store.state}
+						client={runtime.client}
+						notifications={notifications}
+					/>
+					<Text testID="enabled-probe">
+						{() =>
+							`enabled:${String(
+								store.state().preferences?.values.desktopNotifications ?? false,
+							)}`
+						}
+					</Text>
+					<Text testID="shown-probe">{() => `shown:${shownCount()}`}</Text>
+				</View>
+				<AppToastStack toasts={toasts} />
+			</AppToaster.Provider>
+		);
+	});
 	await store.start();
 }
 

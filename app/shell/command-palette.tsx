@@ -20,11 +20,14 @@ import type { AppStore } from "../state/app-store";
 import { Command } from "../ui/command";
 import { CommandDialog } from "../ui/command-dialog";
 import { Icon, type IconName } from "../ui/icon";
+import { tactileTransition, useMountedDialog } from "../ui/motion";
 import { Spinner } from "../ui/spinner";
 import { t } from "./i18n";
 import { sidebarSessions } from "./sidebar-projects";
 
 export interface CommandPaletteProps {
+	/** When supplied, keeps the dialog mounted so its close fade can complete. */
+	open?: Accessor<boolean>;
 	store: AppStore;
 	shortcuts: Accessor<Partial<KeyboardShortcutMap>>;
 	/** Searches saved message text; the message group is absent without it. */
@@ -67,6 +70,8 @@ const CONTENT_LIMIT = 30;
  * it, a match opens its session.
  */
 export function CommandPalette(props: CommandPaletteProps) {
+	const isOpen = () => (props.open ? props.open() : true);
+	const dialog = useMountedDialog(isOpen);
 	const { store } = props;
 	const query = signal("");
 	const content = signal<ContentResult[]>([]);
@@ -82,14 +87,21 @@ export function CommandPalette(props: CommandPaletteProps) {
 	// Opening reads the sessions of projects not read yet, or whose read
 	// failed. Read ones stay current through the Host's session watchers, so
 	// they are not scanned again on every open.
-	untracked(() => {
-		const { projects, sessionIndexes } = store.state();
-		for (const project of projects) {
-			const status = sessionIndexes[project.id]?.status;
-			if (status === undefined || status === "failed") {
-				void store.loadSessions(project.id);
+	effect(() => {
+		if (!isOpen()) return;
+		untracked(() => {
+			query.set("");
+			content.set([]);
+			searching.set(false);
+			request += 1;
+			const { projects, sessionIndexes } = store.state();
+			for (const project of projects) {
+				const status = sessionIndexes[project.id]?.status;
+				if (status === undefined || status === "failed") {
+					void store.loadSessions(project.id);
+				}
 			}
-		}
+		});
 	});
 	const catalog = computed(() => {
 		const state = store.state();
@@ -314,140 +326,152 @@ export function CommandPalette(props: CommandPaletteProps) {
 
 	return (
 		<CommandDialog
-			open
+			open={isOpen()}
 			accessibilityLabel={t("commandPalette.title")}
 			onOpenChange={({ open }) => {
 				if (!open) props.onClose();
 			}}
+			onClose={dialog.onClose}
 		>
-			<Command
-				items={results().items}
-				filterable={false}
-				loading={searching()}
-				autoFocus
-				placeholder={t("commandPalette.placeholder")}
-				accessibilityLabel={t("commandPalette.title")}
-				searchAccessibilityLabel={t("commandPalette.placeholder")}
-				searchBarClass="gap-2.5 border-b border-border/80 px-3.5"
-				searchBarStyle={{ height: 48 }}
-				searchClass="h-full flex-1 bg-transparent text-[14px] leading-5 outline-hidden placeholder:text-muted-foreground"
-				searchSuffix={
-					searching() ? (
-						<Spinner size={14} color={token("muted-foreground")} />
-					) : undefined
-				}
-				listClass="min-h-0 flex-1 mx-2 mt-0.5 mb-2"
-				groupClass="px-2.5 pt-2.5 pb-1 text-[11px] leading-4 font-medium text-muted-foreground"
-				itemClass="group flex-col items-stretch justify-center rounded-(--pilo-radius-md) px-2.5 py-2 text-[13px] leading-[18px] text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50"
-				itemStyle={{ marginBottom: 2 }}
-				renderItem={(entry) => {
-					const row = results().rows.get(entry.id);
-					if (!row) return <Text class="font-sans">{entry.label}</Text>;
-					const stackInlineMeta =
-						narrow() && row.metaAlign === "inline" && Boolean(row.meta);
-					const secondaryLine =
-						row.detail ?? (stackInlineMeta ? row.meta : undefined);
-					const showInlineMeta = Boolean(row.meta) && !stackInlineMeta;
-					const hasTwoLines = Boolean(secondaryLine || row.snippet);
-					return (
-						<View
-							class={`w-full flex-row gap-2.5 ${
-								hasTwoLines ? "items-start" : "items-center"
-							}`}
-						>
-							<View
-								class={`shrink-0 items-center justify-center ${
-									hasTwoLines ? "mt-0.5" : ""
-								}`}
-							>
-								<Icon
-									name={row.icon}
-									size={15}
-									color={token("muted-foreground")}
-								/>
-							</View>
-							<View class="min-w-0 flex-1 gap-0.5">
-								<View class="flex-row items-center gap-2">
-									<Text
-										class={`font-sans truncate text-[13px] font-medium text-foreground ${
-											showInlineMeta && row.metaAlign === "inline"
-												? "max-w-[48%] shrink-0"
-												: "min-w-0 flex-1"
+			{() =>
+				dialog.mounted() ? (
+					<Command
+						items={results().items}
+						filterable={false}
+						loading={searching()}
+						autoFocus
+						placeholder={t("commandPalette.placeholder")}
+						accessibilityLabel={t("commandPalette.title")}
+						searchAccessibilityLabel={t("commandPalette.placeholder")}
+						searchBarClass="gap-2.5 border-b border-border/80 px-3.5"
+						searchBarStyle={{ height: 48 }}
+						searchClass="h-full flex-1 bg-transparent text-[14px] leading-5 outline-hidden placeholder:text-muted-foreground"
+						searchSuffix={
+							searching() ? (
+								<Spinner size={14} color={token("muted-foreground")} />
+							) : undefined
+						}
+						listClass="min-h-0 flex-1 mx-2 mt-0.5 mb-2"
+						groupClass="px-2.5 pt-2.5 pb-1 text-[11px] leading-4 font-medium text-muted-foreground"
+						itemClass="group flex-col items-stretch justify-center rounded-(--pilo-radius-md) px-2.5 py-2 text-[13px] leading-[18px] text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50"
+						itemStyle={[
+							tactileTransition("background-color, color"),
+							{ marginBottom: 2 },
+						]}
+						renderItem={(entry) => {
+							const row = results().rows.get(entry.id);
+							if (!row) return <Text class="font-sans">{entry.label}</Text>;
+							const stackInlineMeta =
+								narrow() && row.metaAlign === "inline" && Boolean(row.meta);
+							const secondaryLine =
+								row.detail ?? (stackInlineMeta ? row.meta : undefined);
+							const showInlineMeta = Boolean(row.meta) && !stackInlineMeta;
+							const hasTwoLines = Boolean(secondaryLine || row.snippet);
+							return (
+								<View
+									class={`w-full flex-row gap-2.5 ${
+										hasTwoLines ? "items-start" : "items-center"
+									}`}
+								>
+									<View
+										class={`shrink-0 items-center justify-center ${
+											hasTwoLines ? "mt-0.5" : ""
 										}`}
 									>
-										{entry.label}
-									</Text>
-									{row.running ? (
-										<View class="size-1.5 shrink-0 rounded-full bg-status-success" />
-									) : null}
-									{row.role ? (
-										<View class="shrink-0 rounded-sm bg-muted/80 px-1.5 py-0.5">
-											<Text class="font-sans text-[10px] leading-3 font-medium text-muted-foreground">
-												{row.role === "user"
-													? t("commandPalette.user")
-													: t("common.agent")}
+										<Icon
+											name={row.icon}
+											size={15}
+											color={token("muted-foreground")}
+										/>
+									</View>
+									<View class="min-w-0 flex-1 gap-0.5">
+										<View class="flex-row items-center gap-2">
+											<Text
+												class={`font-sans truncate text-[13px] font-medium text-foreground ${
+													showInlineMeta && row.metaAlign === "inline"
+														? "max-w-[48%] shrink-0"
+														: "min-w-0 flex-1"
+												}`}
+											>
+												{entry.label}
 											</Text>
+											{row.running ? (
+												<View class="size-1.5 shrink-0 rounded-full bg-status-success" />
+											) : null}
+											{row.role ? (
+												<View class="shrink-0 rounded-sm bg-muted/80 px-1.5 py-0.5">
+													<Text class="font-sans text-[10px] leading-3 font-medium text-muted-foreground">
+														{row.role === "user"
+															? t("commandPalette.user")
+															: t("common.agent")}
+													</Text>
+												</View>
+											) : null}
+											{showInlineMeta ? (
+												<Text
+													class={`font-sans truncate text-xs text-muted-foreground ${
+														row.metaAlign === "end"
+															? "max-w-[36%] shrink-0"
+															: "min-w-0 flex-1"
+													}`}
+												>
+													{row.meta}
+												</Text>
+											) : null}
 										</View>
-									) : null}
-									{showInlineMeta ? (
-										<Text
-											class={`font-sans truncate text-xs text-muted-foreground ${
-												row.metaAlign === "end"
-													? "max-w-[36%] shrink-0"
-													: "min-w-0 flex-1"
-											}`}
-										>
-											{row.meta}
-										</Text>
+										{secondaryLine ? (
+											<Text class="font-sans truncate text-[11px] leading-4 text-muted-foreground">
+												{secondaryLine}
+											</Text>
+										) : null}
+										{row.snippet ? (
+											<Text class="font-sans line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
+												{row.snippet}
+											</Text>
+										) : null}
+									</View>
+									{entry.shortcutLabel ? (
+										<KeyCap keys={entry.shortcutLabel} />
 									) : null}
 								</View>
-								{secondaryLine ? (
-									<Text class="font-sans truncate text-[11px] leading-4 text-muted-foreground">
-										{secondaryLine}
-									</Text>
-								) : null}
-								{row.snippet ? (
-									<Text class="font-sans line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
-										{row.snippet}
-									</Text>
-								) : null}
-							</View>
-							{entry.shortcutLabel ? (
-								<KeyCap keys={entry.shortcutLabel} />
-							) : null}
-						</View>
-					);
-				}}
-				onQueryChange={({ query: next }) => query.set(next)}
-				onSelect={({ id }) => select(id)}
-				onCancel={() => props.onClose()}
-				empty={
-					<View class="items-center gap-2 py-8">
-						<Icon name="Search" size={18} color={token("muted-foreground")} />
-						<Text class="font-sans text-xs text-muted-foreground">
-							{t("commandPalette.noResults")}
-						</Text>
-					</View>
-				}
-				footer={
-					<View class="shrink-0 flex-row items-center justify-between gap-2 border-t border-border/80 bg-muted/35 px-3.5 py-2">
-						{searching() ? (
-							<View class="flex-row items-center gap-1.5">
-								<Spinner size={12} color={token("muted-foreground")} />
-								<Text class="font-sans text-[11px] text-muted-foreground">
-									{t("commandPalette.searchingHistory")}
+							);
+						}}
+						onQueryChange={({ query: next }) => query.set(next)}
+						onSelect={({ id }) => select(id)}
+						onCancel={() => props.onClose()}
+						empty={
+							<View class="items-center gap-2 py-8">
+								<Icon
+									name="Search"
+									size={18}
+									color={token("muted-foreground")}
+								/>
+								<Text class="font-sans text-xs text-muted-foreground">
+									{t("commandPalette.noResults")}
 								</Text>
 							</View>
-						) : (
-							<View class="flex-row items-center gap-3.5">
-								<Hint keys="↑↓" label={() => t("commandPalette.toggle")} />
-								<Hint keys="↵" label={() => t("commandPalette.select")} />
+						}
+						footer={
+							<View class="shrink-0 flex-row items-center justify-between gap-2 border-t border-border/80 bg-muted/35 px-3.5 py-2">
+								{searching() ? (
+									<View class="flex-row items-center gap-1.5">
+										<Spinner size={12} color={token("muted-foreground")} />
+										<Text class="font-sans text-[11px] text-muted-foreground">
+											{t("commandPalette.searchingHistory")}
+										</Text>
+									</View>
+								) : (
+									<View class="flex-row items-center gap-3.5">
+										<Hint keys="↑↓" label={() => t("commandPalette.toggle")} />
+										<Hint keys="↵" label={() => t("commandPalette.select")} />
+									</View>
+								)}
+								<Hint keys="esc" label={() => t("commandPalette.close")} />
 							</View>
-						)}
-						<Hint keys="esc" label={() => t("commandPalette.close")} />
-					</View>
-				}
-			/>
+						}
+					/>
+				) : null
+			}
 		</CommandDialog>
 	);
 }

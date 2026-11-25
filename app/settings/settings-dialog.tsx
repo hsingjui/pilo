@@ -1,6 +1,11 @@
 import {
 	type Accessor,
+	cleanup,
+	createMotion,
+	effect,
+	reduceMotion,
 	Scroll,
+	type ScrollRef,
 	signal,
 	Text,
 	token,
@@ -19,6 +24,7 @@ import { DialogClose } from "../ui/dialog-close";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
+import { MOTION, tactileTransition, useMountedDialog } from "../ui/motion";
 import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
 import type { DesktopNotificationsApi } from "../shell/desktop-notifications";
@@ -204,6 +210,24 @@ const CONTENT_MAX_WIDTH = 1024; // max-w-5xl
  */
 export function SettingsDialog(props: SettingsDialogProps) {
 	const active = signal<SettingsTabId>("preferences");
+	const dialog = useMountedDialog(props.open);
+	let contentScroll: ScrollRef | undefined;
+	const paneMotion = createMotion();
+	let lastTab: SettingsTabId = active();
+	effect(() => {
+		const next = active();
+		if (next === lastTab) return;
+		lastTab = next;
+		contentScroll?.scrollTo({ y: 0, animated: false });
+		if (!reduceMotion()) {
+			void paneMotion.play({
+				keyframes: { opacity: [0.01, 1] },
+				duration: MOTION.duration.tactile,
+				easing: MOTION.easing.standardTuple,
+			});
+		}
+	});
+	cleanup(() => paneMotion.stop());
 	const activeTab = () =>
 		SETTINGS_TABS.find((tab) => tab.id === active()) ?? SETTINGS_TABS[0];
 	const compact = () => windowSize().width < MD_WIDTH;
@@ -226,6 +250,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 			onOpenChange={({ open }) => {
 				if (!open) props.onClose();
 			}}
+			onClose={dialog.onClose}
 			class="overflow-hidden rounded-(--pilo-radius-lg) border border-border bg-background text-foreground font-sans self-center my-auto"
 			style={[
 				{
@@ -238,7 +263,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 			backdropStyle={{ zIndex: token("z-dialog-overlay") }}
 		>
 			{() => {
-				if (!props.open()) return null;
+				if (!dialog.mounted()) return null;
 				const toasts = new AppToasts();
 				return (
 					<AppToaster.Provider value={toasts}>
@@ -287,6 +312,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
 																				: hover.hovered()
 																					? "bg-secondary/50"
 																					: "bg-transparent",
+																		)}
+																		style={tactileTransition(
+																			"background-color, color",
 																		)}
 																		focusVisibleStyle={focusRingStyle(
 																			token("ring"),
@@ -357,6 +385,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
 									}
 								</View>
 								<Scroll
+									ref={(ref) => {
+										contentScroll = ref;
+									}}
 									class="min-h-0 flex-1"
 									contentClass={classNames("pb-6", compact() ? "px-4" : "px-6")}
 									bounces={false}
@@ -364,7 +395,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 								>
 									<View
 										class="mx-auto w-full"
-										style={{ maxWidth: CONTENT_MAX_WIDTH }}
+										style={[paneMotion.style, { maxWidth: CONTENT_MAX_WIDTH }]}
 									>
 										{() => {
 											switch (active()) {

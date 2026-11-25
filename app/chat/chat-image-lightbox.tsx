@@ -1,8 +1,11 @@
 import {
+	cleanup,
 	computed,
+	createMotion,
 	effect,
 	Image,
 	openUrl,
+	reduceMotion,
 	Scroll,
 	signal,
 	Text,
@@ -168,14 +171,45 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 		};
 	});
 
+	const isOpen = () => props.image() !== null;
+	const dialog = useMountedDialog(isOpen);
+	const lastImage = signal<ChatImagePreview | null>(props.image());
+	effect(() => {
+		const next = props.image();
+		if (next) lastImage.set(next);
+	});
+	const renderedImage = () => props.image() ?? lastImage();
+	// FLIP-style GPU scale settle when zoom steps change, avoiding layout transitions.
+	const zoomMotion = createMotion();
+	let prevScale = scale();
+	effect(() => {
+		const next = scale();
+		if (next !== prevScale) {
+			const ratio = prevScale / next;
+			prevScale = next;
+			if (!reduceMotion() && Number.isFinite(ratio) && ratio > 0) {
+				void zoomMotion.play({
+					keyframes: { scale: [ratio, 1] },
+					duration: MOTION.duration.view,
+					easing: MOTION.easing.standardTuple,
+				});
+			}
+		}
+	});
+	cleanup(() => zoomMotion.stop());
+
 	return (
 		<BaseDialog
 			testID="chat-image-lightbox"
-			open={props.image() !== null}
+			open={isOpen()}
 			animation="fade"
-			accessibilityLabel={props.image()?.name || t("chat.image")}
+			accessibilityLabel={renderedImage()?.name || t("chat.image")}
 			onOpenChange={({ open }) => {
 				if (!open) props.onClose();
+			}}
+			onClose={() => {
+				dialog.onClose();
+				if (!isOpen()) lastImage.set(null);
 			}}
 			backdropClass="bg-black/80"
 			backdropStyle={{ zIndex: token("z-dialog-overlay") }}
@@ -187,7 +221,7 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 			}}
 		>
 			{() => {
-				const current = props.image();
+				const current = dialog.mounted() ? renderedImage() : null;
 				if (!current) return null;
 				const label = current.name || t("chat.image");
 				const resetBlur = blurOnPointerPress();
@@ -259,16 +293,18 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 										if (scale() <= MIN_SCALE) props.onClose();
 									}}
 								>
-									<Image
-										testID="lightbox-image"
-										src={current.url}
-										accessibilityLabel={label}
-										style={{
-											width: imageBox().width,
-											height: imageBox().height,
-											objectFit: "contain",
-										}}
-									/>
+									<View style={zoomMotion.style}>
+										<Image
+											testID="lightbox-image"
+											src={current.url}
+											accessibilityLabel={label}
+											style={{
+												width: imageBox().width,
+												height: imageBox().height,
+												objectFit: "contain",
+											}}
+										/>
+									</View>
 								</View>
 							</Scroll>
 						</View>
@@ -288,6 +324,7 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 									percent: percent(),
 								})}
 								class="min-h-9 min-w-14 items-center justify-center rounded-(--pilo-radius-md) px-3 hover:bg-white/15 focus-visible:outline-hidden"
+								style={tactileTransition("background-color")}
 								focusVisibleStyle={focusRingStyle(token("ring"))}
 								onPress={resetZoom}
 							>

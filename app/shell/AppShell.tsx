@@ -9,6 +9,7 @@ import {
 	token,
 	untracked,
 	View,
+	type ViewRef,
 } from "nsh";
 import { currentWindow } from "nsh/desktop";
 
@@ -61,6 +62,7 @@ import {
 import { createRemoteStatus, RemoteDialog } from "../settings/remote-dialog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { MOTION, viewTransition } from "../ui/motion";
 import { ErrorState } from "../ui/state-view";
 import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
@@ -468,9 +470,14 @@ export function AppShell(props: AppShellProps) {
 				refreshCacheStatus();
 			}),
 		);
-	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
+	const sidebarCard = computed(sidebarSurface);
+	const titleBarOptions = computed(() => windowTitleBarOptions(sidebarCard()));
+	effect(() => {
+		window.set({ titleBar: titleBarOptions() });
+	});
 	const titleBar = () => window.titleBar();
-	const barHeight = () => titleBar().height || TITLE_BAR_HEIGHT;
+	const barHeight = () =>
+		titleBar().height || titleBarOptions().height || TITLE_BAR_HEIGHT;
 	const newChat = () => {
 		const current = activeProject(store.state());
 		props.terminals?.select(null);
@@ -614,13 +621,16 @@ export function AppShell(props: AppShellProps) {
 		store.state().preferences?.values.defaultWorkspaceVisibility ?? {};
 	const expandButton = () => (
 		<View
-			class={`absolute top-0 bottom-0 z-10 justify-center transition-opacity duration-200 ease-out ${
+			class={`absolute top-0 bottom-0 z-10 justify-center ${
 				expandVisible() ? "opacity-100 delay-200" : "opacity-0"
 			}`}
-			style={{
-				left: titleBar().left > 0 ? titleBar().left + 6 : 6,
-				pointerEvents: collapsed() ? "auto" : "none",
-			}}
+			style={[
+				viewTransition("opacity", MOTION.duration.calm),
+				{
+					left: titleBar().left > 0 ? titleBar().left + 6 : 6,
+					pointerEvents: collapsed() ? "auto" : "none",
+				},
+			]}
 		>
 			<Button
 				testID="sidebar-expand"
@@ -717,6 +727,7 @@ export function AppShell(props: AppShellProps) {
 				}
 			>
 				<View
+					ref={(node: ViewRef) => sidebarLayout.bindTitleBar(node)}
 					testID="main-title-bar"
 					desktop={{ windowDrag: true }}
 					class="relative flex-row items-center px-2"
@@ -1103,19 +1114,16 @@ export function AppShell(props: AppShellProps) {
 							{layout()}
 						</ChatReadingFont.Provider>
 					</ConversationColumnLayout.Provider>
-					{() =>
-						paletteOpen() ? (
-							<CommandPalette
-								store={store}
-								searchSessions={props.searchSessions}
-								shortcuts={registeredShortcuts}
-								onOpenSettings={
-									props.settings ? () => settingsOpen.set(true) : undefined
-								}
-								onClose={() => paletteOpen.set(false)}
-							/>
-						) : null
-					}
+					<CommandPalette
+						open={paletteOpen}
+						store={store}
+						searchSessions={props.searchSessions}
+						shortcuts={registeredShortcuts}
+						onOpenSettings={
+							props.settings ? () => settingsOpen.set(true) : undefined
+						}
+						onClose={() => paletteOpen.set(false)}
+					/>
 					{() =>
 						props.settings ? (
 							<SettingsDialog
@@ -1145,10 +1153,11 @@ export function AppShell(props: AppShellProps) {
 						) : null
 					}
 					{() =>
-						client && remoteStatus && remoteOpen() ? (
+						client && remoteStatus ? (
 							<RemoteDialog
+								open={remoteOpen}
 								client={client}
-								initialState={untracked(remoteStatus.state)}
+								initialState={remoteStatus.state}
 								onClose={() => {
 									remoteOpen.set(false);
 									// The button follows a switch flipped in the dialog at once.
@@ -1177,9 +1186,14 @@ export function StartupFrame(props: {
 	sidebarWidth?: Accessor<number>;
 }) {
 	const window = currentWindow();
-	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
+	const sidebarCard = computed(sidebarSurface);
+	const titleBarOptions = computed(() => windowTitleBarOptions(sidebarCard()));
+	effect(() => {
+		window.set({ titleBar: titleBarOptions() });
+	});
 	const titleBar = () => ({
-		height: window.titleBar().height || TITLE_BAR_HEIGHT,
+		height:
+			window.titleBar().height || titleBarOptions().height || TITLE_BAR_HEIGHT,
 		left: window.titleBar().left,
 	});
 	const narrow = signal(false);

@@ -11,7 +11,9 @@ import {
 	type ViewRef,
 	cleanup,
 	computed,
+	createMotion,
 	effect,
+	reduceMotion,
 	signal,
 	token,
 	windowSize,
@@ -54,6 +56,7 @@ import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { menuRowClass } from "../ui/menu-row";
+import { MOTION, tactileTransition } from "../ui/motion";
 import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
@@ -105,6 +108,7 @@ const COMPOSER_TOOLBAR = "min-w-0 flex-row items-center";
 
 function surfaceStyle(focused: boolean, muted = false) {
 	return {
+		...tactileTransition("border-color, box-shadow, background-color"),
 		borderColor:
 			focused && !muted ? token("pilo-composer-focus-border") : undefined,
 		boxShadow: focused && !muted ? focusShadow() : composerShadow(),
@@ -972,19 +976,33 @@ export function ChatComposer(props: ChatComposerProps) {
 						onStop={() => void store.stop()}
 					/>
 				</View>
-				{() =>
-					state().dragging ? (
+				{() => {
+					if (!state().dragging) return null;
+					const dropMotion = createMotion({
+						enter: reduceMotion()
+							? undefined
+							: {
+									keyframes: { opacity: [0, 1] },
+									duration: MOTION.duration.tactile,
+									easing: MOTION.easing.standardTuple,
+								},
+					});
+					cleanup(() => dropMotion.stop());
+					return (
 						<View
 							testID="chat-composer-drop"
 							class="absolute inset-0 z-20 items-center justify-center bg-background/90 px-3"
-							style={{ borderRadius: chatPx(token("pilo-composer-radius")) }}
+							style={[
+								dropMotion.style,
+								{ borderRadius: chatPx(token("pilo-composer-radius")) },
+							]}
 						>
 							<Text class="font-sans text-sm text-foreground">
 								{() => t("chat.dropFiles")}
 							</Text>
 						</View>
-					) : null
-				}
+					);
+				}}
 			</View>
 			{() => {
 				if (!focused()) return null;
@@ -1063,12 +1081,27 @@ function SuggestionMenu(props: {
 		if (i < 0) list?.scrollTo({ y: 0, animated: false });
 		else rows[i]?.reveal({ vertical: "nearest", animated: false });
 	});
+	const enterMotion = createMotion({
+		enter: reduceMotion()
+			? {
+					keyframes: { opacity: [0, 1] },
+					duration: 80,
+					easing: MOTION.easing.standardTuple,
+				}
+			: {
+					keyframes: { opacity: [0, 1], translateY: [4, 0], scale: [0.98, 1] },
+					duration: MOTION.duration.surfaceIn,
+					easing: MOTION.easing.standardTuple,
+				},
+	});
+	cleanup(() => enterMotion.stop());
 	return (
 		<View
 			testID="chat-composer-suggestions"
 			class={`${menuPopupClass} min-w-0 overflow-hidden`}
 			style={[
 				menuPopupStyle(),
+				enterMotion.style,
 				{
 					width: Math.min(props.width(), props.trigger() === "/" ? 520 : 600),
 				},
@@ -1133,6 +1166,7 @@ function SuggestionMenu(props: {
 								// Picked with the pointer, the focus stays in the input.
 								focusable={false}
 								class={`${menuRowClass} ${highlighted() ? "bg-hover" : ""}`}
+								style={tactileTransition("background-color, color")}
 								onMouseEnter={() => props.onHighlight(i)}
 								onPress={() => props.onPick(suggestion)}
 							>
