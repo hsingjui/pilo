@@ -1,8 +1,11 @@
 import { mount, signal, Storage, Text, View } from "nsh";
 
+import { chatSessionKey } from "@shared/api/chat-session-key";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { PiModel, PiThinkingLevel } from "@shared/api/pi-runtime-types";
 import type { Project } from "@shared/api/projects-types";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
+import { createChatSubmission } from "@shared/chat/chat-submission";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 
 import { initializeI18n } from "../shell/i18n";
@@ -24,6 +27,7 @@ import {
 import { RemotePairingPage } from "../../web/pairing-page";
 import { RemotePairingError } from "../../web/web-remote-client";
 import { AppStore } from "../state/app-store";
+import { ChatQueueStore } from "../state/chat-queue-store";
 import type { ChatRunConfigState } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { Button } from "../ui/button";
@@ -199,6 +203,12 @@ async function run() {
 		return;
 	}
 
+	const queueScenario = scenario === "queue" || scenario === "queue-offline";
+	const s1Key = chatSessionKey("p1", "s1");
+	const queues = { steering: [] as string[], followUp: [] as string[] };
+	let queueSequence = 1;
+	let queue: ChatQueueStore | undefined;
+
 	const themeSettings = {
 		revision: 1,
 		theme: "light",
@@ -207,6 +217,61 @@ async function run() {
 	const runtime = scriptedClient({
 		projects: [project],
 		sessions: async (projectId) => (projectId === "p1" ? sessions : []),
+		chatSessions: queueScenario
+			? ([
+					{
+						sessionKey: s1Key,
+						projectId: "p1",
+						sessionPath: "/sessions/s1.jsonl",
+						prepared: true,
+						initialized: true,
+						snapshot: { state: "running", generation: 1 },
+						activeTurn: { id: "t1" },
+					},
+				] as unknown as ChatSessionRuntimeState[])
+			: undefined,
+		onCommand: queueScenario
+			? (sessionKey, command) => {
+					const type = String(command.type ?? "");
+					if (type === "steer" || type === "follow_up") {
+						const message = String(command.message ?? "");
+						if (type === "steer") queues.steering.push(message);
+						else queues.followUp.push(message);
+						queue?.receive({
+							sequence: ++queueSequence,
+							timestampMs: 1000,
+							sessionKey,
+							generation: 1,
+							type: "queue_update",
+							steering: [...queues.steering],
+							followUp: [...queues.followUp],
+						});
+						return { success: true, data: { disposition: "queued" } };
+					}
+					if (type === "clear_queue") {
+						const cleared = {
+							steering: [...queues.steering],
+							followUp: [...queues.followUp],
+						};
+						queues.steering = [];
+						queues.followUp = [];
+						queue?.receive({
+							sequence: ++queueSequence,
+							timestampMs: 1000,
+							sessionKey,
+							generation: 1,
+							type: "queue_update",
+							steering: [],
+							followUp: [],
+						});
+						return { success: true, data: cleared };
+					}
+					if (type === "prompt") {
+						return { success: true, data: { disposition: "started" } };
+					}
+					return { success: true };
+				}
+			: undefined,
 		onDeleteSession: async () => {
 			if (scenario === "delete-failed") {
 				throw new Error("Disk is read-only");
@@ -246,17 +311,26 @@ async function run() {
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
 	const store = new AppStore(runtime.client, chat);
+	const composerClient = composerStubClient(runtime.client);
+	if (queueScenario) {
+		queue = new ChatQueueStore(composerClient);
+	}
 	const composer = new ComposerStore({
-		client: composerStubClient(runtime.client),
+		client: composerClient,
 		app: store.state,
+		queue,
 	});
 	followOpenSession(store, chat);
 
 	const connectionState = signal<WebRemoteConnectionState>(
-		scenario === "offline" ? "offline" : "connected",
+		scenario === "offline" || scenario === "queue-offline"
+			? "offline"
+			: "connected",
 	);
 	const recoveryState = signal<WebRemoteRecoveryState>(
-		scenario === "offline" ? "reconnecting" : "idle",
+		scenario === "offline" || scenario === "queue-offline"
+			? "reconnecting"
+			: "idle",
 	);
 
 	const models: PiModel[] = [
@@ -344,6 +418,7 @@ async function run() {
 		store,
 		chat,
 		composer,
+		queue,
 		authExpiryReminder,
 		runConfig: {
 			state: runConfigState,
@@ -370,6 +445,26 @@ async function run() {
 		},
 	});
 	await store.start();
+	if (queueScenario) {
+		store.selectSession("p1", "/sessions/s1.jsonl");
+	}
+	if (scenario === "queue-offline" && queue) {
+		queues.steering.push("keep waiting while offline");
+		queue.adoptQueued(
+			s1Key,
+			"steer",
+			createChatSubmission("keep waiting while offline"),
+		);
+		queue.receive({
+			sequence: ++queueSequence,
+			timestampMs: 1000,
+			sessionKey: s1Key,
+			generation: 1,
+			type: "queue_update",
+			steering: [...queues.steering],
+			followUp: [],
+		});
+	}
 }
 
 initializeI18n();

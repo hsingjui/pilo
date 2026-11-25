@@ -324,3 +324,82 @@ test("mobile composer send mode uses anchored popover instead of phone bottom sh
 	await app.press("id:chat-composer-send-mode:send_now");
 	await app.waitFor("id:chat-composer-send-mode-popup", { state: "gone" });
 });
+
+test("mobile pending queue reuses desktop card with touch targets, edit and send-now", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: { "fixture.scenario": "queue" },
+	});
+
+	await app.waitFor("id:mobile-textarea-input");
+	expect(app.shows("id:chat-pending-queue")).toBe(false);
+
+	// Queue a steer message via the mobile send button.
+	await app.type("id:mobile-textarea-input", "adjust direction");
+	await app.press("id:chat-composer-send");
+	await app.waitFor("id:chat-pending-queue");
+	expect(app.shows("text:Pending messages")).toBe(true);
+	expect(app.shows("id:chat-pending-queue-count")).toBe(true);
+	expect(app.shows("id:chat-pending-queue >> text:1")).toBe(true);
+	expect(app.shows("id:chat-pending-item-0 >> text:Steer")).toBe(true);
+	expect(app.shows("id:chat-pending-item-0 >> text:adjust direction")).toBe(
+		true,
+	);
+
+	// Switch to follow-up mode and queue a second message.
+	await app.press("id:chat-composer-send-mode");
+	await app.waitFor("id:chat-composer-send-mode:follow_up");
+	await app.press("id:chat-composer-send-mode:follow_up");
+	await app.type("id:mobile-textarea-input", "then run tests");
+	await app.press("id:chat-composer-send");
+	await app.waitFor("id:chat-pending-queue >> text:2");
+	expect(app.shows("id:chat-pending-item-1 >> text:Later")).toBe(true);
+	expect(app.shows("id:chat-pending-item-1 >> text:then run tests")).toBe(true);
+
+	// Retrieve the first queued message back into the mobile textarea.
+	await app.press("id:chat-pending-edit-0");
+	await app.waitFor("id:chat-pending-queue >> text:1");
+	expect(app.shows("id:chat-pending-item-0 >> text:then run tests")).toBe(true);
+
+	// Interrupt and send the remaining queued message immediately.
+	await app.press("id:chat-pending-send-now-0");
+	await app.waitFor("id:chat-pending-queue", { state: "gone" });
+});
+
+test("mobile pending queue disables actions while offline and re-enables after reconnect", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: { "fixture.scenario": "queue-offline" },
+	});
+
+	await app.waitFor("id:chat-pending-queue");
+	expect(
+		app.shows("id:chat-pending-item-0 >> text:keep waiting while offline"),
+	).toBe(true);
+
+	let editError = "";
+	try {
+		await app.press("id:chat-pending-edit-0");
+	} catch (error) {
+		editError = String(error);
+	}
+	expect(editError).toContain("disabled");
+
+	let sendError = "";
+	try {
+		await app.press("id:chat-pending-send-now-0");
+	} catch (error) {
+		sendError = String(error);
+	}
+	expect(sendError).toContain("disabled");
+
+	// Reconnecting unlocks the queue actions.
+	await app.press("id:mobile-reconnect-button");
+	await app.waitFor("text:Remote connected");
+	await app.press("id:chat-pending-send-now-0");
+	await app.waitFor("id:chat-pending-queue", { state: "gone" });
+});

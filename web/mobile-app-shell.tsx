@@ -45,6 +45,7 @@ import {
 	type ChatImagePreview,
 } from "../app/chat/chat-media-actions";
 import { ChatMessageList } from "../app/chat/chat-message-list";
+import { ChatPendingQueue } from "../app/chat/chat-pending-queue";
 import {
 	ChatReadingFont,
 	chatReadingFont,
@@ -72,7 +73,6 @@ import { Spinner } from "../app/ui/spinner";
 import { ErrorState } from "../app/ui/state-view";
 import { MobileDrawer, mobileDrawerWidth } from "./mobile-drawer";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
-import { MobilePendingQueue } from "./mobile-pending-queue";
 import type { RemoteChatQueue } from "./remote-chat-queue";
 import {
 	RemoteExtensionDialog,
@@ -821,13 +821,15 @@ export function MobileAppShell(props: MobileAppShellProps) {
 															);
 														}}
 														{props.queue ? (
-															<MobilePendingQueue
+															<ChatPendingQueue
 																queue={props.queue}
 																composer={composer}
 																sessionKey={chatSessionKey}
-																connected={() =>
-																	props.connectionState() === "connected"
+																disabled={() =>
+																	props.connectionState() !== "connected"
 																}
+																touch
+																availableHeight={viewport.availableHeight}
 															/>
 														) : null}
 														<MobileTextareaComposer

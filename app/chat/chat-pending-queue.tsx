@@ -1,4 +1,12 @@
-import { type Accessor, Scroll, Text, token, View, windowSize } from "nsh";
+import {
+	type Accessor,
+	keyboardFrame,
+	Scroll,
+	Text,
+	token,
+	View,
+	windowSize,
+} from "nsh";
 
 import type { ComposerStore } from "../composer/composer-store";
 import { t } from "../shell/i18n";
@@ -9,10 +17,22 @@ import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { textTooltip, Tooltip } from "../ui/tooltip";
 
+/** Touch text scale aligned with Mobile WebUI's 16/14 typography ratio. */
+const TOUCH_TEXT = {
+	badge: { fontSize: 12.5, lineHeight: 16 },
+	body: { fontSize: 13.75, lineHeight: 18 },
+} as const;
+
 export interface ChatPendingQueueProps {
 	queue: ChatQueueStore;
 	composer: ComposerStore;
 	sessionKey: Accessor<string | null>;
+	/** Extra disabled condition (e.g. disconnected Remote WebUI). */
+	disabled?: Accessor<boolean>;
+	/** Uses 40px touch targets, larger mobile text, and keyboard-aware height. */
+	touch?: boolean;
+	/** Visible height when the host already accounts for the keyboard. */
+	availableHeight?: Accessor<number>;
 }
 
 /**
@@ -25,38 +45,64 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 		const key = props.sessionKey();
 		return (
 			!key ||
+			Boolean(props.disabled?.()) ||
 			!props.queue.canMutate(key) ||
 			props.composer.state().sending ||
 			props.composer.readOnly() ||
 			props.composer.compacting()
 		);
 	};
+	const scrollMaxHeight = () => {
+		if (!props.touch) {
+			return Math.min(240, windowSize().height / 4);
+		}
+		const availableHeight =
+			props.availableHeight?.() ?? windowSize().height - keyboardFrame().height;
+		return Math.min(200, Math.max(104, Math.round(availableHeight * 0.25)));
+	};
 
 	return () => {
 		const current = items();
 		if (current.length === 0) return null;
+		const touch = Boolean(props.touch);
 		return (
 			<View
 				testID="chat-pending-queue"
-				class="mb-1 w-full min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-muted"
+				class={classNames(
+					touch ? "mb-1.5" : "mb-1",
+					"w-full min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-muted",
+				)}
 			>
-				<View class="flex-row items-center justify-between border-b border-border/40 px-3 py-1.5">
+				<View
+					class={classNames(
+						"flex-row items-center justify-between border-b border-border/40 px-3",
+						touch ? "py-2" : "py-1.5",
+					)}
+				>
 					<Text
 						role="header"
-						class="font-sans text-xs font-medium text-foreground/80"
+						class={classNames(
+							"font-sans font-medium text-foreground/80",
+							!touch && "text-xs",
+						)}
+						style={touch ? TOUCH_TEXT.body : undefined}
 					>
 						{() => t("chat.pendingMessages")}
 					</Text>
 					<Text
 						testID="chat-pending-queue-count"
-						class="min-w-7 shrink-0 text-center font-sans text-xs tabular-nums text-muted-foreground"
+						class={classNames(
+							"min-w-7 shrink-0 text-center font-sans tabular-nums text-muted-foreground",
+							!touch && "text-xs",
+						)}
+						style={touch ? TOUCH_TEXT.body : undefined}
 					>
 						{() => String(items().length)}
 					</Text>
 				</View>
 				<Scroll
 					class="min-h-0"
-					style={{ maxHeight: Math.min(240, windowSize().height / 4) }}
+					style={{ maxHeight: scrollMaxHeight() }}
 					bounces={false}
 					scrollbar={{ vertical: scrollbarLook() }}
 				>
@@ -73,11 +119,18 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 								<View
 									testID={`chat-pending-item-${index()}`}
 									class={classNames(
-										"min-w-0 flex-row items-center gap-2 px-3 py-2",
+										"min-w-0 flex-row items-center gap-2",
+										touch ? "py-1.5 pl-3 pr-1.5" : "px-3 py-2",
 										index() > 0 && "border-t border-border/30",
 									)}
 								>
-									<Text class="shrink-0 font-sans text-[11px] text-muted-foreground">
+									<Text
+										class={classNames(
+											"shrink-0 font-sans text-muted-foreground",
+											!touch && "text-[11px]",
+										)}
+										style={touch ? TOUCH_TEXT.badge : undefined}
+									>
 										{() =>
 											t(
 												entry().kind === "steer"
@@ -89,23 +142,40 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 									<View
 										class="w-0 min-w-0 flex-1"
 										tooltip={
-											<Tooltip class="max-w-96" delay={300} margin={12}>
-												<Text class="font-sans text-xs">{label}</Text>
-											</Tooltip>
+											touch ? undefined : (
+												<Tooltip class="max-w-96" delay={300} margin={12}>
+													<Text class="font-sans text-xs">{label}</Text>
+												</Tooltip>
+											)
 										}
 									>
-										<Text class="truncate font-sans text-xs text-foreground/80">
+										<Text
+											class={classNames(
+												"font-sans text-foreground/80",
+												touch ? "line-clamp-2" : "truncate text-xs",
+											)}
+											style={touch ? TOUCH_TEXT.body : undefined}
+										>
 											{label}
 										</Text>
 									</View>
-									<View class="shrink-0 flex-row items-center gap-1">
+									<View
+										class={classNames(
+											"shrink-0 flex-row items-center",
+											touch ? "gap-0.5" : "gap-1",
+										)}
+									>
 										<Button
 											testID={`chat-pending-edit-${index()}`}
 											variant="ghost"
 											size="icon"
-											class="size-7 rounded-md"
+											class={touch ? "size-10 rounded-md" : "size-7 rounded-md"}
 											accessibilityLabel={t("chat.retrieveEdit")}
-											tooltip={textTooltip(() => t("chat.retrieveEdit"))}
+											tooltip={
+												touch
+													? undefined
+													: textTooltip(() => t("chat.retrieveEdit"))
+											}
 											disabled={actionsDisabled() || entry().id === null}
 											onPress={() => {
 												const id = entry().id;
@@ -116,7 +186,7 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 										>
 											<Icon
 												name="Pencil"
-												size={14}
+												size={touch ? 16 : 14}
 												color={token("muted-foreground")}
 											/>
 										</Button>
@@ -124,9 +194,13 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 											testID={`chat-pending-send-now-${index()}`}
 											variant="ghost"
 											size="icon"
-											class="size-7 rounded-md"
+											class={touch ? "size-10 rounded-md" : "size-7 rounded-md"}
 											accessibilityLabel={t("chat.interruptSend")}
-											tooltip={textTooltip(() => t("chat.interruptSend"))}
+											tooltip={
+												touch
+													? undefined
+													: textTooltip(() => t("chat.interruptSend"))
+											}
 											disabled={actionsDisabled() || entry().id === null}
 											onPress={() => {
 												const id = entry().id;
@@ -141,7 +215,7 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 										>
 											<Icon
 												name="Send"
-												size={14}
+												size={touch ? 16 : 14}
 												color={token("muted-foreground")}
 											/>
 										</Button>
