@@ -27,7 +27,8 @@ import type { ChatMessage } from "@shared/chat/conversation-types";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
-import { scrollbarLook } from "../ui/scrollbar";
+import { MOTION, tactileTransition } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMessageRow } from "./chat-message-row";
@@ -357,7 +358,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 				initialScrollAtEnd={restore === null}
 				maintainVisibleContentPosition={followPaused() ? undefined : followEnd}
 				bounces={false}
-				scrollbar={{ vertical: scrollbarLook() }}
+				scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 				footer={props.footer}
 				onLayout={web ? attachWebEnd : undefined}
 				onScroll={follow}

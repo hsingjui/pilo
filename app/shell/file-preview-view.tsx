@@ -26,7 +26,8 @@ import type {
 	ActiveWorkspaceFile,
 	WorkspaceStore,
 } from "../state/workspace-store";
-import { scrollbarLook } from "../ui/scrollbar";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
+import { useEnterFade } from "../ui/motion";
 
 const DEFAULT_CODE_FONT_SIZE = 12;
 
@@ -168,12 +169,13 @@ function FilePreviewPanel(props: {
 		);
 	});
 	const fileName = fileBasename(props.file.path) || props.file.path;
+	const fade = useEnterFade(props.visible);
 
 	return (
 		<View
 			testID={`file-preview:${props.file.path}`}
 			class="absolute inset-0 flex-col bg-background"
-			style={{ display: props.visible() ? "flex" : "none" }}
+			style={[fade.style, { display: props.visible() ? "flex" : "none" }]}
 		>
 			{() =>
 				showSource() ? (
@@ -221,7 +223,7 @@ function FilePreviewPanel(props: {
 						class="min-h-0 flex-1"
 						contentClass="mx-auto w-full max-w-4xl p-6"
 						bounces={false}
-						scrollbar={{ vertical: scrollbarLook() }}
+						scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 					>
 						<ChatMarkdown
 							text={() => props.file.content}

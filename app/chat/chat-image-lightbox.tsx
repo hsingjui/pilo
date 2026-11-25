@@ -19,7 +19,8 @@ import { AppToaster } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
-import { scrollbarLook } from "../ui/scrollbar";
+import { MOTION, tactileTransition, useMountedDialog } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import type { ChatImagePreview } from "./chat-media-actions";
 
@@ -246,10 +247,10 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 								contentClass="min-h-full min-w-full items-center justify-center"
 								horizontal={scale() > MIN_SCALE}
 								bounces={false}
-								scrollbar={{
+								scrollbar={scrollbarTheme({
 									vertical: scrollbarLook(),
-									horizontal: scrollbarLook(),
-								}}
+									horizontal: scrollbarLook("horizontal"),
+								})}
 							>
 								<View
 									class="items-center justify-center"

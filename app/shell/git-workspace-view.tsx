@@ -24,9 +24,12 @@ import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
-import { scrollbarLook } from "../ui/scrollbar";
+import { tactileTransition, useEnterFade } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Skeleton } from "../ui/skeleton";
 import { EmptyState, ErrorState } from "../ui/state-view";
+import { Tab } from "../ui/tab";
+import { Tabs } from "../ui/tabs";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import { GitDiffViewer } from "./git-diff-viewer";
@@ -695,7 +698,7 @@ function GitWorkspacePanel(props: {
 									class="min-h-0 flex-1"
 									contentClass="px-2"
 									bounces={false}
-									scrollbar={{ vertical: scrollbarLook() }}
+									scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 								>
 									{() => {
 										if (!hasVisibleFiles()) {
