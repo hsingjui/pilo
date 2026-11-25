@@ -1,4 +1,4 @@
-import { computed, Image, Scroll, Text, token, View } from "nsh";
+import { computed, Image, platform, Scroll, Text, token, View } from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
 import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
@@ -52,7 +52,7 @@ function ToolText(props: { text: () => string; maxHeight: string }) {
 		<>
 			{/* Native Select All only sees the chunks the scroll view has mounted. */}
 			{() =>
-				chunks().length > 1 ? (
+				platform.os !== "web" && chunks().length > 1 ? (
 					<View class="items-end">
 						<ChatCopyButton text={props.text} testID="chat-copy-tool-text" />
 					</View>
@@ -162,9 +162,11 @@ export function ChatToolDetail(props: {
 		const { result } = activity();
 		if (result === undefined || result === null) return null;
 		const flat = flattenToolResult(resultContent(result));
+		const text = flat.needsRawFallback ? formatUnknown(result) : flat.text;
 		return {
 			...flat,
-			text: flat.needsRawFallback ? formatUnknown(result) : flat.text,
+			text:
+				platform.os === "web" ? text.replace(/^(?:[ \t]*\r?\n)+/, "") : text,
 		};
 	});
 	const detailText = computed(() =>
