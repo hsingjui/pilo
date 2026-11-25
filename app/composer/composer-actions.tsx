@@ -21,6 +21,7 @@ import { classNames } from "../ui/class-names";
 import { Icon, type IconName } from "../ui/icon";
 import { Menu, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
+import { springTransition } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import {
 	composerActionsGap,
@@ -133,22 +134,39 @@ export function ComposerActions(props: {
 			}
 			onPress={() => (showStop() ? props.onStop() : props.onSend())}
 		>
-			{() =>
-				showStop() ? (
+			<View class="relative size-4 items-center justify-center">
+				<View
+					class="absolute inset-0 items-center justify-center"
+					style={[
+						springTransition("opacity, transform", "crisp"),
+						showStop()
+							? { opacity: 1, transform: [{ scale: 1 }] }
+							: { opacity: 0, transform: [{ scale: 0.65 }] },
+					]}
+				>
 					<Icon
 						name="Square"
 						size={props.touch ? 12 : chatPx(12)}
 						fill
 						color={token("background")}
 					/>
-				) : (
+				</View>
+				<View
+					class="absolute inset-0 items-center justify-center"
+					style={[
+						springTransition("opacity, transform", "crisp"),
+						showStop()
+							? { opacity: 0, transform: [{ scale: 0.65 }] }
+							: { opacity: 1, transform: [{ scale: 1 }] },
+					]}
+				>
 					<Icon
 						name="ArrowUp"
 						size={props.touch ? 16 : chatPx(16)}
 						color={token("background")}
 					/>
-				)
-			}
+				</View>
+			</View>
 		</Button>
 	);
 	const touch = Boolean(props.touch);

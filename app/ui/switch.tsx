@@ -5,6 +5,7 @@ import {
 } from "nsh/base";
 import { styleVar } from "./theme-style";
 import { focusRingStyle } from "./focus-ring-style";
+import { springTransition, tactileTransition } from "./motion";
 
 export type SwitchProps = Omit<BaseSwitchProps, "children">;
 
@@ -21,13 +22,17 @@ export function Switch(props: SwitchProps) {
 		<BaseSwitch
 			{...rest}
 			class={[
-				"h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-hidden disabled:opacity-50",
+				"h-5 w-9 shrink-0 rounded-full focus-visible:outline-hidden disabled:opacity-50",
 				props.checked ? "bg-primary" : "bg-switch-track",
 				local.class,
 			]
 				.filter(Boolean)
 				.join(" ")}
-			style={[{ boxShadow: styleVar("pilo-shadow-xs") }, local.style]}
+			style={[
+				tactileTransition("background-color, box-shadow, opacity"),
+				{ boxShadow: styleVar("pilo-shadow-xs") },
+				local.style,
+			]}
 			focusVisibleStyle={focusRingStyle(
 				token("ring"),
 				styleVar("pilo-shadow-xs"),
@@ -36,13 +41,17 @@ export function Switch(props: SwitchProps) {
 			)}
 			trackClass={["w-9 h-5 p-0.5", local.trackClass].filter(Boolean).join(" ")}
 			thumbClass={[
-				"size-4 rounded-full bg-background transition-transform",
+				"size-4 rounded-full bg-background origin-left active:scale-x-[1.18] checked:origin-right",
 				props.checked ? "translate-x-4" : "translate-x-0",
 				local.thumbClass,
 			]
 				.filter(Boolean)
 				.join(" ")}
-			thumbStyle={[{ boxShadow: styleVar("pilo-shadow-lg") }, local.thumbStyle]}
+			thumbStyle={[
+				springTransition("transform", "crisp"),
+				{ boxShadow: styleVar("pilo-shadow-lg") },
+				local.thumbStyle,
+			]}
 		/>
 	);
 }

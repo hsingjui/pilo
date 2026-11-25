@@ -1,4 +1,4 @@
-import { colorScheme, signal, split, token } from "nsh";
+import { colorScheme, reduceMotion, signal, split, token } from "nsh";
 import {
 	Checkbox as BaseCheckbox,
 	type CheckboxProps as BaseCheckboxProps,
@@ -6,6 +6,7 @@ import {
 import { classNames } from "./class-names";
 import { focusRingStyle } from "./focus-ring-style";
 import { Icon } from "./icon";
+import { MOTION, springTransition } from "./motion";
 import { styleVar } from "./theme-style";
 
 export interface CheckboxProps extends Omit<
@@ -44,14 +45,24 @@ export function Checkbox(props: CheckboxProps) {
 				local.onChange?.(event);
 			}}
 			class={classNames(
-				"size-4 shrink-0 items-center justify-center rounded-[4px] border transition-shadow focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+				"size-4 shrink-0 items-center justify-center rounded-[4px] border duration-[110ms] active:scale-[0.92] focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
 				marked()
 					? "bg-primary border-primary"
 					: "border-input-border dark:bg-input/30",
 				local.invalid ? "border-destructive" : "focus-visible:border-ring",
 				local.class,
 			)}
-			style={[{ boxShadow: styleVar("pilo-shadow-xs") }, local.style]}
+			style={[
+				reduceMotion()
+					? { transitionProperty: "none" }
+					: {
+							transitionProperty:
+								"background-color, border-color, box-shadow, opacity, scale",
+							transitionTimingFunction: MOTION.easing.standard,
+						},
+				{ boxShadow: styleVar("pilo-shadow-xs") },
+				local.style,
+			]}
 			focusVisibleStyle={focusRingStyle(
 				token(local.invalid ? "destructive" : "ring"),
 				styleVar("pilo-shadow-xs"),
@@ -65,21 +76,19 @@ export function Checkbox(props: CheckboxProps) {
 				"size-3.5 shrink-0 items-center justify-center",
 				local.indicatorClass,
 			)}
-			indicatorStyle={local.indicatorStyle}
+			indicatorStyle={[
+				springTransition("opacity, transform", "crisp"),
+				marked()
+					? { opacity: 1, transform: [{ scale: 1 }] }
+					: { opacity: 0, transform: [{ scale: 0.6 }] },
+				local.indicatorStyle,
+			]}
 			indicator={
-				local.indeterminate ? (
-					<Icon
-						name="Minus"
-						size={14}
-						color={local.indicatorColor ?? token("primary-foreground")}
-					/>
-				) : checked() ? (
-					<Icon
-						name="Check"
-						size={14}
-						color={local.indicatorColor ?? token("primary-foreground")}
-					/>
-				) : null
+				<Icon
+					name={local.indeterminate ? "Minus" : "Check"}
+					size={14}
+					color={local.indicatorColor ?? token("primary-foreground")}
+				/>
 			}
 		/>
 	);

@@ -79,7 +79,9 @@ function ThemeOption(props: {
 				{props.label}
 			</Text>
 			{props.selected ? (
-				<Icon name="Check" size={14} color={token("muted-foreground")} />
+				<View style={springTransition("opacity, transform", "crisp")}>
+					<Icon name="Check" size={14} color={token("muted-foreground")} />
+				</View>
 			) : null}
 		</BaseButton>
 	);
