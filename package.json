@@ -23,10 +23,10 @@
 		"test:integration": "node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test \"tests/integration/**/*.spec.ts\" \"tests/integration/**/*.spec.mjs\""
 	},
 	"devDependencies": {
-		"lucide-react": "^1.43.0",
-		"oxfmt": "^0.67.0",
-		"oxlint": "^1.82.0",
-		"postcss": "8.5.28",
+		"lucide-react": "^1.79.0",
+		"oxfmt": "^0.80.0",
+		"oxlint": "^1.95.0",
+		"postcss": "8.5.33",
 		"typescript": "~6.0.3"
 	}
 }
