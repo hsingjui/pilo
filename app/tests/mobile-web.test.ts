@@ -262,3 +262,65 @@ test("mobile drawer notifies when deleting a session succeeds or fails", async (
 	expect(failed.shows("text:Disk is read-only")).toBe(true);
 	expect(failed.shows("id:mobile-session:s1")).toBe(true);
 });
+
+test("mobile composer context usage opens anchored popover for both empty and populated usage", async () => {
+	// Empty session state with known model window (0% trigger).
+	const pending = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+	});
+	await pending.waitFor("id:composer-context-usage");
+	await pending.press("id:composer-context-usage");
+	await pending.waitFor("id:composer-context-usage-details");
+	expect(pending.shows("text:CONTEXT")).toBe(true);
+	await pending.press("id:composer-context-usage");
+	await pending.waitFor("id:composer-context-usage-details", { state: "gone" });
+
+	// Populated usage on a narrow 320pt viewport.
+	const populated = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 320,
+		height: 568,
+		storage: { "fixture.scenario": "context-usage" },
+	});
+	await populated.waitFor("id:composer-context-usage");
+	expect(populated.shows("id:composer-context-usage >> text:21%")).toBe(true);
+	await populated.press("id:composer-context-usage");
+	await populated.waitFor("id:composer-context-usage-details");
+	expect(populated.shows("text:42k / 200k")).toBe(true);
+	expect(populated.shows("text:TOKEN USAGE")).toBe(true);
+	expect(populated.shows("text:Total cost")).toBe(true);
+	await populated.keyboard.press("escape");
+	await populated.waitFor("id:composer-context-usage-details", {
+		state: "gone",
+	});
+});
+
+test("mobile composer send mode uses anchored popover instead of phone bottom sheet and updates mode", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+	});
+
+	await app.waitFor("id:chat-composer-send-mode");
+	await app.press("id:chat-composer-send-mode");
+	await app.waitFor("id:chat-composer-send-mode-popup");
+	expect(app.shows("text:SEND MODE")).toBe(true);
+	await app.waitFor("id:chat-composer-send-mode:steer");
+	await app.waitFor("id:chat-composer-send-mode:follow_up");
+	await app.waitFor("id:chat-composer-send-mode:send_now");
+
+	await app.press("id:chat-composer-send-mode:follow_up");
+	await app.waitFor("id:chat-composer-send-mode-popup", { state: "gone" });
+
+	// Reopen and switch to send_now.
+	await app.press("id:chat-composer-send-mode");
+	await app.waitFor("id:chat-composer-send-mode-popup");
+	await app.press("id:chat-composer-send-mode:send_now");
+	await app.waitFor("id:chat-composer-send-mode-popup", { state: "gone" });
+});

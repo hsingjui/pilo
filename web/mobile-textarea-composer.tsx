@@ -586,6 +586,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 							usage={() => config()?.session ?? null}
 							contextWindow={() => config()?.model?.contextWindow}
 							touch
+							availableHeight={availableHeight}
 						/>
 					) : null}
 
@@ -599,6 +600,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						sending={() => state().sending}
 						sendShortcut={() => (modEnter() ? "mod-enter" : "enter")}
 						touch
+						availableHeight={availableHeight}
 						onSend={submit}
 						onStop={() => void store.stop()}
 					/>

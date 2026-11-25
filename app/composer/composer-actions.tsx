@@ -1,12 +1,25 @@
-import { type JSX, Text, token, View } from "nsh";
+import {
+	effect,
+	type JSX,
+	keyboardFrame,
+	platform,
+	Scroll,
+	signal,
+	Text,
+	token,
+	View,
+	windowSize,
+} from "nsh";
+import { Popover as BasePopover, Toggle, ToggleGroup } from "nsh/base";
 
 import type { ComposerSendMode } from "@shared/chat/send-mode";
 
 import { t } from "../shell/i18n";
 import { chatPx } from "../chat/layout";
 import { Button } from "../ui/button";
+import { classNames } from "../ui/class-names";
 import { Icon, type IconName } from "../ui/icon";
-import { Menu } from "../ui/menu";
+import { Menu, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Tooltip } from "../ui/tooltip";
 import {
@@ -14,6 +27,13 @@ import {
 	composerSendModeStyle,
 	composerSendSize,
 } from "./composer-layout";
+
+/** Mobile text sizes aligned with `web/mobile-typography.ts` (`MOBILE_TEXT`). */
+const TOUCH_TEXT = {
+	"2xs": { fontSize: 12.5, lineHeight: 16 },
+	xs: { fontSize: 13.75, lineHeight: 18 },
+	sm: { fontSize: 16, lineHeight: 20 },
+} as const;
 
 const SEND_MODE_OPTIONS = [
 	{
@@ -61,6 +81,8 @@ export function ComposerActions(props: {
 	sendShortcut: () => "enter" | "mod-enter";
 	/** Uses 40-44px touch-friendly hit targets for mobile / WebUI. */
 	touch?: boolean;
+	/** Visible height when the host already accounts for the keyboard. */
+	availableHeight?: () => number;
 	onSend: () => void;
 	onStop: () => void;
 }) {
@@ -129,6 +151,175 @@ export function ComposerActions(props: {
 			}
 		</Button>
 	);
+	const touch = Boolean(props.touch);
+	const useAnchoredPopover = touch && !platform.desktop;
+	const touchMenuOpen = signal(false);
+	if (useAnchoredPopover) {
+		effect(() => {
+			if (props.blocked()) touchMenuOpen.set(false);
+		});
+	}
+	const sendModeTrigger = (
+		<Button
+			testID="chat-composer-send-mode"
+			variant="ghost"
+			size="sm"
+			class={touch ? "rounded-(--pilo-mobile-radius-md)" : undefined}
+			style={sendModeStyle()}
+			disabled={props.blocked()}
+			accessibilityLabel={modeLabel()}
+			tooltip={
+				touch ? undefined : (
+					<Tooltip>
+						<Text class="font-sans">{modeLabel}</Text>
+					</Tooltip>
+				)
+			}
+		>
+			{() => (
+				<Icon
+					name={option().icon}
+					size={touch ? 15 : chatPx(14)}
+					color={token("muted-foreground")}
+				/>
+			)}
+			<Icon
+				name="ChevronDown"
+				size={touch ? 13 : chatPx(12)}
+				color={token("muted-foreground")}
+			/>
+		</Button>
+	);
+	// On phone/compact idioms `nsh/base`'s `Menu` turns into an unstyled bottom
+	// sheet anchored at the bottom-left. Anchor a Popover directly above the
+	// trigger instead (same pattern as `web/mobile-dropdown-menu.tsx`).
+	const sendModePicker = useAnchoredPopover ? (
+		<BasePopover
+			open={touchMenuOpen()}
+			onOpenChange={({ open }) => {
+				if (open && props.blocked()) return;
+				touchMenuOpen.set(open);
+			}}
+			placement="top"
+			align="end"
+			offset={8}
+			margin={8}
+			popupClass="overflow-hidden rounded-(--pilo-mobile-menu-radius) bg-(--pilo-menu-background) p-(--pilo-mobile-menu-padding) font-sans text-foreground"
+			popupStyle={[
+				menuPopupStyle(),
+				{ width: Math.min(288, Math.max(220, windowSize().width - 16)) },
+			]}
+			trigger={sendModeTrigger}
+		>
+			<Scroll
+				bounces={false}
+				style={{
+					maxHeight: Math.max(
+						160,
+						Math.round(
+							(props.availableHeight?.() ??
+								windowSize().height - keyboardFrame().height) * 0.55,
+						),
+					),
+				}}
+			>
+				<View testID="chat-composer-send-mode-popup" class="w-full">
+					<Text
+						class="px-3 pt-2 pb-1.5 font-sans font-semibold uppercase tracking-[0.6px] text-muted-foreground"
+						style={TOUCH_TEXT["2xs"]}
+					>
+						{() => t("chat.sendMode")}
+					</Text>
+					<ToggleGroup class="gap-1">
+						{SEND_MODE_OPTIONS.map((entry) => {
+							const active = () => props.sendMode() === entry.mode;
+							return (
+								<Toggle
+									testID={`chat-composer-send-mode:${entry.mode}`}
+									pressed={active()}
+									accessibilityLabel={t(entry.label)}
+									class={classNames(
+										"min-h-11 w-full flex-row items-center gap-3 rounded-(--pilo-mobile-menu-item-radius) px-3 py-2 text-left hover:bg-hover active:bg-hover",
+										active() && "bg-muted/70",
+									)}
+									onChange={() => {
+										props.onSendModeChange(entry.mode);
+										touchMenuOpen.set(false);
+									}}
+								>
+									<Icon
+										name={entry.icon}
+										size={16}
+										color={token(active() ? "foreground" : "muted-foreground")}
+									/>
+									<View class="min-w-0 flex-1 gap-0.5">
+										<Text
+											class={classNames(
+												"font-sans",
+												active()
+													? "font-semibold text-foreground"
+													: "font-medium text-foreground",
+											)}
+											style={TOUCH_TEXT.sm}
+										>
+											{() => t(entry.label)}
+										</Text>
+										<Text
+											class="font-sans text-muted-foreground"
+											style={TOUCH_TEXT.xs}
+										>
+											{() => t(entry.detail)}
+										</Text>
+									</View>
+									<View class="size-4 shrink-0 items-center justify-center">
+										{() =>
+											active() ? (
+												<Icon name="Check" size={15} color={token("primary")} />
+											) : null
+										}
+									</View>
+								</Toggle>
+							);
+						})}
+					</ToggleGroup>
+				</View>
+			</Scroll>
+		</BasePopover>
+	) : (
+		<Menu
+			placement="top"
+			align="end"
+			offset={8}
+			popupStyle={{ minWidth: 0 }}
+			trigger={sendModeTrigger}
+		>
+			<Text class="px-3 pt-2 pb-1 font-sans text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
+				{() => t("chat.sendMode")}
+			</Text>
+			<View class="gap-1">
+				{SEND_MODE_OPTIONS.map((entry) => (
+					<MenuItem
+						testID={`chat-composer-send-mode:${entry.mode}`}
+						role="menuitemradio"
+						checked={props.sendMode() === entry.mode}
+						accessibilityLabel={t(entry.label)}
+						class="py-1"
+						icon={<Icon name={entry.icon} size={14} />}
+						onSelect={() => props.onSendModeChange(entry.mode)}
+					>
+						<View class="min-w-0 flex-1">
+							<Text class="font-sans text-sm font-medium">
+								{() => t(entry.label)}
+							</Text>
+							<Text class="font-sans text-xs leading-tight text-muted-foreground">
+								{() => t(entry.detail)}
+							</Text>
+						</View>
+					</MenuItem>
+				))}
+			</View>
+		</Menu>
+	);
 	return (
 		<View
 			testID="chat-composer-actions"
@@ -136,69 +327,8 @@ export function ComposerActions(props: {
 			style={{ gap: composerActionsGap(props.toolbarWidth()) }}
 		>
 			{props.beforeSendMode}
-			<Menu
-				placement="top"
-				align="end"
-				offset={8}
-				popupStyle={{ minWidth: 0 }}
-				trigger={
-					<Button
-						testID="chat-composer-send-mode"
-						variant="ghost"
-						size="sm"
-						style={sendModeStyle()}
-						disabled={props.blocked()}
-						accessibilityLabel={modeLabel()}
-						tooltip={
-							props.touch ? undefined : (
-								<Tooltip>
-									<Text class="font-sans">{modeLabel}</Text>
-								</Tooltip>
-							)
-						}
-					>
-						{() => (
-							<Icon
-								name={option().icon}
-								size={props.touch ? 15 : chatPx(14)}
-								color={token("muted-foreground")}
-							/>
-						)}
-						<Icon
-							name="ChevronDown"
-							size={props.touch ? 13 : chatPx(12)}
-							color={token("muted-foreground")}
-						/>
-					</Button>
-				}
-			>
-				<Text class="px-3 pt-2 pb-1 font-sans text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
-					{() => t("chat.sendMode")}
-				</Text>
-				<View class="gap-1">
-					{SEND_MODE_OPTIONS.map((entry) => (
-						<MenuItem
-							testID={`chat-composer-send-mode:${entry.mode}`}
-							role="menuitemradio"
-							checked={props.sendMode() === entry.mode}
-							accessibilityLabel={t(entry.label)}
-							class={props.touch ? "min-h-11 py-1.5" : "py-1"}
-							icon={<Icon name={entry.icon} size={14} />}
-							onSelect={() => props.onSendModeChange(entry.mode)}
-						>
-							<View class="min-w-0 flex-1">
-								<Text class="font-sans text-sm font-medium">
-									{() => t(entry.label)}
-								</Text>
-								<Text class="font-sans text-xs leading-tight text-muted-foreground">
-									{() => t(entry.detail)}
-								</Text>
-							</View>
-						</MenuItem>
-					))}
-				</View>
-			</Menu>
-			{props.touch ? (
+			{sendModePicker}
+			{touch ? (
 				<View class="size-10 shrink-0 items-center justify-center">
 					{sendButton}
 				</View>

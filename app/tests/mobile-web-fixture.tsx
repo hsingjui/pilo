@@ -278,7 +278,25 @@ async function run() {
 	const runConfigState = signal<ChatRunConfigState>({
 		sessionKey: "p1:draft-1",
 		projectId: "p1",
-		session: null,
+		session:
+			scenario === "context-usage"
+				? {
+						sessionId: "s1",
+						sessionPath: "/sessions/s1.jsonl",
+						name: "Mobile Testing Session",
+						contextTokens: 42_000,
+						contextWindow: 200_000,
+						contextPercent: 21,
+						contextStale: false,
+						tokens: {
+							input: 12_000,
+							output: 3_000,
+							cacheRead: 27_000,
+							cacheWrite: 0,
+						},
+						cost: 0.042,
+					}
+				: null,
 		model: models[0],
 		thinkingLevel: "medium",
 		thinkingLevels: ["off", "low", "medium", "high"],
