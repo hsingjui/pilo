@@ -187,7 +187,7 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 	const downloadProgress = computed(() => {
 		const total = downloadTotalBytes();
 		if (!total || total <= 0) return null;
-		return Math.min(100, Math.round((downloadedBytes() / total) * 100));
+		return Math.min(100, Math.floor((downloadedBytes() / total) * 100));
 	});
 
 	const hasUpdate = computed(() => availableVersion() !== null);

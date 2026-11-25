@@ -47,6 +47,8 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 	const installing = () => update.status() === "installing";
 	const busy = () => downloading() || installing();
 	const progress = () => update.downloadProgress();
+	const showDownloadSize = () =>
+		downloading() && (progress() !== null || update.downloadedBytes() > 0);
 
 	const downloadedSize = () =>
 		formatUpdateMegabytes(update.downloadedBytes(), appLocale());
@@ -182,7 +184,7 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 						<View class="shrink-0 gap-3 border-t border-border/60 px-6 py-4">
 							{() =>
 								busy() ? (
-									<View class="gap-2">
+									<View testID="update-dialog-progress" class="gap-2">
 										<View class="flex-row items-center justify-between gap-3">
 											<Text class="font-sans text-xs text-muted-foreground">
 												{() =>
@@ -202,29 +204,22 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 												</Text>
 											) : null}
 										</View>
-										<View
-											testID="update-dialog-progress"
-											role="progressbar"
-											accessibilityLabel={t(
-												installing()
-													? "settings.installing"
-													: "settings.downloading",
-											)}
-											class="h-1 w-full overflow-hidden rounded-full bg-muted"
-										>
-											{() => {
-												const pct = progress();
-												return downloading() && pct !== null ? (
+										{() => {
+											const pct = progress();
+											return downloading() && pct !== null ? (
+												<View
+													role="progressbar"
+													accessibilityLabel={`${t("settings.downloading")} ${pct}%`}
+													class="h-1 w-full overflow-hidden rounded-full bg-muted"
+												>
 													<View
 														class="h-full rounded-full bg-primary"
 														style={{ width: `${pct}%` }}
 													/>
-												) : (
-													<View class="h-full w-1/3 animate-pulse rounded-full bg-primary" />
-												);
-											}}
-										</View>
-										{downloading() ? (
+												</View>
+											) : null;
+										}}
+										{showDownloadSize() ? (
 											<Text
 												testID="update-dialog-size"
 												class="font-mono text-xs tabular-nums text-muted-foreground"

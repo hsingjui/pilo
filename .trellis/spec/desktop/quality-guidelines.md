@@ -20,6 +20,7 @@
 - **Windows 更新布局**：nsh 会替换可执行文件所在目录。Inno Setup 将应用文件放在 `pilo-app` 子目录，卸载器留在父目录。更新顺序是 `downloadUpdate()` → `installOnQuit()` → 等待 `client.shutdown()` → `Application.restart()`；暂存或关闭 Host 失败时不继续重启。在有本地会话的 Windows 安装版上确认重启后已换成新版。
 - **更新说明与重试**：桌面 JS 只获准对 `https://api.github.com/repos/hsingjui/pilo/releases/tags/` 发 `GET`；失败时仍显示清单提供的说明。重新检查更新先关闭旧弹窗，再清空旧版本；只有找到更新才重新打开，避免无弹窗时仍禁用快捷键。
 - **Windows 更新代理**：桌面端用 `DesktopUpdates.checkForUpdate(options)` 启动 nsh 原有检查，只替换该次检查的 `UpdaterHost` HTTP 传输。nsh 会保留该 host 给 `downloadUpdate()`；清单、签名和更新包的每次请求都新开 WinHTTP 自动代理会话，由 Windows 处理当前用户的代理、PAC、绕过规则和重定向。系统判定直连时直接连接；请求失败时报告错误，不再尝试走进程代理环境变量。验签、包校验和退出安装仍由 nsh 处理。不要在检测时把单个代理地址写入 `HTTPS_PROXY`：ureq 会缓存配置，PAC 也可能为下载地址选择不同代理。验收用已安装的 Windows 版本：验证手动代理、PAC/绕过、无代理，并在检查完成后改代理再下载，无需重启即可生效；同时确认签名或哈希不匹配仍拒绝安装。
+- **更新进度**：`downloadUpdate` 的 `received` 是累计已收字节，`total` 可缺省。只在下载中且总量有效时显示百分比和进度条；未知总量时只显示已收到的字节，不用固定宽度模拟进度。
 - **验收**：检查安装或解压后的应用能启动 Local、发布 Remote WebUI，并从安装版验证局域网 SSH。macOS 确认最终 `Info.plist` 含 `NSLocalNetworkUsageDescription`，签名标识为 `app.hsingjui.pilo`；只有 Rust 链接器临时签名时，局域网授权记录可能无法匹配，表现为终端能连而应用报 `No route to host`。
 - **打包顺序**：共用运行时构建先对 macOS 的 `pilo-server` 做 ad hoc 签名，三端复制同一份产物。`nsh package` 对初始 `.app` 签名；Pilo 加入资源后单独验证 macOS 运行时签名，保留 entitlements 重新签名整个 `.app`，再生成 DMG 和更新 tarball。直接上传 nsh 初次生成的 ZIP、安装器或 tarball 会遗漏资源。
 
