@@ -153,15 +153,14 @@ export function connectDesktopShell(
 	Application.setQuitRequestOptions({ system: true });
 	Application.on("secondInstance", show);
 	main.on("closePress", ({ reason }) => {
-		// Tray.set has no success result. Don't hide unless there is a known way back.
-		if (
-			reason !== "system" &&
-			settings()?.exitOnClose === false &&
-			(traySeen || registered())
-		) {
+		if (quitting) return;
+		if (reason === "system" || settings()?.exitOnClose !== false) {
+			void quit();
+		} else if (traySeen || registered()) {
 			hide();
 		} else {
-			void quit();
+			// Tray.set has no success result. Keep a way back without quitting.
+			main.minimize();
 		}
 	});
 	main.set({ closeOnPress: false });

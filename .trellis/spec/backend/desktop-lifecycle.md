@@ -26,9 +26,10 @@ owns tray, focus, shortcut registration, and quit handling.
 - The OS login setting is authoritative. Read it back after a successful write;
   don't mirror it into SQLite or infer hidden startup from it.
 - The tray exposes Show, Hide, and Quit. Show and `secondInstance` focus the main
-  window. An ordinary close hides it only when `exitOnClose` is false and the
-  tray has been used or the global show shortcut registered successfully. A
-  system close or an explicit quit awaits Host shutdown before `Application.quit()`.
+  window. When `exitOnClose` is false, an ordinary close keeps the Host running:
+  it hides the window if the tray has been used or the global show shortcut
+  registered successfully, and otherwise minimizes it. A system close or an
+  explicit quit awaits Host shutdown before `Application.quit()`.
 - On macOS, hiding the main window to the tray switches activation policy to
   `Accessory` so the Dock icon is cleared while the menu-bar tray icon stays
   active. Showing the window restores `Regular` before calling `main.focus()`,
@@ -51,8 +52,9 @@ owns tray, focus, shortcut registration, and quit handling.
   optimistically change the switch.
 - An unavailable global shortcut does not stop app startup. Failed replacement
   registration or persistence preserves the previous key.
-- Until a way to reopen the window is known, close shuts down rather than hiding
-  an unreachable Host. Repeated quit requests do not start another shutdown.
+- With `exitOnClose` off but no confirmed tray or shortcut, close minimizes so
+  the window remains reachable through the OS. Repeated quit requests do not
+  start another shutdown.
 
 ## 5. Good / Base / Bad Cases
 
@@ -65,9 +67,11 @@ owns tray, focus, shortcut registration, and quit handling.
 
 Verify login opt-in/out, second launch, tray Show/Hide/Quit, default close versus
 explicit exit, and global activation from another app using a physical keypress
-with Pilo visible, minimized, and hidden to the tray. Check occupied-key
-fallback and that shutdown releases sessions and the WebUI listener. Packaged
-login and Dock behavior cannot be inferred from headless tests.
+with Pilo visible, minimized, and hidden to the tray. With the shortcut occupied
+and the tray not yet used, check that an ordinary close with the switch off
+minimizes and keeps sessions running. Check that shutdown releases sessions and
+the WebUI listener. Packaged login and Dock behavior cannot be inferred from
+headless tests.
 
 ## 7. Wrong vs Correct
 
