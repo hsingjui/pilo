@@ -4,6 +4,10 @@
 //! hiding the main window keeps the Dock icon and running indicator. This
 //! module switches between `Regular` (shown in Dock) and `Accessory` (menu-bar
 //! tray only) on the macOS main queue.
+//!
+//! A pinned Dock icon still launches a hidden (`Accessory`) Pilo: Launch
+//! Services activates it, but no window shows. While hidden, an activation
+//! restores the Dock icon and shows the main window like a Dock reopen.
 
 use nsh_core::prelude::*;
 
@@ -40,8 +44,10 @@ impl DesktopDock {
 mod macos {
     use dispatch2::DispatchQueue;
     use objc2::{
-        class, msg_send,
-        runtime::{AnyObject, Bool},
+        ClassType, class, define_class, msg_send,
+        rc::Retained,
+        runtime::{AnyObject, Bool, NSObject},
+        sel,
     };
     use tokio::sync::oneshot;
 
@@ -121,6 +127,91 @@ mod macos {
         });
     }
 
+    define_class!(
+        // SAFETY: `NSObject` has no subclassing requirements and this class
+        // does not implement `Drop`.
+        #[unsafe(super(NSObject))]
+        #[name = "PiloDockActivationObserver"]
+        struct ActivationObserver;
+
+        impl ActivationObserver {
+            #[unsafe(method(applicationDidBecomeActive:))]
+            fn application_did_become_active(&self, _notification: *mut AnyObject) {
+                show_after_hidden_activation();
+            }
+        }
+    );
+
+    /// Activated while the Dock icon is hidden (a pinned Dock icon, `open`,
+    /// a notification): restore the Dock icon and show the main window through
+    /// the app delegate's Dock reopen handler.
+    fn show_after_hidden_activation() {
+        // SAFETY: Notification callbacks run on the main thread. The selectors
+        // return Objective-C objects or BOOL, as declared below.
+        unsafe {
+            let Some(app) = running_ns_application() else {
+                return;
+            };
+            let policy: isize = msg_send![app, activationPolicy];
+            if policy != NS_APPLICATION_ACTIVATION_POLICY_ACCESSORY {
+                return;
+            }
+            let delegate: *mut AnyObject = msg_send![app, delegate];
+            if delegate.is_null() {
+                return;
+            }
+            let reopens: Bool = msg_send![
+                delegate,
+                respondsToSelector: sel!(applicationShouldHandleReopen:hasVisibleWindows:)
+            ];
+            if !reopens.as_bool() {
+                return;
+            }
+            if !apply_activation_policy_on_main(NS_APPLICATION_ACTIVATION_POLICY_REGULAR) {
+                log::warn!("Failed to restore the Pilo Dock icon after activation");
+                return;
+            }
+            let _: Bool = msg_send![
+                delegate,
+                applicationShouldHandleReopen: app,
+                hasVisibleWindows: Bool::NO
+            ];
+        }
+    }
+
+    /// Observes app activation once, on the main thread, for the process's life.
+    fn observe_activation_on_main(app: *mut AnyObject) {
+        static OBSERVE: std::sync::Once = std::sync::Once::new();
+        OBSERVE.call_once(|| {
+            // SAFETY: Called on the main thread with the running `NSApp`.
+            // `NSApplicationDidBecomeActiveNotification` is an `NSString *const`
+            // exported by AppKit. The notification center does not retain its
+            // observers, so the observer is intentionally leaked.
+            unsafe {
+                let symbol = libc::dlsym(
+                    libc::RTLD_DEFAULT,
+                    c"NSApplicationDidBecomeActiveNotification".as_ptr(),
+                );
+                if symbol.is_null() {
+                    log::warn!("Failed to observe Pilo activation for the hidden Dock icon");
+                    return;
+                }
+                let name = *(symbol.cast::<*mut AnyObject>());
+                let observer: Retained<ActivationObserver> =
+                    msg_send![ActivationObserver::class(), new];
+                let center: *mut AnyObject = msg_send![class!(NSNotificationCenter), defaultCenter];
+                let _: () = msg_send![
+                    center,
+                    addObserver: &*observer,
+                    selector: sel!(applicationDidBecomeActive:),
+                    name: name,
+                    object: app
+                ];
+                std::mem::forget(observer);
+            }
+        });
+    }
+
     fn apply_activation_policy_on_main(policy: isize) -> bool {
         // SAFETY: Called only on the macOS main thread. `running_ns_application`
         // returns an already-initialized `NSApplication*`, and
@@ -130,6 +221,9 @@ mod macos {
                 return false;
             };
             let applied: Bool = msg_send![app, setActivationPolicy: policy];
+            if applied.as_bool() && policy == NS_APPLICATION_ACTIVATION_POLICY_ACCESSORY {
+                observe_activation_on_main(app);
+            }
             applied.as_bool()
         }
     }
