@@ -1,5 +1,10 @@
-import { computed, mount, Storage } from "nsh";
-import { displays, isAvailable, Window, type WindowRef } from "nsh/desktop";
+import { computed, effect, mount, Storage } from "nsh";
+import {
+	currentWindow,
+	displays,
+	isAvailable,
+	type WindowRef,
+} from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
@@ -164,24 +169,6 @@ export async function launch(
 			console.warn("Failed to send Pilo session notification", error);
 		});
 	});
-	const main = isAvailable ? Window.get("main") : null;
-	// The first-launch size fits its display already; `fitMainWindow` would
-	// read the bounds from before it.
-	if (main && !(await sizeMainWindowOnFirstLaunch(main))) fitMainWindow(main);
-	desktop =
-		main && desktopSettings
-			? connectDesktopShell(
-					main,
-					desktopSettings,
-					async () => {
-						store.stop();
-						await client.shutdown();
-					},
-					desktopDock,
-				)
-			: undefined;
-	if (desktop)
-		notify = connectSessionNotifications(client, store, desktop, notifications);
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
 	const toasts = new AppToasts();
@@ -268,7 +255,6 @@ export async function launch(
 		searchSessions: client,
 		settings: client,
 		projectClient: client,
-		desktop,
 		notifications,
 		sidebarSettings,
 		toasts,
@@ -295,17 +281,50 @@ export async function launch(
 			status.type === "closed"
 		);
 	});
-	mount(
-		() => () =>
+	mount(() => {
+		if (isAvailable) {
+			// nsh creates the implicit main window as part of mount.
+			const main = currentWindow();
+			if (desktopSettings) {
+				desktop = connectDesktopShell(
+					main,
+					desktopSettings,
+					async () => {
+						store.stop();
+						await client.shutdown();
+					},
+					desktopDock,
+				);
+				notify = connectSessionNotifications(
+					client,
+					store,
+					desktop,
+					notifications,
+				);
+			}
+			let sizingStarted = false;
+			effect(() => {
+				if (sizingStarted || !main.state()) return;
+				sizingStarted = true;
+				void sizeMainWindowOnFirstLaunch(main)
+					.then((sized) => {
+						if (!sized) fitMainWindow(main);
+					})
+					.catch((error: unknown) => {
+						console.warn("Failed to size the Pilo main window", error);
+					});
+			});
+		}
+		return () =>
 			showShell() ? (
-				<AppShell {...shellProps} />
+				<AppShell {...shellProps} desktop={desktop} />
 			) : (
 				<StartupFrame
 					claude={startupTheme?.themeFamily === "claude"}
 					sidebarWidth={sidebarSettings.width}
 				/>
-			),
-	);
+			);
+	});
 	// The normal sync still reloads the theme after its bootstrap cut.
 	void store.preloadThemeSettings().catch((error: unknown) => {
 		console.warn("Failed to preload Host theme", error);
