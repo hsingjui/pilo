@@ -104,12 +104,18 @@ pub fn session_update_ui_state(
     update: SessionUiStateUpdate,
     project_id: Option<String>,
 ) -> Result<SessionIndexEntry, String> {
-    storage::update_session_ui_state(
+    let entry = storage::update_session_ui_state(
         &storage::open(&runtime.paths)?,
         &session_path,
         &update,
         project_id.as_deref(),
-    )
+    )?;
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::SessionsIndexed {
+            project_id: entry.project_id.clone(),
+        },
+    ));
+    Ok(entry)
 }
 
 pub async fn session_external_activity(
