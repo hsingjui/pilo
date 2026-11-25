@@ -824,9 +824,7 @@ export function ChatComposer(props: ChatComposerProps) {
 						}}
 						onGhostKey={handleGhostKey}
 						onPasteFiles={(files, uris) => {
-							if (readOnly()) return;
-							if (files.length) void store.addFiles(files);
-							if (uris.length) void store.addUris(uris);
+							if (!readOnly()) store.addPastedFiles(files, uris);
 						}}
 					/>
 					{() => {

@@ -3,6 +3,7 @@ import { expect, test } from "nsh/test";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { PiCommand } from "@shared/api/pi-runtime-types";
+import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import type { AppState } from "../state/app-state";
 import { createAppState } from "../state/app-state";
 import type { ModelCatalogState } from "../state/model-catalog";
@@ -217,6 +218,32 @@ test("image attachments are shared within a project but not across projects", as
 	store.removeImage(store.state().images[0]!.id);
 	store.setTarget(targetA);
 	expect(store.state().images).toHaveLength(0);
+});
+
+test("pasted image URIs use the clipboard image only if the original cannot attach", async () => {
+	const original = "file:///original.png";
+	const oversized = "file:///oversized.png";
+	const { client } = fakeClient({
+		readLocalFile: async (uri) =>
+			new Uint8Array(uri === oversized ? MAX_CHAT_IMAGE_BYTES + 1 : 2),
+	});
+	const { store } = storeFor(client);
+	store.setTarget(targetA);
+	const clipboard = new File([new Uint8Array([0x89, 0x50])], "image.png", {
+		type: "image/png",
+	});
+
+	await store.addUris([original], clipboard);
+	expect(store.state().images.map(({ name }) => name)).toEqual([
+		"original.png",
+	]);
+
+	await store.addUris([oversized], clipboard);
+	expect(store.state().images.map(({ name }) => name)).toEqual([
+		"original.png",
+		"image.png",
+	]);
+	expect(store.state().status).toBe(null);
 });
 
 function piCommand(

@@ -1,4 +1,4 @@
-import { type Accessor, batch, computed, signal } from "nsh";
+import { type Accessor, batch, computed, platform, signal } from "nsh";
 import { Storage } from "nsh";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
@@ -808,38 +808,41 @@ export class ComposerStore {
 		}));
 	}
 
-	/** Inserts picked/pasted/dropped files into the draft that requested them. */
-	async addFiles(files: readonly File[], target = this.targetSignal()) {
-		if (!target) return;
+	/** Inserts files into the requesting draft and returns whether any were attached. */
+	async addFiles(
+		files: readonly File[],
+		target = this.targetSignal(),
+		reportFailure = true,
+	): Promise<boolean> {
+		if (!target) return false;
 		const { sessionKey, projectId } = target;
+		const rejectFile = (message: string) => {
+			if (reportFailure) this.setStatus(message, sessionKey);
+		};
+		let attached = false;
 		if (files.length > MAX_CHAT_IMAGE_COUNT) {
-			this.setStatus(
-				t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }),
-				sessionKey,
-			);
+			rejectFile(t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }));
 		}
 		let batchBytes = 0;
 		for (const file of files.slice(0, MAX_CHAT_IMAGE_COUNT)) {
 			const mime = resolveChatImageMimeType(file);
 			if (file.size > MAX_CHAT_IMAGE_BYTES) {
-				this.setStatus(
+				rejectFile(
 					mime
 						? t("chat.imageTooLarge", { name: file.name || "image" })
 						: t("chat.fileTooLarge", {
 								name: file.name || "file",
 								size: formatChatImageSize(MAX_CHAT_IMAGE_BYTES),
 							}),
-					sessionKey,
 				);
 				continue;
 			}
 			batchBytes += file.size;
 			if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {
-				this.setStatus(
+				rejectFile(
 					t("chat.filesTooLarge", {
 						size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
 					}),
-					sessionKey,
 				);
 				break;
 			}
@@ -859,7 +862,7 @@ export class ComposerStore {
 									})
 								: null;
 					if (limit) {
-						this.setStatus(limit, sessionKey);
+						rejectFile(limit);
 						continue;
 					}
 					const image: ChatImageAttachment = {
@@ -890,19 +893,46 @@ export class ComposerStore {
 						value: `${value}${separator}${tokenText} `,
 					});
 				}
+				attached = true;
 			} catch (error) {
-				this.setStatus(
+				rejectFile(
 					`${t("chat.uploadFileFailed", { name: file.name || "file" })}: ${errorMessage(error)}`,
-					sessionKey,
 				);
 			}
 		}
+		return attached;
+	}
+
+	addPastedFiles(files: readonly File[], uris: readonly string[]) {
+		const [file] = files;
+		const [uri] = uris;
+		// Windows nsh can report one image as both a file URI and a clipboard image.
+		if (
+			platform.os === "windows" &&
+			files.length === 1 &&
+			uris.length === 1 &&
+			file &&
+			uri &&
+			((file.name === "image.bmp" && file.type === "image/bmp") ||
+				(file.name === "image.png" && file.type === "image/png")) &&
+			resolveChatImageMimeType({ name: attachmentName(uri), type: "" })
+		) {
+			void this.addUris(uris, file);
+			return;
+		}
+		if (files.length) void this.addFiles(files);
+		if (uris.length) void this.addUris(uris);
 	}
 
 	/** Pasted or dropped `file:` URIs, read natively and attached like picked files. */
-	async addUris(uris: readonly string[]) {
+	async addUris(uris: readonly string[], clipboardImage?: File) {
 		const target = this.targetSignal();
 		if (!target) return;
+		// An unsupported clipboard bitmap must not turn an image paste into a file upload.
+		const fallback =
+			clipboardImage && resolveChatImageMimeType(clipboardImage)
+				? clipboardImage
+				: undefined;
 		if (uris.length > MAX_CHAT_IMAGE_COUNT) {
 			this.setStatus(
 				t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }),
@@ -928,19 +958,28 @@ export class ComposerStore {
 				}
 				const name = attachmentName(uri);
 				const mime = resolveChatImageMimeType({ name, type: "" });
-				await this.addFiles(
+				const attached = await this.addFiles(
 					[
 						new File([bytes], name.slice(0, ATTACHMENT_NAME_LIMIT), {
 							type: mime ?? "",
 						}),
 					],
 					target,
+					// With a fallback, report only failure of the final attempt.
+					!fallback,
 				);
+				if (attached) continue;
 			} catch (error) {
-				this.setStatus(
-					`${t("chat.uploadFileFailed", { name: attachmentName(uri) })}: ${errorMessage(error)}`,
-					target.sessionKey,
-				);
+				if (!fallback) {
+					this.setStatus(
+						`${t("chat.uploadFileFailed", { name: attachmentName(uri) })}: ${errorMessage(error)}`,
+						target.sessionKey,
+					);
+				}
+			}
+			if (fallback) {
+				await this.addFiles([fallback], target);
+				return;
 			}
 		}
 	}
