@@ -22,6 +22,10 @@ pub struct TranscriptSnapshot {
     pub generation: u64,
     pub history: Value,
     pub live: TurnLive,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live_started_at_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live_elapsed_ms: Option<u64>,
 }
 
 impl Runtime {

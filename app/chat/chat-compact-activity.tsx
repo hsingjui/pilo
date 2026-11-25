@@ -14,8 +14,6 @@ import {
 } from "nsh";
 
 import {
-	type AssistantStreamingState,
-	getAssistantStreamingState,
 	lastThinkingLine,
 	pickCompactLiveActivity,
 	pickCompactLivePreview,
@@ -59,7 +57,7 @@ import type {
 } from "./chat-message-types";
 import {
 	ChatReadingFont,
-	readingIconStyle,
+	createReadingIconAlignment,
 	readingTextStyle,
 } from "./chat-reading-font";
 import { ChatThinkingActivity } from "./chat-thinking-activity";
@@ -141,6 +139,7 @@ function CompactTickerLine(props: {
 						</Text>
 					);
 				}
+				const iconAlignment = createReadingIconAlignment();
 				if (current.type === "thinking") {
 					const label = () =>
 						current.status === "running"
@@ -148,14 +147,11 @@ function CompactTickerLine(props: {
 							: t("chat.thought");
 					return (
 						<View class="min-w-0 flex-1 flex-row items-center gap-1.5">
-							<Icon
-								name="Sparkles"
-								size={14}
-								style={readingIconStyle(readingFont())}
-							/>
+							<Icon name="Sparkles" size={14} style={iconAlignment.style()} />
 							<Text
 								class="shrink-0 font-sans font-medium leading-snug text-muted-foreground"
 								style={readingTextStyle(readingFont())}
+								onTextLayout={iconAlignment.onTextLayout}
 							>
 								{label}
 							</Text>
@@ -166,11 +162,7 @@ function CompactTickerLine(props: {
 				const display = compactToolDisplay(current);
 				return (
 					<View class="min-w-0 flex-1 flex-row items-center gap-1.5">
-						<Icon
-							name={display.icon}
-							size={14}
-							style={readingIconStyle(readingFont())}
-						/>
+						<Icon name={display.icon} size={14} style={iconAlignment.style()} />
 						<Text
 							class={
 								failed
@@ -178,6 +170,7 @@ function CompactTickerLine(props: {
 									: "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
 							}
 							style={readingTextStyle(readingFont())}
+							onTextLayout={iconAlignment.onTextLayout}
 						>
 							{display.label}
 							<Text
@@ -310,6 +303,7 @@ export function ChatCompactActivityGroup(props: {
 
 	const header = () => {
 		if (settled()) {
+			const iconAlignment = createReadingIconAlignment();
 			return (
 				<ChatDisclosureRow
 					testID="chat-compact-activity-toggle"
@@ -324,16 +318,13 @@ export function ChatCompactActivityGroup(props: {
 								? "Sparkles"
 								: activity && compactToolDisplay(activity).icon;
 						return icon ? (
-							<Icon
-								name={icon}
-								size={14}
-								style={readingIconStyle(readingFont())}
-							/>
+							<Icon name={icon} size={14} style={iconAlignment.style()} />
 						) : null;
 					}}
 					<Text
 						class="w-0 min-w-0 flex-1 truncate font-sans leading-snug text-muted-foreground"
 						style={readingTextStyle(readingFont())}
+						onTextLayout={iconAlignment.onTextLayout}
 					>
 						{summaryLabel}
 					</Text>
@@ -342,8 +333,10 @@ export function ChatCompactActivityGroup(props: {
 		}
 		return (
 			<View testID="chat-compact-live-preview" class="gap-0.5">
-				{() =>
-					hasThought() ? (
+				{() => {
+					if (!hasThought()) return null;
+					// Avoid sending layout events for the long, streaming preview.
+					return (
 						<ChatDisclosureRow
 							testID="chat-compact-thought-preview"
 							class={open() ? "bg-hover" : undefined}
@@ -357,11 +350,7 @@ export function ChatCompactActivityGroup(props: {
 							}
 							onPress={toggleOpen}
 						>
-							<Icon
-								name="Sparkles"
-								size={14}
-								style={readingIconStyle(readingFont())}
-							/>
+							<Icon name="Sparkles" size={14} />
 							<Text
 								class="w-0 min-w-0 flex-1 truncate font-sans leading-snug text-muted-foreground"
 								style={readingTextStyle(readingFont())}
@@ -369,8 +358,8 @@ export function ChatCompactActivityGroup(props: {
 								{thoughtLine}
 							</Text>
 						</ChatDisclosureRow>
-					) : null
-				}
+					);
+				}}
 				{() => {
 					if (open() && hasThought()) return null;
 					const stepKey = activeStepKey();
@@ -431,76 +420,39 @@ export function ChatCompactActivityGroup(props: {
 	);
 }
 
-function isPreOutputState(
-	state: AssistantStreamingState | null,
-): state is "starting" | "sending" | "waitingResponse" {
-	return (
-		state === "starting" || state === "sending" || state === "waitingResponse"
-	);
-}
-
-/** The turn clock and live status are separate from all activity disclosures. */
+/** The turn clock while streaming, or the work summary once finished. */
 export function ChatCompactWorkHeader(props: {
 	message: () => AssistantChatMessage;
 	activities: () => readonly AssistantActivity[];
 	preferences: () => ChatWorkPreferences;
+	iconAlignment?: ReturnType<typeof createReadingIconAlignment>;
 }) {
 	const readingFont = ChatReadingFont();
+	const iconAlignment = props.iconAlignment ?? createReadingIconAlignment();
 	const live = computed(() => props.message().streaming === true);
-	const now = signal(Date.now());
+	const startedAtMs = computed(() => props.message().workClockStartedAtMs);
+	const now = signal(performance.now());
 	effect(() => {
-		if (!live() || !props.preferences().showWorkDuration) return;
-		now.set(Date.now());
-		const timer = setInterval(() => now.set(Date.now()), 1_000);
+		if (
+			!live() ||
+			!props.preferences().showWorkDuration ||
+			startedAtMs() === undefined
+		)
+			return;
+		now.set(performance.now());
+		const timer = setInterval(() => now.set(performance.now()), 1_000);
 		return () => clearInterval(timer);
 	});
-	let fallbackStart: { id: string; startedAtMs: number } | undefined;
-	const startedAtMs = computed(() => {
-		const current = props.message();
-		if (current.timestampMs !== undefined) return current.timestampMs;
-		const firstThinkingStart = props
-			.activities()
-			.find(
-				(item): item is ThinkingActivity =>
-					item.type === "thinking" && item.startedAtMs !== undefined,
-			)?.startedAtMs;
-		if (firstThinkingStart !== undefined) return firstThinkingStart;
-		if (fallbackStart?.id !== current.id) {
-			fallbackStart = { id: current.id, startedAtMs: Date.now() };
-		}
-		return fallbackStart.startedAtMs;
-	});
-	const streamingState = computed(() => {
-		if (!live()) return null;
-		const current = props.message();
-		return getAssistantStreamingState({
-			text: current.text,
-			activity: props.activities(),
-			streaming: true,
-			emptyState: current.pendingStatus ?? "waitingResponse",
-		});
-	});
 	const title = computed(() => {
-		const showDuration = props.preferences().showWorkDuration;
+		if (!props.preferences().showWorkDuration) return t("chat.workActivity");
 		if (live()) {
-			const state = streamingState();
-			const elapsedMs = Math.max(0, now() - startedAtMs());
-			if (isPreOutputState(state)) {
-				const label = t(`chat.${state}`);
-				return showDuration && elapsedMs >= 1_000
-					? `${label} · ${workDurationText(elapsedMs)}`
-					: label;
-			}
-			if (showDuration) {
-				return t("chat.workingDuration", {
-					duration: workDurationText(elapsedMs),
-				});
-			}
-			return props.activities().length === 0 && state
-				? t(`chat.${state}`)
-				: t("chat.workActivity");
+			const start = startedAtMs();
+			if (start === undefined) return t("chat.workActivity");
+			const elapsedMs = Math.max(0, now() - start);
+			return t("chat.workingDuration", {
+				duration: workDurationText(elapsedMs),
+			});
 		}
-		if (!showDuration) return t("chat.workActivity");
 		const durationMs = props.message().workDurationMs;
 		return durationMs === undefined
 			? t("chat.workActivity")
@@ -519,12 +471,18 @@ export function ChatCompactWorkHeader(props: {
 		<View class="min-h-7 flex-row items-center justify-between gap-1.5 py-0.5">
 			<View class="min-w-0 flex-1 flex-row items-center gap-1.5">
 				{() =>
-					live() ? <ChatActivityDot testID="chat-compact-live-dot" /> : null
+					live() && props.activities().length > 0 ? (
+						<ChatActivityDot
+							testID="chat-compact-live-dot"
+							alignment={iconAlignment}
+						/>
+					) : null
 				}
 				<Text
 					testID="chat-compact-header-title"
 					class="min-w-0 shrink truncate font-sans font-medium tabular-nums leading-snug text-muted-foreground"
 					style={readingTextStyle(readingFont())}
+					onTextLayout={iconAlignment.onTextLayout}
 				>
 					{title}
 				</Text>
@@ -535,7 +493,7 @@ export function ChatCompactWorkHeader(props: {
 						name="CircleAlert"
 						size={14}
 						color={token("destructive")}
-						style={readingIconStyle(readingFont())}
+						style={iconAlignment.style()}
 					/>
 				) : null
 			}

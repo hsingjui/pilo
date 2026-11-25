@@ -165,9 +165,12 @@ or closing sessions. The optional window is
 Omit `messageLimit` for all messages. When supplied, the reader clamps it to
 1–256, defaults to the tail when `startMessage` is omitted, and includes the
 message index on request. The result has
-`{ eventSequence, sessionKey, generation, history, live }`. `history` is the
-existing history response, including its fingerprint; `live` is
-`{ type: "idle" }`, `{ type: "active", events }`, or `{ type: "truncated" }`.
+`{ eventSequence, sessionKey, generation, history, live, liveStartedAtMs?, liveElapsedMs? }`.
+`history` is the existing history response, including its fingerprint; `live`
+is `{ type: "idle" }`, `{ type: "active", events }`, or `{ type: "truncated" }`.
+`liveStartedAtMs` is the active reply segment's original Host start time in Unix
+milliseconds. `liveElapsedMs` is its monotonic elapsed time when the Host returns
+the snapshot. Neither field is required.
 
 Subscribe before requesting the snapshot and keep polling the same stream.
 For an idle cut, history is settled and there are no live events. For an active

@@ -29,7 +29,7 @@ import { context, startedAt } from "./chat-conversation-fixture";
  * - `answered`: a turn that only answered, in 5 seconds.
  * - `untimed`: `answered` with `showWorkDuration` turned off.
  * - `compactRunning`: `running` with `compactOutput` turned on and a live
- *   timestamp 62 seconds before mount so the elapsed timer starts at `1m 02s`.
+ *   clock 62 seconds before mount so the elapsed timer starts at `1m 02s`.
  * - `compactThinking`: a turn still thinking with `compactOutput` turned on.
  * - `compactUntimed`: `compactRunning` with `showWorkDuration` turned off.
  * - `compactSettled`: `settled` with `compactOutput` turned on.
@@ -45,17 +45,17 @@ import { context, startedAt } from "./chat-conversation-fixture";
 
 const at = (seconds: number) => startedAt + seconds * 1000;
 
-function shiftEvents(
+function withLiveClock(
 	events: readonly ConversationEvent[],
-	originMs: number,
+	ageMs: number,
 ): ConversationEvent[] {
-	return events.map((event) => ({
-		...event,
-		timestampMs:
-			event.timestampMs !== undefined
-				? originMs + (event.timestampMs - startedAt)
-				: undefined,
-	}));
+	const workClockStartedAtMs = performance.now() - ageMs;
+	return events.map((event) =>
+		event.type === "user_message_start" ||
+		event.type === "assistant_message_start"
+			? { ...event, workClockStartedAtMs }
+			: event,
+	);
 }
 
 const prompt: ConversationEvent[] = [
@@ -289,6 +289,7 @@ function buildPendingScenario(
 			clientMessageId: "user-pending-1",
 			text: "Bump x.",
 			timestampMs,
+			workClockStartedAtMs: performance.now() - ageMs,
 		},
 		{ type: "local_assistant_pending", timestampMs, pendingStatus: null },
 		{
@@ -300,18 +301,17 @@ function buildPendingScenario(
 }
 
 function buildScenario(scenario: string): ConversationEvent[] {
-	const liveOrigin = Date.now() - 62_000;
 	switch (scenario) {
 		case "compactRunning":
 		case "compactUntimed":
-			return shiftEvents([...prompt, ...work], liveOrigin);
+			return withLiveClock([...prompt, ...work], 62_000);
 		case "compactThinking":
-			return shiftEvents([...prompt, ...work.slice(0, 2)], liveOrigin);
+			return withLiveClock([...prompt, ...work.slice(0, 2)], 62_000);
 		case "compactStreamingText":
-			return shiftEvents(compactStreamingText, liveOrigin);
+			return withLiveClock(compactStreamingText, 62_000);
 		case "compactWaiting":
 		case "compactWaitingUntimed":
-			return shiftEvents(prompt, Date.now() - 5_000);
+			return withLiveClock(prompt, 5_000);
 		default:
 			return scenarios[scenario] ?? scenarios.settled;
 	}

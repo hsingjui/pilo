@@ -44,6 +44,10 @@ export type ChatMessage =
 			streaming?: boolean;
 			/** null: checking session readiness; undefined: no local submission phase. */
 			pendingStatus?: AssistantPendingStatus | null;
+			/** Start of the reply segment, independent of the message display time. */
+			workStartedAtMs?: number;
+			/** Start of the live display clock, in the client's monotonic time. */
+			workClockStartedAtMs?: number;
 			workDurationMs?: number;
 			replyRunwayPx?: number;
 			stopReason?: string;
@@ -79,9 +83,10 @@ export type ConversationEvent = ConversationEventMeta &
 				images?: ChatConversationImage[];
 				/** Live runtime echo starts a streaming placeholder until assistant output arrives. */
 				pendingAssistant?: boolean;
+				workClockStartedAtMs?: number;
 		  }
 		| { type: "compaction_marker"; summary: string; tokensBefore?: number }
-		| { type: "assistant_message_start" }
+		| { type: "assistant_message_start"; workClockStartedAtMs?: number }
 		| { type: "assistant_usage_update"; usage: TokenUsage }
 		| { type: "assistant_text_delta"; delta: string }
 		| { type: "assistant_text_snapshot"; text: string }
@@ -126,6 +131,7 @@ export type ConversationAction =
 			text: string;
 			images?: ChatConversationImage[];
 			timestampMs: number;
+			workClockStartedAtMs?: number;
 			replyRunwayPx?: number;
 			appendMessage?: boolean;
 	  }
@@ -165,6 +171,7 @@ export type ConversationState = {
 		assistantMessageId?: string;
 		localClientMessageId?: string;
 		turnStartedAtMs?: number;
+		workClockStartedAtMs?: number;
 		assistantUpdatedAtMs?: number;
 		firstRuntimeUserSeen: boolean;
 		runtimeStarted?: boolean;

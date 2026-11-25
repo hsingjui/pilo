@@ -1,4 +1,4 @@
-import { type Accessor, context, platform } from "nsh";
+import { type Accessor, context, signal } from "nsh";
 
 import {
 	DEFAULT_READING_FONT_FAMILY,
@@ -48,29 +48,54 @@ export function readingTextStyle(font: ChatReadingFont, lineHeight?: number) {
 			};
 }
 
-/**
- * Optical vertical offset (in points) for an icon beside single-line reading
- * text in a flex-centered row. Sans/CJK fonts have more ascent than descent
- * (especially Segoe UI / Microsoft YaHei on Windows), so geometric box
- * centering places icons visibly above the glyphs' optical midline.
- */
-export function readingIconOpticalOffset(
-	fontSize: number,
-	os: string = platform.os,
-): number {
-	const ratio = os === "windows" ? 0.095 : 0.06;
-	return Math.round(fontSize * ratio * 2) / 2;
+export interface ReadingTextLineMetrics {
+	ascender: number;
+	descender: number;
+	capHeight: number;
 }
 
 /**
- * Optical alignment style for a leading/trailing icon or inline badge beside
- * reading text.
+ * Optical vertical offset (in points) for an icon beside single-line reading
+ * text in a flex-centered row, derived from the text's real font metrics.
+ *
+ * Inside a line box of height `ascender + descender`, geometric centering puts
+ * the icon at `(ascender + descender) / 2`, while the glyphs' cap midline sits
+ * at `ascender - capHeight / 2`. Symmetric half-leading cancels out, leaving
+ * `(ascender - descender - capHeight) / 2`. Balanced fonts (HarmonyOS Sans SC,
+ * Microsoft YaHei UI, PingFang SC, SF Pro) naturally yield 0, while top-heavy
+ * fonts (Segoe UI, Noto Sans SC) get a small positive nudge.
  */
-export function readingIconStyle(
-	font: ChatReadingFont,
-	os: string = platform.os,
-) {
+export function readingIconOpticalOffset(
+	metrics?: ReadingTextLineMetrics | null,
+): number {
+	if (!metrics) return 0;
+	const { ascender, capHeight } = metrics;
+	const descender = Math.abs(metrics.descender);
+	if (
+		!Number.isFinite(ascender) ||
+		!Number.isFinite(descender) ||
+		!Number.isFinite(capHeight) ||
+		ascender <= 0 ||
+		capHeight <= 0
+	) {
+		return 0;
+	}
+	const raw = (ascender - descender - capHeight) / 2;
+	const clamped = Math.max(-2, Math.min(2, raw));
+	const rounded = Math.round(clamped * 2) / 2;
+	return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/** Aligns a row's own icons with its text, including any font fallback. */
+export function createReadingIconAlignment() {
+	const offset = signal(0);
 	return {
-		transform: [{ translateY: readingIconOpticalOffset(font.fontSize, os) }],
+		style: () => {
+			const translateY = offset();
+			return translateY === 0 ? undefined : { transform: [{ translateY }] };
+		},
+		onTextLayout: (event: { lines: readonly ReadingTextLineMetrics[] }) => {
+			offset.set(readingIconOpticalOffset(event.lines[0]));
+		},
 	};
 }

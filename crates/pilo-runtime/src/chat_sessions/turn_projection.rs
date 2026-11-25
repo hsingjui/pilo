@@ -4,6 +4,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::Instant,
 };
 
 use crate::events::{
@@ -77,6 +78,7 @@ struct TurnState {
     sequence: u64,
     revision: u64,
     running: bool,
+    started_at: Option<(i64, Instant)>,
     awaiting_agent_start: bool,
     step_has_output: bool,
     last_text_snapshot: String,
@@ -97,6 +99,7 @@ impl TurnState {
         self.base = None;
         self.projection.settle();
         self.running = false;
+        self.started_at = None;
         self.awaiting_agent_start = false;
         self.step_has_output = false;
         self.last_text_snapshot.clear();
@@ -252,7 +255,7 @@ impl SessionTurn {
         mut read: impl FnMut(Option<Arc<TurnBase>>) -> F,
     ) -> Result<TranscriptSnapshot, String> {
         for attempt in 0..3 {
-            let (projection, base, generation, revision, event_sequence) = events
+            let (projection, base, generation, revision, event_sequence, started_at) = events
                 .with_publish_lock(|| {
                     let state = self
                         .state
@@ -264,6 +267,7 @@ impl SessionTurn {
                         state.generation,
                         state.revision,
                         events.latest_sequence(),
+                        state.started_at,
                     )
                 });
             let mut live = projection.live;
@@ -307,11 +311,19 @@ impl SessionTurn {
                     }
                 }
             };
+            let started_at = if matches!(live, TurnLive::Active { .. }) {
+                started_at
+            } else {
+                None
+            };
             return Ok(TranscriptSnapshot {
                 event_sequence,
                 session_key: session_key.to_owned(),
                 generation,
                 history,
+                live_started_at_ms: started_at.map(|(timestamp, _)| timestamp),
+                live_elapsed_ms: started_at
+                    .and_then(|(_, instant)| u64::try_from(instant.elapsed().as_millis()).ok()),
                 live,
             });
         }
@@ -337,6 +349,7 @@ impl SessionTurn {
                 sequence: 0,
                 revision: 0,
                 running: false,
+                started_at: None,
                 awaiting_agent_start: false,
                 step_has_output: false,
                 last_text_snapshot: String::new(),
@@ -560,6 +573,7 @@ impl SessionTurn {
                     state.projection.truncate();
                     return;
                 }
+                state.started_at = sequenced.event.timestamp_ms.map(|ms| (ms, Instant::now()));
             }
             RuntimeEvent::AssistantMessageStart { .. } => {
                 state.running = true;
@@ -567,6 +581,9 @@ impl SessionTurn {
                 if !state.active() {
                     state.projection.truncate();
                     return;
+                }
+                if state.started_at.is_none() {
+                    state.started_at = sequenced.event.timestamp_ms.map(|ms| (ms, Instant::now()));
                 }
             }
             RuntimeEvent::AssistantTextSnapshot { text, .. } => {
@@ -634,6 +651,7 @@ impl SessionTurn {
             } => {
                 state.step_has_output = false;
                 state.last_text_snapshot.clear();
+                state.started_at = None;
             }
             RuntimeEvent::CompactionEnd { .. } => {
                 return;

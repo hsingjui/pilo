@@ -278,7 +278,9 @@ impl RuntimeEventBus {
         if event.timestamp_ms.is_none()
             && matches!(
                 &event.event,
-                RuntimeEvent::AssistantThinkingStart { .. }
+                RuntimeEvent::UserMessageStart { .. }
+                    | RuntimeEvent::AssistantMessageStart { .. }
+                    | RuntimeEvent::AssistantThinkingStart { .. }
                     | RuntimeEvent::AssistantThinkingDelta { .. }
                     | RuntimeEvent::AssistantThinkingEnd { .. }
             )

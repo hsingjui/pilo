@@ -2,6 +2,7 @@ import { alignHistoryMessages } from "@shared/chat/chat-history-window-model";
 import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { SessionHistory } from "@shared/api/sessions-types";
+import { setActiveTurnStartedAt } from "@shared/chat/conversation-reducer";
 import {
 	coalesceConversationActions,
 	reduceConversationActions,
@@ -16,10 +17,11 @@ import type {
 } from "@shared/chat/conversation-types";
 import type { ChatTranscriptSnapshot } from "../client/nsh-pilo-client";
 
-export type LocalImageEcho = {
+export type LocalPromptEcho = {
 	text: string;
-	images: ChatConversationImage[];
+	images?: ChatConversationImage[];
 	clientMessageId: string;
+	workClockStartedAtMs?: number;
 	sequence?: number;
 };
 
@@ -28,27 +30,38 @@ export function applyChatEvents(
 	conversation: ConversationState,
 	events: readonly PiloRuntimeEvent[],
 	context: ConversationReducerContext,
-	localImageEcho?: LocalImageEcho,
+	localPromptEcho?: LocalPromptEcho,
 ): ConversationState {
 	const echo =
-		localImageEcho &&
+		localPromptEcho &&
 		events.findLast(
 			(event) =>
 				event.type === "user_message_start" &&
-				(!("sequence" in event) || event.sequence === localImageEcho.sequence),
+				(!("sequence" in event) || event.sequence === localPromptEcho.sequence),
 		);
 	const actions: ConversationAction[] = [];
 	for (const event of events) {
 		const action = toConversationAction(event);
 		if (!action) continue;
 		if (
-			localImageEcho &&
+			"sequence" in event &&
+			(action.type === "user_message_start" ||
+				action.type === "assistant_message_start")
+		) {
+			action.workClockStartedAtMs = performance.now();
+		}
+		if (
+			localPromptEcho &&
 			event === echo &&
 			action.type === "user_message_start" &&
-			action.text === localImageEcho.text
+			action.text === localPromptEcho.text
 		) {
-			action.images = localImageEcho.images;
-			action.sourceEntryId = localImageEcho.clientMessageId;
+			if (localPromptEcho.images?.length) {
+				action.images = localPromptEcho.images;
+				action.sourceEntryId = localPromptEcho.clientMessageId;
+			}
+			action.workClockStartedAtMs =
+				localPromptEcho.workClockStartedAtMs ?? action.workClockStartedAtMs;
 		}
 		actions.push(action);
 	}
@@ -109,27 +122,37 @@ export function conversationFromSnapshot(
 	snapshot: ChatTranscriptSnapshot,
 	streamed: readonly PiloClientEvent[],
 	context: ConversationReducerContext,
-	localImageEcho?: LocalImageEcho,
+	localPromptEcho?: LocalPromptEcho,
 ): ConversationState | null {
 	if (snapshot.live.type === "truncated") return null;
+	const clockStart =
+		snapshot.liveElapsedMs === undefined
+			? undefined
+			: performance.now() - snapshot.liveElapsedMs;
 	const conversation = conversationFromHistory(
 		snapshot.history.history,
 		context,
 	);
 	const later = streamed.filter((event) => followsSnapshot(snapshot, event));
 	const live = snapshot.live.type === "active" ? snapshot.live.events : [];
-	const echoSequence = localImageEcho?.sequence;
+	const echoSequence = localPromptEcho?.sequence;
 	const echoAfterSnapshot =
 		echoSequence !== undefined && echoSequence > snapshot.eventSequence;
+	const projected = applyChatEvents(
+		conversation,
+		live,
+		context,
+		echoAfterSnapshot ? undefined : localPromptEcho,
+	);
 	return applyChatEvents(
-		applyChatEvents(
-			conversation,
-			live,
+		setActiveTurnStartedAt(
+			projected,
 			context,
-			echoAfterSnapshot ? undefined : localImageEcho,
+			snapshot.liveStartedAtMs,
+			clockStart,
 		),
 		later,
 		context,
-		echoAfterSnapshot ? localImageEcho : undefined,
+		echoAfterSnapshot ? localPromptEcho : undefined,
 	);
 }

@@ -24,7 +24,7 @@ import { type ChatExpansion, chatToolExpansionKey } from "./chat-expansion";
 import type { ChatWorkPreferences } from "./chat-message-types";
 import {
 	ChatReadingFont,
-	readingIconStyle,
+	createReadingIconAlignment,
 	readingTextStyle,
 } from "./chat-reading-font";
 import { ChatThinkingActivity } from "./chat-thinking-activity";
@@ -54,6 +54,7 @@ export interface ChatActivityGroupProps {
 export function ChatActivityGroup(props: ChatActivityGroupProps) {
 	const { activity, expansion } = props;
 	const readingFont = ChatReadingFont();
+	const iconAlignment = createReadingIconAlignment();
 	const groupKey = computed(() => `${props.expansionKey()}:group`);
 	const running = computed(() =>
 		activity().some((item) => item.status === "running"),
@@ -112,7 +113,7 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 					<Icon
 						name={open() ? "ChevronDown" : "ChevronRight"}
 						size={14}
-						style={readingIconStyle(readingFont())}
+						style={iconAlignment.style()}
 					/>
 				)}
 				<View class="min-w-0 flex-1 flex-row items-center">
@@ -137,13 +138,14 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 					<Text
 						class="min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
 						style={readingTextStyle(readingFont())}
+						onTextLayout={iconAlignment.onTextLayout}
 					>
 						{label}
 					</Text>
 				</View>
 				{() =>
 					running() ? (
-						<View class="shrink-0" style={readingIconStyle(readingFont())}>
+						<View class="shrink-0" style={iconAlignment.style()}>
 							<Spinner size={14} />
 						</View>
 					) : null

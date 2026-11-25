@@ -150,13 +150,16 @@ export function ChatAssistantMessage(props: {
 			!message().errorMessage &&
 			message().stopReason !== "aborted",
 	);
-	// The compact work header is the only live indicator, even before output.
 	const streamingLabel = computed(() => {
-		if (preferences().compactOutput && !props.body) return "";
 		const { text, streaming, pendingStatus } = message();
+		const items = activity();
+		// Keep the standard status until a compact activity group can show progress.
+		if (preferences().compactOutput && !props.body && items.length > 0) {
+			return "";
+		}
 		const state = getAssistantStreamingState({
 			text,
-			activity: activity(),
+			activity: items,
 			streaming,
 			emptyState: pendingStatus ?? "waitingResponse",
 		});

@@ -10,7 +10,7 @@ import {
 
 import {
 	ChatReadingFont,
-	readingIconStyle,
+	createReadingIconAlignment,
 	readingTextStyle,
 } from "./chat-reading-font";
 
@@ -90,13 +90,15 @@ function LabelHighlight(props: { label: string }) {
 }
 
 /** The primary dot breathing beside an active label (3.5s, as the WebUI's). */
-export function ChatActivityDot(props: { testID?: string }) {
-	const readingFont = ChatReadingFont();
+export function ChatActivityDot(props: {
+	testID?: string;
+	alignment: ReturnType<typeof createReadingIconAlignment>;
+}) {
 	return (
 		<View
 			testID={props.testID}
 			class="size-3.5 shrink-0 items-center justify-center"
-			style={readingIconStyle(readingFont())}
+			style={props.alignment.style()}
 			accessible={false}
 			accessibilityElementsHidden
 		>
@@ -124,9 +126,10 @@ export function ChatAgentActivityIndicator(props: {
 	testID?: string;
 }) {
 	const readingFont = ChatReadingFont();
+	const iconAlignment = createReadingIconAlignment();
 	return (
 		<View testID={props.testID} class="flex-row items-center gap-1.5">
-			<ChatActivityDot />
+			<ChatActivityDot alignment={iconAlignment} />
 			<View class="relative">
 				{() =>
 					reduceMotion() ? null : <LabelHighlight label={props.label()} />
@@ -134,6 +137,7 @@ export function ChatAgentActivityIndicator(props: {
 				<Text
 					class="font-sans font-medium leading-snug text-primary"
 					style={readingTextStyle(readingFont())}
+					onTextLayout={iconAlignment.onTextLayout}
 				>
 					{props.label}
 				</Text>

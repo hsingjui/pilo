@@ -29,7 +29,7 @@ import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMediaActions } from "./chat-media-actions";
 import {
 	ChatReadingFont,
-	readingIconStyle,
+	createReadingIconAlignment,
 	readingTextStyle,
 } from "./chat-reading-font";
 import { ChatToolDetail } from "./chat-tool-detail";
@@ -147,6 +147,7 @@ export function ChatToolActivity(props: {
 				const path = openablePath();
 				const value = previewLabel();
 				if (path && value) {
+					const iconAlignment = createReadingIconAlignment();
 					const labelBlur = blurOnPointerPress();
 					const linkBlur = blurOnPointerPress();
 					const tailBlur = blurOnPointerPress();
@@ -175,7 +176,7 @@ export function ChatToolActivity(props: {
 											skillName() !== null,
 										)}
 										size={14}
-										style={readingIconStyle(readingFont())}
+										style={iconAlignment.style()}
 									/>
 									<Text
 										class={
@@ -184,6 +185,7 @@ export function ChatToolActivity(props: {
 												: "shrink-0 font-sans font-medium leading-snug text-muted-foreground"
 										}
 										style={readingTextStyle(readingFont())}
+										onTextLayout={iconAlignment.onTextLayout}
 									>
 										{label}
 									</Text>
@@ -193,7 +195,7 @@ export function ChatToolActivity(props: {
 									ref={linkBlur.ref}
 									onMouseUp={linkBlur.onMouseUp}
 									class="min-w-0 shrink rounded-sm bg-muted/50 px-1.5 py-0.5 hover:bg-muted focus-visible:outline-hidden"
-									style={readingIconStyle(readingFont())}
+									style={iconAlignment.style()}
 									focusVisibleStyle={focusRingStyle(token("ring"))}
 									accessibilityLabel={t("chat.openFile", { path })}
 									tooltip={
@@ -223,13 +225,10 @@ export function ChatToolActivity(props: {
 											<Icon
 												name="CircleAlert"
 												size={14}
-												style={readingIconStyle(readingFont())}
+												style={iconAlignment.style()}
 											/>
 										) : status() === "running" ? (
-											<View
-												class="shrink-0"
-												style={readingIconStyle(readingFont())}
-											>
+											<View class="shrink-0" style={iconAlignment.style()}>
 												<Spinner size={14} />
 											</View>
 										) : null
@@ -239,6 +238,7 @@ export function ChatToolActivity(props: {
 						</Foreground.Provider>
 					);
 				}
+				const iconAlignment = createReadingIconAlignment();
 				return (
 					<ChatDisclosureRow
 						testID="chat-tool"
@@ -266,7 +266,7 @@ export function ChatToolActivity(props: {
 							<Icon
 								name={toolIconName(activity().toolName, skillName() !== null)}
 								size={14}
-								style={readingIconStyle(readingFont())}
+								style={iconAlignment.style()}
 							/>
 						)}
 						<Text
@@ -276,6 +276,7 @@ export function ChatToolActivity(props: {
 									: "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
 							}
 							style={readingTextStyle(readingFont())}
+							onTextLayout={iconAlignment.onTextLayout}
 						>
 							{label}
 							<Text
@@ -293,10 +294,10 @@ export function ChatToolActivity(props: {
 								<Icon
 									name="CircleAlert"
 									size={14}
-									style={readingIconStyle(readingFont())}
+									style={iconAlignment.style()}
 								/>
 							) : status() === "running" ? (
-								<View class="shrink-0" style={readingIconStyle(readingFont())}>
+								<View class="shrink-0" style={iconAlignment.style()}>
 									<Spinner size={14} />
 								</View>
 							) : null

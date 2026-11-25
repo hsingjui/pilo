@@ -207,6 +207,10 @@ export type ChatTranscriptSnapshot = {
 	sessionKey: string;
 	generation: number;
 	history: SessionHistoryResult;
+	/** Host timestamp of the reply segment active at this cut. */
+	liveStartedAtMs?: number;
+	/** Monotonic duration of that segment when the Host returned the cut. */
+	liveElapsedMs?: number;
 	live:
 		| { type: "idle" }
 		/** The turn in progress, as its events in order up to the cut. */

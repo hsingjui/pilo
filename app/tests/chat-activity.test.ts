@@ -1,8 +1,7 @@
 import { expect, open, test } from "nsh/test";
 import {
-	chatReadingFont,
+	createReadingIconAlignment,
 	readingIconOpticalOffset,
-	readingIconStyle,
 } from "../chat/chat-reading-font";
 
 const desktop = {
@@ -198,30 +197,28 @@ test("compact output shows a live timer, dot, and collapsible activity groups wh
 });
 
 test("compact output shows starting, sending, and waiting phases before output arrives", async () => {
-	const starting = await openChat("compactStarting");
-	await starting.waitFor("id:chat-compact-activity >> text:Starting…");
-	expect(starting.shows("id:chat-compact-live-dot")).toBe(true);
-	expect(starting.shows("id:chat-reply-streaming")).toBe(false);
-
-	const sending = await openChat("compactSending");
-	await sending.waitFor("id:chat-compact-header-title");
-	expect(sending.shows("id:chat-compact-live-dot")).toBe(true);
-	expect(sending.texts().some((item) => /^Sending… · \ds$/.test(item))).toBe(
-		true,
-	);
-
-	const waiting = await openChat("compactWaiting");
-	await waiting.waitFor("id:chat-compact-header-title");
-	expect(waiting.shows("id:chat-compact-live-dot")).toBe(true);
-	expect(
-		waiting.texts().some((item) => /^Waiting for response… · \ds$/.test(item)),
-	).toBe(true);
+	for (const [scenario, label] of [
+		["compactStarting", "Starting…"],
+		["compactSending", "Sending…"],
+		["compactWaiting", "Waiting for response…"],
+	]) {
+		const app = await openChat(scenario);
+		await app.waitFor(`id:chat-reply-streaming >> text:${label}`);
+		expect(app.shows("id:chat-compact-header-title")).toBe(true);
+		expect(app.shows("id:chat-compact-header-divider")).toBe(true);
+		expect(app.texts().some((item) => /^Working for \d+s$/.test(item))).toBe(
+			true,
+		);
+		expect(app.shows("id:chat-compact-live-dot")).toBe(false);
+	}
 
 	const untimedWaiting = await openChat("compactWaitingUntimed");
 	await untimedWaiting.waitFor(
-		"id:chat-compact-activity >> text:Waiting for response…",
+		"id:chat-reply-streaming >> text:Waiting for response…",
 	);
-	expect(untimedWaiting.shows("id:chat-compact-live-dot")).toBe(true);
+	expect(untimedWaiting.shows("id:chat-compact-header-title")).toBe(false);
+	expect(untimedWaiting.shows("id:chat-compact-header-divider")).toBe(false);
+	expect(untimedWaiting.shows("id:chat-compact-live-dot")).toBe(false);
 });
 
 test("compact output shows the latest thought line above live thinking", async () => {
@@ -332,15 +329,50 @@ test("whitespace-only trailing text does not collapse a tool group", async () =>
 	expect(app.shows("text:codemode")).toBe(true);
 });
 
-test("activity row icons nudge downward to match reading text optical midline", () => {
-	expect(readingIconOpticalOffset(16, "windows")).toBe(1.5);
-	expect(readingIconOpticalOffset(16, "macos")).toBe(1);
-	expect(readingIconOpticalOffset(16, "web")).toBe(1);
-	expect(readingIconOpticalOffset(20, "windows")).toBe(2);
-	expect(readingIconOpticalOffset(12, "macos")).toBe(0.5);
+test("activity row icons derive optical offset from actual text metrics", () => {
+	// Balanced fonts (e.g. HarmonyOS Sans SC, Microsoft YaHei UI, PingFang SC)
+	// need no downward shift.
 	expect(
-		readingIconStyle(chatReadingFont({ readingFontSize: 16 }), "windows"),
-	).toEqual({
-		transform: [{ translateY: 1.5 }],
-	});
+		readingIconOpticalOffset({
+			ascender: 14.85,
+			descender: 3.9,
+			capHeight: 11.2,
+		}),
+	).toBe(0);
+	expect(
+		readingIconOpticalOffset({
+			ascender: 16.25,
+			descender: 4.07,
+			capHeight: 12.1,
+		}),
+	).toBe(0);
+	expect(readingIconOpticalOffset(null)).toBe(0);
+	// Top-heavy fonts (e.g. Segoe UI, Noto Sans SC) get a measured nudge.
+	expect(
+		readingIconOpticalOffset({
+			ascender: 17.26,
+			descender: 4.02,
+			capHeight: 11.2,
+		}),
+	).toBe(1);
+	// Negative descender sign convention produces the same result.
+	expect(
+		readingIconOpticalOffset({
+			ascender: 17.26,
+			descender: -4.02,
+			capHeight: 11.2,
+		}),
+	).toBe(1);
+
+	const balanced = { ascender: 16.47, descender: 5.53, capHeight: 11.2 };
+	const topHeavy = { ascender: 17.62, descender: 4.38, capHeight: 11.2 };
+	const firstRow = createReadingIconAlignment();
+	const otherRow = createReadingIconAlignment();
+	firstRow.onTextLayout({ lines: [topHeavy] });
+	otherRow.onTextLayout({ lines: [balanced] });
+	expect(firstRow.style()).toEqual({ transform: [{ translateY: 1 }] });
+	expect(otherRow.style()).toBeUndefined();
+
+	firstRow.onTextLayout({ lines: [balanced] });
+	expect(firstRow.style()).toBeUndefined();
 });

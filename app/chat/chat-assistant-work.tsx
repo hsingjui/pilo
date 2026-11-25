@@ -25,7 +25,7 @@ import type {
 } from "./chat-message-types";
 import {
 	ChatReadingFont,
-	readingIconStyle,
+	createReadingIconAlignment,
 	readingTextStyle,
 } from "./chat-reading-font";
 
@@ -187,6 +187,7 @@ function WorkedRegion(
 ) {
 	const { expansion } = props;
 	const readingFont = ChatReadingFont();
+	const iconAlignment = createReadingIconAlignment();
 	const key = computed(
 		() =>
 			`worked:${props.message().id}:${props.active ? "active" : "complete"}`,
@@ -217,12 +218,13 @@ function WorkedRegion(
 					<Icon
 						name={open() ? "ChevronDown" : "ChevronRight"}
 						size={14}
-						style={readingIconStyle(readingFont())}
+						style={iconAlignment.style()}
 					/>
 				)}
 				<Text
 					class="min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
 					style={readingTextStyle(readingFont())}
+					onTextLayout={iconAlignment.onTextLayout}
 				>
 					{label}
 				</Text>
@@ -251,12 +253,17 @@ export function ChatAssistantWork(
 	},
 ) {
 	const { message, sections, activities, expansion } = props;
-	const readingFont = ChatReadingFont();
 	const finalContent = () => sections().final;
 	const hasVisibleFinalText = computed(() =>
 		finalContent().some(
 			(item) => item.type === "text" && item.text.trim().length > 0,
 		),
+	);
+	const showLiveHeader = computed(
+		() => props.preferences().showWorkDuration || activities().length > 0,
+	);
+	const hasLiveBody = computed(
+		() => activities().length > 0 || hasVisibleFinalText(),
 	);
 	const completedKey = () => `compact-complete:${message().id}`;
 	const completedOpen = computed(() =>
@@ -280,15 +287,36 @@ export function ChatAssistantWork(
 		switch (layout()) {
 			case "compact":
 				return (
-					<View testID="chat-compact-activity" class="mt-0.5 mb-1 w-full">
-						<ChatCompactWorkHeader
-							message={message}
-							activities={activities}
-							preferences={props.preferences}
-						/>
+					<View
+						testID="chat-compact-activity"
+						class={
+							showLiveHeader() || hasLiveBody()
+								? hasLiveBody()
+									? "mt-0.5 mb-1 w-full"
+									: "mt-0.5 mb-0.5 w-full"
+								: "w-full"
+						}
+					>
 						{() =>
-							activities().length > 0 || hasVisibleFinalText() ? (
-								<View class="mt-0.5 border-t border-border/60 pt-1.5">
+							showLiveHeader() ? (
+								<View>
+									<ChatCompactWorkHeader
+										message={message}
+										activities={activities}
+										preferences={props.preferences}
+									/>
+									<View
+										testID="chat-compact-header-divider"
+										class="mt-0.5 h-px bg-border/60"
+										accessible={false}
+										accessibilityElementsHidden
+									/>
+								</View>
+							) : null
+						}
+						{() =>
+							hasLiveBody() ? (
+								<View class={showLiveHeader() ? "pt-1.5" : undefined}>
 									<WorkSegments
 										{...props}
 										content={finalContent}
@@ -299,7 +327,8 @@ export function ChatAssistantWork(
 						}
 					</View>
 				);
-			case "compactComplete":
+			case "compactComplete": {
+				const iconAlignment = createReadingIconAlignment();
 				return (
 					<View class="w-full">
 						<View testID="chat-compact-activity" class="mt-0.5 mb-1 w-full">
@@ -315,7 +344,7 @@ export function ChatAssistantWork(
 									<Icon
 										name={completedOpen() ? "ChevronDown" : "ChevronRight"}
 										size={14}
-										style={readingIconStyle(readingFont())}
+										style={iconAlignment.style()}
 									/>
 								)}
 								<View class="min-w-0 flex-1">
@@ -323,6 +352,7 @@ export function ChatAssistantWork(
 										message={message}
 										activities={activities}
 										preferences={props.preferences}
+										iconAlignment={iconAlignment}
 									/>
 								</View>
 							</ChatDisclosureRow>
@@ -348,6 +378,7 @@ export function ChatAssistantWork(
 						<WorkSegments {...props} content={finalContent} />
 					</View>
 				);
+			}
 			case "active":
 				return <WorkedRegion {...props} content={finalContent} active />;
 			case "folded":

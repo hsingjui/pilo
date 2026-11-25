@@ -69,15 +69,15 @@ Runtime::chat_transcript_snapshot(
     &self, session_key: &str, window: TranscriptWindow,
 ) -> impl Future<Output = Result<TranscriptSnapshot, String>>
 TranscriptWindow { start_message: Option<usize>, message_limit: Option<usize>, include_message_index: bool }
-TranscriptSnapshot { event_sequence: u64, session_key: String, generation: u64, history: Value, live: TurnLive }
+TranscriptSnapshot { event_sequence: u64, session_key: String, generation: u64, history: Value, live: TurnLive, live_started_at_ms: Option<i64> }
 ```
 
 JSON fields are camelCase. `live` is tagged by `type`: `{"type":"idle"}`,
 `{"type":"active","events":[...]}`, or `{"type":"truncated"}`. `history`
 uses the existing history DTO, window selection and fingerprint; a missing
 `messageLimit` requests all messages, otherwise the reader's 1–256 limit applies.
-This runtime API is exposed through the native `Pilo` bridge. It does not change
-WebUI's HTTP history path or WebSocket payloads.
+The native `Pilo` bridge and WebUI's `GET /api/v1/chat/transcript` expose the same
+snapshot.
 
 Subscribe first and keep the stream while awaiting the snapshot. For the selected
 session/generation, replaying **history + live + matching events strictly above
@@ -89,10 +89,27 @@ or below this transcript cut for that transcript only, not other sessions or
 global state. Continue normal session/generation routing above the cut. A gap or
 generation change requires a fresh cut rather than guessing missing deltas.
 
-The projection/base Arcs, generation and sequence are captured under the same
-publish lock that sequences events. JSONL I/O and parsing happen outside it;
-events published during the read remain above the cut. Idle captures retry if
-their generation/revision changed during the read.
+The projection/base Arcs, generation, sequence and the segment's start clocks
+are captured under the same publish lock that sequences events. JSONL I/O and
+parsing happen outside it; events published during the read remain above the cut.
+Idle captures retry if their generation/revision changed during the read.
+
+Active cuts can include two independent values:
+
+- `liveStartedAtMs`: the original Host Unix timestamp in milliseconds. Use it
+  with the Host's end timestamp to calculate the completed segment duration.
+- `liveElapsedMs`: elapsed milliseconds on the Host's monotonic clock, sampled
+  after the history read for the captured segment. Resume the live UI clock with
+  `performance.now() - liveElapsedMs` as the client start, never with
+  `Date.now() - liveStartedAtMs`.
+
+Apply the timing after replaying `live.events` and before buffered stream events.
+A later user echo can begin a new segment. A confirmed local submission keeps its
+own monotonic start, including on a matching snapshot; queued messages start at
+their runtime echo. Without either elapsed data (e.g. an older snapshot) or a local
+start, show untimed activity. Validate by reopening a running session with skewed
+Host and client wall clocks and checking that its timer resumes; a cold start
+must not restart the displayed timer at the local prompt echo.
 
 - **Idle**: no live turn is retained. Read the full current JSONL source and
   serialize the requested history window; there are no live events to replay.

@@ -42,7 +42,7 @@ import {
 	conversationFromHistory,
 	conversationFromSnapshot,
 	followsSnapshot,
-	type LocalImageEcho,
+	type LocalPromptEcho,
 } from "./chat-transcript";
 import type { SessionHistoryMetadata } from "./chat-run-config";
 
@@ -332,8 +332,10 @@ export class ChatTranscriptStore {
 	private fresh = false;
 	/** The prompt sent from this app that Pi has not echoed yet. */
 	private local: LocalTurn | undefined;
-	/** The acknowledged local images are needed while rebuilding this live turn. */
-	private localImageEcho: (LocalImageEcho & { generation: number }) | undefined;
+	/** Retain local images and the submit clock if a snapshot rebuilds this turn. */
+	private localPromptEcho:
+		| (LocalPromptEcho & { generation: number })
+		| undefined;
 	/**
 	 * Whether an external Pi runs a turn in the open chat's session: its
 	 * saved history then ends in that turn, which shows as running.
@@ -507,6 +509,7 @@ export class ChatTranscriptStore {
 					text,
 					images,
 					timestampMs,
+					workClockStartedAtMs: performance.now(),
 				},
 				{ type: "local_assistant_pending", timestampMs, pendingStatus: null },
 			],
@@ -593,7 +596,7 @@ export class ChatTranscriptStore {
 		this.tried = false;
 		this.fresh = false;
 		this.local = undefined;
-		this.localImageEcho = undefined;
+		this.localPromptEcho = undefined;
 		this.external = false;
 		this.liveTurnSignal.set(false);
 		this.historyMetaSignal.set(null);
@@ -615,19 +618,20 @@ export class ChatTranscriptStore {
 		const prompt = this.local?.actions.find(
 			(action) => action.type === "local_user_submit",
 		);
-		if (prompt?.images?.length && prompt.text === text) {
-			this.localImageEcho = {
+		if (prompt && prompt.text === text) {
+			this.localPromptEcho = {
 				text,
 				images: prompt.images,
 				clientMessageId: prompt.clientMessageId,
+				workClockStartedAtMs: prompt.workClockStartedAtMs,
 				generation,
 				sequence,
 			};
 		} else if (
-			this.localImageEcho?.generation !== generation ||
-			this.localImageEcho.sequence !== sequence
+			this.localPromptEcho?.generation !== generation ||
+			this.localPromptEcho.sequence !== sequence
 		) {
-			this.localImageEcho = undefined;
+			this.localPromptEcho = undefined;
 		}
 		this.local = undefined;
 	}
@@ -663,7 +667,7 @@ export class ChatTranscriptStore {
 				this.local = undefined;
 				// A snapshot in flight may be from before this turn finished.
 				if (event.type !== "assistant_message_end")
-					this.localImageEcho = undefined;
+					this.localPromptEcho = undefined;
 			}
 			if (this.buffer) {
 				// Looked at when the read in flight is done.
@@ -1036,17 +1040,17 @@ export class ChatTranscriptStore {
 					snapshot,
 					events,
 					this.context,
-					this.localImageEcho?.generation === snapshot.generation
-						? this.localImageEcho
+					this.localPromptEcho?.generation === snapshot.generation
+						? this.localPromptEcho
 						: undefined,
 				);
 				if (conversation) {
-					// An idle snapshot after the echo reads the images from saved history.
+					// An idle snapshot after the echo no longer needs local turn data.
 					if (
 						snapshot.live.type === "idle" &&
-						(this.localImageEcho?.sequence ?? -1) <= snapshot.eventSequence
+						(this.localPromptEcho?.sequence ?? -1) <= snapshot.eventSequence
 					) {
-						this.localImageEcho = undefined;
+						this.localPromptEcho = undefined;
 					}
 					this.cut = {
 						sessionKey,

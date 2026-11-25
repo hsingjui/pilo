@@ -227,7 +227,7 @@ export function markExternalTurnLive(
 		...state,
 		messages,
 		active: {
-			turnStartedAtMs: message.timestampMs,
+			turnStartedAtMs: message.workStartedAtMs ?? message.timestampMs,
 			assistantUpdatedAtMs: message.timestampMs,
 			assistantMessageId: message.id,
 			firstRuntimeUserSeen: false,

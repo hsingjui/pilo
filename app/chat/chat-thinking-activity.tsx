@@ -13,7 +13,7 @@ import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
 import {
 	ChatReadingFont,
-	readingIconStyle,
+	createReadingIconAlignment,
 	readingTextStyle,
 } from "./chat-reading-font";
 
@@ -34,6 +34,7 @@ export function ChatThinkingActivity(props: {
 	const { activity } = props;
 	const disclose = ChatDisclosureAction();
 	const readingFont = ChatReadingFont();
+	const iconAlignment = createReadingIconAlignment();
 	const running = computed(() => activity().status === "running");
 	const open = computed(() =>
 		props.expansion.isOpen(props.expansionKey(), false),
@@ -102,14 +103,11 @@ export function ChatThinkingActivity(props: {
 				}
 				onPress={() => props.expansion.setOpen(props.expansionKey(), !open())}
 			>
-				<Icon
-					name="Sparkles"
-					size={14}
-					style={readingIconStyle(readingFont())}
-				/>
+				<Icon name="Sparkles" size={14} style={iconAlignment.style()} />
 				<Text
 					class="shrink-0 font-sans font-medium leading-snug text-muted-foreground"
 					style={readingTextStyle(readingFont())}
+					onTextLayout={iconAlignment.onTextLayout}
 				>
 					{label}
 				</Text>

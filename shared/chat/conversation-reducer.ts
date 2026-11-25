@@ -92,6 +92,7 @@ function finishContent(
 function ensureActive(
 	state: ConversationState,
 	timestampMs: number | undefined,
+	workClockStartedAtMs?: number,
 ): ConversationState {
 	if (state.active) {
 		if (timestampMs === undefined) return state;
@@ -104,6 +105,7 @@ function ensureActive(
 		...state,
 		active: {
 			turnStartedAtMs: timestampMs,
+			...(workClockStartedAtMs !== undefined && { workClockStartedAtMs }),
 			assistantUpdatedAtMs: timestampMs,
 			firstRuntimeUserSeen: false,
 			// Output with nothing loaded before it joined an already running turn.
@@ -117,8 +119,9 @@ function withAssistant(
 	context: ConversationReducerContext,
 	timestampMs: number | undefined,
 	update: (message: AssistantMessage) => AssistantMessage,
+	workClockStartedAtMs?: number,
 ): ConversationState {
-	let next = ensureActive(state, timestampMs);
+	let next = ensureActive(state, timestampMs, workClockStartedAtMs);
 	let id = next.active?.assistantMessageId;
 	const lastIndex = next.messages.length - 1;
 	let index =
@@ -135,6 +138,12 @@ function withAssistant(
 			text: "",
 			time: timestampMs === undefined ? "" : context.formatTime(timestampMs),
 			timestampMs,
+			...(next.active?.turnStartedAtMs !== undefined && {
+				workStartedAtMs: next.active.turnStartedAtMs,
+			}),
+			...(next.active?.workClockStartedAtMs !== undefined && {
+				workClockStartedAtMs: next.active.workClockStartedAtMs,
+			}),
 			streaming: true,
 		};
 		const messages = [...next.messages, update(assistant)];
@@ -151,6 +160,43 @@ function withAssistant(
 	const messages = next.messages.slice();
 	messages[index] = updated;
 	return { ...next, messages };
+}
+
+/** Records the Host start for completion without restarting the live display clock. */
+export function setActiveTurnStartedAt(
+	state: ConversationState,
+	context: ConversationReducerContext,
+	startedAtMs: number | undefined,
+	clockStartedAtMs?: number,
+): ConversationState {
+	const active = state.active;
+	if (!active) return state;
+	const workStartedAtMs = startedAtMs ?? active.turnStartedAtMs;
+	const workClockStartedAtMs = active.workClockStartedAtMs ?? clockStartedAtMs;
+	if (
+		active.turnStartedAtMs === workStartedAtMs &&
+		active.workClockStartedAtMs === workClockStartedAtMs
+	) {
+		return state;
+	}
+	const timing = {
+		...(workStartedAtMs !== undefined && { workStartedAtMs }),
+		...(workClockStartedAtMs !== undefined && { workClockStartedAtMs }),
+	};
+	const next = {
+		...state,
+		active: {
+			...active,
+			turnStartedAtMs: workStartedAtMs,
+			...(workClockStartedAtMs !== undefined && { workClockStartedAtMs }),
+		},
+	};
+	return active.assistantMessageId
+		? withAssistant(next, context, undefined, (message) => ({
+				...message,
+				...timing,
+			}))
+		: next;
 }
 
 function endTurn(
@@ -229,6 +275,9 @@ function endTurn(
 					},
 		),
 		streaming: false,
+		...(current.workClockStartedAtMs !== undefined && {
+			workClockStartedAtMs: undefined,
+		}),
 		...(current.pendingStatus !== undefined && { pendingStatus: undefined }),
 		workDurationMs:
 			completion === "continued" ||
@@ -336,6 +385,9 @@ function reduceConversationAction(
 				active: {
 					localClientMessageId: action.clientMessageId,
 					turnStartedAtMs: action.timestampMs,
+					...(action.workClockStartedAtMs !== undefined && {
+						workClockStartedAtMs: action.workClockStartedAtMs,
+					}),
 					assistantUpdatedAtMs: action.timestampMs,
 					firstRuntimeUserSeen: false,
 					runtimeStarted: false,
@@ -477,6 +529,9 @@ function reduceConversationAction(
 						],
 						active: {
 							turnStartedAtMs: startedAtMs,
+							...(action.workClockStartedAtMs !== undefined && {
+								workClockStartedAtMs: action.workClockStartedAtMs,
+							}),
 							assistantUpdatedAtMs: action.timestampMs,
 							firstRuntimeUserSeen: true,
 						},
@@ -532,21 +587,33 @@ function reduceConversationAction(
 								],
 								active: null,
 							};
-							next = withAssistant(next, context, startedAtMs, (message) => ({
-								...message,
-								replyRunwayPx: staleAssistant.replyRunwayPx,
-							}));
+							next = withAssistant(
+								next,
+								context,
+								startedAtMs,
+								(message) => ({
+									...message,
+									replyRunwayPx: staleAssistant.replyRunwayPx,
+								}),
+								state.active?.workClockStartedAtMs ??
+									action.workClockStartedAtMs,
+							);
 						}
 					}
 					next = {
 						...setAssistantPendingStatus(next, undefined),
 						active: {
 							...next.active,
-							turnStartedAtMs: startedAtMs,
 							firstRuntimeUserSeen: true,
 							runtimeStarted: true,
 						},
 					};
+					next = setActiveTurnStartedAt(
+						next,
+						context,
+						action.timestampMs,
+						action.workClockStartedAtMs,
+					);
 				}
 				return { ...next, pendingUsers: next.pendingUsers.slice(1) };
 			}
@@ -583,7 +650,10 @@ function reduceConversationAction(
 					},
 				],
 				active: {
-					turnStartedAtMs: timestampMs,
+					turnStartedAtMs: action.timestampMs,
+					...(action.workClockStartedAtMs !== undefined && {
+						workClockStartedAtMs: action.workClockStartedAtMs,
+					}),
 					assistantUpdatedAtMs: action.timestampMs,
 					firstRuntimeUserSeen: true,
 				},
@@ -599,13 +669,19 @@ function reduceConversationAction(
 		}
 		case "assistant_message_start": {
 			const next = withAssistant(
-				state,
+				setActiveTurnStartedAt(
+					state,
+					context,
+					undefined,
+					action.workClockStartedAtMs,
+				),
 				context,
 				action.timestampMs,
 				(message) =>
 					message.pendingStatus === undefined
 						? message
 						: { ...message, pendingStatus: undefined },
+				action.workClockStartedAtMs,
 			);
 			return {
 				...next,
