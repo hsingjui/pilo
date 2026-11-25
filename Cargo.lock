@@ -923,7 +923,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-domain"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "getrandom",
  "regex",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-protocol"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "prost",
  "prost-build",
@@ -945,7 +945,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-runtime"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "axum",
  "base64",
@@ -971,7 +971,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-server"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "libc",
  "memchr",

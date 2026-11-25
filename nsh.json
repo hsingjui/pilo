@@ -1,7 +1,7 @@
 {
 	"name": "Pilo",
 	"id": "app.hsingjui.pilo",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"icon": {
 		"macos": "app/assets/app-icon-macos.png",
 		"windows": "app/assets/app-icon.png",
