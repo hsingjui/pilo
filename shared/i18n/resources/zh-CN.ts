@@ -583,7 +583,6 @@ const zhCN = {
 		workDuration: "工作了 {{duration}}",
 		workingDuration: "已工作 {{duration}}",
 		workActivity: "工作过程",
-		compactSteps: "{{count}} 步",
 		stopped: "已停止",
 		starting: "启动中…",
 		sending: "发送中…",

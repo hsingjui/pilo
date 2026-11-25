@@ -1,18 +1,21 @@
-import { computed, Text, untracked, View } from "nsh";
+import { computed, Scroll, Text, untracked, View } from "nsh";
 
-import {
-	type AssistantContentDisplaySections,
-	type AssistantContentItem,
-	getAssistantActivities,
-	splitActiveCompactContent,
+import type {
+	AssistantContentDisplaySections,
+	AssistantContentItem,
 } from "@shared/chat/chat-activity-state";
 import type { AssistantActivity } from "@shared/chat/chat-activity-types";
 
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
+import { scrollbarLook } from "../ui/scrollbar";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatActivityGroup } from "./chat-activity-group";
-import { ChatCompactWork } from "./chat-compact-activity";
+import {
+	ChatCompactActivityGroup,
+	ChatCompactActivityItems,
+	ChatCompactWorkHeader,
+} from "./chat-compact-activity";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import type { ChatExpansion } from "./chat-expansion";
 import type {
@@ -88,6 +91,7 @@ function WorkSegments(
 		/** The turn's work time, shown on the first group. */
 		durationMs?: () => number | undefined;
 		followedByTextAfterContent?: () => boolean;
+		compact?: "grouped" | "expanded";
 	},
 ) {
 	const segments = computed(() =>
@@ -98,7 +102,7 @@ function WorkSegments(
 	);
 	const messageId = () => props.message().id;
 	return (
-		<View class="w-full">
+		<View class={props.compact ? "w-full gap-1.5" : "w-full"}>
 			{/* Kept by place and kind, not id: a list cell reused for another
 				reply keeps its texts and groups and shows the new content in them,
 				rather than making them all again. */}
@@ -126,6 +130,29 @@ function WorkSegments(
 						const value = segment();
 						return value.type === "activity" ? value : current;
 					};
+					if (props.compact === "expanded") {
+						return (
+							<ChatCompactActivityItems
+								activities={() => activity().items}
+								messageId={messageId}
+								expansion={props.expansion}
+								showDuration={() => props.preferences().showWorkDuration}
+							/>
+						);
+					}
+					if (props.compact === "grouped") {
+						return (
+							<ChatCompactActivityGroup
+								activities={() => activity().items}
+								messageId={messageId}
+								expansionKey={() => `${messageId()}:${activity().id}`}
+								live={() => props.message().streaming === true}
+								followedByText={() => activity().followedByText}
+								expansion={props.expansion}
+								preferences={props.preferences}
+							/>
+						);
+					}
 					return (
 						<ChatActivityGroup
 							activity={() => activity().items}
@@ -215,44 +242,33 @@ function WorkedRegion(
 	);
 }
 
-/**
- * A reply's texts and work, laid out as the WebUI's `AssistantMessage`
- * does: while the turn runs (or when it was interrupted) everything stays
- * in order under an open work header; once it ends, the work before the
- * final text folds behind one header and the final text stays below it.
- */
+/** Compact turns fold groups while live and all pre-answer work once done. */
 export function ChatAssistantWork(
 	props: WorkContext & {
 		sections: () => AssistantContentDisplaySections;
+		activities: () => readonly AssistantActivity[];
 		workActive: () => boolean;
 	},
 ) {
-	const { message, sections } = props;
+	const { message, sections, activities, expansion } = props;
+	const readingFont = ChatReadingFont();
 	const finalContent = () => sections().final;
-	const hasAnyActivity = computed(
-		() =>
-			getAssistantActivities(sections().work).length > 0 ||
-			getAssistantActivities(finalContent()).length > 0,
-	);
-	// A stopped turn is no longer live, but the answer it already showed stays
-	// below the folded work instead of going inside it.
-	const streaming = computed(() => message().streaming === true);
-	const activeCompact = computed(() =>
-		splitActiveCompactContent(finalContent(), streaming()),
-	);
 	const hasVisibleFinalText = computed(() =>
 		finalContent().some(
 			(item) => item.type === "text" && item.text.trim().length > 0,
 		),
 	);
-	const keepsTrailingText = computed(
-		() => activeCompact().trailingText.length > 0,
+	const completedKey = () => `compact-complete:${message().id}`;
+	const completedOpen = computed(() =>
+		expansion.isOpen(
+			completedKey(),
+			!props.preferences().collapseCompletedActivity,
+		),
 	);
 	const layout = computed(() => {
-		if (props.preferences().compactOutput && hasAnyActivity()) {
-			if (streaming()) return "compactActive";
-			if (keepsTrailingText()) return "compactTrailing";
-			return sections().hasCollapsedWork ? "compactFolded" : "compactOnly";
+		if (props.preferences().compactOutput) {
+			if (message().streaming === true) return "compact";
+			if (sections().hasCollapsedWork) return "compactComplete";
 		}
 		return props.workActive()
 			? "active"
@@ -262,56 +278,75 @@ export function ChatAssistantWork(
 	});
 	return () => {
 		switch (layout()) {
-			case "compactActive":
+			case "compact":
 				return (
-					<View class="w-full">
-						<ChatCompactWork
-							{...props}
-							workContent={() => activeCompact().work}
-							hasTrailingText={() => activeCompact().trailingText.length > 0}
+					<View testID="chat-compact-activity" class="mt-0.5 mb-1 w-full">
+						<ChatCompactWorkHeader
+							message={message}
+							activities={activities}
+							preferences={props.preferences}
 						/>
 						{() =>
-							activeCompact().trailingText.length > 0 ? (
-								<WorkSegments
-									{...props}
-									content={() => activeCompact().trailingText}
-								/>
+							activities().length > 0 || hasVisibleFinalText() ? (
+								<View class="mt-0.5 border-t border-border/60 pt-1.5">
+									<WorkSegments
+										{...props}
+										content={finalContent}
+										compact="grouped"
+									/>
+								</View>
 							) : null
 						}
 					</View>
 				);
-			case "compactTrailing":
+			case "compactComplete":
 				return (
 					<View class="w-full">
-						<ChatCompactWork
-							{...props}
-							workContent={() => activeCompact().work}
-							hasTrailingText={hasVisibleFinalText}
-						/>
-						<WorkSegments
-							{...props}
-							content={() => activeCompact().trailingText}
-						/>
-					</View>
-				);
-			case "compactFolded":
-				return (
-					<View class="w-full">
-						<ChatCompactWork
-							{...props}
-							workContent={() => sections().work}
-							hasTrailingText={hasVisibleFinalText}
-						/>
+						<View testID="chat-compact-activity" class="mt-0.5 mb-1 w-full">
+							<ChatDisclosureRow
+								testID="chat-compact-activity-toggle"
+								class="min-h-7 py-0"
+								expanded={completedOpen()}
+								onPress={() =>
+									expansion.setOpen(completedKey(), !completedOpen())
+								}
+							>
+								{() => (
+									<Icon
+										name={completedOpen() ? "ChevronDown" : "ChevronRight"}
+										size={14}
+										style={readingIconStyle(readingFont())}
+									/>
+								)}
+								<View class="min-w-0 flex-1">
+									<ChatCompactWorkHeader
+										message={message}
+										activities={activities}
+										preferences={props.preferences}
+									/>
+								</View>
+							</ChatDisclosureRow>
+							{() =>
+								completedOpen() ? (
+									<Scroll
+										testID="chat-compact-activity-body"
+										class="-mx-1 mt-0.5 max-h-80"
+										bounces={false}
+										scrollbar={{ vertical: scrollbarLook() }}
+									>
+										<View class="px-1 pr-3 pb-0.5">
+											<WorkSegments
+												{...props}
+												content={() => sections().work}
+												compact="expanded"
+											/>
+										</View>
+									</Scroll>
+								) : null
+							}
+						</View>
 						<WorkSegments {...props} content={finalContent} />
 					</View>
-				);
-			case "compactOnly":
-				return (
-					<ChatCompactWork
-						{...props}
-						workContent={finalContent}
-						hasTrailingText={() => false}
-					/>
 				);
 			case "active":
 				return <WorkedRegion {...props} content={finalContent} active />;

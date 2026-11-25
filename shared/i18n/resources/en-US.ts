@@ -611,7 +611,6 @@ const enUS = {
 		workDuration: "Worked for {{duration}}",
 		workingDuration: "Working for {{duration}}",
 		workActivity: "Work activity",
-		compactSteps: "{{count}} steps",
 		stopped: "Stopped",
 		starting: "Starting…",
 		sending: "Sending…",

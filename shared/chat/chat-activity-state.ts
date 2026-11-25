@@ -476,7 +476,7 @@ export function getAssistantStreamingState({
 	emptyState = "starting",
 }: {
 	text: string;
-	activity?: AssistantActivity[];
+	activity?: readonly AssistantActivity[];
 	streaming?: boolean;
 	emptyState?: AssistantPendingStatus | "waitingResponse" | null;
 }): AssistantStreamingState | null {

@@ -15,7 +15,7 @@ const desktop = {
 // A tool row reads as one text: its name, an en space, then its preview.
 const EDIT = "text:Edit\u2002main.ts";
 const RUN = "text:Run\u2002pnpm test";
-const RUNNING = "text:Running\u2002pnpm test";
+const RUNNING = "Running\u2002pnpm test";
 const TASKS = "text:Tasks\u20021/2 done";
 
 function openChat(scenario: string) {
@@ -150,74 +150,100 @@ test("a task list tool shows its progress and opens to its tasks", async () => {
 	expect(app.shows("text:Read the file")).toBe(true);
 });
 
-test("compact output shows a live timer, latest thought, and live tool row that all toggle the full process", async () => {
+test("compact output shows a live timer, dot, and collapsible activity groups while running", async () => {
 	const app = await openChat("compactRunning");
 	await app.waitFor("id:chat-compact-live-preview");
+	expect(app.shows("id:chat-compact-live-dot")).toBe(true);
 	// Header ticks live from the turn start time (62s ago -> 1m 02s+).
 	const initialTitle = app
 		.texts()
 		.find((item) => /^Working for 1m 0\ds$/.test(item));
 	expect(initialTitle).toBeDefined();
-	expect(app.shows("text:4 steps")).toBe(true);
-	// Flush preview rows: latest thought on top, running tool underneath.
+	expect(app.shows("id:chat-compact-step-count")).toBe(false);
 	expect(
-		app.shows("id:chat-compact-thought-preview >> text:Then change x."),
-	).toBe(true);
-	expect(app.shows(`id:chat-compact-activity-preview >> ${RUNNING}`)).toBe(
-		true,
-	);
-	// Full process stays collapsed until clicked; no duplicate footer indicator.
-	expect(app.shows("text:The file sets x to 1.")).toBe(false);
+		app.shows(
+			"id:chat-compact-activity-toggle >> id:chat-compact-header-title",
+		),
+	).toBe(false);
+	const firstGroup = "Thought process · Read 1 files";
+	const narration = "The file sets x to 1.";
+	const inOrder = [firstGroup, narration, RUNNING];
+	expect(app.texts().filter((item) => inOrder.includes(item))).toEqual(inOrder);
 	expect(app.shows(EDIT)).toBe(false);
 	expect(app.shows("id:chat-reply-streaming")).toBe(false);
 
 	// The elapsed timer advances while the turn runs.
-	await new Promise((resolve) => setTimeout(resolve, 1_150));
+	await app.waitFor(`text:${initialTitle}`, { state: "gone" });
 	const laterTitle = app
 		.texts()
 		.find((item) => item.startsWith("Working for "));
 	expect(laterTitle).toBeDefined();
 	expect(laterTitle).not.toBe(initialTitle);
 
-	// Pressing the thought preview expands the full scrollable process.
-	await app.press("id:chat-compact-thought-preview");
-	await app.waitFor("id:chat-compact-activity-body");
-	expect(app.shows("id:chat-compact-live-preview")).toBe(false);
-	expect(app.shows("text:Thought for 3s")).toBe(true);
-	expect(app.shows("text:The file sets x to 1.")).toBe(true);
-	expect(app.shows(EDIT)).toBe(true);
-	expect(app.shows(RUN)).toBe(true);
+	await app.press(`text:${firstGroup}`);
+	await app.waitFor("text:Thought for 3s");
+	expect(app.shows(EDIT)).toBe(false);
 
-	// Pressing the header collapses it back to the live preview rows.
-	await app.press("id:chat-compact-activity-toggle");
-	await app.waitFor("id:chat-compact-activity-body", { state: "gone" });
-	await app.waitFor("id:chat-compact-live-preview");
-
-	// Pressing the live tool preview opens the exact same full process.
 	await app.press("id:chat-compact-activity-preview");
-	await app.waitFor("id:chat-compact-activity-body");
+	await app.waitFor(EDIT);
+	expect(app.shows(RUN)).toBe(true);
+	expect(app.shows("text:Thought for 3s")).toBe(true);
+
+	await app.press(`text:${firstGroup}`);
+	await app.waitFor("text:Thought for 3s", { state: "gone" });
 	expect(app.shows(EDIT)).toBe(true);
+
+	await app.press("id:chat-compact-activity-preview");
+	await app.waitFor("id:chat-compact-activity-body", { state: "gone" });
 });
 
-test("compact output deduplicates live thinking into a single preview row", async () => {
+test("compact output shows starting, sending, and waiting phases before output arrives", async () => {
+	const starting = await openChat("compactStarting");
+	await starting.waitFor("id:chat-compact-activity >> text:Starting…");
+	expect(starting.shows("id:chat-compact-live-dot")).toBe(true);
+	expect(starting.shows("id:chat-reply-streaming")).toBe(false);
+
+	const sending = await openChat("compactSending");
+	await sending.waitFor("id:chat-compact-header-title");
+	expect(sending.shows("id:chat-compact-live-dot")).toBe(true);
+	expect(sending.texts().some((item) => /^Sending… · \ds$/.test(item))).toBe(
+		true,
+	);
+
+	const waiting = await openChat("compactWaiting");
+	await waiting.waitFor("id:chat-compact-header-title");
+	expect(waiting.shows("id:chat-compact-live-dot")).toBe(true);
+	expect(
+		waiting.texts().some((item) => /^Waiting for response… · \ds$/.test(item)),
+	).toBe(true);
+
+	const untimedWaiting = await openChat("compactWaitingUntimed");
+	await untimedWaiting.waitFor(
+		"id:chat-compact-activity >> text:Waiting for response…",
+	);
+	expect(untimedWaiting.shows("id:chat-compact-live-dot")).toBe(true);
+});
+
+test("compact output shows the latest thought line above live thinking", async () => {
 	const app = await openChat("compactThinking");
 	await app.waitFor("id:chat-compact-activity-preview");
-	expect(app.shows("id:chat-compact-thought-preview")).toBe(false);
+	expect(app.shows("id:chat-compact-live-dot")).toBe(true);
+	expect(
+		app.shows("id:chat-compact-thought-preview >> text:Then change x."),
+	).toBe(true);
 	expect(app.shows("id:chat-compact-activity-preview >> text:Thinking…")).toBe(
 		true,
 	);
-	expect(
-		app.shows("id:chat-compact-activity-preview >> text:Then change x."),
-	).toBe(true);
 	expect(app.shows("id:chat-reply-streaming")).toBe(false);
 });
 
 test("compact output hides the live timer when work durations are off", async () => {
 	const app = await openChat("compactUntimed");
 	await app.waitFor("id:chat-compact-live-preview");
-	expect(
-		app.shows("id:chat-compact-activity-toggle >> text:Work activity"),
-	).toBe(true);
+	expect(app.shows("id:chat-compact-live-dot")).toBe(true);
+	expect(app.shows("id:chat-compact-activity >> text:Work activity")).toBe(
+		true,
+	);
 	expect(app.texts().some((item) => item.startsWith("Working for "))).toBe(
 		false,
 	);
@@ -226,16 +252,35 @@ test("compact output hides the live timer when work durations are off", async ()
 test("compact output folds completed work behind one header and expands the full process directly", async () => {
 	const app = await openChat("compactSettled");
 	await app.waitFor("text:Final answer: x is now 2.");
-	expect(app.shows("text:Worked for 1m 15s")).toBe(true);
+	expect(app.shows("id:chat-compact-live-dot")).toBe(false);
+	const toggle = "id:chat-compact-activity-toggle";
+	expect(app.count(toggle)).toBe(1);
+	expect(app.shows(`${toggle} >> text:Worked for 1m 15s`)).toBe(true);
 	expect(app.shows("text:The file sets x to 1.")).toBe(false);
 	expect(app.shows(RUN)).toBe(false);
 
-	await app.press("text:Worked for 1m 15s");
+	await app.press(toggle);
 	await app.waitFor("id:chat-compact-activity-body");
+	expect(app.count(toggle)).toBe(1);
+	expect(
+		app.shows(
+			"id:chat-compact-activity-body >> text:Final answer: x is now 2.",
+		),
+	).toBe(false);
 	expect(app.shows("text:Thought for 3s")).toBe(true);
 	expect(app.shows("text:The file sets x to 1.")).toBe(true);
 	expect(app.shows(EDIT)).toBe(true);
 	expect(app.shows(RUN)).toBe(true);
+});
+
+test("a failed compact reply keeps its last text copyable after trailing work", async () => {
+	const app = await openChat("compactFailed");
+	await app.waitFor("text:The file sets x to 1.");
+	expect(app.shows("text:The turn failed.")).toBe(true);
+	expect(app.shows("id:chat-compact-activity-body")).toBe(false);
+	await app.hover("text:The file sets x to 1.");
+	await app.press("id:chat-reply-footer >> id:chat-copy-message");
+	expect(app.clipboard()).toBe("The file sets x to 1.");
 });
 
 test("compact output with completed-work folding off shows the scrollable full process open", async () => {
@@ -247,34 +292,31 @@ test("compact output with completed-work folding off shows the scrollable full p
 	expect(app.shows(RUN)).toBe(true);
 });
 
-test("compact output switches to a summary header once trailing text starts streaming", async () => {
+test("compact output switches each group to a summary once trailing text starts streaming", async () => {
 	const app = await openChat("compactStreamingText");
 	await app.waitFor("text:Streaming final answer...");
+	expect(app.shows("id:chat-compact-live-dot")).toBe(true);
 	expect(app.texts().some((item) => /^Working for 1m 0\ds$/.test(item))).toBe(
 		true,
 	);
-	expect(
-		app.shows(
-			"text:Thought process · Read 1 files · Edited 1 files · Ran 1 commands",
-		),
-	).toBe(true);
+	expect(app.shows("text:Thought process · Read 1 files")).toBe(true);
+	expect(app.shows("text:Edited 1 files · Ran 1 commands")).toBe(true);
 	expect(app.shows("id:chat-compact-live-preview")).toBe(false);
-	expect(app.shows("id:chat-compact-step-count")).toBe(false);
 	expect(app.shows("id:chat-reply-streaming")).toBe(false);
 });
 
-test("compact output shows a static summary when a turn was aborted", async () => {
+test("compact output shows a static folded header when a turn was aborted", async () => {
 	const app = await openChat("compactAborted");
 	await app.waitFor("text:Stopped");
+	expect(app.shows("id:chat-compact-live-dot")).toBe(false);
 	expect(app.shows("text:Worked for 8s")).toBe(true);
-	expect(app.shows("text:Thought process · Read 1 files")).toBe(true);
+	expect(app.shows("text:The file sets x to 1.")).toBe(true);
 	expect(app.shows("id:chat-compact-live-preview")).toBe(false);
-	expect(app.shows("id:chat-compact-step-count")).toBe(false);
 	expect(app.shows("id:chat-reply-streaming")).toBe(false);
 
 	await app.press("id:chat-compact-activity-toggle");
 	await app.waitFor("id:chat-compact-activity-body");
-	expect(app.shows("text:The file sets x to 1.")).toBe(true);
+	expect(app.shows("text:Thought for 3s")).toBe(true);
 });
 
 test("a work-only continuation split by compaction omits the empty reply footer", async () => {

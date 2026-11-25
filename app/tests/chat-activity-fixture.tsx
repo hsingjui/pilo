@@ -1,7 +1,14 @@
 import { mount, Storage, View } from "nsh";
 
-import type { ConversationEvent } from "@shared/chat/conversation-types";
-import { replayConversationEvents } from "@shared/chat/conversation-replay";
+import type {
+	ConversationAction,
+	ConversationEvent,
+} from "@shared/chat/conversation-types";
+import { createConversationState } from "@shared/chat/conversation-reducer";
+import {
+	reduceConversationActions,
+	replayConversationEvents,
+} from "@shared/chat/conversation-replay";
 import { initializeI18n } from "../shell/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
@@ -31,6 +38,7 @@ import { context, startedAt } from "./chat-conversation-fixture";
  * - `compactStreamingText`: tools finished and trailing text streaming, with
  *   `compactOutput` turned on.
  * - `compactAborted`: an aborted turn with `compactOutput` turned on.
+ * - `compactFailed`: a failed compact turn with tool activity after its text.
  * - `compactedContinuation`: a work-only turn split by a compaction marker.
  * - `whitespaceOnlyText`: a tool call followed only by whitespace text.
  */
@@ -248,9 +256,48 @@ const scenarios: Record<string, ConversationEvent[]> = {
 	compactExpanded: [...prompt, ...work, ...commandEnd],
 	compactStreamingText,
 	compactAborted,
+	compactFailed: [
+		...prompt,
+		...work,
+		{
+			type: "tool_execution_end",
+			toolCallId: "bash-1",
+			toolName: "bash",
+			result: { content: [{ type: "text", text: "command failed" }] },
+			isError: true,
+			timestampMs: at(12),
+		},
+		{
+			type: "assistant_turn_end",
+			stopReason: "error",
+			errorMessage: "The turn failed.",
+			timestampMs: at(13),
+		},
+	],
 	compactedContinuation,
 	whitespaceOnlyText,
 };
+
+function buildPendingScenario(
+	status: "starting" | "sending",
+	ageMs: number,
+): ConversationAction[] {
+	const timestampMs = Date.now() - ageMs;
+	return [
+		{
+			type: "local_user_submit",
+			clientMessageId: "user-pending-1",
+			text: "Bump x.",
+			timestampMs,
+		},
+		{ type: "local_assistant_pending", timestampMs, pendingStatus: null },
+		{
+			type: "local_assistant_status",
+			clientMessageId: "user-pending-1",
+			status,
+		},
+	];
+}
 
 function buildScenario(scenario: string): ConversationEvent[] {
 	const liveOrigin = Date.now() - 62_000;
@@ -262,6 +309,9 @@ function buildScenario(scenario: string): ConversationEvent[] {
 			return shiftEvents([...prompt, ...work.slice(0, 2)], liveOrigin);
 		case "compactStreamingText":
 			return shiftEvents(compactStreamingText, liveOrigin);
+		case "compactWaiting":
+		case "compactWaitingUntimed":
+			return shiftEvents(prompt, Date.now() - 5_000);
 		default:
 			return scenarios[scenario] ?? scenarios.settled;
 	}
@@ -270,10 +320,24 @@ function buildScenario(scenario: string): ConversationEvent[] {
 async function run() {
 	await initializeI18n();
 	const scenario = (await Storage.getItem("fixture.scenario")) ?? "settled";
+	const conversation =
+		scenario === "compactStarting"
+			? reduceConversationActions(
+					createConversationState(),
+					buildPendingScenario("starting", 0),
+					context(),
+				)
+			: scenario === "compactSending"
+				? reduceConversationActions(
+						createConversationState(),
+						buildPendingScenario("sending", 3_000),
+						context(),
+					)
+				: replayConversationEvents(buildScenario(scenario), context());
 	const state: ChatTranscriptState = {
 		sessionKey: "chat-activity-fixture",
 		status: "ready",
-		conversation: replayConversationEvents(buildScenario(scenario), context()),
+		conversation,
 		historyPrefix: [],
 		source: "history",
 	};
@@ -281,8 +345,9 @@ async function run() {
 	const untimed =
 		scenario === "expanded" ||
 		scenario === "untimed" ||
-		scenario === "compactUntimed";
-	const compactOutput = scenario.startsWith("compact");
+		scenario === "compactUntimed" ||
+		scenario === "compactWaitingUntimed";
+	const compactOutput = /^compact[A-Z]/.test(scenario);
 	mount(() => (
 		<View class="flex-1">
 			<ChatMessageList

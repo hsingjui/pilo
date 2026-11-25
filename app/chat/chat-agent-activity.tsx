@@ -89,6 +89,31 @@ function LabelHighlight(props: { label: string }) {
 	);
 }
 
+/** The primary dot breathing beside an active label (3.5s, as the WebUI's). */
+export function ChatActivityDot(props: { testID?: string }) {
+	const readingFont = ChatReadingFont();
+	return (
+		<View
+			testID={props.testID}
+			class="size-3.5 shrink-0 items-center justify-center"
+			style={readingIconStyle(readingFont())}
+			accessible={false}
+			accessibilityElementsHidden
+		>
+			{() =>
+				reduceMotion() ? (
+					<View
+						class="size-[34%] rounded-full bg-primary"
+						style={{ opacity: 0.6, transform: [{ scale: 0.85 }] }}
+					/>
+				) : (
+					<PulsingDot />
+				)
+			}
+		</View>
+	);
+}
+
 /**
  * What a running reply is doing, in words (the WebUI's
  * `ChatAgentActivityIndicator`): a breathing dot and the label. With less
@@ -101,23 +126,7 @@ export function ChatAgentActivityIndicator(props: {
 	const readingFont = ChatReadingFont();
 	return (
 		<View testID={props.testID} class="flex-row items-center gap-1.5">
-			<View
-				class="size-3.5 shrink-0 items-center justify-center"
-				style={readingIconStyle(readingFont())}
-				accessible={false}
-				accessibilityElementsHidden
-			>
-				{() =>
-					reduceMotion() ? (
-						<View
-							class="size-[34%] rounded-full bg-primary"
-							style={{ opacity: 0.6, transform: [{ scale: 0.85 }] }}
-						/>
-					) : (
-						<PulsingDot />
-					)
-				}
-			</View>
+			<ChatActivityDot />
 			<View class="relative">
 				{() =>
 					reduceMotion() ? null : <LabelHighlight label={props.label()} />

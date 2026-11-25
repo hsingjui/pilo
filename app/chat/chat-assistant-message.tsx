@@ -96,13 +96,40 @@ export function ChatAssistantMessage(props: {
 			stopReason === "aborted"
 		);
 	});
-	const sections = computed(() =>
-		splitAssistantContentForDisplay(
-			content(),
+	const sections = computed(() => {
+		const items = content();
+		if (
+			preferences().compactOutput &&
+			!props.body &&
+			message().streaming !== true
+		) {
+			const visible = items.filter(
+				(item) => item.type !== "text" || item.text.trim().length > 0,
+			);
+			// A stopped or failed turn can have more activity after its last reply.
+			const last = visible.findLastIndex((item) => item.type === "text");
+			if (last < 0) {
+				return {
+					work: visible,
+					final: [],
+					hasCollapsedWork: visible.length > 0,
+				};
+			}
+			let first = last;
+			while (visible[first - 1]?.type === "text") first -= 1;
+			const work = [...visible.slice(0, first), ...visible.slice(last + 1)];
+			return {
+				work,
+				final: visible.slice(first, last + 1),
+				hasCollapsedWork: work.length > 0,
+			};
+		}
+		return splitAssistantContentForDisplay(
+			items,
 			!keepWorkExpanded(),
 			Boolean(message().errorMessage),
-		),
-	);
+		);
+	});
 	const copyText = computed(() =>
 		sections()
 			.final.flatMap((item) => (item.type === "text" ? [item.text] : []))
@@ -123,19 +150,10 @@ export function ChatAssistantMessage(props: {
 			!message().errorMessage &&
 			message().stopReason !== "aborted",
 	);
-	// What a running reply is doing, in words; nothing once it settles.
-	// In compact output mode, the live compact header already shows the elapsed
-	// timer and spinner while any activity exists, so avoid duplicating the
-	// footer indicator.
+	// The compact work header is the only live indicator, even before output.
 	const streamingLabel = computed(() => {
+		if (preferences().compactOutput && !props.body) return "";
 		const { text, streaming, pendingStatus } = message();
-		if (
-			preferences().compactOutput &&
-			streaming === true &&
-			activity().length > 0
-		) {
-			return "";
-		}
 		const state = getAssistantStreamingState({
 			text,
 			activity: activity(),
@@ -183,6 +201,7 @@ export function ChatAssistantMessage(props: {
 				<ChatAssistantWork
 					message={message}
 					sections={sections}
+					activities={activity}
 					workActive={() => keepWorkExpanded() && activity().length > 0}
 					expansion={expansion}
 					preferences={preferences}
