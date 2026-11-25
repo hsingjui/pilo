@@ -524,8 +524,7 @@ export class ChatRunConfigStore {
 		// new chat's Pi starting) lets another pick follow it.
 		if (
 			!state ||
-			(state.changing &&
-				(!this.applying?.pick || this.applying.inBackground))
+			(state.changing && (!this.applying?.pick || this.applying.inBackground))
 		)
 			return;
 		const open = this.opens;
