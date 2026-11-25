@@ -32,7 +32,7 @@
 - **签名**：`Pilo.loadDesktopSettings() → { showShortcut, exitOnClose }`、`saveExitOnClose(enabled) → void`、`saveShowShortcut(shortcut) → void`。三者复用 `desktop_settings`，各写入只改变自己的列。`showShortcut` 缺省 `mod+alt+p`，`exitOnClose` 缺省 `false`。
 - **快捷键检查**：注册前与 `desktop/shortcuts.ts` 的实际绑定比较平台键位，包括尚未启用的 `mod+enter` 发送键。拒绝冲突时不更改旧绑定或数据库；启动时发现已保存的冲突键则显示为未生效，保留原值供用户修改。
 - **快捷键写入**：先注册新的键，后持久化，再释放旧键；写入使用立即事务检查已持久化的应用内快捷键冲突。系统拒绝注册不写库，数据库拒绝保存只释放新键，保留旧键和原设置。相同的物理键不重复注册。
-- **通知契约**：只消费新于 bootstrap 序列的 `assistant_message_end` 会话事件，跳过主动取消和没有已保存路径的会话。尊重 `desktopNotifications`，不在事件处理时申请权限。通知 ID 形如 `pilo-session:` 加 JSON `[projectId, sessionPath]`，同一会话的新通知替换旧通知；点击通知（包括冷启动）等待项目加载及会话索引确认路径后再导航。无效通知 ID、已删除会话或未确认路径不会改变导航。
+- **通知契约**：只消费新于 bootstrap 序列的 `assistant_message_end` 会话事件，跳过主动取消和没有已保存路径的会话。尊重 `desktopNotifications`，不在事件处理时申请权限。通知 ID 形如 `pilo-session:` 加 JSON `[projectId, sessionPath]`，同一会话的新通知替换旧通知；点击通知（包括冷启动）等待项目加载及会话索引确认路径后再导航。无效通知 ID、已删除会话或未确认路径不会改变导航。通知查标题和点击定位时，都用 `runtimeSessionPathKey` 比较 Pi 路径和索引路径；导航传索引原始路径，不传通知里的路径。
 - **验收**：原生窗口拖动、调整大小、最小化/最大化；普通和最大化状态分别退出重开，再拔副屏重开；从托盘、快捷键和二次启动恢复窗口；占用新快捷键时旧键仍生效；「设置 → 通用 → 启动退出」能切换「关闭主窗口时退出程序」，开启时关闭窗口会退出，关闭开关时，确认有恢复途径则隐藏，否则（例如快捷键被占用且未操作过托盘）最小化，两种情况下 Pi 都继续工作；显式退出时 Host 清理；有目标的通知在窗口隐藏和冷启动时打开正确会话，关闭通知开关、主动取消或目标已删除时不产生错误跳转。
 - **错误示例**：先释放旧快捷键再尝试注册新键会在注册冲突时丢失恢复入口。正确做法是 `register(next) → saveShowShortcut(next) → unregister(previous)`；保存失败则仅 `unregister(next)`。
 

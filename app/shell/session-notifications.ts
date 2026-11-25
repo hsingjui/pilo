@@ -1,6 +1,7 @@
 import { effect, signal, untracked } from "nsh";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppStore } from "../state/app-store";
 import {
@@ -62,11 +63,13 @@ export function connectSessionNotifications(
 		const index = state.sessionIndexes[projectId];
 		if (index?.status === "loading") return;
 		requested.set(null);
-		if (
-			index?.status === "loaded" &&
-			index.sessions.some((session) => session.sessionPath === sessionPath)
-		) {
-			untracked(() => store.selectSession(projectId, sessionPath));
+		if (index?.status !== "loaded") return;
+		const pathKey = runtimeSessionPathKey(sessionPath);
+		const session = index.sessions.find(
+			(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
+		);
+		if (session) {
+			untracked(() => store.selectSession(projectId, session.sessionPath));
 		}
 	});
 
@@ -98,10 +101,11 @@ export function connectSessionNotifications(
 			!store.state().preferences?.values.desktopNotifications
 		)
 			return;
+		const pathKey = runtimeSessionPathKey(sessionPath);
 		const session = store
 			.state()
 			.sessionIndexes[projectId]?.sessions.find(
-				(entry) => entry.sessionPath === sessionPath,
+				(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
 			);
 		const failed =
 			event.stopReason === "error" || Boolean(event.errorMessage?.trim());
