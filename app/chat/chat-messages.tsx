@@ -14,7 +14,11 @@ import {
 	type ViewToken,
 } from "nsh";
 
-import { shouldShowChatScrollToLatest } from "@shared/chat/chat-scroll-to-latest";
+import {
+	type ChatScrollElementLike,
+	getChatScrollMaxOffset,
+	shouldShowChatScrollToLatest,
+} from "@shared/chat/chat-scroll-to-latest";
 import {
 	createConversationOutline,
 	getOutlineIndexForVisibleRange,
@@ -42,6 +46,132 @@ const followThreshold = 4;
 const followEnd = { autoscrollToBottomThreshold: followThreshold };
 // How far the list is scrolled before its top edge fades, in points.
 const fadeAfter = 16;
+
+type WebChatWheelEvent = {
+	deltaX: number;
+	deltaY: number;
+	ctrlKey: boolean;
+	shiftKey: boolean;
+};
+
+interface WebChatViewport extends ChatScrollElementLike {
+	querySelector(selector: string): object | null;
+	addEventListener(type: "scroll", listener: () => void): void;
+	addEventListener(
+		type: "wheel",
+		listener: (event: WebChatWheelEvent) => void,
+		options: { passive: boolean },
+	): void;
+	removeEventListener(type: "scroll", listener: () => void): void;
+	removeEventListener(
+		type: "wheel",
+		listener: (event: WebChatWheelEvent) => void,
+	): void;
+}
+
+function observeWebChatEnd(
+	initiallyFollowing: boolean,
+	canFollow: () => boolean,
+) {
+	type BrowserWindow = {
+		parent?: BrowserWindow;
+		document?: { querySelector(selector: string): WebChatViewport | null };
+		ResizeObserver?: new (callback: () => void) => {
+			observe(element: object): void;
+			disconnect(): void;
+		};
+	};
+	const realm = globalThis as unknown as BrowserWindow;
+	const selector = '[data-testid="chat-messages"]';
+	let host = realm;
+	let viewport = realm.document?.querySelector(selector);
+	// nsh runs app code in an iframe but renders the list in the host page.
+	if (!viewport && realm.parent && realm.parent !== realm) {
+		try {
+			host = realm.parent;
+			viewport = host.document?.querySelector(selector);
+		} catch {
+			return;
+		}
+	}
+	// The nsh web host sizes this spacer to the virtual list's content extent.
+	const content = viewport?.querySelector(":scope > .nsh-spacer");
+	if (!viewport || !content || !host.ResizeObserver) return;
+
+	let following = initiallyFollowing;
+	let dragging = false;
+	let wheelingUp = false;
+	let end = getChatScrollMaxOffset(viewport);
+	let offsetAfterResize: number | undefined;
+	const readWheel = ({
+		deltaX,
+		deltaY,
+		ctrlKey,
+		shiftKey,
+	}: WebChatWheelEvent) => {
+		if (ctrlKey || (shiftKey && !deltaX) || Math.abs(deltaX) > Math.abs(deltaY))
+			return;
+		if (deltaY < 0 && viewport.scrollTop > 0) {
+			// nsh doesn't report a scroll drag for wheel input; pause before layout can change.
+			wheelingUp = true;
+			following = false;
+		} else if (deltaY > 0) {
+			wheelingUp = false;
+			if (
+				getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
+				followThreshold
+			)
+				following = true;
+		}
+	};
+	const readScroll = () => {
+		const offset = viewport.scrollTop;
+		// Let the resize callback handle layout-induced scrolls at a new extent.
+		if (getChatScrollMaxOffset(viewport) !== end) return;
+		if (offset !== offsetAfterResize)
+			following = !wheelingUp && end - offset <= followThreshold;
+		offsetAfterResize = undefined;
+	};
+	const resize = new host.ResizeObserver(() => {
+		end = getChatScrollMaxOffset(viewport);
+		// Correct the rendered offset before paint, after nsh has applied its layout.
+		if (
+			following &&
+			!dragging &&
+			canFollow() &&
+			Math.abs(end - viewport.scrollTop) > 1
+		) {
+			viewport.scrollTop = end;
+		}
+		offsetAfterResize = viewport.scrollTop;
+	});
+	viewport.addEventListener("scroll", readScroll);
+	viewport.addEventListener("wheel", readWheel, { passive: true });
+	resize.observe(viewport);
+	resize.observe(content);
+	return {
+		setFollowing(value: boolean) {
+			wheelingUp = false;
+			following = value;
+		},
+		endWheel() {
+			wheelingUp = false;
+		},
+		setDragging(value: boolean) {
+			wheelingUp = false;
+			dragging = value;
+			following =
+				!value &&
+				getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
+					followThreshold;
+		},
+		disconnect() {
+			resize.disconnect();
+			viewport.removeEventListener("scroll", readScroll);
+			viewport.removeEventListener("wheel", readWheel);
+		},
+	};
+}
 
 /**
  * A row is its message's place in the chat. The reducer names a reply anew
@@ -109,6 +239,8 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const firstVisibleIndex = signal(restore?.index ?? 0);
 	const atEnd = signal(restore === null);
 	const followPaused = signal(false);
+	const web = platform.os === "web";
+	let webEnd: ReturnType<typeof observeWebChatEnd>;
 	const disclose = (update: () => void) => {
 		// Let the native list keep the visible rows in place when details grow.
 		batch(() => {
@@ -163,8 +295,17 @@ export function ChatMessages(props: ChatMessagesProps) {
 				if (measureAgain) keepPosition();
 			});
 	};
+	const attachWebEnd = () => {
+		if (!stopped) {
+			webEnd ??= observeWebChatEnd(
+				untracked(atEnd),
+				() => !untracked(followPaused),
+			);
+		}
+	};
 	cleanup(() => {
 		stopped = true;
+		webEnd?.disconnect();
 	});
 	let visible: { start: number; end: number } | undefined;
 	const reportVisible = (info: { viewableItems: ViewToken<ChatMessage>[] }) => {
@@ -178,6 +319,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 		if (start === Number.POSITIVE_INFINITY) return;
 		if (restoring && restore !== null) {
 			restoring = false;
+			webEnd?.setFollowing(false);
 			list?.scrollToIndex({
 				index: restore.index,
 				viewOffset: -restore.offset,
@@ -194,6 +336,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const jumpToOutline = (index: number) => {
 		const entry = untracked(outline)[index];
 		if (!entry) return;
+		webEnd?.setFollowing(false);
 		list?.scrollToIndex({
 			index: entry.messageIndex,
 			viewPosition: 0,
@@ -216,7 +359,11 @@ export function ChatMessages(props: ChatMessagesProps) {
 				bounces={false}
 				scrollbar={{ vertical: scrollbarLook() }}
 				footer={props.footer}
+				onLayout={web ? attachWebEnd : undefined}
 				onScroll={follow}
+				onScrollDragStart={web ? () => webEnd?.setDragging(true) : undefined}
+				onScrollDragEnd={web ? () => webEnd?.setDragging(false) : undefined}
+				onScrollEnd={web ? () => webEnd?.endWheel() : undefined}
 				onViewableItemsChange={reportVisible}
 			>
 				{(message) => (
@@ -271,6 +418,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 								}
 								onPress={() => {
 									followPaused.set(false);
+									webEnd?.setFollowing(true);
 									list?.scrollToEnd({ animated: false });
 								}}
 							>

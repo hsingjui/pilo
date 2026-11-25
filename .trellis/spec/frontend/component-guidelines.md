@@ -339,6 +339,12 @@ spacing, type sizes, or control heights.
 
 ## Shared Chat Interaction Contracts
 
+- The nsh WebUI chat list's resize correction only runs while following the
+  end. `onScrollDragStart` does not fire for wheel or trackpad input: listen
+  for an upward `wheel` on the rendered list before resize delivery, rather
+  than inferring intent from a `scroll` event whose content extent may already
+  have changed. When browser verification is authorized, scroll up during
+  streamed growth, then return to the end and check following resumes.
 - `useChatStickyScroll` keeps per-element resize heights in a ref-backed
   `WeakMap` across observer rebinds. Starting/ending an assistant message must
   not reset the viewport/content baseline: a turn-end error can grow the DOM
