@@ -33,7 +33,6 @@ import {
 } from "@shared/chat/chat-submission";
 import type { SessionMention } from "@shared/chat/session-mentions";
 import { t } from "../shell/i18n";
-import { richEditorShortcut, type AppShortcutBinding } from "../shortcuts";
 import {
 	ChatMediaActions,
 	chatAttachmentImage,
@@ -85,7 +84,6 @@ export interface ComposerRichInputProps {
 	paddingVertical: Accessor<number>;
 	paddingRight: Accessor<number>;
 	modEnter: Accessor<boolean>;
-	shortcuts: Accessor<readonly (AppShortcutBinding | undefined)[]>;
 	menuOpen: Accessor<boolean>;
 	canPickSuggestion: Accessor<boolean>;
 	canAdoptGhost: Accessor<boolean>;
@@ -207,9 +205,6 @@ function SessionRichInput(session: {
 		if (key === "Tab" || key === "Escape") props.onGhostKey(key);
 	});
 
-	// RichEditor has priority over the app keymap while focused.
-	const shortcutPlugin = new RichEditorPlugin("composer-app-shortcuts");
-
 	// 5) 纯文本粘贴净化插件：避免网页 HTML/Markdown 样式混入聊天框，并自动还原已有的 @ 引用。
 	const pastePlugin = new RichEditorPlugin("composer-plain-paste");
 	pastePlugin.transformPasted((slice) => {
@@ -296,7 +291,6 @@ function SessionRichInput(session: {
 			modEnterSubmitPlugin,
 			arrowPlugin,
 			ghostPlugin,
-			shortcutPlugin,
 			pastePlugin,
 		],
 	});
@@ -440,32 +434,6 @@ function SessionRichInput(session: {
 		ghostPlugin.capturing = active && !menu && props.canAdoptGhost();
 	});
 
-	effect(() => {
-		const handlers = new Map<string, () => void>();
-		for (const binding of props.shortcuts()) {
-			if (binding) {
-				handlers.set(richEditorShortcut(binding.shortcut), binding.handler);
-			}
-		}
-		const keys = [...handlers.keys()];
-		// nsh falls back to unshifted digit/punctuation bindings, even when Shift is held.
-		const shiftedKeys = keys
-			.filter((key) => /-[^a-z]$/.test(key) && !key.includes("shift-"))
-			.map((key) => `shift-${key}`);
-		shortcutPlugin.captureKeys([...shiftedKeys, ...keys], (key) => {
-			if (
-				!isCurrent() ||
-				!focused() ||
-				props.disabled() ||
-				composing() ||
-				editor.composing
-			)
-				return;
-			handlers.get(key)?.();
-		});
-		shortcutPlugin.capturing = keys.length > 0;
-	});
-
 	// 同步可编辑态。
 	effect(() => {
 		editor.setEditable(!props.disabled());
@@ -586,7 +554,7 @@ function SessionRichInput(session: {
 			editor.focus();
 		},
 		insertText: (text) => {
-			editor.insertContent(text);
+			editor.insertContent(text, "text");
 			syncFromEditor();
 		},
 		submissionText: () => {
@@ -625,7 +593,6 @@ function SessionRichInput(session: {
 		modEnterSubmitPlugin.dispose();
 		arrowPlugin.dispose();
 		ghostPlugin.dispose();
-		shortcutPlugin.dispose();
 		pastePlugin.dispose();
 		editor.dispose();
 	});

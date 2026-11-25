@@ -275,9 +275,8 @@ export function AppShell(props: AppShellProps) {
 	const appShortcutBindings = signal<
 		Partial<Record<ShortcutCommandId, AppShortcutBinding>>
 	>({});
-	const composerAppShortcuts = computed(() =>
-		Object.values(appShortcutBindings()),
-	);
+	const composerFocused = signal(false);
+	const composerComposing = computed(() => composer.state().composing);
 	const registeredShortcuts = computed<Partial<KeyboardShortcutMap>>(() =>
 		Object.fromEntries(
 			Object.entries(appShortcutBindings()).map(([id, binding]) => [
@@ -564,16 +563,22 @@ export function AppShell(props: AppShellProps) {
 		const next = getNextPiModel(catalog.catalog.models, config.model);
 		if (next) void runConfig.setModel(next);
 	};
-	// Native keymaps run before a focused view's key capture, including the recorder.
+	// Only the chat editor yields its own bindings to the app shortcuts.
 	effect(() => {
-		if (modalOpen()) {
+		const overFocused = composerFocused();
+		if (modalOpen() || (overFocused && composerComposing())) {
 			appShortcutBindings.set({});
 			return;
 		}
 		const map = shortcuts();
 		const bound: Partial<Record<ShortcutCommandId, AppShortcutBinding>> = {};
 		const bind = (id: ShortcutCommandId, handler: () => void) => {
-			const binding = bindAppShortcut(id, map[id] ?? defaults[id], handler);
+			const binding = bindAppShortcut(
+				id,
+				map[id] ?? defaults[id],
+				handler,
+				overFocused,
+			);
 			if (!binding) return;
 			cleanup(binding.dispose);
 			bound[id] = binding;
@@ -980,7 +985,7 @@ export function AppShell(props: AppShellProps) {
 													store={composer}
 													assistance={assistance}
 													shortcuts={sessionShortcuts}
-													appShortcuts={composerAppShortcuts}
+													onInputFocusChange={composerFocused.set}
 													focusRequest={focusRequest}
 													sendShortcut={() =>
 														store.state().preferences?.values

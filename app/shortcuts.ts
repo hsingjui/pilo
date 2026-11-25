@@ -1,5 +1,8 @@
 import { keymap, platform } from "nsh";
-import { normalizeKeyboardShortcut } from "@shared/keyboard-shortcuts-core";
+import {
+	isSafeGlobalShortcut,
+	normalizeKeyboardShortcut,
+} from "@shared/keyboard-shortcuts-core";
 import type { ShortcutCommandId } from "@shared/keyboard-shortcuts-types";
 
 /** nsh's built-in bindings, reserved from the system-wide show shortcut. */
@@ -35,44 +38,27 @@ export function isReservedSendShortcut(shortcut: string): boolean {
 
 export interface AppShortcutBinding {
 	shortcut: string;
-	handler: () => void;
 	dispose: () => void;
-}
-
-/** Convert a validated nsh key to the RichEditor plugin's key vocabulary. */
-export function richEditorShortcut(shortcut: string): string {
-	const modifiers = shortcut.split("+");
-	const key = modifiers.pop()!;
-	const names: Record<string, string> = {
-		up: "ArrowUp",
-		down: "ArrowDown",
-		left: "ArrowLeft",
-		right: "ArrowRight",
-		pageup: "PageUp",
-		pagedown: "PageDown",
-		del: "Delete",
-		plus: "=",
-		minus: "-",
-	};
-	const name =
-		names[key] ??
-		(key.length === 1 ? key : key[0].toUpperCase() + key.slice(1));
-	return [...modifiers, name].join("-");
 }
 
 export function bindAppShortcut(
 	id: ShortcutCommandId,
 	value: string,
 	handler: () => void,
+	overFocused = false,
 ): AppShortcutBinding | undefined {
-	const shortcut = nshAppShortcut(value, platform.os === "macos");
+	const isMac = platform.os === "macos";
+	const shortcut = nshAppShortcut(value, isMac);
 	if (!shortcut) return;
 	try {
 		if (isReservedSendShortcut(shortcut)) return;
 		return {
 			shortcut,
-			handler,
-			dispose: keymap.bind(shortcut, handler, { when: "always" }),
+			dispose: keymap.bind(shortcut, handler, {
+				when: "always",
+				// Plain editing and navigation keys keep the focused view's priority.
+				overFocused: overFocused && isSafeGlobalShortcut(value, isMac),
+			}),
 		};
 	} catch (error) {
 		// A binding saved by another client may not be valid on nsh.

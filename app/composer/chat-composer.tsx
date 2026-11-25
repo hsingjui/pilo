@@ -46,7 +46,7 @@ import {
 } from "../chat/chat-media-actions";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
-import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
+import { bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
 import { FileTypeIcon } from "../ui/file-type-icon";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
@@ -196,7 +196,7 @@ export interface ChatComposerProps {
 	assistance?: ComposerAssistance;
 	/** Null suspends session shortcuts while a dialog or command palette is open. */
 	shortcuts?: () => KeyboardShortcutMap | null;
-	appShortcuts?: () => readonly AppShortcutBinding[];
+	onInputFocusChange?: (focused: boolean) => void;
 	/** Focus the matching editor once, when its chat is visible. */
 	focusRequest?: { sessionKey: () => string | null; handled: () => void };
 	/** The configured submit shortcut; Enter submits by default. */
@@ -222,15 +222,21 @@ export function ChatComposer(props: ChatComposerProps) {
 	const contentHeight = signal(0);
 	const focused = signal(false);
 	const focusShortcutLabels = signal<string[]>([]);
-	const focusShortcutBinding = signal<AppShortcutBinding>();
-	const queueShortcutBinding = signal<AppShortcutBinding>();
-	const adoptBinding = signal<AppShortcutBinding>();
 	const surface = signal<ViewRef | undefined>(undefined);
 	const activeSuggestion = signal<RichSuggestionMatch | null>(null);
 	let inputHandle: ComposerRichInputHandle | undefined;
 
 	const state = () => store.state();
+	const composing = computed(() => state().composing);
+	const readOnly = () => store.readOnly();
+	const disabled = () => store.target() === null || readOnly();
+	const editing = computed(() => focused() && !disabled());
 	const running = () => store.running();
+	const onInputFocusChange = props.onInputFocusChange;
+	if (onInputFocusChange) {
+		effect(() => onInputFocusChange(editing()));
+		cleanup(() => onInputFocusChange(false));
+	}
 	const modEnter = () => (props.sendShortcut?.() ?? "enter") === "mod-enter";
 	const hasContent = () =>
 		state().value.trim().length > 0 || state().images.length > 0;
@@ -345,9 +351,12 @@ export function ChatComposer(props: ChatComposerProps) {
 	effect(() => {
 		const shortcut = props.shortcuts?.()?.["focus-composer"];
 		const binding =
-			shortcut && store.target()
-				? bindAppShortcut("focus-composer", shortcut, () =>
-						inputHandle?.focus(),
+			shortcut && store.target() && !(focused() && composing())
+				? bindAppShortcut(
+						"focus-composer",
+						shortcut,
+						() => inputHandle?.focus(),
+						editing(),
 					)
 				: undefined;
 		const isMac = platform.os === "macos";
@@ -355,20 +364,18 @@ export function ChatComposer(props: ChatComposerProps) {
 		focusShortcutLabels.set(
 			normalized ? formatKeyboardShortcutLabels(normalized, isMac) : [],
 		);
-		focusShortcutBinding.set(binding);
 		if (binding) cleanup(binding.dispose);
 	});
 	effect(() => {
 		const map = props.shortcuts?.();
-		const binding =
-			map && focused() && running() && !store.compacting()
-				? bindAppShortcut(
-						"queue-message",
-						map["queue-message"],
-						() => void store.submit("follow_up", inputHandle?.submissionText()),
-					)
-				: undefined;
-		queueShortcutBinding.set(binding);
+		if (!map || !editing() || composing() || !running() || store.compacting())
+			return;
+		const binding = bindAppShortcut(
+			"queue-message",
+			map["queue-message"],
+			() => void store.submit("follow_up", inputHandle?.submissionText()),
+			true,
+		);
 		if (binding) cleanup(binding.dispose);
 	});
 
@@ -491,8 +498,6 @@ export function ChatComposer(props: ChatComposerProps) {
 		!state().value &&
 		!hasAttachments() &&
 		focusShortcutLabels().length > 0;
-	const readOnly = () => store.readOnly();
-	const disabled = () => store.target() === null || readOnly();
 	const focusRequest = props.focusRequest;
 	if (focusRequest) {
 		const readyFocusRequest = () => {
@@ -546,7 +551,6 @@ export function ChatComposer(props: ChatComposerProps) {
 			!focused() && canAdoptWithTab()
 				? bindAppShortcut("focus-composer", "tab", adoptSuggestion)
 				: undefined;
-		adoptBinding.set(binding);
 		if (binding) cleanup(binding.dispose);
 	});
 
@@ -785,12 +789,6 @@ export function ChatComposer(props: ChatComposerProps) {
 						paddingVertical={inputPadding}
 						paddingRight={inputRightPadding}
 						modEnter={modEnter}
-						shortcuts={() => [
-							...(props.appShortcuts?.() ?? []),
-							focusShortcutBinding(),
-							adoptBinding(),
-							queueShortcutBinding(),
-						]}
 						menuOpen={menuOpen}
 						canPickSuggestion={canPickSuggestion}
 						canAdoptGhost={canAdoptWithTab}
