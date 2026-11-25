@@ -9,6 +9,7 @@ mod notifications;
 mod pilo;
 #[cfg(debug_assertions)]
 mod test_fixtures;
+mod updater;
 
 #[native_module("app/native")]
 fn native(registry: &mut Registry) {
@@ -19,6 +20,7 @@ fn native(registry: &mut Registry) {
     registry.module::<AppInfo>();
     registry.module::<dock::DesktopDock>();
     registry.module::<notifications::DesktopNotifications>();
+    registry.module::<updater::DesktopUpdates>();
     registry.class::<pilo::Pilo>();
     #[cfg(debug_assertions)]
     test_fixtures::register(registry);

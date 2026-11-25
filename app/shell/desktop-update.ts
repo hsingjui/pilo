@@ -8,6 +8,7 @@ import {
 	signal,
 	untracked,
 } from "nsh";
+import { DesktopUpdates } from "app/native";
 import { Application } from "nsh/desktop";
 import {
 	type AppUpdate,
@@ -147,7 +148,11 @@ async function fetchGitHubReleaseNotes(
  */
 export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 	const updater: DesktopUpdaterApi = {
-		checkForUpdate: options.updater?.checkForUpdate ?? defaultCheckForUpdate,
+		checkForUpdate:
+			options.updater?.checkForUpdate ??
+			(platform.os === "windows"
+				? DesktopUpdates.checkForUpdate
+				: defaultCheckForUpdate),
 		downloadUpdate: options.updater?.downloadUpdate ?? defaultDownloadUpdate,
 		installAndRestart:
 			options.updater?.installAndRestart ??
