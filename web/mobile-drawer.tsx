@@ -20,6 +20,7 @@ import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { SidebarSession } from "@shared/sidebar/sidebar-types";
 
 import { AppToaster } from "../app/shell/app-toasts";
+import { connectionLabel } from "../app/shell/connection-label";
 import { deleteSessionWithToast } from "../app/shell/delete-session";
 import { t } from "../app/shell/i18n";
 import {
@@ -648,10 +649,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 													const envKey = `env:${group.connection.id}`;
 													const envExpanded =
 														sectionOverrides()[envKey] ?? true;
-													const envName =
-														group.connection.kind.type === "local"
-															? t("common.local")
-															: group.connection.name;
+													const envName = connectionLabel(group.connection);
 													const envIcon =
 														group.connection.kind.type === "ssh"
 															? "Server"

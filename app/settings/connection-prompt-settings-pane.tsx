@@ -7,12 +7,12 @@ import type {
 import { userErrorMessage } from "@shared/app-error";
 import type { NextPromptSettings } from "@shared/next-prompt-types";
 import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
+import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import { Switch } from "../ui/switch";
 import {
 	ConnectionModelLists,
 	ConnectionModelSelect,
-	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
 	subscribeSettingsEvents,

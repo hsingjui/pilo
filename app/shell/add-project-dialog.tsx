@@ -24,6 +24,7 @@ import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
+import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
 
 /** The client calls the dialog needs beyond adding the project. */
@@ -44,10 +45,6 @@ function parentRemotePath(path: string) {
 	const parts = normalized.split("/").filter(Boolean);
 	parts.pop();
 	return parts.length === 0 ? "/" : `/${parts.join("/")}`;
-}
-
-function connectionLabel(connection: Connection) {
-	return connection.kind.type === "local" ? t("common.local") : connection.name;
 }
 
 function errorMessage(error: unknown) {

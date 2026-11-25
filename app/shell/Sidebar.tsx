@@ -24,6 +24,7 @@ import { MenuItem } from "../ui/menu-item";
 import { MenuSeparator } from "../ui/menu-separator";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
+import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
 import { createHover } from "../ui/hover";
 import {
@@ -382,8 +383,7 @@ function ConnectionSection(
 	props: SidebarProps & { group: Accessor<SidebarGroup> },
 ) {
 	const connection = () => props.group().connection;
-	const name = () =>
-		isLocal(connection()) ? t("common.local") : connection().name;
+	const name = () => connectionLabel(connection());
 	const section = () => connectionSection(connection().id);
 	const collapsed = () =>
 		props.settings.settings().collapsedSections[section()] ?? false;

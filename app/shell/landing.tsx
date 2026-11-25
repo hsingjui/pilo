@@ -19,6 +19,7 @@ import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Skeleton } from "../ui/skeleton";
 import { displayFontFamily } from "./appearance";
+import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
 import { PiLogo } from "./pi-logo";
 
@@ -26,12 +27,6 @@ function projectLabel(project: Project) {
 	return isDefaultWorkspace(project)
 		? t("sidebar.defaultWorkspace")
 		: project.name;
-}
-
-function connectionLabel(project: Project) {
-	return project.connection.kind.type === "local"
-		? t("common.local")
-		: project.connection.name;
 }
 
 /**
@@ -119,7 +114,7 @@ function LandingProjectPicker(props: {
 	const accessibilityLabel = () => {
 		const project = props.project();
 		return project
-			? `${t("app.selectProject")}: ${projectLabel(project)} · ${connectionLabel(project)}`
+			? `${t("app.selectProject")}: ${projectLabel(project)} · ${connectionLabel(project.connection)}`
 			: t("app.selectProject");
 	};
 	const open = signal(false);
@@ -157,7 +152,7 @@ function LandingProjectPicker(props: {
 											·
 										</Text>
 										<Text class="min-w-0 shrink truncate font-sans text-xs text-muted-foreground">
-											{connectionLabel(project)}
+											{connectionLabel(project.connection)}
 										</Text>
 									</>
 								) : null}
@@ -193,7 +188,7 @@ function LandingProjectPicker(props: {
 							{projectLabel(candidate)}
 						</Text>
 						<Text class="min-w-0 max-w-[50%] shrink truncate font-sans text-xs text-muted-foreground">
-							{connectionLabel(candidate)}
+							{connectionLabel(candidate.connection)}
 						</Text>
 					</MenuItem>
 				))}

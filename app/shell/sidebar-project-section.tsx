@@ -25,6 +25,7 @@ import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Spinner } from "../ui/spinner";
 import { tooltipStyle } from "../ui/tooltip";
+import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
 import { createHover } from "../ui/hover";
 import {
@@ -37,7 +38,6 @@ import {
 	sidebarText,
 } from "./sidebar-parts";
 import {
-	isLocal,
 	projectSection,
 	sessionRowKey,
 	sidebarSessions,
@@ -245,11 +245,7 @@ export function ProjectSection(props: {
 							onMouseLeave={scheduleCloseDetails}
 						>
 							<Text class="font-sans text-xs">
-								{() =>
-									isLocal(props.project().connection)
-										? t("common.local")
-										: props.project().connection.name
-								}
+								{() => connectionLabel(props.project().connection)}
 							</Text>
 							<View selectable>
 								<Text class="font-mono text-[11px] leading-snug">

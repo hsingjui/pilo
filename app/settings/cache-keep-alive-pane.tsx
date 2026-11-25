@@ -7,6 +7,7 @@ import {
 } from "@shared/cache-keep-alive";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { AppState } from "../state/app-state";
+import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import { Command } from "../ui/command";
 import { Icon } from "../ui/icon";
@@ -17,7 +18,6 @@ import { Switch } from "../ui/switch";
 import {
 	ConnectionModelLists,
 	RefreshModelsButton,
-	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
 	subscribeSettingsEvents,

@@ -99,10 +99,6 @@ export function showConnectionTestToast(
 	});
 }
 
-export function connectionLabel(connection: Connection): string {
-	return connection.kind.type === "local" ? t("common.local") : connection.name;
-}
-
 /** `[provider, id]` as one string, the value the model Selects round-trip. */
 export function modelKey(provider: string, id: string): string {
 	return JSON.stringify([provider, id]);

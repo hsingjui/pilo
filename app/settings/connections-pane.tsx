@@ -1,6 +1,7 @@
 import {
 	type Accessor,
 	cleanup,
+	computed,
 	effect,
 	platform,
 	signal,
@@ -15,6 +16,7 @@ import type {
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
+import { connectionLabel } from "../shell/connection-label";
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../shell/i18n";
@@ -23,10 +25,7 @@ import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { textTooltip } from "../ui/tooltip";
-import {
-	connectionLabel,
-	showConnectionTestToast,
-} from "./connection-settings";
+import { showConnectionTestToast } from "./connection-settings";
 import {
 	SETTINGS_HEADER_ICON_BUTTON_CLASS,
 	SettingsSection,
@@ -101,20 +100,23 @@ export function ConnectionsPane(props: {
 	const setResult = (id: string, text: string) =>
 		results.set({ ...results(), [id]: text });
 
+	const projects = computed(() => props.state().projects);
 	const projectCount = (id: string, fallback: number) => {
-		const count = props
-			.state()
-			.projects.filter((project) => project.connection.id === id).length;
+		const count = projects().filter(
+			(project) => project.connection.id === id,
+		).length;
 		return count > 0 ? count : fallback;
 	};
 
+	let refreshRevision = 0;
 	const refresh = async () => {
+		const revision = ++refreshRevision;
 		const [localResult, sshResult, wslResult] = await Promise.allSettled([
 			client.getLocalConnection(),
 			client.listSshConnections(),
 			client.listWslConnections(),
 		]);
-		if (!alive) return;
+		if (!alive || revision !== refreshRevision) return;
 		if (localResult.status === "fulfilled") local.set(localResult.value);
 		if (sshResult.status === "fulfilled") sshItems.set(sshResult.value);
 		else setResult("ssh-list", t("connection.sshLoadFailed"));
@@ -125,7 +127,7 @@ export function ConnectionsPane(props: {
 	/* The project list reloads on host configuration changes; reload the
 	 * connection catalog with it, like React's configurationRevision effect. */
 	effect(() => {
-		void props.state().projects;
+		void projects();
 		void refresh();
 	});
 

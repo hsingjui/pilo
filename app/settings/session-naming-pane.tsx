@@ -4,11 +4,11 @@ import type { Connection } from "@shared/api/pi-runtime-types";
 import type { ConnectionNamingModel } from "@shared/api/sessions-types";
 import { userErrorMessage } from "@shared/app-error";
 import type { AppState } from "../state/app-state";
+import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import {
 	ConnectionModelLists,
 	ConnectionModelSelect,
-	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
 	subscribeSettingsEvents,
