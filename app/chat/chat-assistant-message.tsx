@@ -153,8 +153,15 @@ export function ChatAssistantMessage(props: {
 	const streamingLabel = computed(() => {
 		const { text, streaming, pendingStatus } = message();
 		const items = activity();
-		// Keep the standard status until a compact activity group can show progress.
-		if (preferences().compactOutput && !props.body && items.length > 0) {
+		// In compact mode, show the standalone status only before any output appears.
+		if (
+			preferences().compactOutput &&
+			!props.body &&
+			(items.length > 0 ||
+				content().some(
+					(item) => item.type === "text" && item.text.trim().length > 0,
+				))
+		) {
 			return "";
 		}
 		const state = getAssistantStreamingState({
