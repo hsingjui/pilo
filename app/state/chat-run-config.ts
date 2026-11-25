@@ -99,7 +99,7 @@ export class ChatRunConfigStore {
 	private requests = 0;
 	private statsRequests = 0;
 	private applying:
-		| { promise: Promise<void>; inBackground: boolean }
+		| { promise: Promise<void>; inBackground: boolean; pick: boolean }
 		| undefined;
 	private readonly backgroundSends = new Map<
 		string,
@@ -520,13 +520,24 @@ export class ChatRunConfigStore {
 
 	private async choose(patch: Partial<ChatRunConfigState>): Promise<void> {
 		const state = this.current();
-		if (!state || state.changing) return;
+		// A send owns Pi's selection; only an earlier pick's write (such as a
+		// new chat's Pi starting) lets another pick follow it.
+		if (
+			!state ||
+			(state.changing &&
+				(!this.applying?.pick || this.applying.inBackground))
+		)
+			return;
 		const open = this.opens;
 		this.requests += 1;
 		this.pendingInitial = null;
 		this.update({ ...patch, error: null });
 		if (state.sessionPath) return;
 		try {
+			// The earlier write captured the old selection; push the latest after it.
+			while (this.applying && open === this.opens)
+				await this.applying.promise.catch(() => {});
+			if (open !== this.opens) return;
 			await this.applySelection(true);
 			await this.refresh(open, false);
 		} catch {
@@ -608,7 +619,7 @@ export class ChatRunConfigStore {
 				this.applying = undefined;
 				this.update({ changing: false });
 			});
-		const application = { promise, inBackground: !!background };
+		const application = { promise, inBackground: !!background, pick: start };
 		if (isOpen()) {
 			this.applying = application;
 			this.update({ changing: true, error: null });

@@ -540,7 +540,6 @@ export function AppShell(props: AppShellProps) {
 			!runConfig ||
 			!config?.ready ||
 			config.sessionKey !== chatSessionKey() ||
-			config.changing ||
 			config.compacting ||
 			composer.running() ||
 			composer.readOnly() ||
