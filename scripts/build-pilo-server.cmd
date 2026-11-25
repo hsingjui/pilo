@@ -19,6 +19,8 @@ if not defined ARCH (
 
 set "RESOURCE=resources\pilo-server-windows-%ARCH%.exe"
 
+if not exist "resources" mkdir "resources"
+
 echo Building pilo-server windows-%ARCH% release
 cargo build -p pilo-server --release || exit /b 1
 
