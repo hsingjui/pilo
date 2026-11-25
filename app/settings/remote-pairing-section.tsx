@@ -12,6 +12,7 @@ import {
 
 import { t } from "../shell/i18n";
 import { qrMatrix } from "../lib/qr-matrix";
+import { CopyStatusIcon } from "../ui/copy-status-icon";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import {
@@ -93,6 +94,7 @@ export function RemotePairingSection(props: {
 	hasLink: Accessor<boolean>;
 	url: Accessor<string | null>;
 	regenerating: Accessor<boolean>;
+	copied?: Accessor<boolean>;
 	onCopy: () => void;
 	onRegenerate: () => void;
 }) {
@@ -119,7 +121,10 @@ export function RemotePairingSection(props: {
 									testID="remote-pairing-copy"
 									onPress={props.onCopy}
 								>
-									<Icon name="Copy" size={14} />
+									<CopyStatusIcon
+										copied={() => props.copied?.() ?? false}
+										size={14}
+									/>
 									<Text class="font-sans text-xs">
 										{t("settings.remoteCopyLink")}
 									</Text>
@@ -163,7 +168,13 @@ export function RemotePairingSection(props: {
 							disabled={props.regenerating()}
 							onPress={props.onRegenerate}
 						>
-							<Icon name="RefreshCw" size={14} />
+							{() =>
+								props.regenerating() ? (
+									<Spinner class="size-3.5" />
+								) : (
+									<Icon name="RefreshCw" size={14} />
+								)
+							}
 							<Text class="font-sans text-xs">
 								{t("settings.remoteNewLink")}
 							</Text>

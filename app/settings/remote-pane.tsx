@@ -263,10 +263,22 @@ export function RemotePane(props: {
 		}
 	};
 
-	const copyToClipboard = async (value: string | null | undefined) => {
+	const copiedKey = signal<string | null>(null);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+	cleanup(() => clearTimeout(copiedTimer));
+
+	const copyToClipboard = async (
+		value: string | null | undefined,
+		key?: string,
+	) => {
 		if (!value) return;
 		try {
 			await writeClipboardText(value);
+			if (key) {
+				clearTimeout(copiedTimer);
+				copiedKey.set(key);
+				copiedTimer = setTimeout(() => copiedKey.set(null), 1_600);
+			}
 			showToast(toasts, {
 				variant: "success",
 				title: t("settings.remoteLinkCopied"),
@@ -470,9 +482,17 @@ export function RemotePane(props: {
 													)
 												}
 												accessibilityLabel={`${t("settings.remoteCopyLink")} ${address().baseUrl}`}
-												onPress={() => void copyToClipboard(address().baseUrl)}
+												onPress={() =>
+													void copyToClipboard(
+														address().baseUrl,
+														`addr:${address().id}`,
+													)
+												}
 											>
-												<Icon name="Copy" size={16} />
+												<CopyStatusIcon
+													copied={() => copiedKey() === `addr:${address().id}`}
+													size={16}
+												/>
 											</SettingsIconButton>
 											<SettingsIconButton
 												testID={`remote-address:${index()}:remove`}
