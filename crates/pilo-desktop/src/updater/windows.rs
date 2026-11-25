@@ -76,12 +76,12 @@ impl UpdaterHost for SystemProxyUpdater {
         self.0.running_package()
     }
 
-    fn get(&self, url: &str, sink: UpdaterSink<'_>) -> Result<(), String> {
-        get(url, sink)
+    fn get(&self, url: &str, from: u64, sink: UpdaterSink<'_>) -> Result<(), String> {
+        get(url, from, sink)
     }
 }
 
-fn get(url: &str, sink: UpdaterSink<'_>) -> Result<(), String> {
+fn get(url: &str, from: u64, sink: UpdaterSink<'_>) -> Result<(), String> {
     let url = Url::parse(url).map_err(|_| String::from("invalid update URL"))?;
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return Err("the update URL must use HTTPS without credentials".into());
@@ -124,6 +124,21 @@ fn get(url: &str, sink: UpdaterSink<'_>) -> Result<(), String> {
             ),
             "open request",
         )?;
+        // WinHTTP forwards these headers across redirects, including GitHub's CDN.
+        let mut headers = String::from("Accept-Encoding: identity");
+        if from > 0 {
+            headers.push_str(&format!("\r\nRange: bytes={from}-"));
+        }
+        let headers = wide(&headers);
+        check(
+            WinHttpAddRequestHeaders(
+                request.0,
+                headers.as_ptr(),
+                u32::MAX,
+                WINHTTP_ADDREQ_FLAG_ADD,
+            ),
+            "set download headers",
+        )?;
         check(
             WinHttpSendRequest(request.0, ptr::null(), 0, ptr::null(), 0, 0, 0),
             "send request",
@@ -146,22 +161,27 @@ fn get(url: &str, sink: UpdaterSink<'_>) -> Result<(), String> {
             ),
             "read HTTP status",
         )?;
-        if !(200..300).contains(&status) {
-            return Err(format!("HTTP {status}"));
-        }
-        let mut length = [0_u16; 21];
-        let mut length_bytes = size_of_val(&length) as u32;
-        let total = (WinHttpQueryHeaders(
-            request.0,
-            WINHTTP_QUERY_CONTENT_LENGTH,
-            ptr::null(),
-            length.as_mut_ptr().cast(),
-            &mut length_bytes,
-            ptr::null_mut(),
-        ) != 0)
-            .then(|| String::from_utf16_lossy(&length[..length_bytes as usize / 2]))
-            .and_then(|length| length.parse::<u64>().ok());
-
+        let length = request
+            .header(WINHTTP_QUERY_CONTENT_LENGTH)
+            .and_then(|value| parse_bytes(value.trim()));
+        let (mut offset, total, expected) = match status {
+            // A full response replaces the partial file instead of appending to it.
+            200 => (0, length, length),
+            206 if from > 0 => {
+                let range = request.header(WINHTTP_QUERY_CONTENT_RANGE);
+                let Some((size, total)) = range
+                    .as_deref()
+                    .and_then(|value| resume_range(value, from, length))
+                else {
+                    // Like 416 below, no chunks tells nsh to retry from zero.
+                    return Ok(());
+                };
+                (from, total, Some(size))
+            }
+            416 if from > 0 => return Ok(()),
+            _ => return Err(format!("HTTP {status}")),
+        };
+        let start = offset;
         let mut buffer = [0_u8; 64 * 1024];
         loop {
             let mut read = 0;
@@ -174,12 +194,62 @@ fn get(url: &str, sink: UpdaterSink<'_>) -> Result<(), String> {
                 ),
                 "read response body",
             )?;
+            let received = offset - start;
             if read == 0 {
-                return Ok(());
+                return match expected {
+                    Some(size) if size != received => {
+                        Err(format!("truncated response ({received} of {size} bytes)"))
+                    }
+                    _ => Ok(()),
+                };
             }
-            sink(&buffer[..read as usize], total)?;
+            let next = offset
+                .checked_add(u64::from(read))
+                .ok_or("download offset overflow")?;
+            if expected.is_some_and(|size| next - start > size) {
+                if status == 206 && received == 0 {
+                    // No chunks reached nsh, so it can retry from zero.
+                    return Ok(());
+                }
+                return Err("response exceeds its declared length".into());
+            }
+            sink(offset, &buffer[..read as usize], total)?;
+            offset = next;
         }
     }
+}
+
+/// Validate the returned byte range before allowing any data to be appended.
+fn resume_range(value: &str, from: u64, length: Option<u64>) -> Option<(u64, Option<u64>)> {
+    let (unit, rest) = value.trim().split_once(' ')?;
+    if !unit.eq_ignore_ascii_case("bytes") {
+        return None;
+    }
+    let (range, total) = rest.trim_start().split_once('/')?;
+    let (start, end) = range.split_once('-')?;
+    let start = parse_bytes(start)?;
+    let end = parse_bytes(end)?.checked_add(1)?;
+    let size = end.checked_sub(start)?;
+    if start != from || size == 0 || length.is_some_and(|length| length != size) {
+        return None;
+    }
+    let total = if total == "*" {
+        None
+    } else {
+        let total = parse_bytes(total)?;
+        if end > total {
+            return None;
+        }
+        Some(total)
+    };
+    Some((size, total))
+}
+
+fn parse_bytes(value: &str) -> Option<u64> {
+    if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -195,6 +265,27 @@ impl Handle {
         } else {
             Ok(Self(handle))
         }
+    }
+
+    fn header(&self, name: u32) -> Option<String> {
+        // Enough for three u64 values and the Content-Range syntax.
+        let mut value = [0_u16; 96];
+        let mut bytes = size_of_val(&value) as u32;
+        // SAFETY: The handle is live and `bytes` is the buffer capacity in bytes.
+        let result = unsafe {
+            WinHttpQueryHeaders(
+                self.0,
+                name,
+                ptr::null(),
+                value.as_mut_ptr().cast(),
+                &mut bytes,
+                ptr::null_mut(),
+            )
+        };
+        if result == 0 {
+            return None;
+        }
+        String::from_utf16(value.get(..bytes as usize / 2)?).ok()
     }
 }
 

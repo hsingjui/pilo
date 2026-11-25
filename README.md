@@ -14,7 +14,7 @@
   <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Desktop-macOS%20development-4B5563?style=flat-square" alt="Desktop development: macOS">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
-  <a href="https://github.com/longbridge/nsh"><img src="https://img.shields.io/badge/nsh-0.6-3776AB?style=flat-square" alt="nsh 0.6"></a>
+  <a href="https://github.com/longbridge/nsh"><img src="https://img.shields.io/badge/nsh-0.7-3776AB?style=flat-square" alt="nsh 0.7"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-3776AB?style=flat-square" alt="React 19"></a>
 </p>
 
@@ -58,7 +58,7 @@ Pilo is currently built from source. Development requires Node.js 22, pnpm (CI u
 
 Pilo discovers `pi` from `PATH` by default. Each connection can also be configured with a custom Pi executable path in Settings.
 
-The desktop app is built with [nsh](https://github.com/longbridge/nsh). The same development command is used on macOS, Windows, and Linux; it requires the `nsh` 0.6.1 CLI on `PATH`. The desktop app has only been verified on macOS.
+The desktop app is built with [nsh](https://github.com/longbridge/nsh). The same development command is used on macOS, Windows, and Linux; it requires the `nsh` 0.7.0 CLI on `PATH`. The desktop app has only been verified on macOS.
 
 ```bash
 pnpm install

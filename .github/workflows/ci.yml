@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      NSH_VERSION: "0.6.1"
+      NSH_VERSION: "0.7.0"
 
     steps:
       - name: Checkout
