@@ -1,6 +1,7 @@
 import { computed, effect, untracked } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
+import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import {
 	getProjectScopeDefaultModel,
@@ -53,8 +54,12 @@ export function openChatTarget(state: AppState): ChatTranscriptTarget | null {
 			? { sessionKey: chatSessionKey(projectId, open.sessionId), projectId }
 			: null;
 	}
+	const pathKey = runtimeSessionPathKey(sessionPath);
 	const held = state.chatSessions.find(
-		(chat) => chat.projectId === projectId && chat.sessionPath === sessionPath,
+		(chat) =>
+			chat.projectId === projectId &&
+			chat.sessionPath &&
+			runtimeSessionPathKey(chat.sessionPath) === pathKey,
 	);
 	if (held) return { sessionKey: held.sessionKey, projectId, sessionPath };
 	const saved = state.sessionIndexes[projectId]?.sessions.find(

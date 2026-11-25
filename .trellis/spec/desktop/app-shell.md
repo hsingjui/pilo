@@ -51,6 +51,8 @@
 2. 否则用会话索引条目的 `chatSessionKey(projectId, piSessionId)`（`shared/api/chat-session-key.ts`）。
 3. 没有选中会话，或索引里没有该会话：`close()`。
 
+草稿转为已保存会话，以及按文件查找已有运行时，都用 `runtimeSessionPathKey` 比较 Pi 路径和索引路径（Windows 上 `/` 与 `\` 可能混用）。只有索引确认文件存在后才转正，导航保留索引原始路径，聊天保留草稿的 `sessionKey`，不重新打开或回放未写完的历史。
+
 目标不变时不重新打开。导航里已打开但还没有目标的会话（索引未读到或已不在索引）显示空工作区。测试见 `desktop/tests/open-chat.test.ts`。
 
 ## 工作区

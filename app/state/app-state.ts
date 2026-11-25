@@ -447,19 +447,17 @@ function adoptIndexedSession(state: AppState): AppState {
 	const path = state.chatSessions.find(
 		(chat) => chat.sessionKey === key,
 	)?.sessionPath;
-	if (
-		!path ||
-		!state.sessionIndexes[open.projectId]?.sessions.some(
-			(entry) => entry.sessionPath === path,
-		)
-	) {
-		return state;
-	}
+	if (!path) return state;
+	const pathKey = runtimeSessionPathKey(path);
+	const indexed = state.sessionIndexes[open.projectId]?.sessions.find(
+		(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
+	);
+	if (!indexed) return state;
 	return {
 		...state,
 		navigation: {
 			projectId: open.projectId,
-			session: { projectId: open.projectId, sessionPath: path },
+			session: { projectId: open.projectId, sessionPath: indexed.sessionPath },
 		},
 	};
 }
