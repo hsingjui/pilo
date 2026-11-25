@@ -630,10 +630,14 @@ function GitWorkspacePanel(props: {
 							>
 								{/* Working tree / Staged segmented selector */}
 								<View class="min-h-10 shrink-0 justify-center px-3 py-1">
-									<View
-										role="group"
+									<Tabs
+										orientation="horizontal"
 										accessibilityLabel={t("file.changes")}
-										class="w-full min-w-0 flex-row gap-0.5 rounded-(--pilo-radius-lg) bg-muted/70 p-0.5"
+										class="h-auto w-full min-w-0 gap-0.5 rounded-(--pilo-radius-lg) bg-muted/70 p-0.5"
+										indicatorClass="inset-y-0.5 rounded-(--pilo-radius-md) bg-background"
+										indicatorStyle={{
+											boxShadow: styleVar("pilo-button-secondary-shadow"),
+										}}
 									>
 										{(["working", "staged"] as const).map((value) => {
 											const isSelected = () => mode() === value;
@@ -641,26 +645,16 @@ function GitWorkspacePanel(props: {
 												value === "staged" ? stagedCount() : workingCount();
 											const pointerBlur = blurOnPointerPress();
 											return (
-												<BaseButton
+												<Tab
 													testID={`git-mode-${value}`}
 													ref={pointerBlur.ref}
 													onMouseUp={pointerBlur.onMouseUp}
 													selected={isSelected()}
 													class={classNames(
-														"h-8 min-w-0 flex-1 flex-row items-center justify-center gap-2 rounded-(--pilo-radius-md) px-2 transition-colors focus-visible:outline-hidden",
-														isSelected()
-															? "bg-background"
-															: "hover:bg-hover/60",
+														"h-8 min-w-0 flex-1 gap-2 rounded-(--pilo-radius-md) px-2 py-0",
+														!isSelected() && "hover:bg-hover/40",
 													)}
-													style={
-														isSelected()
-															? {
-																	boxShadow: styleVar(
-																		"pilo-button-secondary-shadow",
-																	),
-																}
-															: undefined
-													}
+													style={tactileTransition("background-color, color")}
 													focusVisibleStyle={focusRingStyle(token("ring"))}
 													onPress={() =>
 														props.onViewChange({
@@ -686,10 +680,10 @@ function GitWorkspacePanel(props: {
 													<Text class="font-sans text-[11px] tabular-nums text-muted-foreground">
 														{() => String(count())}
 													</Text>
-												</BaseButton>
+												</Tab>
 											);
 										})}
-									</View>
+									</Tabs>
 								</View>
 
 								{/* Changed files list */}
