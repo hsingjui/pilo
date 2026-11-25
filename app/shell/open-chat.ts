@@ -255,7 +255,9 @@ export function followRunConfig(
 	effect(() => {
 		const next = projectId();
 		untracked(() => {
-			if (next) void catalog.open(next);
+			if (!next) return;
+			const project = store.state().projects.find(({ id }) => id === next);
+			void catalog.open(next, project?.connection.id);
 		});
 	});
 	const target = computed(() => JSON.stringify(openChatTarget(store.state())));

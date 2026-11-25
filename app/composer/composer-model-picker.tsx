@@ -1,4 +1,4 @@
-import { Scroll, signal, Text, token, View } from "nsh";
+import { effect, Scroll, signal, Text, token, untracked, View } from "nsh";
 
 import type { PiModel } from "@shared/api/pi-runtime-types";
 import {
@@ -74,6 +74,13 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 			value.toLowerCase().includes(search()),
 		);
 	const scopeReady = () => props.scope() !== null && props.scopeReady();
+	// A catalog without Scope metadata, such as the connection's models shown
+	// for a project not probed yet, still lists its models under All.
+	effect(() => {
+		if (!props.loading() && !scopeReady() && props.models().length > 0) {
+			untracked(() => view.set("all"));
+		}
+	});
 	const showModels = () => editing() || view() === "all" || scopeReady();
 	const visibleModels = () =>
 		(editing() || view() === "all"

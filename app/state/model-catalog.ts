@@ -23,14 +23,20 @@ export type ModelCatalogClient = Pick<
 	| "connectEvents"
 	| "loadModels"
 	| "saveModels"
+	| "loadConnectionModels"
 	| "loadModelScope"
 	| "saveModelScope"
 >;
 
 export type ModelCatalogState = {
 	projectId: string;
-	/** The persisted catalog snapshot; `null` until one is read or refreshed. */
+	/**
+	 * The persisted catalog snapshot; `null` until one is read or refreshed.
+	 * A project without one shows its connection's model list here instead.
+	 */
 	catalog: ProjectPiModels | null;
+	/** `catalog` is the connection's model list, not a project snapshot. */
+	provisional?: boolean;
 	/** The project's saved Scope; `null` until its read finished. */
 	scope: ProjectModelScope | null;
 	/** Cache and scope reads finished; `false` while the catalog is unknown. */
@@ -55,19 +61,25 @@ export class ModelCatalogStore {
 	/** Counts `open` calls so a late read cannot overwrite a newer project. */
 	private opens = 0;
 	private refreshing: Promise<void> | undefined;
+	/** Each connection's model list, read once and shared across projects. */
+	private readonly connectionModels = new Map<string, Promise<PiModel[]>>();
 
 	constructor(client: ModelCatalogClient) {
 		this.client = client;
 	}
 
-	/** Reads the project's cached catalog and Scope and shows them. */
-	async open(projectId: string): Promise<void> {
+	/**
+	 * Reads the project's cached catalog and Scope and shows them. Without a
+	 * cached catalog, the connection's model list is shown until a refresh.
+	 */
+	async open(projectId: string, connectionId?: string): Promise<void> {
 		const open = ++this.opens;
 		this.disconnect?.();
 		this.disconnect = undefined;
 		this.current.set({
 			projectId,
 			catalog: null,
+			provisional: false,
 			scope: null,
 			loaded: false,
 			refreshing: false,
@@ -100,6 +112,49 @@ export class ModelCatalogStore {
 		]);
 		if (open !== this.opens) return;
 		this.current.set({ ...this.current()!, catalog, scope, loaded: true });
+		if (!catalog && connectionId) {
+			await this.showConnectionModels(open, projectId, connectionId);
+		}
+	}
+
+	/** Fills a project without a cached catalog with its connection's models. */
+	private async showConnectionModels(
+		open: number,
+		projectId: string,
+		connectionId: string,
+	): Promise<void> {
+		let request = this.connectionModels.get(connectionId);
+		if (!request) {
+			const loading = this.client.loadConnectionModels(connectionId);
+			request = loading;
+			this.connectionModels.set(connectionId, loading);
+			// A failed read is retried by the next open.
+			loading.catch(() => {
+				if (this.connectionModels.get(connectionId) === loading) {
+					this.connectionModels.delete(connectionId);
+				}
+			});
+		}
+		let models: PiModel[];
+		try {
+			models = await request;
+		} catch (error) {
+			console.warn("Failed to load the connection's Pi models", error);
+			return;
+		}
+		// A refresh that finished meanwhile wins over the connection's list.
+		if (open !== this.opens || this.current()?.catalog) return;
+		this.update({
+			catalog: {
+				projectId,
+				models,
+				commands: null,
+				defaultModel: null,
+				defaultThinkingLevel: null,
+				refreshedAtMs: 0,
+			},
+			provisional: true,
+		});
 	}
 
 	close(): void {
@@ -147,7 +202,7 @@ export class ModelCatalogStore {
 		const run = probeProjectPiModels(
 			projectId,
 			{
-				cached: this.current()?.catalog ?? null,
+				cached: state.provisional ? null : state.catalog,
 				createClient: (project, sessionId) =>
 					createNshModelProbe(this.client, project, sessionId),
 				persist: (snapshot) => this.client.saveModels(snapshot),
@@ -158,7 +213,7 @@ export class ModelCatalogStore {
 			(catalog) => {
 				this.refreshing = undefined;
 				if (this.current()?.projectId !== projectId) return;
-				this.update({ catalog, refreshing: false });
+				this.update({ catalog, provisional: false, refreshing: false });
 			},
 			(error: unknown) => {
 				this.refreshing = undefined;
