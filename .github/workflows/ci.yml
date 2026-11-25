@@ -88,7 +88,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends libssl-dev libwayland-dev
 
       - name: Configure Cargo for native binding generation
-        run: cat .github/nsh-cargo.toml >> "$CARGO_HOME/config.toml"
+        run: |
+          mkdir -p "$CARGO_HOME"
+          cat .github/nsh-cargo.toml >> "$CARGO_HOME/config.toml"
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2

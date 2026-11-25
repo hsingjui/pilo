@@ -168,8 +168,8 @@ jobs:
       - name: Configure Cargo for native binding generation
         shell: bash
         run: |
+          mkdir -p "$CARGO_HOME" .nsh/rust
           cat .github/nsh-cargo.toml >> "$CARGO_HOME/config.toml"
-          mkdir -p .nsh/rust
 
       - name: Cache Cargo dependencies for the generated nsh workspace
         uses: Swatinem/rust-cache@v2
