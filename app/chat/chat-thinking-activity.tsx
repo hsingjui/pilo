@@ -1,4 +1,5 @@
 import { computed, effect, signal, Text, untracked, View } from "nsh";
+import { Collapsible } from "nsh/base";
 
 import { lastThinkingLine } from "@shared/chat/chat-activity-state";
 import type { ThinkingActivity } from "@shared/chat/chat-activity-types";
@@ -6,6 +7,7 @@ import type { ThinkingActivity } from "@shared/chat/chat-activity-types";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { collapsibleRevealProps } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
@@ -124,8 +126,10 @@ export function ChatThinkingActivity(props: {
 					)
 				}
 			</ChatDisclosureRow>
-			{() =>
-				showDetails() ? (
+			<Collapsible
+				open={showDetails()}
+				{...collapsibleRevealProps()}
+				content={
 					<View class="items-start pt-0.5">
 						<ChatMarkdown
 							class="text-muted-foreground"
@@ -150,8 +154,8 @@ export function ChatThinkingActivity(props: {
 							) : null
 						}
 					</View>
-				) : null
-			}
+				}
+			/>
 		</View>
 	);
 }

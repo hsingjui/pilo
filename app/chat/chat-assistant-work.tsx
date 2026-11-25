@@ -1,4 +1,5 @@
 import { computed, Scroll, Text, untracked, View } from "nsh";
+import { Collapsible } from "nsh/base";
 
 import type {
 	AssistantContentDisplaySections,
@@ -8,7 +9,8 @@ import type { AssistantActivity } from "@shared/chat/chat-activity-types";
 
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
-import { scrollbarLook } from "../ui/scrollbar";
+import { chevronRotateStyle, collapsibleRevealProps } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatActivityGroup } from "./chat-activity-group";
 import {
@@ -214,13 +216,12 @@ function WorkedRegion(
 				expanded={open()}
 				onPress={() => expansion.setOpen(key(), !open())}
 			>
-				{() => (
-					<Icon
-						name={open() ? "ChevronDown" : "ChevronRight"}
-						size={14}
-						style={iconAlignment.style()}
-					/>
-				)}
+				<View
+					class="shrink-0 items-center justify-center"
+					style={[iconAlignment.style(), chevronRotateStyle(open(), 0, 90)]}
+				>
+					<Icon name="ChevronRight" size={14} />
+				</View>
 				<Text
 					class="min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
 					style={readingTextStyle(readingFont())}
@@ -229,8 +230,10 @@ function WorkedRegion(
 					{label}
 				</Text>
 			</ChatDisclosureRow>
-			{() =>
-				open() ? (
+			<Collapsible
+				open={open()}
+				{...collapsibleRevealProps()}
+				content={
 					<View class="pt-0.5">
 						<WorkSegments
 							{...props}
@@ -238,8 +241,8 @@ function WorkedRegion(
 							followedByTextAfterContent={props.followedByTextAfterContent}
 						/>
 					</View>
-				) : null
-			}
+				}
+			/>
 		</View>
 	);
 }
@@ -340,13 +343,15 @@ export function ChatAssistantWork(
 									expansion.setOpen(completedKey(), !completedOpen())
 								}
 							>
-								{() => (
-									<Icon
-										name={completedOpen() ? "ChevronDown" : "ChevronRight"}
-										size={14}
-										style={iconAlignment.style()}
-									/>
-								)}
+								<View
+									class="shrink-0 items-center justify-center"
+									style={[
+										iconAlignment.style(),
+										chevronRotateStyle(completedOpen(), 0, 90),
+									]}
+								>
+									<Icon name="ChevronRight" size={14} />
+								</View>
 								<View class="min-w-0 flex-1">
 									<ChatCompactWorkHeader
 										message={message}
@@ -372,8 +377,8 @@ export function ChatAssistantWork(
 											/>
 										</View>
 									</Scroll>
-								) : null
-							}
+								}
+							/>
 						</View>
 						<WorkSegments {...props} content={finalContent} />
 					</View>

@@ -1,4 +1,5 @@
 import { computed, effect, Text, untracked, View } from "nsh";
+import { Collapsible } from "nsh/base";
 
 import {
 	shouldAutoCollapseAssistantActivity,
@@ -13,6 +14,7 @@ import type {
 
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
+import { chevronRotateStyle, collapsibleRevealProps } from "../ui/motion";
 import { Spinner } from "../ui/spinner";
 import {
 	activitySummaryLabel,
@@ -109,13 +111,12 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 				expanded={open()}
 				onPress={() => expansion.setOpen(groupKey(), !open())}
 			>
-				{() => (
-					<Icon
-						name={open() ? "ChevronDown" : "ChevronRight"}
-						size={14}
-						style={iconAlignment.style()}
-					/>
-				)}
+				<View
+					class="shrink-0 items-center justify-center"
+					style={[iconAlignment.style(), chevronRotateStyle(open(), 0, 90)]}
+				>
+					<Icon name="ChevronRight" size={14} />
+				</View>
 				<View class="min-w-0 flex-1 flex-row items-center">
 					{() =>
 						hasDuration() ? (
@@ -151,8 +152,10 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 					) : null
 				}
 			</ChatDisclosureRow>
-			{() =>
-				open() ? (
+			<Collapsible
+				open={open()}
+				{...collapsibleRevealProps()}
+				content={
 					<View class="gap-0.5 pt-0.5">
 						{/* Kept by place and kind, as the reply's segments are. */}
 						<Each
@@ -183,8 +186,8 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 							}
 						</Each>
 					</View>
-				) : null
-			}
+				}
+			/>
 		</View>
 	);
 }

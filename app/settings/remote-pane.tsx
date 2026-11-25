@@ -7,6 +7,7 @@ import {
 	Text,
 	View,
 } from "nsh";
+import { Collapsible } from "nsh/base";
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
@@ -21,8 +22,10 @@ import { randomId } from "@shared/random-id";
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
 import { writeClipboardText } from "../ui/clipboard";
+import { CopyStatusIcon } from "../ui/copy-status-icon";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
+import { collapsibleRevealProps } from "../ui/motion";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { subscribeSettingsEvents } from "./connection-settings";
@@ -492,17 +495,22 @@ export function RemotePane(props: {
 							</View>
 						</SettingsSection>
 
-						{() =>
-							pairingVisible() ? (
+						<Collapsible
+							open={pairingVisible()}
+							{...collapsibleRevealProps()}
+							content={
 								<RemotePairingSection
 									hasLink={hasPairingLink}
 									url={() => current().pairingUrl}
 									regenerating={() => busy() === "pairing"}
-									onCopy={() => void copyToClipboard(current().pairingUrl)}
+									copied={() => copiedKey() === "pairing"}
+									onCopy={() =>
+										void copyToClipboard(current().pairingUrl, "pairing")
+									}
 									onRegenerate={() => void regenerate()}
 								/>
-							) : null
-						}
+							}
+						/>
 
 						<RemoteDevicesSection
 							devices={activeDevices}
