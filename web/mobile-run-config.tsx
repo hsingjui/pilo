@@ -115,6 +115,13 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 			value.toLowerCase().includes(search()),
 		);
 	const scopeReady = () => props.scope() !== null && props.scopeReady();
+	// A catalog without Scope metadata, such as the connection's models shown
+	// for a project not probed yet, still lists its models under All.
+	effect(() => {
+		if (!props.loading() && !scopeReady() && props.models().length > 0) {
+			untracked(() => view.set("all"));
+		}
+	});
 	const showModels = () => view() === "all" || scopeReady();
 	const allModels = () => props.models();
 	const visibleModels = () =>
