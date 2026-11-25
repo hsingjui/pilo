@@ -357,10 +357,41 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           set -euo pipefail
+          base_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          windows_installer="Pilo-$GITHUB_REF_NAME-windows-x64-setup.exe"
+          windows_portable="Pilo-Portable-$VERSION-windows-x86_64.zip"
+          macos_dmg="Pilo-$GITHUB_REF_NAME-macos-arm64.dmg"
+          linux_archive="Pilo-$VERSION-linux-x86_64.tar.gz"
+          for file in "$windows_installer" "$windows_portable" "$macos_dmg" "$linux_archive"; do
+            if [[ ! -s "release-assets/$file" ]]; then
+              echo "Missing release asset: $file" >&2
+              exit 1
+            fi
+          done
+
           flags=(--draft --verify-tag --title "Pilo $GITHUB_REF_NAME")
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags+=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" \
+            "${flags[@]}" --notes-file - <<EOF
+          ### 下载安装
+
+          | 平台 | 文件 | 说明 |
+          | --- | --- | --- |
+          | Windows x64 | [$windows_installer]($base_url/$windows_installer) | 安装版 |
+          | Windows x64 | [$windows_portable]($base_url/$windows_portable) | 便携版，解压到独立目录后运行 |
+          | macOS (Apple Silicon) | [$macos_dmg]($base_url/$macos_dmg) | 打开 DMG，将 Pilo 拖入「应用程序」 |
+          | Linux x64 | [$linux_archive]($base_url/$linux_archive) | 解压后运行，需要 GTK 4.14 或更新版本 |
+
+          #### macOS 安装提示
+
+          Pilo 未使用 Apple Developer ID 证书签名，也未经过 Apple 公证。如果 macOS 阻止打开，请先确认安装包来自本仓库的 GitHub Release，再在终端执行：
+
+          \`\`\`bash
+          xattr -rd com.apple.quarantine /Applications/Pilo.app
+          \`\`\`
+          EOF
