@@ -20,6 +20,7 @@ import {
 	chatSessionKey as formatChatSessionKey,
 	parseChatSessionKey,
 } from "@shared/api/chat-session-key";
+import { compactMiddlePath } from "@shared/project-path";
 import { userErrorMessage } from "@shared/app-error";
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import { resolveMobileComposerBottomPadding } from "@shared/mobile-viewport";
@@ -721,9 +722,72 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								</Button>
 							}
 						>
-							<View testID="mobile-session-menu-popup" class="gap-1">
+							<View testID="mobile-session-menu-popup" class="gap-0.5">
+								<MobileDropdownItem
+									testID="mobile-session-copy-id"
+									class="px-2.5 py-1.5"
+									disabled={!openSessionId()}
+									onSelect={() => {
+										const id = openSessionId();
+										if (id) copyText(id);
+									}}
+								>
+									<View class="min-w-0 flex-1 gap-0.5">
+										<View class="flex-row items-center justify-between gap-2">
+											<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+												{() => t("chat.sessionId")}
+											</Text>
+											<Icon
+												name="Copy"
+												size={13}
+												color={token("muted-foreground")}
+												style={{ opacity: 0.75 }}
+											/>
+										</View>
+										<Text class="min-w-0 truncate font-mono text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
+											{() => openSessionId() ?? "—"}
+										</Text>
+									</View>
+								</MobileDropdownItem>
+								<MobileDropdownItem
+									testID="mobile-session-copy-path"
+									class="px-2.5 py-1.5"
+									disabled={!openSessionPath()}
+									onSelect={() => {
+										const path = openSessionPath();
+										if (path) copyText(path);
+									}}
+								>
+									<View class="min-w-0 flex-1 gap-0.5">
+										<View class="flex-row items-center justify-between gap-2">
+											<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+												{() => t("chat.sessionFilePath")}
+											</Text>
+											<Icon
+												name="Copy"
+												size={13}
+												color={token("muted-foreground")}
+												style={{ opacity: 0.75 }}
+											/>
+										</View>
+										<Text
+											class={`min-w-0 truncate text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground ${
+												openSessionPath() ? "font-mono" : "font-sans"
+											}`}
+										>
+											{() => {
+												const path = openSessionPath();
+												return path
+													? compactMiddlePath(path, 34)
+													: t("chat.sessionPathUnavailable");
+											}}
+										</Text>
+									</View>
+								</MobileDropdownItem>
+								<View class="mx-1.5 my-1 h-px bg-(--pilo-menu-edge)" />
 								<MobileDropdownItem
 									testID="mobile-session-rename"
+									class="gap-2.5 px-2.5 py-1.5"
 									icon={<Icon name="Pencil" size={14} />}
 									disabled={!openSessionPath() || !project()}
 									onSelect={() => {
@@ -742,43 +806,11 @@ export function MobileAppShell(props: MobileAppShellProps) {
 										{() => t("chat.renameSession")}
 									</Text>
 								</MobileDropdownItem>
-								<MobileDropdownItem
-									testID="mobile-session-copy-id"
-									icon={<Icon name="Copy" size={14} />}
-									disabled={!openSessionId()}
-									onSelect={() => {
-										const id = openSessionId();
-										if (id) copyText(id);
-									}}
-								>
-									<Text class="shrink-0 font-sans text-muted-foreground">
-										{() => t("chat.sessionId")}
-									</Text>
-									<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs">
-										{() => openSessionId() ?? "—"}
-									</Text>
-								</MobileDropdownItem>
-								<MobileDropdownItem
-									testID="mobile-session-copy-path"
-									icon={<Icon name="Copy" size={14} />}
-									disabled={!openSessionPath()}
-									onSelect={() => {
-										const path = openSessionPath();
-										if (path) copyText(path);
-									}}
-								>
-									<Text class="shrink-0 font-sans text-muted-foreground">
-										{() => t("chat.sessionFilePath")}
-									</Text>
-									<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs">
-										{() =>
-											openSessionPath() ?? t("chat.sessionPathUnavailable")
-										}
-									</Text>
-								</MobileDropdownItem>
+								<View class="mx-1.5 my-1 h-px bg-(--pilo-menu-edge)" />
 								<MobileDropdownItem
 									testID="mobile-session-delete"
 									variant="destructive"
+									class="gap-2.5 px-2.5 py-1.5"
 									icon={<Icon name="Trash2" size={14} />}
 									disabled={!openSessionPath() || !project()}
 									onSelect={() => confirmingHeaderDelete.set(true)}

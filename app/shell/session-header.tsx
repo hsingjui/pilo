@@ -11,6 +11,7 @@ import {
 import { Button as BaseButton } from "nsh/base";
 
 import { fileBasename } from "@shared/chat/chat-tool-result";
+import { compactMiddlePath } from "@shared/project-path";
 import type { WorkspaceFile } from "@shared/project-workspace";
 import {
 	computeMaxVisibleAuxTabs,
@@ -521,7 +522,8 @@ function SessionHeaderMenu(props: {
 					if (!open) confirmingDelete.set(false);
 				}}
 				align="end"
-				popupClass="w-72"
+				offset={6}
+				popupClass="w-80"
 				trigger={
 					<Button
 						testID="session-menu-trigger"
@@ -539,50 +541,81 @@ function SessionHeaderMenu(props: {
 					</Button>
 				}
 			>
-				<View class="gap-1">
+				<View class="gap-0.5">
 					<MenuItem
 						testID="session-menu-copy-id"
 						indicatorClass="hidden"
-						icon={<Icon name="Copy" size={14} />}
+						class="px-2.5 py-1.5"
 						disabled={!props.sessionId()}
 						onSelect={() => {
 							const id = props.sessionId();
 							if (id) copy(id);
 						}}
 					>
-						<Text class="shrink-0 font-sans text-muted-foreground">
-							{() => t("chat.sessionId")}
-						</Text>
-						<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs text-(length:--pilo-ui-text-xs)">
-							{() => props.sessionId() ?? "—"}
-						</Text>
+						<View class="min-w-0 flex-1 gap-0.5">
+							<View class="flex-row items-center justify-between gap-2">
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+									{() => t("chat.sessionId")}
+								</Text>
+								<Icon
+									name="Copy"
+									size={13}
+									color={token("muted-foreground")}
+									style={{ opacity: 0.75 }}
+								/>
+							</View>
+							<Text class="min-w-0 truncate font-mono text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
+								{() => props.sessionId() ?? "—"}
+							</Text>
+						</View>
 					</MenuItem>
 					<MenuItem
 						testID="session-menu-copy-path"
 						indicatorClass="hidden"
-						icon={<Icon name="Copy" size={14} />}
+						class="px-2.5 py-1.5"
 						disabled={!props.sessionPath()}
 						onSelect={() => {
 							const path = props.sessionPath();
 							if (path) copy(path);
 						}}
 					>
-						<Text class="shrink-0 font-sans text-muted-foreground">
-							{() => t("chat.sessionFilePath")}
-						</Text>
-						<Text class="min-w-0 flex-1 truncate text-right font-mono text-xs text-(length:--pilo-ui-text-xs)">
-							{() => props.sessionPath() ?? t("chat.sessionPathUnavailable")}
-						</Text>
+						<View class="min-w-0 flex-1 gap-0.5">
+							<View class="flex-row items-center justify-between gap-2">
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+									{() => t("chat.sessionFilePath")}
+								</Text>
+								<Icon
+									name="Copy"
+									size={13}
+									color={token("muted-foreground")}
+									style={{ opacity: 0.75 }}
+								/>
+							</View>
+							<Text
+								class={classNames(
+									"min-w-0 truncate text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground",
+									props.sessionPath() ? "font-mono" : "font-sans",
+								)}
+							>
+								{() => {
+									const path = props.sessionPath();
+									return path
+										? compactMiddlePath(path, 38)
+										: t("chat.sessionPathUnavailable");
+								}}
+							</Text>
+						</View>
 					</MenuItem>
 					{() =>
 						props.onRename || (props.onDelete && props.sessionPath()) ? (
-							<MenuSeparator />
+							<MenuSeparator class="mx-1.5 my-1" />
 						) : null
 					}
 					{props.onRename ? (
 						<MenuItem
 							testID="session-menu-rename"
 							indicatorClass="hidden"
+							class="gap-2.5 px-2.5 py-1.5"
 							icon={<Icon name="Pencil" size={14} />}
 							onSelect={() => setRenameOpen(true)}
 						>
@@ -590,11 +623,20 @@ function SessionHeaderMenu(props: {
 						</MenuItem>
 					) : null}
 					{() =>
+						props.onRename && props.onDelete && props.sessionPath() ? (
+							<MenuSeparator class="mx-1.5 my-1" />
+						) : null
+					}
+					{() =>
 						props.onDelete && props.sessionPath() ? (
 							<MenuItem
 								testID="session-menu-delete"
 								indicatorClass="hidden"
 								variant="destructive"
+								class={classNames(
+									"gap-2.5 px-2.5 py-1.5",
+									confirmingDelete() && "bg-destructive/10",
+								)}
 								icon={<Icon name="Trash2" size={14} />}
 								closeOnSelect={false}
 								onSelect={() => {
@@ -607,7 +649,12 @@ function SessionHeaderMenu(props: {
 									props.onDelete?.();
 								}}
 							>
-								<Text class="font-sans">
+								<Text
+									class={classNames(
+										"font-sans",
+										confirmingDelete() && "font-medium",
+									)}
+								>
 									{() =>
 										confirmingDelete()
 											? t(
