@@ -45,11 +45,21 @@ export function chatRuntimeShowsActivity(
 	);
 }
 
-// Pi and the session index can spell the same Windows path with different separators.
+// Pi and the session index can spell the same Windows path with different separators,
+// drive letter casing, or verbatim prefixes (`\\?\`).
 export function runtimeSessionPathKey(path: string): string {
-	return /^[a-z]:[\\/]/i.test(path) || path.startsWith("\\\\")
-		? path.replaceAll("\\", "/")
-		: path;
+	let normalized = path;
+	if (/^\\\\\?\\UNC\\/i.test(normalized)) {
+		normalized = `\\\\${normalized.slice(8)}`;
+	} else if (/^\\\\\?\\[a-z]:[\\/]/i.test(normalized)) {
+		normalized = normalized.slice(4);
+	}
+	if (/^[a-z]:[\\/]/i.test(normalized)) {
+		return `${normalized[0].toLowerCase()}${normalized.slice(1).replaceAll("\\", "/")}`;
+	}
+	return normalized.startsWith("\\\\")
+		? normalized.replaceAll("\\", "/")
+		: normalized;
 }
 
 export function findReusableChatRuntime(

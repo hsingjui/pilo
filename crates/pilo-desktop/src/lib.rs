@@ -18,6 +18,8 @@ fn native(registry: &mut Registry) {
     if let Some(status) = pilo_runtime::handle_ssh_askpass() {
         std::process::exit(status);
     }
+    #[cfg(windows)]
+    notifications::init_windows_notifications();
     registry.module::<AppInfo>();
     registry.module::<dock::DesktopDock>();
     registry.module::<editor_links::DesktopEditorLinks>();

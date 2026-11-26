@@ -60,6 +60,9 @@ jobs:
           check("crates/pilo-desktop/Cargo.toml", desktop["version"])
           nsh_manifest = json.loads(Path("nsh.json").read_text(encoding="utf-8"))
           check("nsh.json", nsh_manifest["version"])
+          # Local dev runs against app.hsingjui.pilo.dev to stay isolated from installed Pilo.
+          nsh_manifest["name"] = "Pilo"
+          nsh_manifest["id"] = "app.hsingjui.pilo"
           check("web/nsh.json", json.loads(Path("web/nsh.json").read_text(encoding="utf-8"))["version"])
           members = [toml(f"{path}/Cargo.toml")["package"]["name"] for path in workspace["members"]]
           for path, names in [("Cargo.lock", members), ("crates/pilo-desktop/Cargo.lock", [*members, desktop["name"]])]:
@@ -247,6 +250,16 @@ jobs:
           # nsh replaces the executable's directory. Keep Inno's uninstall files in its parent.
           $installer = Join-Path $out 'Pilo.iss'
           $script = (Get-Content -Raw -LiteralPath $installer).Replace('{app}', '{app}\pilo-app')
+          # nsh 0.7.0 registers a deterministic COM toast activator in HKCU, but omits
+          # AppUserModelToastActivatorCLSID from the Start Menu shortcut. Windows prefers
+          # the shortcut PropertyStore over HKCU\Software\Classes\AppUserModelId, so
+          # without this CLSID on the shortcut, toast clicks never invoke onPress.
+          if ($script -notmatch 'AppUserModelToastActivatorCLSID') {
+            $script = $script.Replace(
+              'AppUserModelID: "app.hsingjui.pilo"',
+              'AppUserModelID: "app.hsingjui.pilo"; AppUserModelToastActivatorCLSID: "58BCF293-2F89-430F-B5FA-7E0B41AFF62C"'
+            )
+          }
           $script += "`r`n" + @'
           [UninstallDelete]
           Type: filesandordirs; Name: "{app}\pilo-app"

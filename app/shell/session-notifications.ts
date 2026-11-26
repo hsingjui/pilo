@@ -1,6 +1,7 @@
 import { effect, lifecycle, signal, untracked } from "nsh";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppStore } from "../state/app-store";
@@ -12,6 +13,18 @@ import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
 
 const SESSION_PREFIX = "pilo-session:";
+
+function sessionNotificationName(
+	session: SessionIndexEntry | undefined,
+	pendingTitle: string | undefined,
+) {
+	const raw =
+		session?.titleOverride ??
+		session?.name ??
+		session?.firstUserMessagePreview ??
+		pendingTitle;
+	return raw?.replace(/\s+/g, " ").trim() || null;
+}
 
 function decodeTarget(id: string) {
 	if (!id.startsWith(SESSION_PREFIX)) return null;
@@ -31,7 +44,8 @@ function decodeTarget(id: string) {
 }
 
 export function connectSessionNotifications(
-	client: Pick<NshPiloClient, "chatState">,
+	client: Pick<NshPiloClient, "chatState"> &
+		Partial<Pick<NshPiloClient, "listCachedSessions" | "listSessions">>,
 	store: AppStore,
 	desktop: Pick<DesktopShell, "show" | "isQuitting">,
 	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
@@ -141,17 +155,44 @@ export function connectSessionNotifications(
 					})();
 			if (viewing) return;
 		}
-		const session = store
-			.state()
-			.sessionIndexes[projectId]?.sessions.find(
+		const findSession = (entries?: readonly SessionIndexEntry[]) =>
+			entries?.find(
 				(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
 			);
+		const resolveName = (entry: SessionIndexEntry | undefined) =>
+			sessionNotificationName(
+				entry,
+				store.state().pendingDrafts.get(sessionKey)?.title,
+			);
+		let session = findSession(
+			store.state().sessionIndexes[projectId]?.sessions,
+		);
+		let name = resolveName(session);
+		if (!name && client.listCachedSessions) {
+			const cached = await client
+				.listCachedSessions(projectId)
+				.catch(() => undefined);
+			session = findSession(cached) ?? session;
+			name = resolveName(session);
+		}
+		if (!name && client.listSessions) {
+			const scanned = await client
+				.listSessions(projectId)
+				.catch(() => undefined);
+			session = findSession(scanned) ?? session;
+			name = resolveName(session);
+		}
+		if (
+			desktop.isQuitting() ||
+			!store.state().preferences?.values.desktopNotifications
+		)
+			return;
 		const failed =
 			event.stopReason === "error" || Boolean(event.errorMessage?.trim());
 		const label = t(failed ? "notifications.error" : "notifications.completed");
-		const name = (session?.titleOverride ?? session?.name)?.trim();
+		const id = SESSION_PREFIX + JSON.stringify([projectId, sessionPath]);
 		await notifications.show({
-			id: SESSION_PREFIX + JSON.stringify([projectId, sessionPath]),
+			id,
 			title: name
 				? `${Array.from(name).slice(0, 100).join("")} · ${label}`
 				: t(

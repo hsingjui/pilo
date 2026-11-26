@@ -270,6 +270,236 @@ test("connectSessionNotifications sends on completion and navigates on click", a
 	store.stop();
 });
 
+test("connectSessionNotifications falls back to firstUserMessagePreview and cached sessions", async () => {
+	initializeI18n();
+	const project = {
+		id: "project:local:\\\\?\\D:\\Code\\pilo",
+		name: "pilo",
+		path: "\\\\?\\D:\\Code\\pilo",
+		connection: {
+			id: "local",
+			name: "Local",
+			kind: { type: "local" },
+		} as Connection,
+	} as Project;
+	const indexedPath =
+		"C:\\Users\\dev\\.pi/agent\\sessions\\--D--Code-pilo--\\s1.jsonl";
+	const piPath =
+		"C:\\Users\\dev\\.pi\\agent\\sessions\\--D--Code-pilo--\\s1.jsonl";
+	const runtime = scriptedClient({
+		projects: [project],
+		sessions: async (projectId) =>
+			projectId === project.id
+				? [
+						{
+							projectId: project.id,
+							sessionPath: indexedPath,
+							piSessionId: "s1",
+							name: null,
+							titleOverride: null,
+							firstUserMessagePreview: "Upgrade\n  komari   service",
+							pinned: false,
+						} as SessionIndexEntry,
+					]
+				: [],
+		chatSessions: [
+			{
+				sessionKey: "k-preview",
+				projectId: project.id,
+				sessionPath: piPath,
+				prepared: true,
+				initialized: true,
+				activeTurn: false,
+				snapshot: {
+					generation: 1,
+					state: "running",
+					connection: project.connection,
+					projectId: project.id,
+				},
+			},
+		],
+		preferences: {
+			revision: 1,
+			values: {
+				...HOST_DEFAULT_VALUES,
+				desktopNotifications: true,
+			},
+		},
+	});
+	const store = new AppStore(runtime.client);
+	await store.start();
+	// Intentionally do NOT call store.loadSessions(project.id) so the project
+	// index is not loaded in UI state yet.
+
+	const shown: Array<{ id: string; title: string }> = [];
+	const notifications: DesktopNotificationsApi = {
+		permission: () => Promise.resolve("granted"),
+		requestPermission: () => Promise.resolve("granted"),
+		show: async (options) => {
+			shown.push({ id: options.id, title: options.title });
+			return true;
+		},
+		onPress: () => () => undefined,
+	};
+	const clientWithCache = {
+		chatState: runtime.client.chatState,
+		listCachedSessions: (projectId: string) =>
+			runtime.client.listSessions(projectId),
+	};
+	const notify = connectSessionNotifications(
+		clientWithCache,
+		store,
+		{
+			show: () => undefined,
+			isQuitting: () => false,
+		},
+		notifications,
+	);
+
+	await notify({
+		sequence: 2,
+		type: "assistant_message_end",
+		projectId: project.id,
+		sessionKey: "k-preview",
+		generation: 1,
+		stopReason: "stop",
+		errorMessage: null,
+		usage: null,
+	});
+	expect(shown.length).toBe(1);
+	expect(shown[0].title).toContain("Upgrade komari service");
+	store.stop();
+});
+
+test("connectSessionNotifications falls back to scan when index and cache lack a title, and matches Windows verbatim/drive-case paths", async () => {
+	initializeI18n();
+	const project = {
+		id: "project:local:\\\\?\\D:\\Code\\pilo",
+		name: "pilo",
+		path: "\\\\?\\D:\\Code\\pilo",
+		connection: {
+			id: "local",
+			name: "Local",
+			kind: { type: "local" },
+		} as Connection,
+	} as Project;
+	const indexedPath =
+		"c:\\Users\\dev\\.pi/agent\\sessions\\--D--Code-pilo--\\s2.jsonl";
+	const piPath =
+		"\\\\?\\C:\\Users\\dev\\.pi\\agent\\sessions\\--D--Code-pilo--\\s2.jsonl";
+	const runtime = scriptedClient({
+		projects: [project],
+		sessions: async (projectId) =>
+			projectId === project.id
+				? [
+						{
+							projectId: project.id,
+							sessionPath: indexedPath,
+							piSessionId: "s2",
+							name: null,
+							titleOverride: null,
+							firstUserMessagePreview: null,
+							pinned: false,
+						} as SessionIndexEntry,
+					]
+				: [],
+		chatSessions: [
+			{
+				sessionKey: "k-scan",
+				projectId: project.id,
+				sessionPath: piPath,
+				prepared: true,
+				initialized: true,
+				activeTurn: false,
+				snapshot: {
+					generation: 1,
+					state: "running",
+					connection: project.connection,
+					projectId: project.id,
+				},
+			},
+		],
+		preferences: {
+			revision: 1,
+			values: {
+				...HOST_DEFAULT_VALUES,
+				desktopNotifications: true,
+			},
+		},
+	});
+	const store = new AppStore(runtime.client);
+	await store.start();
+	await store.loadSessions(project.id);
+
+	const shown: Array<{ id: string; title: string }> = [];
+	const notifications: DesktopNotificationsApi = {
+		permission: () => Promise.resolve("granted"),
+		requestPermission: () => Promise.resolve("granted"),
+		show: async (options) => {
+			shown.push({ id: options.id, title: options.title });
+			return true;
+		},
+		onPress: () => () => undefined,
+	};
+	let cachedCalls = 0;
+	let scanCalls = 0;
+	const notify = connectSessionNotifications(
+		{
+			chatState: runtime.client.chatState,
+			listCachedSessions: async () => {
+				cachedCalls += 1;
+				return [
+					{
+						projectId: project.id,
+						sessionPath: indexedPath,
+						piSessionId: "s2",
+						name: null,
+						titleOverride: null,
+						firstUserMessagePreview: null,
+						pinned: false,
+					} as SessionIndexEntry,
+				];
+			},
+			listSessions: async () => {
+				scanCalls += 1;
+				return [
+					{
+						projectId: project.id,
+						sessionPath: indexedPath,
+						piSessionId: "s2",
+						name: "Scanned Windows title",
+						titleOverride: null,
+						firstUserMessagePreview: null,
+						pinned: false,
+					} as SessionIndexEntry,
+				];
+			},
+		},
+		store,
+		{
+			show: () => undefined,
+			isQuitting: () => false,
+		},
+		notifications,
+	);
+
+	await notify({
+		sequence: 2,
+		type: "assistant_message_end",
+		projectId: project.id,
+		sessionKey: "k-scan",
+		generation: 1,
+		stopReason: "stop",
+		errorMessage: null,
+		usage: null,
+	});
+	expect(cachedCalls).toBe(1);
+	expect(scanCalls).toBe(1);
+	expect(shown.length).toBe(1);
+	expect(shown[0].title).toContain("Scanned Windows title");
+	store.stop();
+});
+
 test("NotificationsPane refreshes permission status after granting and sends test notifications", async () => {
 	const app = await open("./notifications-pane-fixture.tsx", {
 		platform: "macos",
