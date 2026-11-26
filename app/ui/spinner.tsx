@@ -1,7 +1,8 @@
-import { Canvas, Path2D, split, type CanvasProps } from "nsh";
+import { Canvas, split, type CanvasProps } from "nsh";
 import icons from "../shell/lucide-icons.json";
 import { classNames } from "./class-names";
 import { Foreground } from "./foreground";
+import { cachedIconPaths } from "./icon";
 
 export interface SpinnerProps extends Pick<
 	CanvasProps,
@@ -21,7 +22,7 @@ export function Spinner(props: SpinnerProps) {
 	]);
 	const foreground = Foreground();
 	const icon = icons.LoaderCircle;
-	const paths = icon.paths.map(({ d }) => new Path2D(d));
+	const paths = cachedIconPaths("LoaderCircle");
 	return (
 		<Canvas
 			{...rest}
@@ -41,7 +42,7 @@ export function Spinner(props: SpinnerProps) {
 				cx.lineWidth = 2;
 				cx.lineCap = "round";
 				cx.lineJoin = "round";
-				for (const path of paths) cx.stroke(path);
+				for (const { path } of paths) cx.stroke(path);
 			}}
 		/>
 	);

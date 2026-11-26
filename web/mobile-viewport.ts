@@ -1,5 +1,6 @@
 import {
 	type Accessor,
+	batch,
 	cleanup,
 	computed,
 	context,
@@ -186,9 +187,11 @@ export function installMobileViewportSync(): MobileViewportState {
 				// Ignore scroll reset errors in restricted contexts.
 			}
 		}
-		height.set(layout.height);
-		keyboardOpen.set(layout.keyboardOpen);
-		offsetTop.set(layout.offsetTop);
+		batch(() => {
+			height.set(layout.height);
+			keyboardOpen.set(layout.keyboardOpen);
+			offsetTop.set(layout.offsetTop);
+		});
 	};
 
 	const sync = () => {

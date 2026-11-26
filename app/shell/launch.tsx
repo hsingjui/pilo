@@ -313,7 +313,7 @@ export async function launch(
 				/>
 			);
 	});
-	// The normal sync still reloads the theme after its bootstrap cut.
+	// Overlap initial theme preload with locale seeding before store bootstrap.
 	void store.preloadThemeSettings().catch((error: unknown) => {
 		console.warn("Failed to preload Host theme", error);
 	});

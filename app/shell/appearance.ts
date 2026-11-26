@@ -215,6 +215,8 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 	});
 }
 
+let lastThemeKey: string | null = null;
+
 function showTheme(
 	settings: StartupTheme | null,
 	pageSans: string,
@@ -222,6 +224,19 @@ function showTheme(
 	codeSize: number | undefined,
 	uiSize: number,
 ) {
+	const key = JSON.stringify([
+		settings?.theme ?? "system",
+		settings?.themeFamily ?? "lody",
+		settings?.themeFamily === "custom"
+			? (settings.themeCustomTokens ?? null)
+			: null,
+		pageSans,
+		codeMono,
+		codeSize ?? null,
+		uiSize,
+	]);
+	if (key === lastThemeKey) return;
+	lastThemeKey = key;
 	setColorScheme(settings?.theme ?? "system");
 	const family = settings?.themeFamily ?? "lody";
 	const builtIn = isBuiltinThemeFamily(family) ? BUILTIN_THEMES[family] : null;

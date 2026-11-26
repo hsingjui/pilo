@@ -17,6 +17,23 @@ export interface IconProps extends Pick<
 	accessibilityLabel?: string;
 }
 
+type CachedIconPath = { readonly path: Path2D; readonly fill?: boolean };
+
+const iconPathCache = new Map<IconName, readonly CachedIconPath[]>();
+
+export function cachedIconPaths(name: IconName): readonly CachedIconPath[] {
+	const hit = iconPathCache.get(name);
+	if (hit) return hit;
+	const entry = icons[name];
+	if (!entry) throw new RangeError(`Unknown icon: ${name}`);
+	const parsed = entry.paths.map((item: { d: string; fill?: boolean }) => ({
+		path: new Path2D(item.d),
+		fill: item.fill,
+	}));
+	iconPathCache.set(name, parsed);
+	return parsed;
+}
+
 export function Icon(props: IconProps) {
 	if (!icons[props.name]) throw new RangeError(`Unknown icon: ${props.name}`);
 	const icon = computed(() => {
@@ -25,12 +42,7 @@ export function Icon(props: IconProps) {
 		return entry;
 	});
 	const foreground = Foreground();
-	const paths = computed(() =>
-		icon().paths.map((entry: { d: string; fill?: boolean }) => ({
-			path: new Path2D(entry.d),
-			fill: entry.fill,
-		})),
-	);
+	const paths = computed(() => cachedIconPaths(props.name));
 	return (
 		<Canvas
 			class={props.class}
