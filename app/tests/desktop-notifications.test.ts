@@ -312,6 +312,8 @@ test("NotificationsPane reports failures when permission is denied or test send 
 		storage: { "fixture.mode": "send-fails" },
 	});
 	await failedSendApp.waitFor("text:Allowed");
+	await failedSendApp.press("id:settings-desktop-notifications");
+	await failedSendApp.waitFor("text:enabled:true");
 	await failedSendApp.press("id:settings-send-test-notification");
 	await failedSendApp.waitFor("text:Failed to send test notification");
 });

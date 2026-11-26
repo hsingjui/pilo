@@ -1,4 +1,4 @@
-import { effect, signal, untracked } from "nsh";
+import { effect, lifecycle, signal, untracked } from "nsh";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
@@ -35,6 +35,11 @@ export function connectSessionNotifications(
 	store: AppStore,
 	desktop: Pick<DesktopShell, "show" | "isQuitting">,
 	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
+	options?: {
+		/** 当用户前台正停留在目标会话聊天视图时返回 true，以静默抑制打扰通知。 */
+		isViewingSession?: (projectId: string, sessionPath: string) => boolean;
+		onSelectTarget?: (projectId: string) => void;
+	},
 ) {
 	const requested = signal<ReturnType<typeof decodeTarget>>(null);
 	let loading: ReturnType<typeof decodeTarget> = null;
@@ -54,22 +59,40 @@ export function connectSessionNotifications(
 			requested.set(null);
 			return;
 		}
+		const pathKey = runtimeSessionPathKey(sessionPath);
+		const index = state.sessionIndexes[projectId];
+		// 命中已有索引直接秒跳，无需等待全量重扫。
+		if (index?.status === "loaded") {
+			const cached = index.sessions.find(
+				(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
+			);
+			if (cached) {
+				requested.set(null);
+				loading = null;
+				untracked(() => {
+					options?.onSelectTarget?.(projectId);
+					store.selectSession(projectId, cached.sessionPath);
+				});
+				return;
+			}
+		}
 		if (loading !== target) {
 			loading = target;
 			untracked(() => void store.loadSessions(projectId));
 			return;
 		}
 		// Another index refresh can supersede our load. Wait for its result too.
-		const index = state.sessionIndexes[projectId];
 		if (index?.status === "loading") return;
 		requested.set(null);
 		if (index?.status !== "loaded") return;
-		const pathKey = runtimeSessionPathKey(sessionPath);
 		const session = index.sessions.find(
 			(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
 		);
 		if (session) {
-			untracked(() => store.selectSession(projectId, session.sessionPath));
+			untracked(() => {
+				options?.onSelectTarget?.(projectId);
+				store.selectSession(projectId, session.sessionPath);
+			});
 		}
 	});
 
@@ -102,6 +125,22 @@ export function connectSessionNotifications(
 		)
 			return;
 		const pathKey = runtimeSessionPathKey(sessionPath);
+		// 前台且正停留在目标会话聊天视图时不弹出打扰用户的系统通知。
+		const activeWindow = lifecycle() === "active";
+		if (activeWindow) {
+			const viewing = options?.isViewingSession
+				? options.isViewingSession(projectId, sessionPath)
+				: (() => {
+						const open = store.state().navigation.session;
+						return Boolean(
+							open &&
+							open.projectId === projectId &&
+							open.sessionPath &&
+							runtimeSessionPathKey(open.sessionPath) === pathKey,
+						);
+					})();
+			if (viewing) return;
+		}
 		const session = store
 			.state()
 			.sessionIndexes[projectId]?.sessions.find(

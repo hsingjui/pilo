@@ -76,15 +76,6 @@ export function PreferencesPane(props: {
 						onChange={(event) => save({ compactOutput: event.checked })}
 					/>
 				</SettingsRow>
-				<SettingsRow label={t("settings.pluginNotifications")}>
-					<Switch
-						testID="settings-plugin-notifications"
-						checked={values()?.showPluginNotifications ?? false}
-						onChange={(event) =>
-							save({ showPluginNotifications: event.checked })
-						}
-					/>
-				</SettingsRow>
 				<SettingsRow label={t("settings.language")}>
 					<Select
 						testID="settings-language"

@@ -59,17 +59,18 @@ export function NotificationsPane(props: {
 		alive = false;
 	});
 	const values = () => props.state().preferences?.values;
-	const save = (desktopNotifications: boolean) => {
-		props.client
-			.savePreferences({ desktopNotifications })
-			.catch((error: unknown) => {
-				console.error(t("settings.preferencesSaveFailed"), error);
-				showToast(toasts, {
-					variant: "error",
-					title: t("settings.preferencesSaveFailed"),
-					description: userErrorMessage(error),
-				});
+	const save = (patch: {
+		desktopNotifications?: boolean;
+		showPluginNotifications?: boolean;
+	}) => {
+		props.client.savePreferences(patch).catch((error: unknown) => {
+			console.error(t("settings.preferencesSaveFailed"), error);
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.preferencesSaveFailed"),
+				description: userErrorMessage(error),
 			});
+		});
 	};
 	const refresh = () => {
 		checking.set(true);
@@ -78,7 +79,8 @@ export function NotificationsPane(props: {
 			.then((next) => {
 				if (!alive) return;
 				permission.set(next);
-				if (next !== "granted" && values()?.desktopNotifications) save(false);
+				if (next !== "granted" && values()?.desktopNotifications)
+					save({ desktopNotifications: false });
 			})
 			.catch(() => {
 				if (alive) permission.set("unavailable");
@@ -102,12 +104,12 @@ export function NotificationsPane(props: {
 	};
 	const changeEnabled = (enabled: boolean) => {
 		if (!enabled) {
-			save(false);
+			save({ desktopNotifications: false });
 			return;
 		}
 		void ensurePermission().then((granted) => {
 			if (!alive) return;
-			save(granted);
+			save({ desktopNotifications: granted });
 			if (!granted) {
 				showToast(toasts, {
 					variant: "error",
@@ -185,19 +187,40 @@ export function NotificationsPane(props: {
 					</View>
 				</SettingsRow>
 				<SettingsRow label={t("settings.testNotification")} ghostEdge="both">
+					{() => {
+						const perm = permission();
+						const disabled =
+							testing() ||
+							!(values()?.desktopNotifications ?? false) ||
+							perm === "denied" ||
+							perm === "unavailable";
+						return (
+							<SettingsActionButton
+								testID="settings-send-test-notification"
+								disabled={disabled}
+								onPress={sendTest}
+							>
+								<Icon name="Send" size={14} />
+								<Text class="font-sans">
+									{testing()
+										? t("settings.sending")
+										: t("settings.sendTestNotification")}
+								</Text>
+							</SettingsActionButton>
+						);
+					}}
+				</SettingsRow>
+			</SettingsSection>
+			<SettingsSection title={t("settings.inAppNotifications")}>
+				<SettingsRow label={t("settings.pluginNotifications")}>
 					{() => (
-						<SettingsActionButton
-							testID="settings-send-test-notification"
-							disabled={testing()}
-							onPress={sendTest}
-						>
-							<Icon name="Send" size={14} />
-							<Text class="font-sans">
-								{testing()
-									? t("settings.sending")
-									: t("settings.sendTestNotification")}
-							</Text>
-						</SettingsActionButton>
+						<Switch
+							testID="settings-plugin-notifications"
+							checked={values()?.showPluginNotifications ?? false}
+							onChange={(event) =>
+								save({ showPluginNotifications: event.checked })
+							}
+						/>
 					)}
 				</SettingsRow>
 			</SettingsSection>
