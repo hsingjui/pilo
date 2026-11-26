@@ -10,6 +10,8 @@ export interface AppToast {
 	title: string;
 	description?: string;
 	action?: { label: string; onPress: () => void };
+	/** Triggered when the toast expires or is dismissed without clicking `action`. */
+	onDismiss?: () => void;
 	/** Milliseconds it shows; Sonner's 4s without it. */
 	timeout?: number;
 }
@@ -27,32 +29,39 @@ export class AppToasts {
 	private readonly manager = new ToastManager();
 	// ToastManager stores JSON, so callbacks must stay on the JS side.
 	private readonly actions = new Map<string, () => void>();
+	private readonly dismissCallbacks = new Map<string, () => void>();
 	private readonly current = signal<ToastEntry[]>([]);
 	private readonly expanded = signal(false);
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private disposed = false;
 
-	show({ action, ...toast }: AppToast): void {
+	show({ action, onDismiss, ...toast }: AppToast): string | null {
 		// A settings request can finish after its dialog closes.
-		if (this.disposed) return;
+		if (this.disposed) return null;
 		const id = `toast-${++sequence}`;
 		if (action) this.actions.set(id, action.onPress);
+		if (onDismiss) this.dismissCallbacks.set(id, onDismiss);
 		const value = action ? { ...toast, actionLabel: action.label } : toast;
 		this.manager.push(id, value, {
 			timeout: toast.timeout ?? DEFAULT_TIMEOUT_MS,
 		});
 		this.tick();
+		return id;
 	}
 
 	dismiss(id: string): void {
 		this.actions.delete(id);
+		const onDismiss = this.dismissCallbacks.get(id);
+		this.dismissCallbacks.delete(id);
 		this.manager.dismiss(id);
 		this.tick();
+		onDismiss?.();
 	}
 
 	performAction(id: string): void {
 		const action = this.actions.get(id);
 		if (!action) return;
+		this.dismissCallbacks.delete(id);
 		this.dismiss(id);
 		action();
 	}
@@ -71,12 +80,18 @@ export class AppToasts {
 		if (this.timer !== null) clearInterval(this.timer);
 		this.timer = null;
 		this.actions.clear();
+		this.dismissCallbacks.clear();
 		this.manager.dispose();
 	}
 
 	private advance(): boolean {
 		const { changed, ending } = this.manager.advance(this.expanded());
-		for (const id of ending) this.actions.delete(id);
+		for (const id of ending) {
+			this.actions.delete(id);
+			const onDismiss = this.dismissCallbacks.get(id);
+			this.dismissCallbacks.delete(id);
+			onDismiss?.();
+		}
 		return changed;
 	}
 

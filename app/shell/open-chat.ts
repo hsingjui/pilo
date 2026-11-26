@@ -1,4 +1,4 @@
-import { computed, effect, untracked } from "nsh";
+import { cleanup, computed, effect, untracked } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
@@ -190,27 +190,112 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 /**
  * Ends a temporary chat once another chat is open, as the WebUI does:
  * Pi saved nothing of it to come back to.
+ * 当传入 `onLeaving` 且临时会话已有内容时，给予短暂缓冲期并允许一键返回，避免手滑点错直接销毁。
  */
 export function endLeftTemporaryChats(
 	store: AppStore,
 	stopChat: (sessionKey: string, reason?: string) => Promise<void>,
+	options?: {
+		graceMs?: number;
+		/**
+		 * Notify the UI that a temporary chat is pending cleanup.
+		 * Return a dismiss callback when a toast's `onDismiss` owns the cleanup
+		 * trigger (`onDismiss` passed here), so hover-paused toasts stay in sync.
+		 */
+		onLeaving?: (info: {
+			projectId: string;
+			sessionId: string;
+			sessionKey: string;
+			graceMs: number;
+			restore: () => void;
+			onDismiss: () => void;
+		}) => (() => void) | void;
+	},
 ) {
-	const temporaryKey = computed(() => {
+	const temporary = computed(() => {
 		const open = store.state().navigation.session;
 		return open?.sessionId && isTemporarySessionId(open.sessionId)
-			? chatSessionKey(open.projectId, open.sessionId)
+			? {
+					projectId: open.projectId,
+					sessionId: open.sessionId,
+					sessionKey: chatSessionKey(open.projectId, open.sessionId),
+				}
 			: null;
 	});
-	let shown: string | null = null;
+	let shown: {
+		projectId: string;
+		sessionId: string;
+		sessionKey: string;
+	} | null = null;
+	const pendingStops = new Map<
+		string,
+		{ timer?: ReturnType<typeof setTimeout>; dismissToast?: () => void }
+	>();
+	const cancelPending = (sessionKey: string) => {
+		const entry = pendingStops.get(sessionKey);
+		if (!entry) return;
+		pendingStops.delete(sessionKey);
+		if (entry.timer !== undefined) clearTimeout(entry.timer);
+		entry.dismissToast?.();
+	};
+	cleanup(() => {
+		for (const entry of pendingStops.values()) {
+			if (entry.timer !== undefined) clearTimeout(entry.timer);
+		}
+		pendingStops.clear();
+	});
 	effect(() => {
-		const next = temporaryKey();
+		const next = temporary();
 		untracked(() => {
+			if (next) cancelPending(next.sessionKey);
 			const left = shown;
 			shown = next;
-			if (!left || left === next) return;
-			void stopChat(left, "temporary_chat_left").catch((error: unknown) => {
-				console.warn("Failed to stop the temporary chat", error);
+			if (!left || left.sessionKey === next?.sessionKey) return;
+			const state = store.state();
+			const hasContent =
+				state.chatSessions.some(
+					(chat) => chat.sessionKey === left.sessionKey,
+				) || state.pendingDrafts.has(left.sessionKey);
+			const stopChatNow = () => {
+				void stopChat(left.sessionKey, "temporary_chat_left").catch(
+					(error: unknown) => {
+						console.warn("Failed to stop the temporary chat", error);
+					},
+				);
+			};
+			if (!hasContent || !options?.onLeaving) {
+				cancelPending(left.sessionKey);
+				stopChatNow();
+				return;
+			}
+			cancelPending(left.sessionKey);
+			const graceMs = options.graceMs ?? 8_000;
+			const entry: {
+				timer?: ReturnType<typeof setTimeout>;
+				dismissToast?: () => void;
+			} = {};
+			pendingStops.set(left.sessionKey, entry);
+			const commitStop = () => {
+				if (pendingStops.get(left.sessionKey) !== entry) return;
+				pendingStops.delete(left.sessionKey);
+				if (entry.timer !== undefined) clearTimeout(entry.timer);
+				stopChatNow();
+			};
+			const dismissToast = options.onLeaving({
+				...left,
+				graceMs,
+				restore: () => {
+					if (pendingStops.get(left.sessionKey) !== entry) return;
+					cancelPending(left.sessionKey);
+					store.selectDraft(left.projectId, left.sessionId);
+				},
+				onDismiss: commitStop,
 			});
+			if (typeof dismissToast === "function") {
+				entry.dismissToast = dismissToast;
+			} else if (pendingStops.get(left.sessionKey) === entry) {
+				entry.timer = setTimeout(commitStop, graceMs);
+			}
 		});
 	});
 }
