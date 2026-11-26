@@ -33,10 +33,10 @@ pub(super) async fn events(
         .on_upgrade(move |socket| event_socket(socket, state, auth_session, query.after))
 }
 
-async fn remote_token_is_valid(paths: &HostPaths, token: &str) -> bool {
+async fn remote_token_is_valid(paths: &HostPaths, token: &str, auth_generation: u64) -> bool {
     let paths = paths.clone();
     let token = token.to_owned();
-    tokio::task::spawn_blocking(move || auth::authenticate(&paths, &token))
+    tokio::task::spawn_blocking(move || auth::authenticate_cached(&paths, &token, auth_generation))
         .await
         .ok()
         .and_then(Result::ok)
@@ -119,14 +119,16 @@ async fn event_socket(
                 }
             }
             _ = auth_tick.tick() => {
-                if !remote_token_is_valid(&paths, &auth_session.token).await {
+                let current_gen = *auth_generation.borrow();
+                if !remote_token_is_valid(&paths, &auth_session.token, current_gen).await {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication expired";
                 }
             }
             changed = auth_generation.changed() => {
+                let current_gen = *auth_generation.borrow();
                 if changed.is_err()
-                    || !remote_token_is_valid(&paths, &auth_session.token).await
+                    || !remote_token_is_valid(&paths, &auth_session.token, current_gen).await
                 {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication changed";

@@ -1,3 +1,9 @@
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
+};
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 
@@ -5,6 +11,20 @@ use crate::{host_paths::HostPaths, storage};
 use pilo_domain::RemoteDevice;
 
 const PAIRING_TTL_MS: u64 = 10 * 60 * 1_000;
+const AUTH_CACHE_TOUCH_INTERVAL_MS: u64 = 60 * 1_000;
+const AUTH_CACHE_MAX_ENTRIES: usize = 64;
+
+#[derive(Clone)]
+struct CachedAuth {
+    generation: u64,
+    device: RemoteDevice,
+    last_db_check_ms: u64,
+}
+
+fn auth_cache() -> &'static Mutex<HashMap<(PathBuf, String), CachedAuth>> {
+    static CACHE: OnceLock<Mutex<HashMap<(PathBuf, String), CachedAuth>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[derive(Clone)]
 pub(crate) struct PairingSecret {
@@ -72,12 +92,51 @@ pub(crate) fn create_device(
     Ok(PairedDevice { device, token })
 }
 
-pub(crate) fn authenticate(paths: &HostPaths, token: &str) -> Result<Option<RemoteDevice>, String> {
+/// Fast-path device auth backed by a short-lived in-memory cache keyed by
+/// `(db_path, token_hash)` and invalidated immediately on `auth_generation` bumps.
+pub(crate) fn authenticate_cached(
+    paths: &HostPaths,
+    token: &str,
+    auth_generation: u64,
+) -> Result<Option<RemoteDevice>, String> {
     if token.len() < 32 || token.len() > 128 {
         return Ok(None);
     }
+    let now_ms = storage::now_ms();
+    let token_hash = hash_credential(token);
+    let db_path = paths.database_path()?;
+    let cache_key = (db_path, token_hash.clone());
+    if let Ok(cache) = auth_cache().lock()
+        && let Some(entry) = cache.get(&cache_key)
+        && entry.generation == auth_generation
+        && now_ms < entry.device.expires_at_ms
+        && now_ms.saturating_sub(entry.last_db_check_ms) < AUTH_CACHE_TOUCH_INTERVAL_MS
+    {
+        return Ok(Some(entry.device.clone()));
+    }
     let db = storage::open_with_paths(paths)?;
-    storage::authenticate_remote_device(&db, &hash_credential(token), storage::now_ms())
+    let device = storage::authenticate_remote_device(&db, &token_hash, now_ms)?;
+    if let Ok(mut cache) = auth_cache().lock() {
+        match &device {
+            Some(device) => {
+                if cache.len() >= AUTH_CACHE_MAX_ENTRIES {
+                    cache.clear();
+                }
+                cache.insert(
+                    cache_key,
+                    CachedAuth {
+                        generation: auth_generation,
+                        device: device.clone(),
+                        last_db_check_ms: now_ms,
+                    },
+                );
+            }
+            None => {
+                cache.remove(&cache_key);
+            }
+        }
+    }
+    Ok(device)
 }
 
 /// 把当前设备的有效期重置为从现在起的完整 TTL；token 不变。

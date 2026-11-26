@@ -1,6 +1,9 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -51,6 +54,12 @@ struct RemoteServerInner {
 }
 
 const MIN_REMOTE_PORT: u16 = 1024;
+
+fn next_auth_generation() -> u64 {
+    // The auth cache outlives listeners, so starts and revocations share one sequence.
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct RemoteServerManager {
@@ -315,8 +324,7 @@ impl RemoteServerManager {
             ));
         }
         if let Some(running) = self.inner.lock().await.running.as_ref() {
-            let next = running.auth_generation.borrow().wrapping_add(1);
-            running.auth_generation.send_replace(next);
+            running.auth_generation.send_replace(next_auth_generation());
         }
         self.snapshot(runtime).await
     }
@@ -476,7 +484,7 @@ impl RemoteServerManager {
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let (auth_generation, auth_generation_rx) = watch::channel(0_u64);
+        let (auth_generation, auth_generation_rx) = watch::channel(next_auth_generation());
         let mut shutdown_for_task = shutdown.subscribe();
         let events = runtime.events.clone();
         events.set_web_events_enabled(true);

@@ -224,7 +224,11 @@ pub(super) async fn require_auth(
     };
     let paths = state.runtime.paths.clone();
     let auth_token = token.clone();
-    let result = tokio::task::spawn_blocking(move || auth::authenticate(&paths, &auth_token)).await;
+    let auth_generation = *state.auth_generation.borrow();
+    let result = tokio::task::spawn_blocking(move || {
+        auth::authenticate_cached(&paths, &auth_token, auth_generation)
+    })
+    .await;
     match result {
         Ok(Ok(Some(device))) => {
             request
