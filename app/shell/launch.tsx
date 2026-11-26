@@ -1,9 +1,11 @@
-import { computed, effect, mount, Storage } from "nsh";
+import { computed, effect, mount } from "nsh";
 import {
 	currentWindow,
 	displays,
 	isAvailable,
+	type Display,
 	type WindowRef,
+	type WindowState,
 } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
@@ -44,73 +46,7 @@ import { createSessionAutoTitle } from "./session-auto-title";
 import { connectSessionNotifications } from "./session-notifications";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
-/** Set once the main window has taken its first-launch size. */
-const INITIAL_WINDOW_SIZED_KEY = "pilo.initialWindowSized";
-/** The share of the display's usable area the first window takes. */
-const INITIAL_WINDOW_SHARE = { width: 0.7, height: 0.92 } as const;
-/** The first window's largest size: past it, a large display shows it centered. */
-const INITIAL_WINDOW_MAX = { width: 1200, height: 960 } as const;
-
-/**
- * Sizes the main window to its display on the app's first launch and
- * centers it there; later launches keep where the user left it
- * (`restoreBounds`). False when it left the window as it was.
- */
-async function sizeMainWindowOnFirstLaunch(main: WindowRef) {
-	const sized = await Storage.getItem(INITIAL_WINDOW_SIZED_KEY).catch(
-		() => null,
-	);
-	if (sized) return false;
-	const state = main.state();
-	const display =
-		state?.display ?? displays().find((d) => d.primary) ?? displays()[0];
-	if (!state || state.mode !== "normal" || !display) return false;
-	const area = display.visibleBounds;
-	const { size } = state.bounds;
-	const { size: content } = state.contentBounds;
-	const minSize = manifest.window.minSize;
-	// The bounds are the outer frame; the minimum size is the content's.
-	const minWidth = minSize.width + (size.width - content.width);
-	const minHeight = minSize.height + (size.height - content.height);
-	// A display smaller than the least window is `fitMainWindow`'s.
-	if (area.size.width < minWidth || area.size.height < minHeight) return false;
-	const width = Math.min(
-		Math.max(
-			Math.round(area.size.width * INITIAL_WINDOW_SHARE.width),
-			minWidth,
-		),
-		INITIAL_WINDOW_MAX.width,
-		area.size.width,
-	);
-	const height = Math.min(
-		Math.max(
-			Math.round(area.size.height * INITIAL_WINDOW_SHARE.height),
-			minHeight,
-		),
-		INITIAL_WINDOW_MAX.height,
-		area.size.height,
-	);
-	main.setBounds({
-		origin: {
-			x: Math.round(area.origin.x + (area.size.width - width) / 2),
-			y: Math.round(area.origin.y + (area.size.height - height) / 2),
-		},
-		size: { width, height },
-		animated: false,
-	});
-	void Storage.setItem(INITIAL_WINDOW_SIZED_KEY, "1").catch(
-		(error: unknown) => {
-			console.warn("Failed to save the first-launch window size", error);
-		},
-	);
-	return true;
-}
-
-function fitMainWindow(main: WindowRef) {
-	const [display, secondDisplay] = displays();
-	const state = main.state();
-	// Leave multi-display layouts and restored window modes to nsh.
-	if (!display || secondDisplay || !state || state.mode !== "normal") return;
+function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
 	const area = display.visibleBounds;
 	const { origin, size } = state.bounds;
 	const { size: content } = state.contentBounds;
@@ -349,17 +285,22 @@ export async function launch(
 					},
 				);
 			}
-			let sizingStarted = false;
+			// nsh applies the manifest defaults or restores saved geometry first.
+			let fitted = false;
 			effect(() => {
-				if (sizingStarted || !main.state()) return;
-				sizingStarted = true;
-				void sizeMainWindowOnFirstLaunch(main)
-					.then((sized) => {
-						if (!sized) fitMainWindow(main);
-					})
-					.catch((error: unknown) => {
-						console.warn("Failed to size the Pilo main window", error);
-					});
+				if (fitted) return;
+				const state = main.state();
+				if (!state) return;
+				const screens = displays();
+				const display =
+					state.display ??
+					screens.find((screen) => screen.primary) ??
+					screens[0];
+				if (!display) return;
+				fitted = true;
+				if (state.mode === "normal" && !state.minimized) {
+					fitMainWindow(main, state, display);
+				}
 			});
 		}
 		return () =>

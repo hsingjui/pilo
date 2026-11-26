@@ -19,7 +19,8 @@
 ## 主窗口
 
 - nsh 0.7 在 `mount` 时才创建隐式主窗口，挂载前的 `Window.get("main")` 返回 `null`。`app/shell/launch.tsx` 在根组件中通过 `currentWindow()` 接上桌面设置、关闭处理和通知；窗口尺寸调整另等 `WindowRef.state()` 首次可用，不阻塞生命周期接线。
-- `desktop/nsh.json` 的 `window.restoreBounds` 由 nsh 保存和恢复窗口位置、大小与模式，并根据当前显示器调整恢复位置。没有保存状态时居中打开。窗口状态不进 Host SQLite，也不读取旧 Tauri 的窗口状态。
+- 根 `nsh.json` 的 `window` 是默认尺寸（内容区 `1200 × 800` 点）和居中位置的唯一来源；有保存状态时由 nsh 的 `restoreBounds` 优先恢复位置、大小与模式。不要另存首次启动标记或在挂载后按屏幕比例重设默认尺寸。窗口状态不进 Host SQLite，也不读取旧 Tauri 的窗口状态。
+- `launch.tsx` 启动时仅对未最小化的普通窗口做一次边界校正：优先使用窗口所在屏幕的 `visibleBounds`，没有该屏幕信息时回退到主屏幕。已在可用区域内的窗口不动，小屏上过大的窗口缩至可用区域；不改最大化或全屏状态。
 - `AppShell` 保留系统窗口框架和按钮，只绘制内容顶栏和拖动区。用 `WindowRef.titleBar()` 的 `left` / `right` 避开系统按钮，不按平台写死按钮宽度。
 - 侧栏标题行对齐按平台分开：macOS 浮动卡片要为交通灯把行收进卡片上沿（`sidebarTitleBarHeight` 减去上下 frame、`sidebarTitleBarMarginTop` 只抵消 padding）；Windows/Linux 没有交通灯，始终用完整窗口标题栏高度并抵消 `card.top`，让侧栏动作、主标题栏动作和系统窗口按钮共享同一中心线。不要把 macOS 的卡片内缩逻辑套到 Windows/Linux。
 - `singleInstance: true` 由 nsh 宿主处理。再次启动、托盘显示、已注册的全局快捷键和通知点击复用主窗口的 `focus()`，由 nsh 显示窗口并恢复最小化。
