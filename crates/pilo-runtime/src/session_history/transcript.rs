@@ -126,15 +126,8 @@ fn read_prefix(file: &mut File, size: u64, mut consume: impl FnMut(&[u8])) -> Re
 }
 
 pub(crate) fn empty_transcript_history(window: TranscriptWindow) -> Result<Value, String> {
-    serialize(HistoryParser::default(), window, None)
-}
-
-fn serialize(
-    parser: HistoryParser,
-    window: TranscriptWindow,
-    fingerprint: Option<SessionFileFingerprint>,
-) -> Result<Value, String> {
-    serialize_windowed_projection(parser.finish(), window, fingerprint)
+    // This placeholder represents no history read, not a file with a missing header.
+    serialize_windowed_projection(super::types::SessionHistory::default(), window, None)
 }
 
 /// Reads the transcript for a snapshot through the shared session history
