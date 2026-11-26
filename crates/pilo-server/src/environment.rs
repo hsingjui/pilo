@@ -649,7 +649,14 @@ async fn command_text(
     cwd: Option<&Path>,
     path: &str,
 ) -> Result<String, String> {
-    let mut command = if cfg!(windows) {
+    let needs_windows_shell = cfg!(windows) && {
+        let ext = Path::new(program)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_ascii_lowercase);
+        !matches!(ext.as_deref(), Some("exe" | "com"))
+    };
+    let mut command = if needs_windows_shell {
         let invocation = std::iter::once(program)
             .chain(args.iter().copied())
             .map(|value| format!("'{}'", value.replace('\'', "''")))
