@@ -10,7 +10,7 @@ import {
 	type ViewStyle,
 } from "nsh";
 import {
-	Button as BaseButton,
+	MenuItem as BaseMenuItem,
 	Popover as BasePopover,
 	type PopoverProps,
 } from "nsh/base";
@@ -74,7 +74,7 @@ export function MobileDropdownMenu(props: MobileDropdownMenuProps) {
 			offset={local.offset ?? 6}
 			margin={local.margin ?? 8}
 			popupClass={classNames(
-				"rounded-(--pilo-menu-radius) bg-(--pilo-menu-background) text-foreground p-(--pilo-menu-padding) gap-(--pilo-menu-item-gap) font-sans",
+				"rounded-(--pilo-menu-radius) bg-(--pilo-menu-background) text-foreground p-(--pilo-menu-padding) font-sans",
 				local.popupClass,
 			)}
 			popupStyle={[
@@ -86,7 +86,9 @@ export function MobileDropdownMenu(props: MobileDropdownMenuProps) {
 			popupEndingStyle={motion().popupEndingStyle}
 		>
 			<DropdownClose.Provider value={() => setOpen(false)}>
-				{local.children}
+				<View role="menu" class="gap-(--pilo-menu-item-gap)">
+					{local.children}
+				</View>
 			</DropdownClose.Provider>
 		</BasePopover>
 	);
@@ -98,6 +100,7 @@ export interface MobileDropdownItemProps {
 	style?: StyleProp<ViewStyle>;
 	icon?: JSX.Element;
 	checked?: boolean;
+	role?: "menuitemradio";
 	variant?: "default" | "destructive";
 	disabled?: boolean;
 	closeOnSelect?: boolean;
@@ -115,11 +118,12 @@ export function MobileDropdownItem(props: MobileDropdownItemProps) {
 
 	return (
 		<Foreground.Provider value={foreground}>
-			<BaseButton
+			<BaseMenuItem
 				testID={props.testID}
-				role={props.checked !== undefined ? "menuitemcheckbox" : "menuitem"}
-				selected={props.checked}
+				role={props.role}
+				checked={props.checked}
 				disabled={props.disabled}
+				closeOnSelect={false}
 				accessibilityLabel={props.accessibilityLabel}
 				class={classNames(
 					menuRowClass,
@@ -129,7 +133,7 @@ export function MobileDropdownItem(props: MobileDropdownItemProps) {
 					props.class,
 				)}
 				style={[tactileTransition("background-color, color"), props.style]}
-				onPress={() => {
+				onSelect={() => {
 					if (props.disabled) return;
 					props.onSelect?.();
 					if (props.closeOnSelect !== false) close();
@@ -154,7 +158,7 @@ export function MobileDropdownItem(props: MobileDropdownItemProps) {
 					</Foreground.Provider>
 				) : null}
 				{props.children}
-			</BaseButton>
+			</BaseMenuItem>
 		</Foreground.Provider>
 	);
 }
