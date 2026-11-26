@@ -94,12 +94,13 @@ store.acknowledgeOpenSession();
 
 ## 侧栏
 
-`Sidebar.tsx` 切换连接分组、最近会话和单项目列表。项目行、项目菜单及展开后的会话列表在 `sidebar-project-section.tsx`；三种列表复用 `sidebar-session-row.tsx` 的会话行和 `sidebar-session-glide.tsx` 的悬停高亮。
+`Sidebar.tsx` 切换连接分组、最近会话和单项目列表。项目行、项目菜单及展开后的会话列表在 `sidebar-project-section.tsx`；三种列表复用 `sidebar-session-row.tsx` 的会话行。
 
 - 设置键与默认值沿用 WebView（`pilo.collapsedSections` 等；`env:` 分组默认展开，`ws:` 默认折叠），清单见[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#webview-localstorage-清单)。
 - `AppShell` 使用 `ResizablePanelGroup` 原生拖动侧栏，默认 292pt，范围 240–480pt。拖动结束由 `SidebarSettingsStore` 将宽度存入 nsh Storage 的 `pilo.sidebarWidth`；折叠按钮只隐藏侧栏，不改保存的宽度。
 - 项目视图：按连接分组，本地在前；展开项目时读取会话，运行中的在前，再取最近五条，其余由「查看全部」原地展开。排序复用 `shared/sidebar/session-list.ts` 的 `summarizeProjectSessions`。
 - 最近视图：所有项目的会话合并，运行中的在前，再取最近 50 条，复用 `sortSidebarSessionsActiveFirst`。
+- 最近会话、项目内展开的会话和「查看全部」共用 `sidebar-session-glide.tsx`：首次悬停在目标行原地淡入，同一列表内换行才启动位移动画；离开时停在当前位置淡出。点选会话时立即隐藏悬停背景，选中背景由会话行直接更新。虚拟化列表的行布局坐标相对于复用单元格，悬停层用鼠标事件换算成视口坐标；列表滚动时清除旧高亮，下次鼠标移动再定位。
 - `AppStore` 静默刷新侧栏。`SessionsIndexed` 仅读索引，其他会话事件只在项目没有活动监听时扫描。两种后台读取都可能读到索引缓存，必须等同项目在途扫描完成后再分配读取序号，否则迟到的手动刷新结果会被丢弃。
 - 侧栏通过 `isDefaultWorkspace` 识别内置工作区，按当前界面语言显示 `sidebar.defaultWorkspace`；普通项目沿用已存名称，不写回运行时。
 - 底栏与 Tauri `sidebar-footer.tsx` 一致：左侧设置，右侧依次是 Remote 手机按钮和主题切换。Remote 不在设置弹窗里；按钮由 `desktop/settings/remote-dialog.tsx` 的 `createRemoteStatus` 每 3 秒轮询 Host，运行时高亮；弹窗打开时暂停轮询，关闭后立即刷新。弹窗内容是 `RemotePane`，反馈走 `AppToaster` toast。

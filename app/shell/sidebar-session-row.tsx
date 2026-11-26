@@ -158,6 +158,7 @@ export function SessionRow(props: {
 	const session = props.session;
 	const toasts = AppToaster();
 	const glide = SessionGlideContext();
+	const trackViewportRow = glide?.trackViewportRow;
 	let bounds: Bounds | null = null;
 	const menuOpen = signal(false);
 	const contextOpen = signal(false);
@@ -301,7 +302,6 @@ export function SessionRow(props: {
 		return classes.join(" ");
 	};
 	const rowStyle = () => ({
-		...tactileTransition("background-color, border-color"),
 		minHeight: sidebarRowHeight(
 			projectContext()
 				? "pilo-sidebar-session-context-height"
@@ -480,7 +480,13 @@ export function SessionRow(props: {
 			onLayout={(event) => {
 				bounds = event.bounds;
 			}}
-			onMouseEnter={() => glide?.show(bounds)}
+			onMouseEnter={trackViewportRow ? undefined : () => glide?.show(bounds)}
+			onMouseLeave={glide?.leaveViewportRow}
+			onMouseMove={
+				trackViewportRow
+					? (event) => trackViewportRow(bounds, event)
+					: undefined
+			}
 		>
 			<ContextMenu
 				testID={`session:${session().id}:context`}
@@ -507,6 +513,7 @@ export function SessionRow(props: {
 							selected={selected()}
 							accessibilityLabel={session().title}
 							onPress={() => {
+								glide?.dismiss();
 								const { projectId, sessionPath, id } = session();
 								props.onSelectChat?.(projectId);
 								if (sessionPath) store.selectSession(projectId, sessionPath);

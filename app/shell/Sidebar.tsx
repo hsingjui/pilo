@@ -575,29 +575,32 @@ function AllProjectSessions(
 	);
 	const sessions = computed(() => sortSidebarSessionsByRecency(rows()));
 	const section = projectSection(props.projectId);
-	// Rows keep their own hover: the sliding highlight needs every row in
-	// one view, and a list recycles its cells.
 	return (
-		<List
-			testID={`${section}:all`}
-			class="min-h-0 min-w-0 flex-1"
-			contentClass="pt-1 pr-2.5 pb-3 pl-1.5"
-			contentStyle={{ gap: chatPx(token("pilo-sidebar-session-gap")) }}
-			bounces={false}
-			scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
-			each={sessions()}
-			keyExtractor={sessionRowKey}
-			estimatedItemSize={sidebarRowHeight("pilo-sidebar-session-height")}
-			empty={() => <NoSessions testID={section} />}
-		>
-			{(session) => (
-				<SessionRow
-					store={store}
-					session={session}
-					onSelectChat={props.onSelectChat}
-				/>
+		<SessionGlide
+			viewport={(onScroll) => (
+				<List
+					testID={`${section}:all`}
+					class="min-h-0 min-w-0 flex-1"
+					contentClass="pt-1 pr-2.5 pb-3 pl-1.5"
+					contentStyle={{ gap: chatPx(token("pilo-sidebar-session-gap")) }}
+					bounces={false}
+					onScroll={onScroll}
+					scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
+					each={sessions()}
+					keyExtractor={sessionRowKey}
+					estimatedItemSize={sidebarRowHeight("pilo-sidebar-session-height")}
+					empty={() => <NoSessions testID={section} />}
+				>
+					{(session) => (
+						<SessionRow
+							store={store}
+							session={session}
+							onSelectChat={props.onSelectChat}
+						/>
+					)}
+				</List>
 			)}
-		</List>
+		/>
 	);
 }
 
