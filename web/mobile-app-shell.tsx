@@ -634,7 +634,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 				<Icon name="PanelLeft" size={16} color={token("muted-foreground")} />
 			</Button>
 
-			<View class="min-w-0 flex-1 flex-row items-center px-1">
+			<View class="min-w-0 flex-1 flex-row items-center pr-1">
 				{() =>
 					showHeaderTitle() ? (
 						<View

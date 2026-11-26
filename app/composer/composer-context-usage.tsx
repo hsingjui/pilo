@@ -284,11 +284,7 @@ export function ComposerContextUsage(props: {
 	);
 	const details = (
 		<View testID="composer-context-usage-details" class="w-full">
-			<View
-				class={
-					touch ? "w-full gap-2.5 px-3.5 py-3" : "w-full gap-2 px-2.5 py-2.5"
-				}
-			>
+			<View class="w-full gap-2 px-2.5 py-2.5">
 				<View class="flex-row flex-wrap items-center gap-x-2">
 					<Text
 						class={classNames(
@@ -361,12 +357,7 @@ export function ComposerContextUsage(props: {
 						}}
 					</Text>
 				</View>
-				<View
-					class={classNames(
-						"w-full overflow-hidden rounded-full bg-muted",
-						touch ? "h-2" : "h-1.5",
-					)}
-				>
+				<View class="w-full overflow-hidden rounded-full bg-muted h-1.5">
 					<View
 						class={barFillClass()}
 						style={{
@@ -433,13 +424,7 @@ export function ComposerContextUsage(props: {
 			</View>
 			{() =>
 				breakdown().length > 0 ? (
-					<View
-						class={
-							touch
-								? "w-full gap-2.5 border-t border-border/60 px-3.5 py-2.5"
-								: "w-full gap-2 border-t border-border/60 px-2.5 py-2"
-						}
-					>
+					<View class="w-full gap-2 border-t border-border/60 px-2.5 py-2">
 						<Text
 							class={classNames(
 								sectionTitle,
@@ -448,7 +433,7 @@ export function ComposerContextUsage(props: {
 						>
 							{() => t("chat.tokensSection")}
 						</Text>
-						<View class={touch ? "gap-2" : "gap-1.5"}>
+						<View class="gap-1.5">
 							{breakdown().map(([label, value]) => (
 								<DetailRow
 									label={label}
@@ -465,11 +450,7 @@ export function ComposerContextUsage(props: {
 							/>
 						) : null}
 						<DetailRow
-							class={
-								touch
-									? "border-t border-border/60 pt-2"
-									: "border-t border-border/60 pt-1.5"
-							}
+							class="border-t border-border/60 pt-1.5"
 							label={t("chat.tokensTotal")}
 							value={formatCompactTokens(
 								breakdown().reduce((sum, [, value]) => sum + value, 0),
@@ -482,13 +463,7 @@ export function ComposerContextUsage(props: {
 			{() =>
 				hasCost()
 					? untracked(() => (
-							<View
-								class={
-									touch
-										? "w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-3.5 py-2.5"
-										: "w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-2.5 py-2"
-								}
-							>
+							<View class="w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-2.5 py-2">
 								<Text
 									class={classNames(
 										rowLabel,
@@ -513,7 +488,7 @@ export function ComposerContextUsage(props: {
 	);
 	if (touch) {
 		const popupWidth = () =>
-			Math.min(280, Math.max(200, windowSize().width - 16));
+			Math.min(224, Math.max(200, windowSize().width - 16));
 		const maxScrollHeight = () =>
 			Math.max(
 				160,
