@@ -87,8 +87,13 @@ export type SettingsClient = Pick<
 	| "remoteDeviceRename"
 	| "openLogDirectory"
 > &
-	/** Optional: without it the font pickers offer only built-in families. */
-	Partial<Pick<NshPiloClient, "systemFontFamilies">>;
+	/** Optional host-only discovery helpers. */
+	Partial<
+		Pick<
+			NshPiloClient,
+			"systemFontFamilies" | "listSshConfigHosts" | "listSshLocalKeys"
+		>
+	>;
 
 export interface SettingsDialogProps {
 	open: () => boolean;
@@ -180,7 +185,7 @@ const SETTINGS_TABS: SettingsTab[] = [
 		id: "session-naming",
 		section: "project",
 		labelKey: "settings.sessionNaming",
-		icon: "Type",
+		icon: "Tag",
 	},
 	{
 		id: "about",
@@ -192,7 +197,7 @@ const SETTINGS_TABS: SettingsTab[] = [
 
 const SECTIONS = [
 	{ id: "personal", labelKey: null },
-	{ id: "project", labelKey: "settings.projectSection" },
+	{ id: "project", labelKey: "settings.connectionsAndAi" },
 	{ id: "other", labelKey: "settings.other" },
 ] as const;
 

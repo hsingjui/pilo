@@ -18,7 +18,12 @@ import {
 	paneConnectionCatalog,
 	subscribeSettingsEvents,
 } from "./connection-settings";
-import { SettingsRow, SettingsSection, SettingsSectionMessage } from "./layout";
+import {
+	SettingsActionButton,
+	SettingsRow,
+	SettingsSection,
+	SettingsSectionMessage,
+} from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 type PromptSettings = NextPromptSettings | PromptEnhancementSettings;
@@ -39,9 +44,11 @@ export function ConnectionPromptSettingsPane(props: {
 	const toasts = AppToaster();
 	const lists = new ConnectionModelLists(props.client);
 	const connections = signal<Connection[]>([]);
+	const loadingCatalog = signal(true);
 	const catalogError = signal<string | null>(null);
 	const settings = signal<Record<string, PromptSettings>>({});
 	const busy = signal<Record<string, boolean>>({});
+	const syncingAll = signal(false);
 	const errors = signal<Record<string, string | undefined>>({});
 	let alive = true;
 	cleanup(() => {
@@ -77,6 +84,9 @@ export function ConnectionPromptSettingsPane(props: {
 		})
 		.catch((error: unknown) => {
 			if (alive) catalogError.set(userErrorMessage(error));
+		})
+		.finally(() => {
+			if (alive) loadingCatalog.set(false);
 		});
 
 	subscribeSettingsEvents(props.client, (event) => {
@@ -84,12 +94,14 @@ export function ConnectionPromptSettingsPane(props: {
 		if (next) mergeSettings(next);
 	});
 
+	const anyRowBusy = () => Object.values(busy()).some(Boolean);
+
 	const save = (
 		connection: Connection,
 		patch: { enabled?: boolean; model?: PromptSettings["model"] },
 	) => {
 		const connectionId = connection.id;
-		if (busy()[connectionId]) return;
+		if (busy()[connectionId] || syncingAll()) return;
 		const current = settings()[connectionId];
 		busy.set({ ...busy(), [connectionId]: true });
 		props
@@ -116,6 +128,45 @@ export function ConnectionPromptSettingsPane(props: {
 			});
 	};
 
+	const applyToAll = async () => {
+		const list = connections();
+		const source = list[0] ? settings()[list[0].id] : undefined;
+		if (!source || list.length <= 1 || syncingAll() || anyRowBusy()) return;
+		syncingAll.set(true);
+		try {
+			const settled = await Promise.allSettled(
+				list
+					.slice(1)
+					.map((connection) =>
+						props.save(connection.id, source.enabled, source.model),
+					),
+			);
+			if (!alive) return;
+			let firstError: unknown = null;
+			for (const result of settled) {
+				if (result.status === "fulfilled") {
+					mergeSettings(result.value);
+				} else if (firstError === null) {
+					firstError = result.reason;
+				}
+			}
+			if (firstError !== null) {
+				showToast(toasts, {
+					variant: "error",
+					title: t("settings.preferencesSaveFailed"),
+					description: userErrorMessage(firstError),
+				});
+			} else {
+				showToast(toasts, {
+					variant: "success",
+					title: t("settings.appliedToAllConnections"),
+				});
+			}
+		} finally {
+			if (alive) syncingAll.set(false);
+		}
+	};
+
 	return (
 		<View class="min-w-0 gap-3">
 			<Text class="font-sans text-xs leading-5 text-muted-foreground">
@@ -128,11 +179,38 @@ export function ConnectionPromptSettingsPane(props: {
 					</Text>
 				) : null
 			}
-			<SettingsSection title={t(`${props.labelPrefix}Model`)}>
-				{() =>
-					connections().flatMap((connection) => {
+			<SettingsSection
+				title={t(`${props.labelPrefix}Model`)}
+				actions={() =>
+					connections().length > 1 ? (
+						<SettingsActionButton
+							testID={`${props.testID}-apply-all`}
+							disabled={
+								syncingAll() ||
+								anyRowBusy() ||
+								!settings()[connections()[0]?.id ?? ""]
+							}
+							onPress={() => void applyToAll()}
+						>
+							<Text class="font-sans text-xs">
+								{t("settings.applyToAllConnections")}
+							</Text>
+						</SettingsActionButton>
+					) : null
+				}
+			>
+				{() => {
+					if (loadingCatalog()) {
+						return (
+							<SettingsSectionMessage padded="roomy">
+								{t("common.loading")}
+							</SettingsSectionMessage>
+						);
+					}
+					return connections().flatMap((connection) => {
 						const current = () => settings()[connection.id];
-						const disabled = () => !current() || busy()[connection.id];
+						const disabled = () =>
+							!current() || busy()[connection.id] || syncingAll();
 						const row = (
 							<SettingsRow label={connectionLabel(connection)}>
 								<ConnectionModelSelect
@@ -177,8 +255,8 @@ export function ConnectionPromptSettingsPane(props: {
 									</SettingsSectionMessage>,
 								]
 							: [row];
-					})
-				}
+					});
+				}}
 			</SettingsSection>
 		</View>
 	);

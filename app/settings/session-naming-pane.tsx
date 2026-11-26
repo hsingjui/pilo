@@ -1,4 +1,4 @@
-import { type Accessor, cleanup, signal } from "nsh";
+import { type Accessor, cleanup, signal, Text } from "nsh";
 
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { ConnectionNamingModel } from "@shared/api/sessions-types";
@@ -14,8 +14,17 @@ import {
 	paneConnectionCatalog,
 	subscribeSettingsEvents,
 } from "./connection-settings";
-import { SettingsRow, SettingsSection, SettingsSectionMessage } from "./layout";
+import {
+	SettingsActionButton,
+	SettingsRow,
+	SettingsSection,
+	SettingsSectionMessage,
+} from "./layout";
 import type { SettingsClient } from "./settings-dialog";
+
+const AUTO_NAMING_PROVIDER = "__auto__";
+const AUTO_NAMING_MODEL = "follow";
+const AUTO_NAMING_KEY = modelKey(AUTO_NAMING_PROVIDER, AUTO_NAMING_MODEL);
 
 /**
  * Session naming per connection: the model that writes a session's title,
@@ -34,6 +43,7 @@ export function SessionNamingPane(props: {
 	const loading = signal(true);
 	const selections = signal<Record<string, ConnectionNamingModel>>({});
 	const busy = signal<Record<string, boolean>>({});
+	const syncingAll = signal(false);
 	const catalogError = signal<string | null>(null);
 	let alive = true;
 	cleanup(() => {
@@ -66,13 +76,15 @@ export function SessionNamingPane(props: {
 		if (event.type === "configuration_changed") void load();
 	});
 
+	const anyRowBusy = () => Object.values(busy()).some(Boolean);
+
 	const save = (
 		connection: Connection,
 		provider: string | null,
 		modelId: string | null,
 	) => {
 		const connectionId = connection.id;
-		if (busy()[connectionId]) return;
+		if (busy()[connectionId] || syncingAll()) return;
 		busy.set({ ...busy(), [connectionId]: true });
 		props.client
 			.saveNamingModel(connectionId, provider, modelId)
@@ -96,8 +108,74 @@ export function SessionNamingPane(props: {
 			});
 	};
 
+	const applyToAll = async () => {
+		const list = connections();
+		if (list.length <= 1 || syncingAll() || anyRowBusy()) return;
+		const source = selections()[list[0].id];
+		syncingAll.set(true);
+		try {
+			const settled = await Promise.allSettled(
+				list
+					.slice(1)
+					.map((connection) =>
+						props.client
+							.saveNamingModel(
+								connection.id,
+								source?.provider ?? null,
+								source?.modelId ?? null,
+							)
+							.then((model) => [connection.id, model] as const),
+					),
+			);
+			if (!alive) return;
+			const next = { ...selections() };
+			let updated = false;
+			let firstError: unknown = null;
+			for (const result of settled) {
+				if (result.status === "fulfilled") {
+					const [id, model] = result.value;
+					if (model) next[id] = model;
+					else delete next[id];
+					updated = true;
+				} else if (firstError === null) {
+					firstError = result.reason;
+				}
+			}
+			if (updated) selections.set(next);
+			if (firstError !== null) {
+				showToast(toasts, {
+					variant: "error",
+					title: t("settings.preferencesSaveFailed"),
+					description: userErrorMessage(firstError),
+				});
+			} else {
+				showToast(toasts, {
+					variant: "success",
+					title: t("settings.appliedToAllConnections"),
+				});
+			}
+		} finally {
+			if (alive) syncingAll.set(false);
+		}
+	};
+
 	return (
-		<SettingsSection title={t("settings.namingModel")}>
+		<SettingsSection
+			title={t("settings.namingModel")}
+			actions={() =>
+				connections().length > 1 ? (
+					<SettingsActionButton
+						testID="settings-naming-apply-all"
+						disabled={loading() || syncingAll() || anyRowBusy()}
+						onPress={() => void applyToAll()}
+					>
+						<Text class="font-sans text-xs">
+							{t("settings.applyToAllConnections")}
+						</Text>
+					</SettingsActionButton>
+				) : null
+			}
+		>
 			{() => {
 				if (loading())
 					return (
@@ -126,12 +204,21 @@ export function SessionNamingPane(props: {
 								lists={lists}
 								noneValue="disabled"
 								noneTitle={t("settings.noAutomaticNaming")}
+								extraItems={[
+									{
+										value: AUTO_NAMING_KEY,
+										title: t("settings.autoFollowNaming"),
+									},
+								]}
+								onPickExtra={() =>
+									save(connection, AUTO_NAMING_PROVIDER, AUTO_NAMING_MODEL)
+								}
 								value={
 									selected()
 										? modelKey(selected()!.provider, selected()!.modelId)
 										: "disabled"
 								}
-								disabled={busy()[connection.id]}
+								disabled={busy()[connection.id] || syncingAll()}
 								onPick={(model) =>
 									save(
 										connection,

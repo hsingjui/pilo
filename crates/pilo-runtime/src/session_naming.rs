@@ -6,6 +6,7 @@ use crate::{pi_oneshot, project, server_pi::PiLaunchOptions, storage};
 const SESSION_NAMING_SYSTEM_PROMPT: &str = "Generate a concise title for a coding conversation from the user's first message. Return exactly one plain-text title with no quotes, markdown, explanation, prefix, or suffix. Use the same language as the user. Prefer at most 24 CJK characters or 60 Latin characters.";
 
 const SESSION_NAMING_TIMEOUT: Duration = Duration::from_secs(45);
+pub(crate) const AUTO_NAMING_PROVIDER: &str = "__auto__";
 
 fn normalize_generated_session_title(value: &str) -> Option<String> {
     let line = value.lines().map(str::trim).find(|line| !line.is_empty())?;
@@ -41,14 +42,20 @@ pub async fn generate_session_title(
         return Ok(None);
     };
 
+    let (provider, model) = if naming_model.provider == AUTO_NAMING_PROVIDER {
+        (None, None)
+    } else {
+        (Some(naming_model.provider), Some(naming_model.model_id))
+    };
+
     let title = pi_oneshot::generate_text(
         runtime,
         project_id,
         PiLaunchOptions {
             no_session: true,
             disable_resources: true,
-            provider: Some(naming_model.provider),
-            model: Some(naming_model.model_id),
+            provider,
+            model,
             thinking: Some("off".to_owned()),
             system_prompt: Some(SESSION_NAMING_SYSTEM_PROMPT.to_owned()),
             ..PiLaunchOptions::default()

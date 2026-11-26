@@ -171,6 +171,9 @@ export function ConnectionModelSelect(props: {
 	/** Value and label of the "no model" option (follow / disabled). */
 	noneValue: string;
 	noneTitle: string;
+	/** Additional top-level options (e.g. automatic follow-default naming). */
+	extraItems?: readonly { value: string; title: string }[];
+	onPickExtra?: (value: string) => void;
 	value: string;
 	onPick: (model: PiModel | null) => void;
 	disabled?: boolean;
@@ -178,6 +181,7 @@ export function ConnectionModelSelect(props: {
 	const list = () => props.lists.state(props.connection.id)();
 	const items = () => [
 		{ value: props.noneValue, title: props.noneTitle },
+		...(props.extraItems ?? []),
 		...list().models.map((model) => ({
 			value: modelKey(model.provider, model.id),
 			title: `${model.name || model.id} · ${model.provider}`,
@@ -201,6 +205,10 @@ export function ConnectionModelSelect(props: {
 				onChange={({ value }) => {
 					if (!value || value === props.noneValue) {
 						props.onPick(null);
+						return;
+					}
+					if (props.extraItems?.some((item) => item.value === value)) {
+						props.onPickExtra?.(value);
 						return;
 					}
 					const model = list().models.find(
