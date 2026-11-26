@@ -196,7 +196,7 @@ export function activeProject(state: AppState): Project | null {
 }
 
 export function readStateKey(projectId: string, sessionPath: string) {
-	return `${projectId}\n${sessionPath}`;
+	return `${projectId}\n${runtimeSessionPathKey(sessionPath)}`;
 }
 
 export function isSessionUnread(
@@ -247,12 +247,11 @@ function mergeReadState(
 	next: SessionReadState,
 ): SessionReadState {
 	if (!current) return next;
+	// Keep the Host's original path for acknowledging the latest completion.
+	const latest =
+		current.completedRevision > next.completedRevision ? current : next;
 	return {
-		...next,
-		completedRevision: Math.max(
-			current.completedRevision,
-			next.completedRevision,
-		),
+		...latest,
 		readRevision: Math.max(current.readRevision, next.readRevision),
 	};
 }
@@ -548,16 +547,17 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				...state,
 				themeSettings: newer(state.themeSettings, action.settings),
 			};
-		case "read_states_loaded":
-			return {
-				...state,
-				readStates: Object.fromEntries(
-					action.states.map((read) => {
-						const key = readStateKey(read.projectId, read.sessionPath);
-						return [key, mergeReadState(state.readStates[key], read)];
-					}),
-				),
-			};
+		case "read_states_loaded": {
+			const readStates: AppState["readStates"] = {};
+			for (const read of action.states) {
+				const key = readStateKey(read.projectId, read.sessionPath);
+				readStates[key] = mergeReadState(
+					readStates[key] ?? state.readStates[key],
+					read,
+				);
+			}
+			return { ...state, readStates };
+		}
 		case "sessions_loading":
 			return withSessionIndex(state, action.projectId, (current) => ({
 				status: "loading",

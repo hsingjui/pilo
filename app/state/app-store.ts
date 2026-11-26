@@ -462,7 +462,7 @@ export class AppStore {
 		const read = state.readStates[readStateKey(projectId, sessionPath)];
 		if (!read) return;
 		this.client
-			.markSessionRead(projectId, sessionPath, read.completedRevision)
+			.markSessionRead(projectId, read.sessionPath, read.completedRevision)
 			.catch((error: unknown) => {
 				console.error("Marking the session read failed", error);
 			});
