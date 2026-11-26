@@ -173,6 +173,10 @@ pub(crate) fn router(
         .route("/api/v1/sessions/title", post(sessions::session_title))
         .route("/api/v1/sessions/delete", post(sessions::session_delete))
         .route(
+            "/api/v1/sessions/ui-state",
+            post(sessions::session_ui_state),
+        )
+        .route(
             "/api/v1/models",
             get(model_settings::models).post(model_settings::models_set),
         )
@@ -206,6 +210,10 @@ pub(crate) fn router(
             "/api/v1/cache-keep-alive/settings",
             get(model_settings::cache_keep_alive_settings_list)
                 .post(model_settings::cache_keep_alive_settings_set),
+        )
+        .route(
+            "/api/v1/cache-keep-alive/pause",
+            post(model_settings::cache_keep_alive_pause),
         )
         .route("/api/v1/chat/start", post(chat::chat_start))
         .route("/api/v1/chat/stop", post(chat::chat_stop))

@@ -16,6 +16,7 @@ import {
 } from "nsh";
 import { Button, ContextMenu } from "nsh/base";
 
+import { userErrorMessage } from "@shared/app-error";
 import type { SidebarSession } from "@shared/sidebar/sidebar-types";
 import type { AppStore } from "../state/app-store";
 import { Icon } from "../ui/icon";
@@ -24,7 +25,7 @@ import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { createHover } from "../ui/hover";
 import { MOTION, tactileTransition } from "../ui/motion";
-import { AppToaster } from "./app-toasts";
+import { AppToaster, showToast } from "./app-toasts";
 import { deleteSessionWithToast } from "./delete-session";
 import { t } from "./i18n";
 import { sessionRowKey } from "./sidebar-projects";
@@ -45,6 +46,7 @@ function ConfirmDeleteButton(props: {
 	testID: string;
 	class: string;
 	resetOn: Accessor<string>;
+	running?: Accessor<boolean>;
 	onConfirm: () => void;
 }) {
 	const confirming = signal(false);
@@ -78,6 +80,10 @@ function ConfirmDeleteButton(props: {
 		timer = undefined;
 	});
 	const hover = createHover();
+	const confirmLabel = () =>
+		props.running?.()
+			? t("sidebar.deleteRunningConfirm")
+			: t("sidebar.confirmDelete");
 	return (
 		<Button
 			ref={(node) => {
@@ -94,9 +100,7 @@ function ConfirmDeleteButton(props: {
 				confirming() ? { width: "max-content" } : undefined,
 			]}
 			focusVisibleStyle={sidebarFocusRing()}
-			accessibilityLabel={
-				confirming() ? t("sidebar.confirmDelete") : t("sidebar.delete")
-			}
+			accessibilityLabel={confirming() ? confirmLabel() : t("sidebar.delete")}
 			onMouseEnter={hover.props.onMouseEnter}
 			onMouseLeave={() => {
 				hover.props.onMouseLeave();
@@ -124,7 +128,7 @@ function ConfirmDeleteButton(props: {
 							class="shrink-0 whitespace-nowrap font-sans font-medium leading-none text-destructive"
 							style={sidebarText("2xs")}
 						>
-							{() => t("sidebar.confirmDelete")}
+							{confirmLabel}
 						</Text>
 					</>
 				) : (
@@ -202,11 +206,15 @@ export function SessionRow(props: {
 		const title = renameValue().trim();
 		renaming.set(false);
 		if (title && title !== session().title) {
-			void store.renameSession(
-				session().projectId,
-				session().sessionPath,
-				title,
-			);
+			void store
+				.renameSession(session().projectId, session().sessionPath, title)
+				.catch((error: unknown) => {
+					showToast(toasts, {
+						variant: "error",
+						title: t("chat.renameSessionFailed"),
+						description: userErrorMessage(error),
+					});
+				});
 		}
 	};
 
@@ -262,7 +270,9 @@ export function SessionRow(props: {
 				<Text class="font-sans">
 					{() =>
 						confirmingDelete()
-							? t("sidebar.confirmDelete")
+							? session().active
+								? t("sidebar.deleteRunningConfirm")
+								: t("sidebar.confirmDelete")
 							: t("sidebar.delete")
 					}
 				</Text>
@@ -452,6 +462,7 @@ export function SessionRow(props: {
 					<ConfirmDeleteButton
 						testID={`session:${session().id}:delete-button`}
 						resetOn={rowKey}
+						running={() => Boolean(session().active)}
 						class={`absolute top-0 right-0 z-20 ${shownWhileMenu(
 							HOVER_ACTION,
 							"opacity-100",

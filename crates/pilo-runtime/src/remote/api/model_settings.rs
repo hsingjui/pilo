@@ -234,3 +234,19 @@ pub(super) async fn cache_keep_alive_settings_set(
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PauseCacheKeepAliveRequest {
+    session_key: String,
+}
+
+pub(super) async fn cache_keep_alive_pause(
+    state: RemoteHttpState,
+    Json(body): Json<PauseCacheKeepAliveRequest>,
+) -> Response {
+    match crate::cache_keep_alive::cache_keep_alive_pause(&state.runtime, body.session_key).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}

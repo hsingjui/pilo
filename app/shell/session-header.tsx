@@ -1,4 +1,13 @@
-import { computed, type JSX, signal, Text, token, View } from "nsh";
+import {
+	cleanup,
+	computed,
+	type JSX,
+	signal,
+	Text,
+	token,
+	untracked,
+	View,
+} from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
 import { fileBasename } from "@shared/chat/chat-tool-result";
@@ -41,6 +50,12 @@ export interface SessionHeaderProps {
 	sessionPath: () => string | null;
 	/** Renames the session in the index; omitted for an unsaved one. */
 	onRename?: (title: string) => void;
+	/** Deletes the saved session; omitted for an unsaved one. */
+	onDelete?: () => void;
+	/** Whether the open session currently has a running turn. */
+	running?: () => boolean;
+	/** Reports when the header's own modal dialog (e.g. rename) opens or closes. */
+	onModalOpenChange?: (open: boolean) => void;
 	/** The sidebar is collapsed: its expand button floats over the logo. */
 	logoHidden?: () => boolean;
 	/** The chat's title tab and menu show; a new chat's landing hides them. */
@@ -142,7 +157,7 @@ export function SessionHeader(props: SessionHeaderProps) {
 		}
 		for (const tab of terminalTabs()) {
 			const label = () =>
-				`${tab.title} ${tab.number}${tab.exited ? " · exited" : ""}`;
+				`${tab.title} ${tab.number}${tab.exited ? ` · ${t("terminal.exited")}` : ""}`;
 			items.push({
 				id: `terminal:${tab.id}`,
 				testID: `terminal-tab:${tab.id}`,
@@ -320,7 +335,10 @@ export function SessionHeader(props: SessionHeaderProps) {
 							sessionId={props.sessionId}
 							sessionPath={props.sessionPath}
 							title={props.title}
+							running={props.running}
 							onRename={props.onRename}
+							onDelete={props.onDelete}
+							onModalOpenChange={props.onModalOpenChange}
 						/>
 					) : null
 				}
@@ -470,9 +488,21 @@ function SessionHeaderMenu(props: {
 	sessionId: () => string | null;
 	sessionPath: () => string | null;
 	title: () => string;
+	running?: () => boolean;
 	onRename?: (title: string) => void;
+	onDelete?: () => void;
+	onModalOpenChange?: (open: boolean) => void;
 }) {
 	const renameOpen = signal(false);
+	const menuOpen = signal(false);
+	const confirmingDelete = signal(false);
+	const setRenameOpen = (open: boolean) => {
+		renameOpen.set(open);
+		props.onModalOpenChange?.(open);
+	};
+	cleanup(() => {
+		if (untracked(renameOpen)) props.onModalOpenChange?.(false);
+	});
 	const toasts = AppToaster();
 	const copy = (text: string) =>
 		void writeClipboardText(text)
@@ -485,6 +515,11 @@ function SessionHeaderMenu(props: {
 	return (
 		<>
 			<Menu
+				open={menuOpen()}
+				onOpenChange={({ open }) => {
+					menuOpen.set(open);
+					if (!open) confirmingDelete.set(false);
+				}}
 				align="end"
 				popupClass="w-72"
 				trigger={
@@ -539,28 +574,70 @@ function SessionHeaderMenu(props: {
 							{() => props.sessionPath() ?? t("chat.sessionPathUnavailable")}
 						</Text>
 					</MenuItem>
-					{props.onRename ? (
-						<>
+					{() =>
+						props.onRename || (props.onDelete && props.sessionPath()) ? (
 							<MenuSeparator />
-							<MenuItem
-								testID="session-menu-rename"
-								indicatorClass="hidden"
-								icon={<Icon name="Pencil" size={14} />}
-								onSelect={() => renameOpen.set(true)}
-							>
-								<Text class="font-sans">{() => t("chat.renameSession")}</Text>
-							</MenuItem>
-						</>
+						) : null
+					}
+					{props.onRename ? (
+						<MenuItem
+							testID="session-menu-rename"
+							indicatorClass="hidden"
+							icon={<Icon name="Pencil" size={14} />}
+							onSelect={() => setRenameOpen(true)}
+						>
+							<Text class="font-sans">{() => t("chat.renameSession")}</Text>
+						</MenuItem>
 					) : null}
+					{() =>
+						props.onDelete && props.sessionPath() ? (
+							<MenuItem
+								testID="session-menu-delete"
+								indicatorClass="hidden"
+								variant="destructive"
+								icon={<Icon name="Trash2" size={14} />}
+								closeOnSelect={false}
+								onSelect={() => {
+									if (!confirmingDelete()) {
+										confirmingDelete.set(true);
+										return;
+									}
+									confirmingDelete.set(false);
+									menuOpen.set(false);
+									props.onDelete?.();
+								}}
+							>
+								<Text class="font-sans">
+									{() =>
+										confirmingDelete()
+											? t(
+													props.running?.()
+														? "sidebar.deleteRunningConfirm"
+														: "sidebar.confirmDelete",
+												)
+											: t("chat.deleteSession")
+									}
+								</Text>
+							</MenuItem>
+						) : null
+					}
 				</View>
 			</Menu>
-			{props.onRename ? <RenameDialog open={renameOpen} {...props} /> : null}
+			{props.onRename ? (
+				<RenameDialog
+					open={renameOpen}
+					setOpen={setRenameOpen}
+					title={props.title}
+					onRename={props.onRename}
+				/>
+			) : null}
 		</>
 	);
 }
 
 function RenameDialog(props: {
-	open: { (): boolean; set: (value: boolean) => void };
+	open: () => boolean;
+	setOpen: (value: boolean) => void;
 	title: () => string;
 	onRename?: (title: string) => void;
 }) {
@@ -568,14 +645,14 @@ function RenameDialog(props: {
 	const submit = () => {
 		const title = value().trim();
 		if (title && title !== props.title()) props.onRename?.(title);
-		props.open.set(false);
+		props.setOpen(false);
 	};
 	return (
 		<Dialog
 			testID="session-rename-dialog"
 			open={props.open()}
 			accessibilityLabel={t("chat.renameDialogTitle")}
-			onOpenChange={({ open }) => props.open.set(open)}
+			onOpenChange={({ open }) => props.setOpen(open)}
 			onOpen={() => value.set(props.title())}
 		>
 			<DialogHeader>
@@ -586,6 +663,7 @@ function RenameDialog(props: {
 			</DialogHeader>
 			<Input
 				testID="session-rename-input"
+				autoFocus
 				placeholder={t("navigation.renamePlaceholder")}
 				accessibilityLabel={t("chat.renameDialogTitle")}
 				value={value()}
@@ -593,7 +671,7 @@ function RenameDialog(props: {
 				onSubmit={submit}
 			/>
 			<DialogFooter>
-				<Button variant="ghost" onPress={() => props.open.set(false)}>
+				<Button variant="ghost" onPress={() => props.setOpen(false)}>
 					<Text class="font-sans">{() => t("chat.renameDialogCancel")}</Text>
 				</Button>
 				<Button

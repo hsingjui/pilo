@@ -289,3 +289,27 @@ pub(super) async fn session_delete(
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SessionUiStateRequest {
+    project_id: Option<String>,
+    session_path: String,
+    update: pilo_domain::SessionUiStateUpdate,
+}
+
+/// Mobile WebUI 的会话重命名 / UI 状态更新。
+pub(super) async fn session_ui_state(
+    state: RemoteHttpState,
+    Json(request): Json<SessionUiStateRequest>,
+) -> Response {
+    match crate::session_api::session_update_ui_state(
+        &state.runtime,
+        request.session_path,
+        request.update,
+        request.project_id,
+    ) {
+        Ok(entry) => Json(entry).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
