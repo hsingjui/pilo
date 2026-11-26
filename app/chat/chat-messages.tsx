@@ -59,7 +59,13 @@ type WebChatWheelEvent = {
 };
 
 interface WebChatViewport extends ChatScrollElementLike {
-	querySelector(selector: string): object | null;
+	style: {
+		setProperty(name: string, value: string): void;
+		removeProperty(name: string): void;
+	};
+	querySelector(
+		selector: string,
+	): { getBoundingClientRect(): { height: number } } | null;
 	addEventListener(type: "scroll", listener: () => void): void;
 	addEventListener(
 		type: "wheel",
@@ -75,7 +81,7 @@ interface WebChatViewport extends ChatScrollElementLike {
 
 function observeWebChatEnd(
 	initiallyFollowing: boolean,
-	canFollow: () => boolean,
+	onResumeFollowing: () => void,
 ) {
 	type BrowserWindow = {
 		parent?: BrowserWindow;
@@ -102,11 +108,21 @@ function observeWebChatEnd(
 	const content = viewport?.querySelector(":scope > .nsh-spacer");
 	if (!viewport || !content || !host.ResizeObserver) return;
 
+	// The virtual list already anchors rows above the viewport. The browser
+	// must not also anchor to content pushed down by an open disclosure.
+	viewport.style.setProperty("overflow-anchor", "none");
 	let following = initiallyFollowing;
+	let pausedForDisclosure = false;
 	let dragging = false;
 	let wheelingUp = false;
 	let end = getChatScrollMaxOffset(viewport);
-	let offsetAfterResize: number | undefined;
+	let contentHeight = content.getBoundingClientRect().height;
+	let lastOffset = viewport.scrollTop;
+	const updateFollowing = (value: boolean) => {
+		pausedForDisclosure = false;
+		following = value;
+		if (value) onResumeFollowing();
+	};
 	const readWheel = ({
 		deltaX,
 		deltaY,
@@ -118,45 +134,57 @@ function observeWebChatEnd(
 		if (deltaY < 0 && viewport.scrollTop > 0) {
 			// nsh doesn't report a scroll drag for wheel input; pause before layout can change.
 			wheelingUp = true;
-			following = false;
+			updateFollowing(false);
 		} else if (deltaY > 0) {
 			wheelingUp = false;
 			if (
 				getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
 				followThreshold
 			)
-				following = true;
+				updateFollowing(true);
 		}
 	};
 	const readScroll = () => {
 		const offset = viewport.scrollTop;
-		// Let the resize callback handle layout-induced scrolls at a new extent.
-		if (getChatScrollMaxOffset(viewport) !== end) return;
-		if (offset !== offsetAfterResize)
-			following = !wheelingUp && end - offset <= followThreshold;
-		offsetAfterResize = undefined;
+		// Resize and duplicate scroll reports must not resume following.
+		if (getChatScrollMaxOffset(viewport) !== end || offset === lastOffset)
+			return;
+		lastOffset = offset;
+		updateFollowing(!wheelingUp && end - offset <= followThreshold);
 	};
 	const resize = new host.ResizeObserver(() => {
 		end = getChatScrollMaxOffset(viewport);
-		// Correct the rendered offset before paint, after nsh has applied its layout.
+		const height = content.getBoundingClientRect().height;
+		// The spacer may shrink even when the chat was too short to scroll.
 		if (
-			following &&
-			!dragging &&
-			canFollow() &&
-			Math.abs(end - viewport.scrollTop) > 1
+			pausedForDisclosure &&
+			height < contentHeight &&
+			end - viewport.scrollTop <= followThreshold
 		) {
+			updateFollowing(true);
+		}
+		contentHeight = height;
+		// Correct the rendered offset before paint, after nsh has applied its layout.
+		if (following && !dragging && Math.abs(end - viewport.scrollTop) > 1) {
 			viewport.scrollTop = end;
 		}
-		offsetAfterResize = viewport.scrollTop;
+		lastOffset = viewport.scrollTop;
 	});
 	viewport.addEventListener("scroll", readScroll);
 	viewport.addEventListener("wheel", readWheel, { passive: true });
 	resize.observe(viewport);
 	resize.observe(content);
 	return {
+		pauseForDisclosure() {
+			pausedForDisclosure ||= following;
+			following = false;
+			lastOffset = viewport.scrollTop;
+		},
 		setFollowing(value: boolean) {
+			pausedForDisclosure = false;
 			wheelingUp = false;
 			following = value;
+			lastOffset = viewport.scrollTop;
 		},
 		endWheel() {
 			wheelingUp = false;
@@ -164,13 +192,15 @@ function observeWebChatEnd(
 		setDragging(value: boolean) {
 			wheelingUp = false;
 			dragging = value;
-			following =
+			updateFollowing(
 				!value &&
-				getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
-					followThreshold;
+					getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
+						followThreshold,
+			);
 		},
 		disconnect() {
 			resize.disconnect();
+			viewport.style.removeProperty("overflow-anchor");
 			viewport.removeEventListener("scroll", readScroll);
 			viewport.removeEventListener("wheel", readWheel);
 		},
@@ -248,7 +278,8 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const web = platform.os === "web";
 	let webEnd: ReturnType<typeof observeWebChatEnd>;
 	const disclose = (update: () => void) => {
-		// Let the native list keep the visible rows in place when details grow.
+		// Let details grow below the trigger instead of following the new end.
+		webEnd?.pauseForDisclosure();
 		batch(() => {
 			followPaused.set(true);
 			update();
@@ -261,7 +292,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 		const isAtEnd =
 			contentSize.height - (offset.y + size.height) <= followThreshold;
 		atEnd.set(isAtEnd);
-		if (isAtEnd) followPaused.set(false);
+		if (isAtEnd && !webEnd) followPaused.set(false);
 		away.set(
 			shouldShowChatScrollToLatest(
 				{
@@ -304,8 +335,8 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const attachWebEnd = () => {
 		if (!stopped) {
 			webEnd ??= observeWebChatEnd(
-				untracked(atEnd),
-				() => !untracked(followPaused),
+				untracked(atEnd) && !untracked(followPaused),
+				() => followPaused.set(false),
 			);
 		}
 	};
