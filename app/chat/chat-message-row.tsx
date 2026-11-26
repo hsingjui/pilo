@@ -17,6 +17,9 @@ import { ChatUserMessage } from "./chat-user-message";
 
 export interface ChatMessageRowProps {
 	message: () => ChatMessage;
+	index?: () => number;
+	isPlaceholderFailed?: (index: number) => boolean;
+	onRetryPlaceholder?: (index: number) => void;
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	assistantText?: ChatTextBody;
@@ -42,7 +45,21 @@ export function ChatMessageRow(props: ChatMessageRowProps) {
 	const role = computed(() => message().role);
 	return () => {
 		if (placeholder()) {
-			return <ChatHistoryPlaceholder message={message} />;
+			return (
+				<ChatHistoryPlaceholder
+					message={message}
+					failed={
+						props.isPlaceholderFailed && props.index
+							? () => props.isPlaceholderFailed!(props.index!())
+							: undefined
+					}
+					onRetry={
+						props.onRetryPlaceholder && props.index
+							? () => props.onRetryPlaceholder!(props.index!())
+							: undefined
+					}
+				/>
+			);
 		}
 		switch (role()) {
 			case "user":

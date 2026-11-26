@@ -51,6 +51,8 @@ export interface ChatMessageListProps {
 	 * reads the pages of history holding them).
 	 */
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
+	isPlaceholderFailed?: (index: number) => boolean;
+	onRetryPlaceholder?: (index: number) => void;
 }
 
 /**
@@ -93,7 +95,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
 							/>
 						);
 					case "waiting":
-						return <ChatTurnWaiting />;
+						return <ChatTurnWaiting onRefresh={props.onRetry} />;
 					case "empty":
 						return (
 							<View
@@ -121,6 +123,8 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								forkDisabled={props.forkDisabled}
 								footer={props.footer}
 								onVisibleRangeChange={props.onVisibleRangeChange}
+								isPlaceholderFailed={props.isPlaceholderFailed}
+								onRetryPlaceholder={props.onRetryPlaceholder}
 								restorePosition={
 									key === null ? null : (positions.get(key) ?? null)
 								}

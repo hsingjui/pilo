@@ -121,7 +121,7 @@ fn describe_history_message(
                 timestamp_ms = timestamp_ms.or(*timestamp);
                 estimated_chars = estimated_chars.saturating_add(summary.chars().count());
                 preview = if summary.is_empty() {
-                    "上下文已压缩".to_owned()
+                    String::new()
                 } else {
                     preview_text(summary)
                 };
@@ -138,7 +138,7 @@ fn describe_history_message(
                 estimated_chars = estimated_chars.saturating_add(text.chars().count());
                 if preview.is_empty() {
                     preview = if text.is_empty() && !images.is_empty() {
-                        "[图片]".to_owned()
+                        "[image]".to_owned()
                     } else {
                         user_message_preview(text)
                     };

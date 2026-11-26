@@ -17,6 +17,7 @@ import {
 } from "nsh";
 
 import {
+	CHAT_FOLLOW_BOTTOM_THRESHOLD_PX,
 	type ChatScrollElementLike,
 	getChatScrollMaxOffset,
 	shouldShowChatScrollToLatest,
@@ -45,7 +46,7 @@ import type {
 import { ConversationColumn } from "./conversation-column";
 
 // How close to its end the list still counts as at the end, in points.
-const followThreshold = 4;
+const followThreshold = CHAT_FOLLOW_BOTTOM_THRESHOLD_PX;
 const followEnd = { autoscrollToBottomThreshold: followThreshold };
 // How far the list is scrolled before its top edge fades, in points.
 const fadeAfter = 16;
@@ -215,6 +216,8 @@ export interface ChatMessagesProps {
 	restorePosition?: ChatScrollPosition | null;
 	/** Where the chat is read to, kept as it scrolls. */
 	onScrollPositionChange?: (position: ChatScrollPosition) => void;
+	isPlaceholderFailed?: (index: number) => boolean;
+	onRetryPlaceholder?: (index: number) => void;
 }
 
 /**
@@ -369,10 +372,13 @@ export function ChatMessages(props: ChatMessagesProps) {
 				onScrollEnd={web ? () => webEnd?.endWheel() : undefined}
 				onViewableItemsChange={reportVisible}
 			>
-				{(message) => (
+				{(message, index) => (
 					<ChatDisclosureAction.Provider value={disclose}>
 						<ChatMessageRow
 							message={message}
+							index={index}
+							isPlaceholderFailed={props.isPlaceholderFailed}
+							onRetryPlaceholder={props.onRetryPlaceholder}
 							userBody={props.userBody}
 							assistantBody={props.assistantBody}
 							assistantText={props.assistantText}

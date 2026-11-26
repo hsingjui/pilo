@@ -246,6 +246,7 @@ function startsTurn(event: PiloClientEvent) {
 export class ChatTranscriptStore {
 	private readonly current = signal(closed);
 	readonly state: Accessor<ChatTranscriptState> = this.current;
+	private readonly failedPageStarts = signal<ReadonlySet<number>>(new Set());
 	private readonly liveTurnSignal = signal(false);
 	private readonly historyMetaSignal =
 		signal<ChatTranscriptHistoryMetadata | null>(null);
@@ -598,6 +599,7 @@ export class ChatTranscriptStore {
 		this.local = undefined;
 		this.localPromptEcho = undefined;
 		this.external = false;
+		this.failedPageStarts.set(new Set());
 		this.liveTurnSignal.set(false);
 		this.historyMetaSignal.set(null);
 	}
@@ -781,6 +783,47 @@ export class ChatTranscriptStore {
 		this.fill();
 	}
 
+	isPlaceholderFailed(messageIndex: number): boolean {
+		const pageStart =
+			Math.floor(messageIndex / HISTORY_PAGE_MESSAGE_COUNT) *
+			HISTORY_PAGE_MESSAGE_COUNT;
+		return this.failedPageStarts().has(pageStart);
+	}
+
+	retryPlaceholder(messageIndex: number): void {
+		const saved = this.saved;
+		if (!saved || this.current().status !== "ready") return;
+		const end = this.older.getSnapshot().runtimeBaseStart - 1;
+		const size = HISTORY_PAGE_MESSAGE_COUNT;
+		const start = Math.floor(messageIndex / size) * size;
+		if (start < 0 || start > end || saved.pages.has(start)) return;
+		const pageEnd = Math.min(end, start + size - 1);
+		if (this.older.isRangeHydrated(start, pageEnd)) {
+			this.clearFailedPage(start);
+			return;
+		}
+		saved.pages.add(start);
+		void this.loadPage(saved, start, pageEnd - start + 1);
+	}
+
+	private markFailedPage(pageStart: number) {
+		this.failedPageStarts.update((set) => {
+			if (set.has(pageStart)) return set;
+			const next = new Set(set);
+			next.add(pageStart);
+			return next;
+		});
+	}
+
+	private clearFailedPage(pageStart: number) {
+		this.failedPageStarts.update((set) => {
+			if (!set.has(pageStart)) return set;
+			const next = new Set(set);
+			next.delete(pageStart);
+			return next;
+		});
+	}
+
 	/** Reads the pages of the wanted range that are not loaded or on their way. */
 	private fill() {
 		const { saved, wanted } = this;
@@ -814,6 +857,7 @@ export class ChatTranscriptStore {
 		startMessage: number,
 		messageLimit: number,
 	) {
+		this.clearFailedPage(startMessage);
 		try {
 			const { history, fingerprint } = await this.client.loadHistory(
 				saved.projectId,
@@ -847,7 +891,9 @@ export class ChatTranscriptStore {
 			this.older.hydrate(start, messages);
 			this.showPrefix();
 		} catch {
-			// The page stays as placeholders; asking for it again reads it again.
+			if (this.saved === saved) {
+				this.markFailedPage(startMessage);
+			}
 		} finally {
 			saved.pages.delete(startMessage);
 		}
@@ -898,6 +944,7 @@ export class ChatTranscriptStore {
 		result?: SessionHistoryResult,
 		sessionPath?: string | null,
 	) {
+		this.failedPageStarts.set(new Set());
 		const { messageIndex = [], windowStartMessage = 0 } = result?.history ?? {};
 		this.older.initialize(messageIndex, windowStartMessage);
 		const snapshot = this.older.getSnapshot();

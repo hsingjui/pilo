@@ -1,7 +1,7 @@
-const SCROLL_TO_LATEST_SHOW_MIN_PX = 96;
-const SCROLL_TO_LATEST_SHOW_MAX_PX = 180;
-const SCROLL_TO_LATEST_SHOW_VIEWPORT_RATIO = 0.22;
-const SCROLL_TO_LATEST_HIDE_RATIO = 0.45;
+/** 与消息列表跟底阈值对齐，避免出现“既不自动跟底又不出现回到底部按钮”的死区。 */
+export const CHAT_FOLLOW_BOTTOM_THRESHOLD_PX = 24;
+
+const SCROLL_TO_LATEST_HIDE_THRESHOLD_PX = 12;
 
 /** A scroll view's metrics, named as a DOM element's. */
 export type ChatScrollElementLike = {
@@ -23,20 +23,15 @@ export function shouldShowChatScrollToLatest(
 	const maxScrollOffset = getChatScrollMaxOffset(scrollElement);
 	if (maxScrollOffset <= 0) return false;
 
-	const showThreshold = Math.min(
-		SCROLL_TO_LATEST_SHOW_MAX_PX,
-		Math.max(
-			SCROLL_TO_LATEST_SHOW_MIN_PX,
-			scrollElement.clientHeight * SCROLL_TO_LATEST_SHOW_VIEWPORT_RATIO,
-		),
-	);
-	const hideThreshold = showThreshold * SCROLL_TO_LATEST_HIDE_RATIO;
 	const distanceFromBottom = Math.max(
 		0,
 		maxScrollOffset - scrollElement.scrollTop,
 	);
 
 	return (
-		distanceFromBottom >= (currentlyVisible ? hideThreshold : showThreshold)
+		distanceFromBottom >=
+		(currentlyVisible
+			? SCROLL_TO_LATEST_HIDE_THRESHOLD_PX
+			: CHAT_FOLLOW_BOTTOM_THRESHOLD_PX)
 	);
 }
