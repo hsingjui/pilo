@@ -848,9 +848,13 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		this.ensureSocket();
 	}
 
+	private replayCursorTimer: ReturnType<typeof setTimeout> | undefined;
+	private persistedReplayCursor: number | undefined;
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.flushReplayCursor();
 		this.clearReconnectTimer();
 		this.clearProbeTimer();
 		this.clearRecoveredTimer();
@@ -864,10 +868,29 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		for (const listener of active) listener.onStatus(false);
 	}
 
-	private setReplayCursor(sequence: number): void {
+	private flushReplayCursor(): void {
+		if (this.replayCursorTimer !== undefined) {
+			clearTimeout(this.replayCursorTimer);
+			this.replayCursorTimer = undefined;
+		}
+		if (this.persistedReplayCursor === this.replayCursor) return;
+		this.persistedReplayCursor = this.replayCursor;
+		writeBrowserLocalStorage(REMOTE_SEQUENCE_KEY, String(this.replayCursor));
+	}
+
+	private setReplayCursor(sequence: number, immediate = false): void {
 		if (sequence === this.replayCursor) return;
 		this.replayCursor = sequence;
-		writeBrowserLocalStorage(REMOTE_SEQUENCE_KEY, String(sequence));
+		if (immediate) {
+			this.flushReplayCursor();
+			return;
+		}
+		if (this.replayCursorTimer === undefined) {
+			this.replayCursorTimer = setTimeout(() => {
+				this.replayCursorTimer = undefined;
+				this.flushReplayCursor();
+			}, 1_000);
+		}
 	}
 
 	private clearReconnectTimer(): void {
@@ -903,12 +926,17 @@ export class WebRemotePiloClient implements WebRemoteClient {
 			this.onlineSignal.set(false);
 			this.connectionSignal.set("offline");
 		};
+		const handlePageHide = () => {
+			this.flushReplayCursor();
+		};
 		if (win.addEventListener && win.removeEventListener) {
 			win.addEventListener("online", handleOnline);
 			win.addEventListener("offline", handleOffline);
+			win.addEventListener("pagehide", handlePageHide);
 			this.removeNetworkListeners = () => {
 				win.removeEventListener?.("online", handleOnline);
 				win.removeEventListener?.("offline", handleOffline);
+				win.removeEventListener?.("pagehide", handlePageHide);
 			};
 		}
 
@@ -929,6 +957,7 @@ export class WebRemotePiloClient implements WebRemoteClient {
 	): void {
 		if (state === "background") {
 			this.hiddenAt = Date.now();
+			this.flushReplayCursor();
 			this.clearProbeTimer();
 			return;
 		}
@@ -1033,7 +1062,7 @@ export class WebRemotePiloClient implements WebRemoteClient {
 					// The Host subscribes before hello, but sends replay after it.
 					// A lower watermark means the Host restarted; never advance here.
 					const reset = parsed.latestSequence < this.replayCursor;
-					if (reset) this.setReplayCursor(0);
+					if (reset) this.setReplayCursor(0, true);
 					this.acceptHello(reset);
 					this.broadcast(parsed as PiloClientEventMessage);
 					return;

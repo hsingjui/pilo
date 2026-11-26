@@ -267,9 +267,15 @@ impl Pilo {
     /// Waits for an ordered batch, an inclusive gap, or a closed event stream.
     pub async fn next_events(this: Instance<Self>, max: f64) -> Result<JsonValue, String> {
         let max = positive_count(max, "event batch size")?;
-        let stream = this.with(|pilo| pilo.event_stream.clone());
-        let batch = stream.lock().await.next_batch(max).await;
-        encode_event_batch(batch)
+        let task = this.with(|pilo| {
+            let stream = pilo.event_stream.clone();
+            pilo.executor.spawn(async move {
+                let batch = stream.lock().await.next_batch(max).await;
+                encode_event_batch(batch)
+            })
+        });
+        task.await
+            .map_err(|error| format!("Pilo event stream task failed: {error}"))?
     }
 
     /// Reads the saved project catalog without loading live chat snapshots.
@@ -1442,8 +1448,13 @@ impl Pilo {
         max: f64,
     ) -> Result<Vec<JsonValue>, String> {
         let max = positive_count(max, "terminal event batch size")?;
-        let events = this.with(|pilo| pilo.terminal_events.clone());
-        Ok(encode_terminal_events(events.next_batch(max).await))
+        let task = this.with(|pilo| {
+            let events = pilo.terminal_events.clone();
+            pilo.executor
+                .spawn(async move { encode_terminal_events(events.next_batch(max).await) })
+        });
+        task.await
+            .map_err(|error| format!("Pilo terminal event task failed: {error}"))
     }
 
     /// Waits for the runtime to close. Safe to call again after shutdown.

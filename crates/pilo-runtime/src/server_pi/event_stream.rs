@@ -190,7 +190,7 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
             let was_empty = buffered_runtime_events.is_empty();
             match event.event.as_str() {
                 "pi.rpc" => {
-                    let data = event.data.clone();
+                    let data = event.data;
                     observe_pi_event(&state, &data, generation, &agent_start_observer);
                     trace_pi_transport_event(&stream_id, &data);
                     dispatch_pi_rpc(

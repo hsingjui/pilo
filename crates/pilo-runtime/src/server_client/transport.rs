@@ -114,6 +114,22 @@ impl ServerEventHub {
     }
 
     pub(super) fn send(&self, event: ServerEvent) {
+        let json_bytes = if event.data.is_null() {
+            4
+        } else {
+            let mut size = crate::events::PayloadSize::default();
+            if serde_json::to_writer(&mut size, &event.data).is_ok() {
+                size.0
+            } else {
+                usize::MAX
+            }
+        };
+        let bytes = event.binary.iter().fold(
+            json_bytes
+                .saturating_add(event.stream_id.len())
+                .saturating_add(event.event.len()),
+            |sum, payload| sum.saturating_add(payload.len()),
+        );
         let stream_id = event.stream_id.clone();
         let mut streams = self
             .streams
@@ -122,18 +138,6 @@ impl ServerEventHub {
         let Some(queue) = streams.get(&stream_id) else {
             return;
         };
-        let mut size = crate::events::PayloadSize::default();
-        let json_bytes = if serde_json::to_writer(&mut size, &event.data).is_ok() {
-            size.0
-        } else {
-            usize::MAX
-        };
-        let bytes = event.binary.iter().fold(
-            json_bytes
-                .saturating_add(event.stream_id.len())
-                .saturating_add(event.event.len()),
-            |sum, payload| sum.saturating_add(payload.len()),
-        );
         let permit = u32::try_from(bytes)
             .ok()
             .and_then(|bytes| Arc::clone(&queue.bytes).try_acquire_many_owned(bytes).ok());

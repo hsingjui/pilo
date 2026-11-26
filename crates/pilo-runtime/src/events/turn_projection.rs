@@ -32,6 +32,7 @@ pub struct TurnProjection {
     limits: TurnLimits,
     snapshot: TurnSnapshot,
     bytes: usize,
+    event_sizes: Vec<usize>,
 }
 
 impl TurnProjection {
@@ -43,6 +44,7 @@ impl TurnProjection {
                 live: TurnLive::Idle,
             },
             bytes: 0,
+            event_sizes: Vec::new(),
         }
     }
 
@@ -57,6 +59,7 @@ impl TurnProjection {
         self.snapshot.live = TurnLive::Active {
             events: Arc::new(Vec::new()),
         };
+        self.event_sizes.clear();
         true
     }
 
@@ -82,7 +85,7 @@ impl TurnProjection {
         } = &event
             && let Some(index) = find_segment_tool_update(events, *generation, tool_call_id)
         {
-            let Some(old_bytes) = json_size(events[index].as_ref()) else {
+            let Some(old_bytes) = self.event_sizes.get(index).copied() else {
                 self.truncate();
                 return;
             };
@@ -103,6 +106,7 @@ impl TurnProjection {
                 return;
             }
             Arc::make_mut(events)[index] = Arc::new(event);
+            self.event_sizes[index] = new_bytes;
             self.bytes = next_bytes;
             return;
         }
@@ -114,7 +118,7 @@ impl TurnProjection {
             && let Some(update_index) =
                 find_reclaimable_tool_update(events, *generation, tool_call_id)
         {
-            let Some(old_bytes) = json_size(events[update_index].as_ref()) else {
+            let Some(old_bytes) = self.event_sizes.get(update_index).copied() else {
                 self.truncate();
                 return;
             };
@@ -137,6 +141,8 @@ impl TurnProjection {
             let events = Arc::make_mut(events);
             events.remove(update_index);
             events.push(Arc::new(event));
+            self.event_sizes.remove(update_index);
+            self.event_sizes.push(new_bytes);
             self.bytes = next_bytes;
             return;
         }
@@ -161,8 +167,11 @@ impl TurnProjection {
             Some(delta) => json_size(delta).and_then(|size| size.checked_sub(2)),
             None => json_size(&event),
         };
-        let Some(next_bytes) = additional_bytes.and_then(|size| self.bytes.checked_add(size))
-        else {
+        let Some(added_bytes) = additional_bytes else {
+            self.truncate();
+            return;
+        };
+        let Some(next_bytes) = self.bytes.checked_add(added_bytes) else {
             self.truncate();
             return;
         };
@@ -176,7 +185,12 @@ impl TurnProjection {
         if let (Some(incoming), Some(previous)) = (incoming_delta, events.last_mut()) {
             match Arc::make_mut(previous) {
                 RuntimeEvent::AssistantTextDelta { delta, .. }
-                | RuntimeEvent::AssistantThinkingDelta { delta, .. } => delta.push_str(incoming),
+                | RuntimeEvent::AssistantThinkingDelta { delta, .. } => {
+                    delta.push_str(incoming);
+                    if let Some(last_size) = self.event_sizes.last_mut() {
+                        *last_size = last_size.saturating_add(added_bytes);
+                    }
+                }
                 _ => {
                     self.truncate();
                     return;
@@ -184,6 +198,7 @@ impl TurnProjection {
             }
         } else {
             events.push(Arc::new(event));
+            self.event_sizes.push(added_bytes);
         }
         self.bytes = next_bytes;
     }
@@ -193,12 +208,14 @@ impl TurnProjection {
         self.snapshot.base_size = None;
         self.snapshot.live = TurnLive::Truncated;
         self.bytes = 0;
+        self.event_sizes.clear();
     }
 
     pub fn settle(&mut self) {
         self.snapshot.base_size = None;
         self.snapshot.live = TurnLive::Idle;
         self.bytes = 0;
+        self.event_sizes.clear();
     }
 }
 

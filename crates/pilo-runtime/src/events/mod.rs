@@ -109,6 +109,15 @@ impl WebEventReceiver {
     }
 }
 
+fn decimal_digits(mut value: u64) -> usize {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
+}
+
 #[derive(Default)]
 pub(crate) struct PayloadSize(pub(crate) usize);
 
@@ -290,22 +299,27 @@ impl RuntimeEventBus {
                 .ok()
                 .and_then(|duration| i64::try_from(duration.as_millis()).ok());
         }
+        // Measure the envelope's serialized bytes outside the global replay lock;
+        // `SequencedRuntimeEvent` inserts `"sequence":<n>,` right after the opening `{`.
+        let mut envelope_size = PayloadSize::default();
+        let envelope_bytes = if serde_json::to_writer(&mut envelope_size, &event).is_ok() {
+            Some(envelope_size.0)
+        } else {
+            None
+        };
         let (sequenced, payload_bytes) = {
             let mut replay = self
                 .replay
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let sequence = self.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+            let bytes = match envelope_bytes {
+                Some(base) => base.saturating_add(12 + decimal_digits(sequence)),
+                None => usize::MAX,
+            };
             // One allocation is shared by replay, the web queue and every reader.
             let sequenced = Arc::new(SequencedRuntimeEvent { sequence, event });
             observe(&sequenced);
-            // Count without allocating another serialized copy of large RPC results.
-            let mut size = PayloadSize::default();
-            let bytes = if serde_json::to_writer(&mut size, &*sequenced).is_ok() {
-                size.0
-            } else {
-                usize::MAX
-            };
             // Publish under the same lock so concurrent sessions keep sequence order.
             self.streams
                 .lock()

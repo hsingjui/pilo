@@ -209,15 +209,42 @@ enum EventBatchResult {
     Closed,
 }
 
+fn is_coalesceable_stream_event(event: &SequencedRuntimeEvent) -> bool {
+    matches!(
+        event.event.event,
+        crate::events::RuntimeEvent::AssistantTextDelta { .. }
+            | crate::events::RuntimeEvent::AssistantThinkingDelta { .. }
+            | crate::events::RuntimeEvent::ToolExecutionUpdate { .. }
+    )
+}
+
 async fn collect_event_batch(
     first: Arc<SequencedRuntimeEvent>,
     receiver: &mut crate::events::WebEventReceiver,
 ) -> EventBatchResult {
+    let coalesce = is_coalesceable_stream_event(&first);
     let mut batch = vec![first];
+    while batch.len() < WS_BATCH_MAX_EVENTS {
+        match receiver.try_recv() {
+            Ok(event) => batch.push(event),
+            Err(broadcast::error::TryRecvError::Empty) => break,
+            Err(broadcast::error::TryRecvError::Lagged(_)) => return EventBatchResult::Lagged,
+            Err(broadcast::error::TryRecvError::Closed) => return EventBatchResult::Closed,
+        }
+    }
+    if !coalesce || batch.len() >= WS_BATCH_MAX_EVENTS {
+        return EventBatchResult::Ready(batch);
+    }
     let deadline = tokio::time::Instant::now() + WS_BATCH_WINDOW;
     while batch.len() < WS_BATCH_MAX_EVENTS {
         match tokio::time::timeout_at(deadline, receiver.recv()).await {
-            Ok(Ok(event)) => batch.push(event),
+            Ok(Ok(event)) => {
+                let keep_waiting = is_coalesceable_stream_event(&event);
+                batch.push(event);
+                if !keep_waiting {
+                    break;
+                }
+            }
             Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
                 return EventBatchResult::Lagged;
             }

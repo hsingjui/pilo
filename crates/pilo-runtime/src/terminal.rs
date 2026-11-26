@@ -171,8 +171,12 @@ impl TerminalEventBus {
             });
             live
         };
-        for subscriber in subscribers {
-            subscriber.push(event.clone());
+        let mut iter = subscribers.into_iter();
+        if let Some(first) = iter.next() {
+            for subscriber in iter {
+                subscriber.push(event.clone());
+            }
+            first.push(event);
         }
     }
 
@@ -278,7 +282,7 @@ impl TerminalManager {
                 }
                 match event.event.as_str() {
                     "terminal.output" => {
-                        let data = event.binary.first().cloned().unwrap_or_default();
+                        let data = event.binary.into_iter().next().unwrap_or_default();
                         terminal_events.publish(TerminalEvent::Output {
                             terminal_id: event_terminal_id.clone(),
                             data,

@@ -33,7 +33,25 @@ pub(super) fn encode_event_batch(batch: EventBatch) -> Result<JsonValue, String>
 }
 
 pub(super) fn encode_terminal_events(events: Vec<TerminalEvent>) -> Vec<JsonValue> {
-    events
+    let mut coalesced: Vec<TerminalEvent> = Vec::with_capacity(events.len());
+    for event in events {
+        match event {
+            TerminalEvent::Output { terminal_id, data } => {
+                if let Some(TerminalEvent::Output {
+                    terminal_id: prev_id,
+                    data: prev_data,
+                }) = coalesced.last_mut()
+                    && *prev_id == terminal_id
+                {
+                    prev_data.extend_from_slice(&data);
+                    continue;
+                }
+                coalesced.push(TerminalEvent::Output { terminal_id, data });
+            }
+            other => coalesced.push(other),
+        }
+    }
+    coalesced
         .into_iter()
         .map(|event| match event {
             TerminalEvent::Output { terminal_id, data } => serde_json::json!({
