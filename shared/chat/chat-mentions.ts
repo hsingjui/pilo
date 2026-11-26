@@ -115,6 +115,77 @@ export function writeChatMentionDraft(
 		: text;
 }
 
+export type MentionEnhancementPayload = {
+	text: string;
+	placeholders: readonly { token: string; raw: string }[];
+};
+
+/**
+ * 将正文中的内联 `@文件` / `@会话` 替换为稳定占位符供草稿优化模型改写，
+ * 以便优化后尽量把引用还原在原句中，而不是全部抽离堆到末尾。
+ */
+export function prepareMentionDraftForEnhancement(
+	value: string,
+	sessions: ReadonlyMap<string, SessionMention>,
+): MentionEnhancementPayload {
+	const parts = readChatMentionParts(value, sessions);
+	const placeholders: { token: string; raw: string }[] = [];
+	const chunks: string[] = [];
+	let prefix = "PILO_REF";
+	while (value.includes(`[[${prefix}_`)) {
+		prefix += "_X";
+	}
+	for (const part of parts) {
+		if (!part.mention) {
+			chunks.push(part.value);
+			continue;
+		}
+		const token = `[[${prefix}_${placeholders.length}]]`;
+		placeholders.push({ token, raw: part.value });
+		chunks.push(token);
+	}
+	return { text: chunks.join(""), placeholders };
+}
+
+/**
+ * 将优化后的文本中的占位符还原为原始 `@` 引用；
+ * 若模型遗漏了部分占位符，则按原顺序补回末尾，确保绝不丢失引用。
+ */
+export function restoreMentionDraftFromEnhancement(
+	enhancedText: string,
+	placeholders: readonly { token: string; raw: string }[],
+): string {
+	if (placeholders.length === 0) return enhancedText;
+	const byToken = new Map<string, string>();
+	for (const { token, raw } of placeholders) {
+		byToken.set(token, raw);
+	}
+	const restoredRaws = new Set<string>();
+	const pattern = new RegExp(
+		Array.from(byToken.keys(), (token) =>
+			token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+		).join("|"),
+		"g",
+	);
+	const result = enhancedText.replace(pattern, (match) => {
+		const raw = byToken.get(match);
+		if (raw === undefined) return match;
+		restoredRaws.add(raw);
+		return raw;
+	});
+	const missing: string[] = [];
+	const seenMissing = new Set<string>();
+	for (const { raw } of placeholders) {
+		if (!restoredRaws.has(raw) && !seenMissing.has(raw)) {
+			seenMissing.add(raw);
+			missing.push(raw);
+		}
+	}
+	return missing.length
+		? `${result ? `${result}\n` : ""}${missing.join("\n")}`
+		: result;
+}
+
 /**
  * 从草稿中精确移除指定的文件或会话引用，同时保持其余内联引用在正文中的原始位置。
  * 如果引用独占一行，连同该行一并清除；如果处于行内，顺带折叠紧邻的一格多余空格。
