@@ -1,6 +1,8 @@
 import { Canvas, computed, Image, Path2D, Text, token, View } from "nsh";
 
 import type { Project } from "@shared/api/projects-types";
+import powershellIcon from "../assets/editors/powershell.svg";
+import rexIcon from "../assets/editors/rex.svg";
 import vscodeIcon from "../assets/editors/vscode.svg";
 import wincIcon from "../assets/editors/winc.svg";
 import type { ProjectNativeApp } from "../client/nsh-pilo-client";
@@ -53,10 +55,15 @@ function OpenerIcon(props: { opener: ProjectOpenerId }) {
 			return <Image src={vscodeIcon} class="size-4 shrink-0 overflow-hidden" />;
 		case "winc":
 			return <Image src={wincIcon} class="size-4 shrink-0 overflow-hidden" />;
+		case "powershell":
+			return (
+				<Image src={powershellIcon} class="size-4 shrink-0 overflow-hidden" />
+			);
+		case "rex":
+			return <Image src={rexIcon} class="size-4 shrink-0 overflow-hidden" />;
 		case "explorer":
 		case "finder":
 			return <Icon name="FolderOpen" size={16} />;
-		case "powershell":
 		case "ghostty":
 			return <Icon name="Terminal" size={16} />;
 	}

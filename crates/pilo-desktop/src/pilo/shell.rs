@@ -36,6 +36,11 @@ impl HostShell for NshHostShell {
         open_path(path)
     }
 
+    #[cfg(windows)]
+    fn activate_process_window(&self, pid: u32) {
+        activate_process_window(pid);
+    }
+
     fn desktop_setting(&self, key: String, value: Option<JsonValue>) -> HostSettingFuture {
         let paths = self.paths.clone();
         Box::pin(async move {
@@ -77,6 +82,67 @@ impl HostShell for NshHostShell {
                 _ => Err(format!("unknown desktop setting: {key}")),
             }
         })
+    }
+}
+
+#[cfg(windows)]
+fn activate_process_window(pid: u32) {
+    use windows_sys::Win32::{
+        Foundation::{HWND, LPARAM},
+        UI::WindowsAndMessaging::{
+            EnumWindows, GW_OWNER, GetForegroundWindow, GetWindow, GetWindowTextLengthW,
+            GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE, SetForegroundWindow,
+            ShowWindowAsync,
+        },
+    };
+
+    struct Target {
+        pid: u32,
+        window: HWND,
+    }
+
+    unsafe extern "system" fn find_window(window: HWND, data: LPARAM) -> i32 {
+        // SAFETY: EnumWindows calls back synchronously with the live Target passed below.
+        let target = unsafe { &mut *(data as *mut Target) };
+        let mut owner_pid = 0;
+        // SAFETY: `window` comes from EnumWindows and `owner_pid` is writable.
+        unsafe {
+            GetWindowThreadProcessId(window, &mut owner_pid);
+            if owner_pid == target.pid
+                && IsWindowVisible(window) != 0
+                && GetWindow(window, GW_OWNER).is_null()
+                && GetWindowTextLengthW(window) > 0
+            {
+                target.window = window;
+                return 0;
+            }
+        }
+        1
+    }
+
+    let mut target = Target {
+        pid,
+        window: std::ptr::null_mut(),
+    };
+    // SAFETY: The callback runs synchronously and does not retain the pointer.
+    unsafe {
+        EnumWindows(Some(find_window), &mut target as *mut Target as LPARAM);
+        if target.window.is_null() {
+            return;
+        }
+        // The user may have switched apps while the tab was being created.
+        let foreground = GetForegroundWindow();
+        let mut foreground_pid = 0;
+        if !foreground.is_null() {
+            GetWindowThreadProcessId(foreground, &mut foreground_pid);
+        }
+        if foreground_pid != std::process::id() {
+            return;
+        }
+        if IsIconic(target.window) != 0 {
+            ShowWindowAsync(target.window, SW_RESTORE);
+        }
+        SetForegroundWindow(target.window);
     }
 }
 

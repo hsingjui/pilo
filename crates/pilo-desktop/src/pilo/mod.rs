@@ -1327,7 +1327,7 @@ impl Pilo {
     }
 
     /// Opens the project, or a path in it, in a desktop app: `finder`,
-    /// `ghostty`, `winc`, `explorer` or `powershell`.
+    /// `ghostty`, `rex`, `winc`, `explorer` or `powershell`.
     pub async fn project_open_in_app(
         this: Instance<Self>,
         project_id: String,

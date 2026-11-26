@@ -176,6 +176,7 @@ export type PiloNative = Pick<
 export type ProjectNativeApp =
 	| "finder"
 	| "ghostty"
+	| "rex"
 	| "winc"
 	| "explorer"
 	| "powershell";

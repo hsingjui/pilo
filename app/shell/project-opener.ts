@@ -21,6 +21,7 @@ const PROJECT_OPENERS = [
 	{ id: "powershell", name: "PowerShell" },
 	{ id: "finder", name: "Finder" },
 	{ id: "ghostty", name: "Ghostty" },
+	{ id: "rex", name: "Rex" },
 ] as const;
 
 export type ProjectOpener = (typeof PROJECT_OPENERS)[number];
@@ -51,6 +52,11 @@ export function projectOpeners(
 			case "finder":
 			case "ghostty":
 				return platform.os === "macos" && kind === "local";
+			case "rex":
+				return (
+					kind === "local" &&
+					(platform.os === "macos" || platform.os === "windows")
+				);
 			default:
 				return true;
 		}
@@ -63,7 +69,8 @@ export function opensDirectory(opener: ProjectOpenerId) {
 		opener === "explorer" ||
 		opener === "finder" ||
 		opener === "powershell" ||
-		opener === "ghostty"
+		opener === "ghostty" ||
+		opener === "rex"
 	);
 }
 

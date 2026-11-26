@@ -37,10 +37,10 @@ see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
   an editor URL for a project directory or the selected absolute file path.
 - `openProjectInEditor(project, editor: ProjectOpener, path?: string): Promise<void>`
   preserves the connection environment and existing quick-open selection.
-  `ProjectOpener` adds `explorer | powershell | finder | ghostty | winc` to `ProjectEditor`.
+  `ProjectOpener` adds `explorer | powershell | finder | ghostty | rex | winc` to `ProjectEditor`.
 - `getProjectOpeners(project)` filters native apps by desktop OS and connection.
 - `project_open_in_app(handle, id: String, app: ProjectApp, path: Option<String>) -> Result<(), String>`
-  accepts IPC `{ id, app: "explorer" | "powershell" | "finder" | "ghostty" | "winc", path? }`.
+  accepts IPC `{ id, app: "explorer" | "powershell" | "finder" | "ghostty" | "rex" | "winc", path? }`.
   Omitted path uses the saved project directory; a file targets its parent folder
   for file managers/terminals, or the file itself for Winc.
 - `project_open_in_zed_wsl(app, id: String, path: Option<String>) -> Result<(), String>`
@@ -213,7 +213,8 @@ Owners: `shared/chat/chat-markdown-links.ts`, `web/lib/api/file-links.ts`,
   shell text; only saved WSL projects can use that command.
 - Quick open retains editor URL routing and the `pilo.projectEditor.v1` preference,
   and adds Windows File Explorer/Windows PowerShell for Local/WSL and macOS
-  Finder/Ghostty for Local. Winc is a CLI-based editor for Windows/macOS/Linux
+  Finder/Ghostty for Local. Rex is available only for Local projects on Windows
+  and macOS. Winc is a CLI-based editor for Windows/macOS/Linux
   Local and Windows WSL projects; SSH retains URL-based editors only. WebUI gets no native menu
   or launch endpoint. An unavailable remembered choice falls back to Zed without
   overwriting the preference. Preserve existing menu keyboard behavior and 44px
@@ -244,6 +245,24 @@ Owners: `shared/chat/chat-markdown-links.ts`, `web/lib/api/file-links.ts`,
   uses `/usr/bin/open -na winc --args -- <path>` so a running app receives the path;
   Linux uses `winc -- <path>` from PATH. Windows/Linux return after spawning and
   reap the GUI process in the background; macOS checks the launcher exit status.
+- Rex on Windows prefers a tab in the most recently used local session, not
+  necessarily the currently visible session. Read the empty key in
+  `%LOCALAPPDATA%/Superlogical/Rex/last_sessions.json` and use the bundled
+  `bin/rex-server.exe` only if a connected local Windows app client still
+  reports that session. Clear inherited Rex targeting variables and disable
+  server autostart for these CLI calls. Pass the directory separately to
+  `window new --session … --cwd …`, then select the session on that client
+  best-effort. Use the connected client's `principal.pid` to ask the desktop
+  shell to activate its visible top-level window and restore it if minimized.
+  Only request foreground activation if Pilo is still the foreground process;
+  denial does not undo or fail a successful tab open. If no unique target can
+  be confirmed, resolve the desktop app through the Superlogical installer or
+  PATH (not the server CLI) and launch a new session with that directory. Do not
+  retry via GUI after a tab creation request fails: a timeout can occur after
+  creation. On macOS, open the folder
+  by the `com.superlogical.rex` bundle ID; when launching cold, give the client
+  time to connect before sending the folder event, which Rex Beta otherwise
+  can drop.
 - Middle-button `auxclick` anywhere on a file tab (including its close icon)
   closes that file once through the existing close/focus flow. Prevent middle
   `mousedown` defaults too, to suppress Windows autoscroll/Linux paste. Right
