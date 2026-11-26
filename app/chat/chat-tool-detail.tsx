@@ -16,7 +16,6 @@ import type { ChatTodoItem } from "@shared/chat/chat-todos";
 import { appLocale, t } from "../shell/i18n";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { scrollbarLook } from "../ui/scrollbar";
-import { ChatCopyButton } from "./chat-copy-button";
 import { ChatMediaActions } from "./chat-media-actions";
 import { ChatTodoList } from "./chat-todo-list";
 
@@ -49,30 +48,21 @@ function toolTextChunks(text: string) {
 function ToolText(props: { text: () => string; maxHeight: string }) {
 	const chunks = computed(() => toolTextChunks(props.text()));
 	return (
-		<>
-			{() =>
-				props.text().length > 0 ? (
-					<View class="items-end">
-						<ChatCopyButton text={props.text} testID="chat-copy-tool-text" />
-					</View>
-				) : null
-			}
-			<Scroll
-				class={`${props.maxHeight} py-0.5 pr-1`}
-				bounces={false}
-				scrollbar={{ vertical: scrollbarLook() }}
-			>
-				<View selectable>
-					<Each of={chunks()} key="index">
-						{(chunk) => (
-							<Text class={codeText} style={codeSize()}>
-								{chunk}
-							</Text>
-						)}
-					</Each>
-				</View>
-			</Scroll>
-		</>
+		<Scroll
+			class={`${props.maxHeight} py-0.5 pr-1`}
+			bounces={false}
+			scrollbar={{ vertical: scrollbarLook() }}
+		>
+			<View selectable>
+				<Each of={chunks()} key="index">
+					{(chunk) => (
+						<Text class={codeText} style={codeSize()}>
+							{chunk}
+						</Text>
+					)}
+				</Each>
+			</View>
+		</Scroll>
 	);
 }
 
@@ -85,59 +75,50 @@ function ToolDiff(props: { diff: () => string }) {
 			.map((line) => diffLineStyle(line)),
 	);
 	return (
-		<>
-			{() =>
-				props.diff().length > 0 ? (
-					<View class="items-end">
-						<ChatCopyButton text={props.diff} testID="chat-copy-tool-diff" />
-					</View>
-				) : null
-			}
-			<Scroll
-				testID="chat-tool-diff"
-				class="max-h-64 py-1"
-				bounces={false}
-				scrollbar={{ vertical: scrollbarLook() }}
-			>
-				<View selectable>
-					<Each of={lines()} key="index">
-						{(line) => (
-							<View
+		<Scroll
+			testID="chat-tool-diff"
+			class="max-h-64 py-1"
+			bounces={false}
+			scrollbar={{ vertical: scrollbarLook() }}
+		>
+			<View selectable>
+				<Each of={lines()} key="index">
+					{(line) => (
+						<View
+							class={
+								line().marker === "+"
+									? "flex-row bg-code-added/[0.07]"
+									: line().marker === "−"
+										? "flex-row bg-destructive/[0.06]"
+										: "flex-row"
+							}
+						>
+							<Text
+								accessibilityElementsHidden
 								class={
 									line().marker === "+"
-										? "flex-row bg-code-added/[0.07]"
-										: line().marker === "−"
-											? "flex-row bg-destructive/[0.06]"
-											: "flex-row"
+										? "w-3 text-center font-mono leading-[1.4] text-code-added"
+										: "w-3 text-center font-mono leading-[1.4] text-destructive"
 								}
+								style={codeSize()}
 							>
-								<Text
-									accessibilityElementsHidden
-									class={
-										line().marker === "+"
-											? "w-3 text-center font-mono leading-[1.4] text-code-added"
-											: "w-3 text-center font-mono leading-[1.4] text-destructive"
-									}
-									style={codeSize()}
-								>
-									{() => line().marker}
-								</Text>
-								<Text
-									class={
-										line().marker
-											? "min-w-0 flex-1 font-mono leading-[1.4] text-foreground/80"
-											: "min-w-0 flex-1 font-mono leading-[1.4] text-muted-foreground"
-									}
-									style={codeSize()}
-								>
-									{() => line().content || " "}
-								</Text>
-							</View>
-						)}
-					</Each>
-				</View>
-			</Scroll>
-		</>
+								{() => line().marker}
+							</Text>
+							<Text
+								class={
+									line().marker
+										? "min-w-0 flex-1 font-mono leading-[1.4] text-foreground/80"
+										: "min-w-0 flex-1 font-mono leading-[1.4] text-muted-foreground"
+								}
+								style={codeSize()}
+							>
+								{() => line().content || " "}
+							</Text>
+						</View>
+					)}
+				</Each>
+			</View>
+		</Scroll>
 	);
 }
 
