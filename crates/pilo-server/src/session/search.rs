@@ -83,6 +83,37 @@ pub(crate) fn session_search(params: SessionSearchParams) -> Result<Value, Strin
     serde_json::to_value(matches).map_err(|error| error.to_string())
 }
 
+#[derive(Deserialize)]
+struct RawSessionLine {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    id: Option<String>,
+    timestamp: Option<Value>,
+    message: Option<RawMessage>,
+}
+
+#[derive(Deserialize)]
+struct RawMessage {
+    role: Option<String>,
+    content: Option<RawContent>,
+    timestamp: Option<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawContent {
+    Text(String),
+    Parts(Vec<RawPart>),
+    Other(serde::de::IgnoredAny),
+}
+
+#[derive(Deserialize)]
+struct RawPart {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    text: Option<String>,
+}
+
 fn search_file(
     path: &Path,
     query_folded: &str,
@@ -93,11 +124,15 @@ fn search_file(
         Ok(file) => file,
         Err(_) => return Ok(()),
     };
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
     let mut session_id = None;
-    for line in reader.lines() {
-        let line = match line {
-            Ok(line) => line,
+    let mut line_buf = Vec::with_capacity(4096);
+    let session_finder = memchr::memmem::Finder::new(b"\"session\"");
+    let message_finder = memchr::memmem::Finder::new(b"\"message\"");
+    loop {
+        line_buf.clear();
+        let read = match reader.read_until(b'\n', &mut line_buf) {
+            Ok(read) => read,
             Err(error) => {
                 return Err(format!(
                     "failed to search session '{}': {error}",
@@ -105,24 +140,40 @@ fn search_file(
                 ));
             }
         };
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+        if read == 0 {
+            break;
+        }
+        if session_id.is_some() {
+            if message_finder.find(&line_buf).is_none() {
+                continue;
+            }
+        } else if session_finder.find(&line_buf).is_none()
+            && message_finder.find(&line_buf).is_none()
+        {
+            continue;
+        }
+        let Ok(line) = serde_json::from_slice::<RawSessionLine>(&line_buf) else {
             continue;
         };
-        if session_id.is_none() && value.get("type").and_then(Value::as_str) == Some("session") {
-            session_id = value.get("id").and_then(Value::as_str).map(str::to_owned);
+        if session_id.is_none() && line.kind.as_deref() == Some("session") {
+            session_id = line.id;
             continue;
         }
-        if value.get("type").and_then(Value::as_str) != Some("message") {
+        if line.kind.as_deref() != Some("message") {
             continue;
         }
-        let role = value.pointer("/message/role").and_then(Value::as_str);
+        let Some(message) = line.message else {
+            continue;
+        };
+        let role = message.role.as_deref();
         if !matches!(role, Some("user" | "assistant")) {
             continue;
         }
-        let Some(text) = searchable_message_text(value.pointer("/message/content")) else {
+        let Some(text) = searchable_raw_content(message.content.as_ref()) else {
             continue;
         };
-        if !text.to_lowercase().contains(query_folded) {
+        let folded = text.to_lowercase();
+        if !folded.contains(query_folded) {
             continue;
         }
         let Some(session_id) = session_id.as_ref() else {
@@ -132,11 +183,8 @@ fn search_file(
             session_path: path.to_string_lossy().into_owned(),
             session_id: session_id.clone(),
             role: role.unwrap_or_default().to_owned(),
-            snippet: search_snippet(&text, query_folded),
-            timestamp: value
-                .get("timestamp")
-                .cloned()
-                .or_else(|| value.pointer("/message/timestamp").cloned()),
+            snippet: search_snippet_folded(&text, &folded, query_folded),
+            timestamp: line.timestamp.or(message.timestamp),
         });
         if matches.len() >= limit {
             break;
@@ -145,11 +193,65 @@ fn search_file(
     Ok(())
 }
 
+fn compact_searchable_text(text: &str) -> Option<String> {
+    let mut compact = String::with_capacity(text.len().min(MAX_SEARCHABLE_MESSAGE_CHARS));
+    let mut char_count = 0_usize;
+    for word in text.split_whitespace() {
+        if !compact.is_empty() {
+            if char_count >= MAX_SEARCHABLE_MESSAGE_CHARS {
+                break;
+            }
+            compact.push(' ');
+            char_count += 1;
+        }
+        for ch in word.chars() {
+            if char_count >= MAX_SEARCHABLE_MESSAGE_CHARS {
+                break;
+            }
+            compact.push(ch);
+            char_count += 1;
+        }
+        if char_count >= MAX_SEARCHABLE_MESSAGE_CHARS {
+            break;
+        }
+    }
+    (!compact.is_empty()).then_some(compact)
+}
+
+fn searchable_raw_content(content: Option<&RawContent>) -> Option<String> {
+    let mut text = String::new();
+    match content? {
+        RawContent::Text(value) => text.push_str(value),
+        RawContent::Parts(parts) => {
+            let mut char_count = 0_usize;
+            for part in parts {
+                if matches!(part.kind.as_deref(), Some("text" | "thinking") | None)
+                    && let Some(value) = part.text.as_deref()
+                {
+                    if !text.is_empty() {
+                        text.push(' ');
+                        char_count += 1;
+                    }
+                    text.push_str(value);
+                    char_count += value.chars().count();
+                    if char_count >= MAX_SEARCHABLE_MESSAGE_CHARS {
+                        break;
+                    }
+                }
+            }
+        }
+        RawContent::Other(_) => return None,
+    }
+    compact_searchable_text(&text)
+}
+
+#[cfg(test)]
 fn searchable_message_text(content: Option<&Value>) -> Option<String> {
     let mut text = String::new();
     match content? {
         Value::String(value) => text.push_str(value),
         Value::Array(parts) => {
+            let mut char_count = 0_usize;
             for part in parts {
                 let part_type = part.get("type").and_then(Value::as_str);
                 if matches!(part_type, Some("text" | "thinking") | None)
@@ -157,9 +259,11 @@ fn searchable_message_text(content: Option<&Value>) -> Option<String> {
                 {
                     if !text.is_empty() {
                         text.push(' ');
+                        char_count += 1;
                     }
                     text.push_str(value);
-                    if text.chars().count() >= MAX_SEARCHABLE_MESSAGE_CHARS {
+                    char_count += value.chars().count();
+                    if char_count >= MAX_SEARCHABLE_MESSAGE_CHARS {
                         break;
                     }
                 }
@@ -167,28 +271,44 @@ fn searchable_message_text(content: Option<&Value>) -> Option<String> {
         }
         _ => return None,
     }
-    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!compact.is_empty()).then(|| {
-        compact
-            .chars()
-            .take(MAX_SEARCHABLE_MESSAGE_CHARS)
-            .collect::<String>()
-    })
+    compact_searchable_text(&text)
 }
 
+#[cfg(test)]
 fn search_snippet(text: &str, query_folded: &str) -> String {
     let folded = text.to_lowercase();
+    search_snippet_folded(text, &folded, query_folded)
+}
+
+fn search_snippet_folded(text: &str, folded: &str, query_folded: &str) -> String {
     let byte_index = folded.find(query_folded).unwrap_or(0);
     let match_char = folded[..byte_index.min(folded.len())].chars().count();
-    let chars = text.chars().collect::<Vec<_>>();
     let before = 70;
     let start = match_char.saturating_sub(before);
-    let end = (start + MAX_SNIPPET_CHARS).min(chars.len());
-    let mut snippet = chars[start..end].iter().collect::<String>();
-    if start > 0 {
-        snippet.insert(0, '…');
+    let end = start + MAX_SNIPPET_CHARS;
+    let mut start_byte = None;
+    let mut end_byte = text.len();
+    let mut truncated_end = false;
+    for (char_index, (byte_pos, _)) in text.char_indices().enumerate() {
+        if char_index == start {
+            start_byte = Some(byte_pos);
+        }
+        if char_index == end {
+            end_byte = byte_pos;
+            truncated_end = true;
+            break;
+        }
     }
-    if end < chars.len() {
+    let slice = match start_byte {
+        Some(start_byte) => &text[start_byte..end_byte],
+        None => "",
+    };
+    let mut snippet = String::with_capacity(slice.len() + 6);
+    if start > 0 {
+        snippet.push('…');
+    }
+    snippet.push_str(slice);
+    if truncated_end {
         snippet.push('…');
     }
     snippet

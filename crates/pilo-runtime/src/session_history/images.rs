@@ -67,7 +67,10 @@ pub async fn read_history_image_bytes(
         location.byte_length,
     )
     .await?;
-    extract_history_image_bytes(&line, image_id)
+    let image_id = image_id.to_owned();
+    tokio::task::spawn_blocking(move || extract_history_image_bytes(&line, &image_id))
+        .await
+        .map_err(|error| format!("session history image decode task failed: {error}"))?
 }
 
 async fn read_session_range(

@@ -98,6 +98,15 @@ fn user_message_preview(text: &str) -> String {
         .map_or_else(|| preview_text(text), |summary| preview_text(&summary))
 }
 
+fn json_serialized_len(value: &serde_json::Value) -> usize {
+    let mut size = crate::events::PayloadSize::default();
+    if serde_json::to_writer(&mut size, value).is_ok() {
+        size.0
+    } else {
+        0
+    }
+}
+
 fn describe_history_message(
     index: usize,
     events: &[ConversationEventDto],
@@ -166,13 +175,13 @@ fn describe_history_message(
             } => {
                 estimated_chars = estimated_chars
                     .saturating_add(tool_name.len())
-                    .saturating_add(args.to_string().len());
+                    .saturating_add(json_serialized_len(args));
                 if preview.is_empty() {
                     preview = format!("{} …", tool_name);
                 }
             }
             ConversationEventDto::ToolExecutionEnd { result, .. } => {
-                estimated_chars = estimated_chars.saturating_add(result.to_string().len());
+                estimated_chars = estimated_chars.saturating_add(json_serialized_len(result));
             }
             ConversationEventDto::AssistantThinkingStart { .. }
             | ConversationEventDto::AssistantThinkingEnd { .. }
@@ -288,14 +297,16 @@ pub(super) fn serialize_history_tail(
     let mut message_ranges = prefix.message_ranges.to_vec();
     message_ranges.reserve(messages.len());
     for (position, message_events) in messages.iter().enumerate() {
-        let event_json = serde_json::to_vec(message_events)
-            .map_err(|error| format!("failed to serialize history events: {error}"))?;
         if position > 0 {
             output.push(b',');
         }
         let start = output_offset + output.len();
-        if event_json.len() >= 2 {
-            output.extend_from_slice(&event_json[1..event_json.len() - 1]);
+        for (event_index, event) in message_events.iter().enumerate() {
+            if event_index > 0 {
+                output.push(b',');
+            }
+            serde_json::to_writer(&mut *output, event)
+                .map_err(|error| format!("failed to serialize history events: {error}"))?;
         }
         message_ranges.push(start..output_offset + output.len());
     }
@@ -378,16 +389,33 @@ pub(super) fn serialize_history_window_parts(
     include_message_index: bool,
     fingerprint: Option<SessionFileFingerprint>,
 ) -> Vec<u8> {
-    let mut history = Vec::with_capacity(
-        events
+    let message_index_len = if include_message_index {
+        index.message_index_json.len().saturating_add(16)
+    } else {
+        0
+    };
+    let fingerprint_json = fingerprint
+        .map(|fingerprint| {
+            format!(
+                "{{\"fileSize\":{},\"fileMtimeNs\":\"{}\"}}",
+                fingerprint.file_size, fingerprint.file_mtime_ns
+            )
+        })
+        .unwrap_or_else(|| "null".to_owned());
+    let mut response = Vec::with_capacity(
+        prefix
             .len()
+            .saturating_add(events.len())
             .saturating_add(suffix.len())
-            .saturating_add(256),
+            .saturating_add(message_index_len)
+            .saturating_add(fingerprint_json.len())
+            .saturating_add(160),
     );
-    history.extend_from_slice(prefix);
-    history.extend_from_slice(events);
-    history.extend_from_slice(suffix);
-    history.extend_from_slice(
+    response.extend_from_slice(b"{\"history\":");
+    response.extend_from_slice(prefix);
+    response.extend_from_slice(events);
+    response.extend_from_slice(suffix);
+    response.extend_from_slice(
         format!(
             ",\"windowStartMessage\":{},\"windowMessageCount\":{},\"totalMessages\":{}",
             window.start,
@@ -397,11 +425,13 @@ pub(super) fn serialize_history_window_parts(
         .as_bytes(),
     );
     if include_message_index {
-        history.extend_from_slice(b",\"messageIndex\":");
-        history.extend_from_slice(index.message_index_json.as_ref());
+        response.extend_from_slice(b",\"messageIndex\":");
+        response.extend_from_slice(index.message_index_json.as_ref());
     }
-    history.push(b'}');
-    serialize_history_response(&history, fingerprint)
+    response.extend_from_slice(b"},\"fingerprint\":");
+    response.extend_from_slice(fingerprint_json.as_bytes());
+    response.push(b'}');
+    response
 }
 
 pub(super) fn serialize_history_response(

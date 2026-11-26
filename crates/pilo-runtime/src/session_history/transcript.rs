@@ -271,8 +271,12 @@ pub(super) async fn serve_transcript_window(
         }
         None => super::reader::respond_with_history(storage, Some(fingerprint)).await?,
     };
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("transcript history serialization failed: {error}"))
+    tokio::task::spawn_blocking(move || {
+        serde_json::from_slice(&bytes)
+            .map_err(|error| format!("transcript history serialization failed: {error}"))
+    })
+    .await
+    .map_err(|error| format!("transcript history parse task failed: {error}"))?
 }
 
 /// Opens the transcript and validates the recorded boundary without reading
