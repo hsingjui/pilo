@@ -313,6 +313,7 @@ function SessionRichInput(session: {
 		);
 	};
 	let lastSyncedValue = initialValue;
+	let lastSyncedImages = initialImages;
 	let lastSessions = initialValue.includes("@")
 		? props.sessionsByValue()
 		: undefined;
@@ -444,7 +445,7 @@ function SessionRichInput(session: {
 	// Sync external draft changes without adding them to native undo history.
 	effect(() => {
 		const nextValue = props.value();
-		props.images();
+		const nextImages = props.images();
 		const sessions = nextValue.includes("@")
 			? props.sessionsByValue()
 			: undefined;
@@ -456,17 +457,23 @@ function SessionRichInput(session: {
 				sessions === lastSessions &&
 				!disabled
 			) {
+				if (
+					nextImages === lastSyncedImages &&
+					editor.revision === syncedRevision
+				) {
+					return;
+				}
 				syncFromEditor();
 				// A native edit can change the store while the effect is running.
 				if (props.value() !== nextValue) return;
 			}
-			const nextImages = props.images();
+			const latestImages = props.images();
 			if (nextValue !== lastSyncedValue || sessions !== lastSessions) {
 				const doc = editor.doc;
 				const nextDoc = makeDoc(
 					nextValue,
 					sessions ?? emptySessions,
-					nextImages,
+					latestImages,
 				);
 				lastSyncedValue = nextValue;
 				lastSessions = sessions;
@@ -488,12 +495,15 @@ function SessionRichInput(session: {
 			} else {
 				const doc = editor.doc;
 				const docIds = new Set(richDocImageIds(doc));
-				const nextIds = new Set(nextImages.map((image) => image.id));
+				const nextIds = new Set(latestImages.map((image) => image.id));
 				const removedIds = new Set(
 					[...docIds].filter((id) => !nextIds.has(id)),
 				);
-				const addedImages = nextImages.filter((image) => !docIds.has(image.id));
+				const addedImages = latestImages.filter(
+					(image) => !docIds.has(image.id),
+				);
 				if (removedIds.size === 0 && addedImages.length === 0) {
+					lastSyncedImages = latestImages;
 					syncSuggestion();
 					return;
 				}
@@ -516,6 +526,7 @@ function SessionRichInput(session: {
 			}
 			const doc = editor.doc;
 			syncedRevision = editor.revision;
+			lastSyncedImages = latestImages;
 			knownDocImageIds = new Set(richDocImageIds(doc));
 			const docValue = richDocToValue(doc);
 			if (docValue !== lastSyncedValue) {

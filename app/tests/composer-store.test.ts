@@ -1,4 +1,4 @@
-import { signal } from "nsh";
+import { effect, signal } from "nsh";
 import { expect, test } from "nsh/test";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
@@ -668,4 +668,48 @@ test("stop resets transient send_now back to the persisted send mode", async () 
 
 	await store.stop();
 	expect(store.state().sendMode).toBe("follow_up");
+});
+
+test("onUnsentDraft sees the updated draft value and batches with app state", () => {
+	const { client } = fakeClient();
+	const app = signal<AppState>({
+		...createAppState(),
+		projects: [{ id: "p1", name: "Project" }],
+	} as AppState);
+	const observedInCallback: string[] = [];
+	const observedInEffect: string[] = [];
+	const store = new ComposerStore({
+		client,
+		app,
+		onUnsentDraft: (target, text) => {
+			observedInCallback.push(store.state().value);
+			app.update((state) => {
+				const unsentDrafts = new Map(state.unsentDrafts);
+				if (text === null) unsentDrafts.delete(target.sessionKey);
+				else {
+					unsentDrafts.set(target.sessionKey, {
+						projectId: target.projectId,
+						title: text,
+						startedAt: 1,
+					});
+				}
+				return { ...state, unsentDrafts };
+			});
+		},
+	});
+	store.setTarget(targetA);
+	store.setValue("hello world");
+	observedInCallback.length = 0;
+
+	effect(() => {
+		app();
+		store.readOnly();
+		observedInEffect.push(store.state().value);
+	});
+	observedInEffect.length = 0;
+
+	store.setValue("hello xworld");
+
+	expect(observedInCallback).toEqual(["hello xworld"]);
+	expect(observedInEffect).toEqual(["hello xworld"]);
 });

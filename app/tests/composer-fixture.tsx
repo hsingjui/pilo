@@ -176,6 +176,21 @@ function composerFixture(activeTurn: boolean) {
 			state: catalogState,
 			refresh: async () => {},
 		},
+		onUnsentDraft: (target, text) => {
+			appSignal.update((current) => {
+				const unsentDrafts = new Map(current.unsentDrafts);
+				const title = text?.replace(/\s+/g, " ").trim() ?? null;
+				if (title === null) unsentDrafts.delete(target.sessionKey);
+				else {
+					unsentDrafts.set(target.sessionKey, {
+						projectId: target.projectId,
+						title,
+						startedAt: 1,
+					});
+				}
+				return { ...current, unsentDrafts };
+			});
+		},
 		onNewChat: () => {
 			activity.set("new-chat");
 		},

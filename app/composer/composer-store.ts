@@ -299,6 +299,7 @@ export class ComposerStore {
 	private readonly mentionDraftComputed: Accessor<
 		ReturnType<typeof readChatMentionDraft>
 	>;
+	private readonly readOnlyComputed: Accessor<boolean>;
 
 	constructor(deps: {
 		client: ComposerClient;
@@ -386,6 +387,13 @@ export class ComposerStore {
 			if (!value.includes("@")) return { text: value, references: [] };
 			return readChatMentionDraft(value, this.sessionsByValueComputed());
 		});
+		this.readOnlyComputed = computed(() => {
+			const target = this.targetSignal();
+			return (
+				!!target &&
+				isExternalTurnOpen(this.app(), target.projectId, target.sessionPath)
+			);
+		});
 		void Storage.getItem(COMPOSER_SEND_MODE_STORAGE_KEY)
 			.then((stored) => {
 				if (isPersistedComposerSendMode(stored)) {
@@ -446,14 +454,19 @@ export class ComposerStore {
 	}
 
 	private updateDraft(change: (state: ComposerViewState) => ComposerViewState) {
-		this.stateSignal.update((current) => {
-			const next = change(current);
-			if (next.value !== current.value || next.images !== current.images) {
-				this.draftVersion++;
-				const target = this.targetSignal();
-				if (target) this.cacheDraft(target, next);
-			}
-			return next;
+		batch(() => {
+			const cached = untracked(() => {
+				const current = this.stateSignal();
+				const next = change(current);
+				const changed =
+					next.value !== current.value || next.images !== current.images;
+				if (changed) this.draftVersion++;
+				const target = changed ? this.targetSignal() : null;
+				this.stateSignal.set(next);
+				return target ? { target, next } : null;
+			});
+			// Persist and notify external draft observers only after `stateSignal` holds `next`.
+			if (cached) this.cacheDraft(cached.target, cached.next);
 		});
 	}
 
@@ -716,11 +729,7 @@ export class ComposerStore {
 	 * here, as in the WebUI.
 	 */
 	readOnly(): boolean {
-		const target = this.targetSignal();
-		return (
-			!!target &&
-			isExternalTurnOpen(this.app(), target.projectId, target.sessionPath)
-		);
+		return this.readOnlyComputed();
 	}
 
 	/** Sessions the `@` menu offers, newest first, as mention draft entries. */

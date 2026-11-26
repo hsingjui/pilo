@@ -9,6 +9,15 @@ test("the composer types, submits a prompt and clears", async () => {
 	expect(app.shows("id:chat-composer-input >> text:do the thing")).toBe(false);
 });
 
+test("editing in the middle of an unsent draft keeps the caret in place", async () => {
+	const app = await open("./composer-idle-fixture.tsx", { platform: "macos" });
+	await app.type("id:chat-composer-input", "hello world");
+	for (let i = 0; i < 5; i++) await app.keyboard.press("arrowleft");
+	await app.keyboard.press("x");
+	await app.keyboard.press("y");
+	expect(app.shows("id:chat-composer-input >> text:hello xyworld")).toBe(true);
+});
+
 test("switching chats isolates drafts per session and restores them when returning", async () => {
 	const app = await open("./composer-idle-fixture.tsx", { platform: "macos" });
 	await app.type("id:chat-composer-input", "session a draft");
