@@ -1,7 +1,8 @@
 //! Connection settings use Pi's user catalog, never a union of project caches.
 
 use std::{
-    sync::Arc,
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -17,11 +18,57 @@ use super::{
     storage,
 };
 
+const MODEL_CATALOG_TTL: Duration = Duration::from_secs(120);
+
+struct CachedConnectionModels {
+    models: Vec<Value>,
+    cached_at: Instant,
+}
+
+#[derive(Default)]
+struct ModelCatalogCache {
+    generation: u64,
+    entries: HashMap<String, CachedConnectionModels>,
+}
+
+fn cache() -> &'static Mutex<ModelCatalogCache> {
+    static CACHE: OnceLock<Mutex<ModelCatalogCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(ModelCatalogCache::default()))
+}
+
+pub(crate) fn invalidate(connection_id: &str) {
+    let suffix = format!("::{connection_id}");
+    if let Ok(mut guard) = cache().lock() {
+        guard.generation = guard.generation.wrapping_add(1);
+        // Updating the local connection can affect SSH connections that run Pi locally.
+        if connection_id == "local" {
+            guard.entries.clear();
+        } else {
+            guard.entries.retain(|key, _| !key.ends_with(&suffix));
+        }
+    }
+}
+
 pub(crate) async fn load(
     paths: &super::host_paths::HostPaths,
     runtime: &PiloRuntime,
     connection_id: &str,
 ) -> Result<Vec<Value>, String> {
+    let scope = paths
+        .database_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let cache_key = format!("{scope}::{connection_id}");
+    let started_generation = if let Ok(guard) = cache().lock() {
+        if let Some(entry) = guard.entries.get(&cache_key)
+            && entry.cached_at.elapsed() < MODEL_CATALOG_TTL
+        {
+            return Ok(entry.models.clone());
+        }
+        Some(guard.generation)
+    } else {
+        None
+    };
     let started = Instant::now();
     super::debug_trace::runtime_trace(
         "model_catalog.connection.begin",
@@ -105,5 +152,77 @@ pub(crate) async fn load(
             "modelCount": result.as_ref().map(|models| models.len()).ok(),
         }),
     );
+    if let Ok(models) = &result
+        && let Some(started_generation) = started_generation
+        && let Ok(mut guard) = cache().lock()
+        && guard.generation == started_generation
+    {
+        guard.entries.insert(
+            cache_key,
+            CachedConnectionModels {
+                models: models.clone(),
+                cached_at: Instant::now(),
+            },
+        );
+    }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalidate_local_clears_all_entries_and_bumps_generation() {
+        let mut guard = cache().lock().unwrap();
+        let initial_gen = guard.generation;
+        guard.entries.insert(
+            "db::local".to_owned(),
+            CachedConnectionModels {
+                models: vec![json!({ "id": "m1" })],
+                cached_at: Instant::now(),
+            },
+        );
+        guard.entries.insert(
+            "db::ssh-local-pi".to_owned(),
+            CachedConnectionModels {
+                models: vec![json!({ "id": "m2" })],
+                cached_at: Instant::now(),
+            },
+        );
+        drop(guard);
+
+        invalidate("local");
+
+        let guard = cache().lock().unwrap();
+        assert_ne!(guard.generation, initial_gen);
+        assert!(guard.entries.is_empty());
+    }
+
+    #[test]
+    fn invalidate_specific_connection_preserves_other_entries() {
+        let mut guard = cache().lock().unwrap();
+        guard.entries.insert(
+            "db::ssh-a".to_owned(),
+            CachedConnectionModels {
+                models: vec![json!({ "id": "a" })],
+                cached_at: Instant::now(),
+            },
+        );
+        guard.entries.insert(
+            "db::ssh-b".to_owned(),
+            CachedConnectionModels {
+                models: vec![json!({ "id": "b" })],
+                cached_at: Instant::now(),
+            },
+        );
+        drop(guard);
+
+        invalidate("ssh-a");
+
+        let mut guard = cache().lock().unwrap();
+        assert!(!guard.entries.contains_key("db::ssh-a"));
+        assert!(guard.entries.contains_key("db::ssh-b"));
+        guard.entries.remove("db::ssh-b");
+    }
 }

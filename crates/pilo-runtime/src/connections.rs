@@ -118,6 +118,7 @@ pub fn connection_settings_update(
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty());
     storage::upsert_connection(&db, &connection)?;
+    crate::connection_models::invalidate(&connection.id);
     runtime.events.send(RuntimeEventEnvelope::global(
         RuntimeEvent::ConfigurationChanged,
     ));

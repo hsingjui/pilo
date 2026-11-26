@@ -247,6 +247,7 @@ async fn execute(
                         return Err("password is only supported for SSH".to_owned());
                     }
                     storage::upsert_connection(&storage::open(&runtime.paths)?, &save.connection)?;
+                    crate::connection_models::invalidate(&save.connection.id);
                 }
             };
             let connection = super::connections::connection_shown_in_home_set(runtime, id, shown)?;
