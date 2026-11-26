@@ -174,11 +174,18 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 	const selected = () => props.config()?.model ?? null;
 	const modelLabel = () => selected()?.name || selected()?.id || "—";
 	const thinking = () => props.config()?.thinkingLevel ?? null;
+	const thinkingLevels = computed(() => props.config()?.thinkingLevels ?? [], {
+		equals: (previous, next) =>
+			previous.length === next.length &&
+			previous.every((level, index) => level === next[index]),
+	});
 	const thinkingLabel = () => piThinkingLevelLabel(thinking());
-	const modelPending = () =>
-		!selected() && (props.loading() || !props.config()?.ready);
-	const thinkingPending = () =>
-		modelPending() || (!thinking() && !props.config()?.ready);
+	const modelPending = computed(
+		() => !selected() && (props.loading() || !props.config()?.ready),
+	);
+	const thinkingPending = computed(
+		() => modelPending() || (!thinking() && !props.config()?.ready),
+	);
 	const triggerDisabled = () => !props.config()?.ready || !!props.readOnly?.();
 
 	const search = () => query().trim().toLowerCase();
@@ -422,36 +429,42 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 			>
 				<PiLogo size={16} />
 				{() =>
-					modelPending() ? (
-						<Skeleton class="h-2.5 w-20 shrink-0 rounded-full" />
-					) : (
-						<>
-							<Text
-								class="min-w-0 shrink truncate font-sans text-muted-foreground"
-								style={MOBILE_TEXT.xs}
-							>
-								{modelLabel}
-							</Text>
-							<Text
-								accessible={false}
-								accessibilityElementsHidden
-								class="shrink-0 font-sans text-muted-foreground/60"
-								style={MOBILE_TEXT.xs}
-							>
-								·
-							</Text>
-							{thinkingPending() ? (
-								<Skeleton class="h-2.5 w-8 shrink-0 rounded-full" />
-							) : (
-								<Text
-									class="shrink-0 font-sans text-muted-foreground"
-									style={MOBILE_TEXT.xs}
-								>
-									{thinkingLabel}
-								</Text>
-							)}
-						</>
-					)
+					modelPending()
+						? untracked(() => (
+								<Skeleton class="h-2.5 w-20 shrink-0 rounded-full" />
+							))
+						: untracked(() => (
+								<>
+									<Text
+										class="min-w-0 shrink truncate font-sans text-muted-foreground"
+										style={MOBILE_TEXT.xs}
+									>
+										{modelLabel}
+									</Text>
+									<Text
+										accessible={false}
+										accessibilityElementsHidden
+										class="shrink-0 font-sans text-muted-foreground/60"
+										style={MOBILE_TEXT.xs}
+									>
+										·
+									</Text>
+									{() =>
+										thinkingPending()
+											? untracked(() => (
+													<Skeleton class="h-2.5 w-8 shrink-0 rounded-full" />
+												))
+											: untracked(() => (
+													<Text
+														class="shrink-0 font-sans text-muted-foreground"
+														style={MOBILE_TEXT.xs}
+													>
+														{thinkingLabel}
+													</Text>
+												))
+									}
+								</>
+							))
 				}
 			</Button>
 
@@ -621,20 +634,22 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 											}
 										</View>
 										{() => {
-											const levels = props.config()?.thinkingLevels ?? [];
+											const levels = thinkingLevels();
 											if (levels.length === 0) {
-												return (
+												return untracked(() => (
 													<Text
 														class="py-2 font-sans text-muted-foreground"
 														style={MOBILE_TEXT.sm}
 													>
-														{props.config()?.ready
-															? t("chat.noReasoning")
-															: t("chat.readingReasoning")}
+														{() =>
+															props.config()?.ready
+																? t("chat.noReasoning")
+																: t("chat.readingReasoning")
+														}
 													</Text>
-												);
+												));
 											}
-											return (
+											return untracked(() => (
 												<View
 													style={{
 														display: "grid",
@@ -670,7 +685,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 														);
 													})}
 												</View>
-											);
+											));
 										}}
 									</View>
 								</Scroll>

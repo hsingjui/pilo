@@ -155,7 +155,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const selectedIndex = signal(0);
 
 	const state = () => store.state();
-	const running = () => store.running();
+	const running = computed(() => store.running());
 	const readOnly = () => store.readOnly();
 	const config = () => props.runConfig?.config() ?? null;
 	const headerMissing = () => Boolean(config()?.headerMissing);

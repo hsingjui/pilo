@@ -8,6 +8,7 @@ import {
 	Scroll,
 	Text,
 	token,
+	untracked,
 	View,
 	windowSize,
 } from "nsh";
@@ -209,28 +210,37 @@ export function ComposerContextUsage(props: {
 			return "h-full w-full rounded-full bg-(--status-warning)";
 		return "h-full w-full rounded-full bg-foreground/70";
 	};
+	const hasPercent = computed(() => percent() !== undefined);
+	const contextNote = computed(() =>
+		percent() === undefined ? "unknown" : stale() ? "stale" : null,
+	);
+	const hasCost = computed(() => cost() !== undefined);
+	const pendingCompact = computed(() => Boolean(props.pendingCompact?.()));
+	const compacting = computed(() => Boolean(props.compacting?.()));
 	const triggerContent = () =>
-		percent() === undefined ? (
-			<Icon name="CircleDashed" size={touch ? 16 : chatPx(16)} />
-		) : (
-			<>
-				<Text
-					class={triggerTextClass()}
-					style={
-						touch
-							? TOUCH_TEXT.xs
-							: { fontSize: chatPx(12), lineHeight: chatPx(12) }
-					}
-				>
-					{() => formatPercent(percent())}
-				</Text>
-				<ContextRing
-					percent={ringPercent}
-					animatedRatio={animatedRatio}
-					size={touch ? 16 : undefined}
-				/>
-			</>
-		);
+		hasPercent()
+			? untracked(() => (
+					<>
+						<Text
+							class={triggerTextClass()}
+							style={
+								touch
+									? TOUCH_TEXT.xs
+									: { fontSize: chatPx(12), lineHeight: chatPx(12) }
+							}
+						>
+							{() => formatPercent(percent())}
+						</Text>
+						<ContextRing
+							percent={ringPercent}
+							animatedRatio={animatedRatio}
+							size={touch ? 16 : undefined}
+						/>
+					</>
+				))
+			: untracked(() => (
+					<Icon name="CircleDashed" size={touch ? 16 : chatPx(16)} />
+				));
 	const trigger = touch ? (
 		<Foreground.Provider value={triggerColor}>
 			<BaseButton
@@ -277,12 +287,53 @@ export function ComposerContextUsage(props: {
 					touch ? "w-full gap-2.5 px-3.5 py-3" : "w-full gap-2 px-2.5 py-2.5"
 				}
 			>
-				<Text
-					class={sectionTitle}
-					style={touch ? TOUCH_TEXT["2xs"] : undefined}
-				>
-					{() => t("chat.contextSection")}
-				</Text>
+				<View class="flex-row flex-wrap items-center gap-x-2">
+					<Text
+						class={sectionTitle}
+						style={touch ? TOUCH_TEXT["2xs"] : undefined}
+					>
+						{() => t("chat.contextSection")}
+					</Text>
+					{() =>
+						props.onCompact && !pendingCompact()
+							? untracked(() => (
+									<Button
+										testID="composer-context-compact"
+										variant="ghost"
+										size="sm"
+										class={classNames(
+											"ml-auto gap-1.5 px-1.5",
+											touch ? "min-h-10" : "h-6",
+										)}
+										disabled={compacting() || props.compactDisabled?.()}
+										onPress={props.onCompact}
+									>
+										{() =>
+											compacting() ? (
+												<Spinner size={13} color={token("muted-foreground")} />
+											) : (
+												<Icon
+													name="Minimize2"
+													size={13}
+													color={token("muted-foreground")}
+												/>
+											)
+										}
+										<Text
+											class="font-sans text-xs text-muted-foreground"
+											style={touch ? TOUCH_TEXT.xs : undefined}
+										>
+											{() =>
+												compacting()
+													? t("chat.compacting")
+													: t("chat.compactContext")
+											}
+										</Text>
+									</Button>
+								))
+							: null
+					}
+				</View>
 				<View class="flex-row items-baseline justify-between gap-3">
 					<Text
 						class="font-sans text-sm font-semibold tabular-nums text-popover-foreground"
@@ -314,22 +365,54 @@ export function ComposerContextUsage(props: {
 						}}
 					/>
 				</View>
+				{() => {
+					const note = contextNote();
+					if (note === "unknown") {
+						return (
+							<Text
+								class="font-sans text-[11px] leading-4 text-muted-foreground"
+								style={touch ? TOUCH_TEXT.note : undefined}
+							>
+								{() => t("chat.contextUsageUnknown")}
+							</Text>
+						);
+					}
+					if (note === "stale") {
+						return (
+							<Text
+								class="font-sans text-[11px] leading-4 text-muted-foreground"
+								style={touch ? TOUCH_TEXT.note : undefined}
+							>
+								{() => t("chat.contextUsageAfterCompaction")}
+							</Text>
+						);
+					}
+					return null;
+				}}
 				{() =>
-					percent() === undefined ? (
-						<Text
-							class="font-sans text-[11px] leading-4 text-muted-foreground"
-							style={touch ? TOUCH_TEXT.note : undefined}
-						>
-							{() => t("chat.contextUsageUnknown")}
-						</Text>
-					) : stale() ? (
-						<Text
-							class="font-sans text-[11px] leading-4 text-muted-foreground"
-							style={touch ? TOUCH_TEXT.note : undefined}
-						>
-							{() => t("chat.contextUsageAfterCompaction")}
-						</Text>
-					) : null
+					props.onCompact && pendingCompact()
+						? untracked(() => (
+								<Button
+									testID="composer-context-cancel-compact"
+									variant="ghost"
+									size="sm"
+									class={classNames(
+										"w-full justify-between px-1.5",
+										touch && "min-h-10",
+									)}
+									accessibilityLabel={t("chat.cancelCompactPending")}
+									onPress={props.onCancelPendingCompact}
+								>
+									<Text
+										class="font-sans text-xs text-muted-foreground"
+										style={touch ? TOUCH_TEXT.xs : undefined}
+									>
+										{() => t("chat.compactPending")}
+									</Text>
+									<Icon name="X" size={13} color={token("muted-foreground")} />
+								</Button>
+							))
+						: null
 				}
 			</View>
 			{() =>
@@ -379,105 +462,30 @@ export function ComposerContextUsage(props: {
 				) : null
 			}
 			{() =>
-				cost() !== undefined ? (
-					<View
-						class={
-							touch
-								? "w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-3.5 py-2.5"
-								: "w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-2.5 py-2"
-						}
-					>
-						<Text class={rowLabel} style={touch ? TOUCH_TEXT.xs : undefined}>
-							{() => t("chat.totalCost")}
-						</Text>
-						<Text
-							class="font-mono text-[11px] tabular-nums text-foreground"
-							style={touch ? TOUCH_TEXT["2xs"] : undefined}
-						>
-							{() => formatCost(cost())}
-						</Text>
-					</View>
-				) : null
-			}
-			{() =>
-				props.onCompact ? (
-					<View
-						class={
-							touch
-								? "w-full border-t border-border/60 px-3 py-2"
-								: "w-full border-t border-border/60 px-2 py-1.5"
-						}
-					>
-						{() =>
-							props.pendingCompact?.() ? (
-								<Button
-									testID="composer-context-cancel-compact"
-									variant="ghost"
-									size="sm"
-									class={classNames(
-										"w-full justify-between",
-										touch && "min-h-10",
-									)}
-									onPress={props.onCancelPendingCompact}
+				hasCost()
+					? untracked(() => (
+							<View
+								class={
+									touch
+										? "w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-3.5 py-2.5"
+										: "w-full flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/45 px-2.5 py-2"
+								}
+							>
+								<Text
+									class={rowLabel}
+									style={touch ? TOUCH_TEXT.xs : undefined}
 								>
-									<Text
-										class="font-sans text-xs text-muted-foreground"
-										style={touch ? TOUCH_TEXT.xs : undefined}
-									>
-										{() => t("chat.compactPending")}
-									</Text>
-									<Icon name="X" size={13} color={token("muted-foreground")} />
-								</Button>
-							) : (
-								<Button
-									testID="composer-context-compact"
-									variant={usageTone() === "normal" ? "ghost" : "outline"}
-									size="sm"
-									class={classNames(
-										"w-full justify-center gap-1.5",
-										touch && "min-h-10",
-									)}
-									disabled={
-										Boolean(props.compacting?.()) ||
-										Boolean(props.compactDisabled?.())
-									}
-									onPress={props.onCompact}
+									{() => t("chat.totalCost")}
+								</Text>
+								<Text
+									class="font-mono text-[11px] tabular-nums text-foreground"
+									style={touch ? TOUCH_TEXT["2xs"] : undefined}
 								>
-									{() =>
-										props.compacting?.() ? (
-											<Spinner size={13} color={token("muted-foreground")} />
-										) : (
-											<Icon
-												name="Minimize2"
-												size={13}
-												color={token(
-													usageTone() === "danger"
-														? "destructive"
-														: "muted-foreground",
-												)}
-											/>
-										)
-									}
-									<Text
-										class={classNames(
-											"font-sans text-xs font-medium",
-											usageTone() === "danger"
-												? "text-destructive"
-												: "text-foreground",
-										)}
-										style={touch ? TOUCH_TEXT.xs : undefined}
-									>
-										{() =>
-											props.compacting?.()
-												? t("chat.compacting")
-												: t("chat.compactContext")
-										}
-									</Text>
-								</Button>
-							)
-						}
-					</View>
-				) : null
+									{() => formatCost(cost())}
+								</Text>
+							</View>
+						))
+					: null
 			}
 		</View>
 	);

@@ -1,4 +1,13 @@
-import { effect, Scroll, signal, Text, token, untracked, View } from "nsh";
+import {
+	computed,
+	effect,
+	Scroll,
+	signal,
+	Text,
+	token,
+	untracked,
+	View,
+} from "nsh";
 
 import type { PiModel } from "@shared/api/pi-runtime-types";
 import {
@@ -70,7 +79,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 	const draft = signal<ProjectScopeDraft | null>(null);
 	const saveError = signal<string | null>(null);
 
-	const editing = () => draft() !== null;
+	const editing = computed(() => draft() !== null);
 	const search = () => query().trim().toLowerCase();
 	const matches = (provider: string, id: string, name = "") =>
 		[name, id, provider].some((value) =>
@@ -553,7 +562,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 
 	return (
 		<View class="w-68 max-w-full font-sans">
-			{() => (editing() ? editor() : browsing())}
+			{() => (editing() ? untracked(editor) : untracked(browsing))}
 		</View>
 	);
 }

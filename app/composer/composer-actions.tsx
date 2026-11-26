@@ -1,4 +1,5 @@
 import {
+	computed,
 	effect,
 	type JSX,
 	keyboardFrame,
@@ -7,6 +8,7 @@ import {
 	signal,
 	Text,
 	token,
+	untracked,
 	View,
 	windowSize,
 } from "nsh";
@@ -21,6 +23,7 @@ import { classNames } from "../ui/class-names";
 import { Icon, type IconName } from "../ui/icon";
 import { Menu, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
+import { MenuSeparator } from "../ui/menu-separator";
 import { springTransition } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import {
@@ -92,16 +95,19 @@ export function ComposerActions(props: {
 		SEND_MODE_OPTIONS[0];
 	const modeLabel = () =>
 		t("chat.sendModeCurrent", { mode: t(option().label) });
+	const showSendMode = computed(() => props.running());
+	const isBlocked = computed(() => props.blocked());
 	const isInterruptMode = () =>
-		props.running() && props.sendMode() === "send_now";
+		showSendMode() && props.sendMode() === "send_now";
 	const primaryIsStop = () =>
-		props.sending() || (props.running() && !props.hasContent());
-	const showDedicatedStop = () =>
-		props.running() && !props.sending() && props.hasContent();
+		props.sending() || (showSendMode() && !props.hasContent());
+	const showDedicatedStop = computed(
+		() => showSendMode() && !props.sending() && props.hasContent(),
+	);
 	const actionLabel = () =>
 		primaryIsStop()
 			? t("chat.stop")
-			: props.running()
+			: showSendMode()
 				? t(option().label)
 				: t("chat.send");
 	const shortcutHint = () =>
@@ -118,32 +124,31 @@ export function ComposerActions(props: {
 			: composerSendModeStyle();
 	const sendButtonSize = () =>
 		props.touch ? { width: 32, height: 32 } : composerSendSize();
-	const dedicatedStopButton = () =>
-		showDedicatedStop() ? (
-			<Button
-				testID="chat-composer-stop"
-				variant="outline"
-				size="icon"
-				class="rounded-full border-border/80 bg-muted hover:border-destructive/40 hover:bg-destructive/10"
-				style={sendButtonSize()}
-				accessibilityLabel={t("chat.stop")}
-				tooltip={
-					props.touch ? undefined : (
-						<Tooltip>
-							<Text class="font-sans">{() => t("chat.stop")}</Text>
-						</Tooltip>
-					)
-				}
-				onPress={props.onStop}
-			>
-				<Icon
-					name="Square"
-					size={props.touch ? 11 : chatPx(11)}
-					fill
-					color={token("foreground")}
-				/>
-			</Button>
-		) : null;
+	const dedicatedStopButton = () => (
+		<Button
+			testID="chat-composer-stop"
+			variant="outline"
+			size="icon"
+			class="rounded-full border-border/80 bg-muted hover:border-destructive/40 hover:bg-destructive/10"
+			style={sendButtonSize()}
+			accessibilityLabel={t("chat.stop")}
+			tooltip={
+				props.touch ? undefined : (
+					<Tooltip>
+						<Text class="font-sans">{() => t("chat.stop")}</Text>
+					</Tooltip>
+				)
+			}
+			onPress={props.onStop}
+		>
+			<Icon
+				name="Square"
+				size={props.touch ? 11 : chatPx(11)}
+				fill
+				color={token("foreground")}
+			/>
+		</Button>
+	);
 	const sendButton = (
 		<Button
 			testID="chat-composer-send"
@@ -221,7 +226,7 @@ export function ComposerActions(props: {
 	const touchMenuOpen = signal(false);
 	if (useAnchoredPopover) {
 		effect(() => {
-			if (props.blocked() || !props.running()) touchMenuOpen.set(false);
+			if (isBlocked() || !showSendMode()) touchMenuOpen.set(false);
 		});
 	}
 	const sendModeTrigger = () => (
@@ -277,7 +282,7 @@ export function ComposerActions(props: {
 				popupClass="overflow-hidden rounded-(--pilo-mobile-menu-radius) bg-(--pilo-menu-background) p-(--pilo-mobile-menu-padding) font-sans text-foreground"
 				popupStyle={[
 					menuPopupStyle(),
-					{ width: Math.min(288, Math.max(220, windowSize().width - 16)) },
+					{ width: Math.min(240, Math.max(204, windowSize().width - 16)) },
 				]}
 				trigger={sendModeTrigger()}
 			>
@@ -295,73 +300,84 @@ export function ComposerActions(props: {
 				>
 					<View testID="chat-composer-send-mode-popup" class="w-full">
 						<Text
-							class="px-3 pt-2 pb-1.5 font-sans font-semibold uppercase tracking-[0.6px] text-muted-foreground"
+							class="px-2.5 pt-1.5 pb-1 font-sans font-semibold uppercase tracking-[0.6px] text-muted-foreground"
 							style={TOUCH_TEXT["2xs"]}
 						>
 							{() => t("chat.sendMode")}
 						</Text>
-						<ToggleGroup class="gap-1">
+						<ToggleGroup class="gap-0.5">
 							{SEND_MODE_OPTIONS.map((entry) => {
 								const active = () => props.sendMode() === entry.mode;
 								const destructive = entry.mode === "send_now";
 								return (
-									<Toggle
-										testID={`chat-composer-send-mode:${entry.mode}`}
-										pressed={active()}
-										accessibilityLabel={t(entry.label)}
-										class={classNames(
-											"min-h-11 w-full flex-row items-center gap-3 rounded-(--pilo-mobile-menu-item-radius) px-3 py-2 text-left hover:bg-hover active:bg-hover",
-											active() && "bg-muted/70",
-										)}
-										onChange={() => {
-											props.onSendModeChange(entry.mode);
-											touchMenuOpen.set(false);
-										}}
-									>
-										<Icon
-											name={entry.icon}
-											size={16}
-											color={token(
+									<>
+										{destructive ? (
+											<View class="my-0.5 h-px bg-(--pilo-menu-edge)" />
+										) : null}
+										<Toggle
+											testID={`chat-composer-send-mode:${entry.mode}`}
+											pressed={active()}
+											accessibilityLabel={t(entry.label)}
+											class={classNames(
+												"min-h-11 w-full flex-row items-center gap-2.5 rounded-(--pilo-mobile-menu-item-radius) px-2.5 py-1.5 text-left",
 												destructive
-													? "destructive"
-													: active()
-														? "foreground"
-														: "muted-foreground",
+													? "hover:bg-destructive/10 active:bg-destructive/10"
+													: "hover:bg-hover active:bg-hover",
+												active() &&
+													(destructive ? "bg-destructive/10" : "bg-muted/70"),
 											)}
-										/>
-										<View class="min-w-0 flex-1 gap-0.5">
-											<Text
-												class={classNames(
-													"font-sans",
+											onChange={() => {
+												props.onSendModeChange(entry.mode);
+												touchMenuOpen.set(false);
+											}}
+										>
+											<Icon
+												name={entry.icon}
+												size={16}
+												color={token(
 													destructive
-														? "font-medium text-destructive"
+														? "destructive"
 														: active()
-															? "font-semibold text-foreground"
-															: "font-medium text-foreground",
+															? "foreground"
+															: "muted-foreground",
 												)}
-												style={TOUCH_TEXT.sm}
-											>
-												{() => t(entry.label)}
-											</Text>
-											<Text
-												class="font-sans text-muted-foreground"
-												style={TOUCH_TEXT.xs}
-											>
-												{() => t(entry.detail)}
-											</Text>
-										</View>
-										<View class="size-4 shrink-0 items-center justify-center">
-											{() =>
-												active() ? (
-													<Icon
-														name="Check"
-														size={15}
-														color={token("primary")}
-													/>
-												) : null
-											}
-										</View>
-									</Toggle>
+											/>
+											<View class="min-w-0 flex-1 gap-0.5">
+												<Text
+													class={classNames(
+														"font-sans",
+														destructive
+															? "font-medium text-destructive"
+															: active()
+																? "font-semibold text-foreground"
+																: "font-medium text-foreground",
+													)}
+													style={TOUCH_TEXT.sm}
+												>
+													{() => t(entry.label)}
+												</Text>
+												<Text
+													class="font-sans text-muted-foreground"
+													style={TOUCH_TEXT.xs}
+												>
+													{() => t(entry.detail)}
+												</Text>
+											</View>
+											<View class="size-4 shrink-0 items-center justify-center">
+												{() =>
+													active() ? (
+														<Icon
+															name="Check"
+															size={15}
+															color={token(
+																destructive ? "destructive" : "primary",
+															)}
+														/>
+													) : null
+												}
+											</View>
+										</Toggle>
+									</>
 								);
 							})}
 						</ToggleGroup>
@@ -373,45 +389,43 @@ export function ComposerActions(props: {
 				placement="top"
 				align="end"
 				offset={8}
-				popupStyle={{ minWidth: 0 }}
+				popupStyle={{ minWidth: 184, maxWidth: 232 }}
 				trigger={sendModeTrigger()}
 			>
-				<Text class="px-3 pt-2 pb-1 font-sans text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
+				<Text class="px-2.5 pt-1.5 pb-1 font-sans text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
 					{() => t("chat.sendMode")}
 				</Text>
-				<View class="gap-1">
+				<View class="gap-0.5">
 					{SEND_MODE_OPTIONS.map((entry) => {
 						const destructive = entry.mode === "send_now";
 						return (
-							<MenuItem
-								testID={`chat-composer-send-mode:${entry.mode}`}
-								role="menuitemradio"
-								checked={props.sendMode() === entry.mode}
-								accessibilityLabel={t(entry.label)}
-								class="py-1"
-								icon={
-									<Icon
-										name={entry.icon}
-										size={14}
-										color={destructive ? token("destructive") : undefined}
-									/>
-								}
-								onSelect={() => props.onSendModeChange(entry.mode)}
-							>
-								<View class="min-w-0 flex-1">
-									<Text
-										class={classNames(
-											"font-sans text-sm font-medium",
-											destructive && "text-destructive",
-										)}
-									>
-										{() => t(entry.label)}
-									</Text>
-									<Text class="font-sans text-xs leading-tight text-muted-foreground">
-										{() => t(entry.detail)}
-									</Text>
-								</View>
-							</MenuItem>
+							<>
+								{destructive ? <MenuSeparator /> : null}
+								<MenuItem
+									testID={`chat-composer-send-mode:${entry.mode}`}
+									role="menuitemradio"
+									variant={destructive ? "destructive" : undefined}
+									checked={props.sendMode() === entry.mode}
+									accessibilityLabel={t(entry.label)}
+									class="gap-2.5 px-2.5 py-1.5"
+									icon={<Icon name={entry.icon} size={14} />}
+									onSelect={() => props.onSendModeChange(entry.mode)}
+								>
+									<View class="min-w-0 flex-1 gap-0.5">
+										<Text
+											class={classNames(
+												"font-sans text-sm text-(length:--pilo-ui-text-sm) font-medium leading-tight",
+												destructive && "text-destructive",
+											)}
+										>
+											{() => t(entry.label)}
+										</Text>
+										<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
+											{() => t(entry.detail)}
+										</Text>
+									</View>
+								</MenuItem>
+							</>
 						);
 					})}
 				</View>
@@ -424,13 +438,13 @@ export function ComposerActions(props: {
 			style={{ gap: composerActionsGap(props.toolbarWidth()) }}
 		>
 			{props.beforeSendMode}
-			{() => (props.running() ? sendModePicker() : null)}
+			{() => (showSendMode() ? untracked(sendModePicker) : null)}
 			{touch ? (
 				<>
 					{() =>
 						showDedicatedStop() ? (
 							<View class="size-10 shrink-0 items-center justify-center">
-								{dedicatedStopButton()}
+								{untracked(dedicatedStopButton)}
 							</View>
 						) : null
 					}
@@ -440,7 +454,7 @@ export function ComposerActions(props: {
 				</>
 			) : (
 				<>
-					{dedicatedStopButton}
+					{() => (showDedicatedStop() ? untracked(dedicatedStopButton) : null)}
 					{sendButton}
 				</>
 			)}

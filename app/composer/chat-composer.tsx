@@ -229,7 +229,7 @@ export function ChatComposer(props: ChatComposerProps) {
 	const disabled = () =>
 		store.target() === null || readOnly() || headerMissing();
 	const editing = computed(() => focused() && !disabled());
-	const running = () => store.running();
+	const running = computed(() => store.running());
 	// 会话空闲时复位一次性 `send_now`。
 	effect(() => {
 		if (!running()) store.resetTransientSendMode();

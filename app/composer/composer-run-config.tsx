@@ -1,4 +1,5 @@
 import {
+	computed,
 	Overlay,
 	platform,
 	Scroll,
@@ -6,6 +7,7 @@ import {
 	split,
 	Text,
 	token,
+	untracked,
 	View,
 	type Bounds,
 } from "nsh";
@@ -120,15 +122,22 @@ export function ComposerRunConfig(
 	const selected = () => props.config()?.model ?? null;
 	const modelLabel = () => selected()?.name || selected()?.id || "—";
 	const thinking = () => props.config()?.thinkingLevel ?? null;
-	const thinkingLevels = () => props.config()?.thinkingLevels ?? [];
-	const hasReasoning = () => thinkingLevels().length > 0;
+	const thinkingLevels = computed(() => props.config()?.thinkingLevels ?? [], {
+		equals: (previous, next) =>
+			previous.length === next.length &&
+			previous.every((level, index) => level === next[index]),
+	});
+	const hasReasoning = computed(() => thinkingLevels().length > 0);
 	const thinkingLabel = () => piThinkingLevelLabel(thinking());
-	const modelPending = () =>
-		!selected() && (props.loading() || !props.config()?.ready);
-	const thinkingPending = () =>
-		modelPending() || (!thinking() && !props.config()?.ready);
-	const showThinkingInTrigger = () =>
-		thinkingPending() || (hasReasoning() && thinking() !== null);
+	const modelPending = computed(
+		() => !selected() && (props.loading() || !props.config()?.ready),
+	);
+	const thinkingPending = computed(
+		() => modelPending() || (!thinking() && !props.config()?.ready),
+	);
+	const showThinkingInTrigger = computed(
+		() => thinkingPending() || (hasReasoning() && thinking() !== null),
+	);
 	const triggerStyle = () => {
 		const base = composerRunConfigStyle(props.toolbarWidth());
 		return props.touch ? { ...base, height: 40 } : base;
@@ -169,48 +178,59 @@ export function ComposerRunConfig(
 				>
 					<PiLogo size={props.touch ? 16 : chatPx(16)} />
 					{() =>
-						modelPending() ? (
-							<Skeleton
-								class="shrink-0 rounded-full"
-								style={{ width: chatPx(80), height: chatPx(10) }}
-							/>
-						) : (
-							<>
-								<Text
-									class="min-w-0 shrink truncate font-sans text-muted-foreground"
-									style={triggerTextStyle}
-								>
-									{modelLabel}
-								</Text>
-								{() =>
-									showThinkingInTrigger() ? (
-										<>
-											<Text
-												accessible={false}
-												accessibilityElementsHidden
-												class="shrink-0 font-sans text-muted-foreground/60"
-												style={triggerTextStyle}
-											>
-												·
-											</Text>
-											{thinkingPending() ? (
-												<Skeleton
-													class="shrink-0 rounded-full"
-													style={{ width: chatPx(32), height: chatPx(10) }}
-												/>
-											) : (
-												<Text
-													class="shrink-0 font-sans text-muted-foreground"
-													style={triggerTextStyle}
-												>
-													{thinkingLabel}
-												</Text>
-											)}
-										</>
-									) : null
-								}
-							</>
-						)
+						modelPending()
+							? untracked(() => (
+									<Skeleton
+										class="shrink-0 rounded-full"
+										style={{ width: chatPx(80), height: chatPx(10) }}
+									/>
+								))
+							: untracked(() => (
+									<>
+										<Text
+											class="min-w-0 shrink truncate font-sans text-muted-foreground"
+											style={triggerTextStyle}
+										>
+											{modelLabel}
+										</Text>
+										{() =>
+											showThinkingInTrigger()
+												? untracked(() => (
+														<>
+															<Text
+																accessible={false}
+																accessibilityElementsHidden
+																class="shrink-0 font-sans text-muted-foreground/60"
+																style={triggerTextStyle}
+															>
+																·
+															</Text>
+															{() =>
+																thinkingPending()
+																	? untracked(() => (
+																			<Skeleton
+																				class="shrink-0 rounded-full"
+																				style={{
+																					width: chatPx(32),
+																					height: chatPx(10),
+																				}}
+																			/>
+																		))
+																	: untracked(() => (
+																			<Text
+																				class="shrink-0 font-sans text-muted-foreground"
+																				style={triggerTextStyle}
+																			>
+																				{thinkingLabel}
+																			</Text>
+																		))
+															}
+														</>
+													))
+												: null
+										}
+									</>
+								))
 					}
 				</Button>
 			}
@@ -260,36 +280,41 @@ export function ComposerRunConfig(
 					}
 				>
 					<View style={{ gap: Math.max(3, token("pilo-menu-item-gap")) }}>
+						{() => {
+							const levels = thinkingLevels();
+							return untracked(() =>
+								levels.map((level) => (
+									<MenuItem
+										testID={`run-config-thinking:${level}`}
+										role="menuitemradio"
+										checked={thinking() === level}
+										indicatorClass="hidden"
+										class={classNames(
+											"min-w-40 justify-between",
+											props.touch && "min-h-11",
+										)}
+										onSelect={() => props.onThinking(level)}
+									>
+										<Text class="font-sans">{piThinkingLevelLabel(level)}</Text>
+										<MenuCheck checked={() => thinking() === level} />
+									</MenuItem>
+								)),
+							);
+						}}
 						{() =>
-							thinkingLevels().map((level) => (
-								<MenuItem
-									testID={`run-config-thinking:${level}`}
-									role="menuitemradio"
-									checked={thinking() === level}
-									indicatorClass="hidden"
-									class={classNames(
-										"min-w-40 justify-between",
-										props.touch && "min-h-11",
-									)}
-									onSelect={() => props.onThinking(level)}
-								>
-									<Text class="font-sans">{piThinkingLevelLabel(level)}</Text>
-									<MenuCheck checked={() => thinking() === level} />
-								</MenuItem>
-							))
-						}
-						{() =>
-							thinkingLevels().length === 0 ? (
-								<MenuItem disabled>
-									<Text class="font-sans text-muted-foreground">
-										{() =>
-											props.config()?.ready
-												? t("chat.noReasoning")
-												: t("chat.readingReasoning")
-										}
-									</Text>
-								</MenuItem>
-							) : null
+							!hasReasoning()
+								? untracked(() => (
+										<MenuItem disabled>
+											<Text class="font-sans text-muted-foreground">
+												{() =>
+													props.config()?.ready
+														? t("chat.noReasoning")
+														: t("chat.readingReasoning")
+												}
+											</Text>
+										</MenuItem>
+									))
+								: null
 						}
 					</View>
 				</RunConfigSubmenu>

@@ -714,7 +714,7 @@ const zhCN = {
 		sendModeFollowUp: "排队",
 		sendModeFollowUpDetail: "任务结束后发送",
 		sendModeNow: "打断",
-		sendModeNowDetail: "停止当前任务并发送（仅本次生效，保留队列）",
+		sendModeNowDetail: "立即停止并发送",
 		queuedImages: "{{count}} 张图片",
 		queuedSteer: "调整",
 		queuedFollowUp: "排队",

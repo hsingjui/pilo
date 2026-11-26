@@ -1,4 +1,4 @@
-import { Text, View, signal } from "nsh";
+import { cleanup, Text, View, signal } from "nsh";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { PiCommand } from "@shared/api/pi-runtime-types";
@@ -14,6 +14,8 @@ import { scriptedClient } from "./scripted-app-client";
 const activity = signal("idle");
 /** Reports the latest prompt/steer message payload sent by the composer. */
 const lastMessage = signal("");
+/** Counts synthetic live-turn updates emitted while `fixture.pulseStream` is on. */
+const streamTick = signal(0);
 
 function fixtureCommand(
 	name: string,
@@ -47,6 +49,7 @@ export function composerStubClient(client: object): ComposerClient {
 function composerFixture(activeTurn: boolean) {
 	activity.set("idle");
 	lastMessage.set("");
+	streamTick.set(0);
 	const { client: runtime } = scriptedClient({
 		onCommand: (_sessionKey, command) => {
 			if (command.type === "get_commands") {
@@ -127,6 +130,26 @@ function composerFixture(activeTurn: boolean) {
 		},
 	} as unknown as AppState;
 	const appSignal = signal(app);
+	const pulseTimers: ReturnType<typeof setTimeout>[] = [];
+	cleanup(() => {
+		for (const timer of pulseTimers) clearTimeout(timer);
+		pulseTimers.length = 0;
+	});
+	const scheduleStreamPulse = () => {
+		for (const delay of [120, 160, 200]) {
+			pulseTimers.push(
+				setTimeout(() => {
+					appSignal.update((current) => ({
+						...current,
+						chatSessions: current.chatSessions.map((session) => ({
+							...session,
+						})),
+					}));
+					streamTick.update((count) => count + 1);
+				}, delay),
+			);
+		}
+	};
 	const catalogState = signal<ModelCatalogState | null>({
 		projectId: "p1",
 		catalog: {
@@ -158,7 +181,7 @@ function composerFixture(activeTurn: boolean) {
 		},
 	});
 	store.setTarget({ sessionKey: "sa", projectId: "p1" });
-	return store;
+	return { store, scheduleStreamPulse };
 }
 
 const SAMPLE_PNG = new Uint8Array([
@@ -172,10 +195,13 @@ const SAMPLE_PNG = new Uint8Array([
 
 export function composerFixtureRoot(activeTurn = false) {
 	initializeI18n("en-US");
-	const store = composerFixture(activeTurn);
+	const { store, scheduleStreamPulse } = composerFixture(activeTurn);
 	return (
 		<View class="bg-background" style={{ width: "100%", gap: 8 }}>
 			<ChatComposer store={store} />
+			<View testID="fixture-pulse-stream" onPress={() => scheduleStreamPulse()}>
+				<Text>pulse-stream</Text>
+			</View>
 			<View
 				testID="fixture-attach-image"
 				onPress={() => {
@@ -198,6 +224,7 @@ export function composerFixtureRoot(activeTurn = false) {
 				<Text>switch-chat</Text>
 			</View>
 			<Text testID="composer-activity">{activity}</Text>
+			<Text testID="composer-stream-tick">{() => `tick:${streamTick()}`}</Text>
 			<View testID="composer-last-message">
 				<Text>{lastMessage}</Text>
 			</View>

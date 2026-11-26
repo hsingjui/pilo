@@ -52,6 +52,28 @@ test("a running chat stops and steers", async () => {
 	expect(app.shows("id:composer-last-message >> text:adjust")).toBe(true);
 });
 
+test("desktop send mode menu stays open across live streaming updates and switches modes", async () => {
+	const app = await open("./composer-running-fixture.tsx", {
+		platform: "macos",
+		clock: {},
+	});
+	await app.press("id:fixture-pulse-stream");
+	await app.press("id:chat-composer-send-mode");
+	await app.waitFor("id:chat-composer-send-mode:steer");
+	await app.waitFor("id:chat-composer-send-mode:follow_up");
+	await app.waitFor("id:chat-composer-send-mode:send_now");
+	expect(app.shows("text:Stop and send now")).toBe(true);
+	expect(app.shows("text:tick:0")).toBe(true);
+	await app.wait(250);
+	expect(app.shows("text:tick:3")).toBe(true);
+	expect(app.shows("id:chat-composer-send-mode:steer")).toBe(true);
+	await app.press("id:chat-composer-send-mode:follow_up");
+	await app.waitFor("id:chat-composer-send-mode:follow_up", { state: "gone" });
+	await app.type("id:chat-composer-input", "later");
+	await app.submit("id:chat-composer-input");
+	await app.waitFor("text:sent:follow_up");
+});
+
 test("@ starts on its file tab; Tab switches to sessions and renders inline + tray without raw path", async () => {
 	const app = await open("./composer-idle-fixture.tsx", { platform: "macos" });
 	await app.type("id:chat-composer-input", "@");
