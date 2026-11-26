@@ -51,13 +51,19 @@ export function AboutPane(props: {
 			}
 			case "installing":
 				return t("settings.installing");
+			case "ready_to_restart":
+				return t("settings.updateRestartNow");
 			default:
 				return t("settings.updateCheck");
 		}
 	};
 
 	const handleUpdateAction = () => {
-		if (status() === "downloading" || status() === "installing") {
+		if (
+			status() === "downloading" ||
+			status() === "installing" ||
+			status() === "ready_to_restart"
+		) {
 			update.setDialogOpen(true);
 			return;
 		}
@@ -137,7 +143,9 @@ export function AboutPane(props: {
 								<SettingsStatus muted icon="CheckCircle2">
 									{t("settings.latest")}
 								</SettingsStatus>
-							) : status() === "available" && update.availableVersion() ? (
+							) : (status() === "available" ||
+									status() === "ready_to_restart") &&
+							  update.availableVersion() ? (
 								<SettingsStatus>v{update.availableVersion()}</SettingsStatus>
 							) : null
 						}
@@ -150,7 +158,14 @@ export function AboutPane(props: {
 								{status() === "checking" ? (
 									<Spinner class="size-3.5" />
 								) : (
-									<Icon name="RefreshCw" size={14} />
+									<Icon
+										name={
+											status() === "ready_to_restart"
+												? "RotateCcw"
+												: "RefreshCw"
+										}
+										size={14}
+									/>
 								)}
 								<Text class="font-sans text-xs">{buttonLabel()}</Text>
 							</SettingsActionButton>

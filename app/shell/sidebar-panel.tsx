@@ -577,11 +577,13 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 	const { update } = props;
 	const status = () => update.status();
 	const busy = () => status() === "downloading" || status() === "installing";
+	const readyToRestart = () => status() === "ready_to_restart";
 	const failed = () => status() === "error";
 	const progress = () => update.downloadProgress();
 
 	const label = () => {
 		if (failed()) return t("settings.updateDetails");
+		if (readyToRestart()) return t("settings.updateRestartNow");
 		if (status() === "installing") return t("settings.installing");
 		if (status() === "downloading") {
 			const pct = progress();
@@ -592,6 +594,7 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 
 	const detail = () => {
 		if (failed()) return update.error() ?? t("about.updateFailed");
+		if (readyToRestart()) return t("settings.updateReadyToRestart");
 		if (status() === "installing") return t("settings.installing");
 		if (status() === "downloading") {
 			const pct = progress();
@@ -625,6 +628,8 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 				const color = token(colorToken());
 				if (failed()) return <Icon name="RefreshCw" size={14} color={color} />;
 				if (busy()) return <Spinner size={14} color={color} />;
+				if (readyToRestart())
+					return <Icon name="RotateCcw" size={14} color={color} />;
 				return <Icon name="Download" size={14} color={color} />;
 			}}
 			<Text

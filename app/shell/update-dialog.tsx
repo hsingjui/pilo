@@ -55,6 +55,7 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 	);
 
 	const downloading = () => update.status() === "downloading";
+	const readyToRestart = () => update.status() === "ready_to_restart";
 	const installing = () => update.status() === "installing";
 	const busy = () => downloading() || installing();
 	const progress = () => update.downloadProgress();
@@ -277,6 +278,16 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 									</Text>
 								) : null
 							}
+							{() =>
+								readyToRestart() ? (
+									<Text
+										testID="update-dialog-ready"
+										class="font-sans text-xs leading-relaxed text-muted-foreground"
+									>
+										{() => t("settings.updateReadyToRestart")}
+									</Text>
+								) : null
+							}
 							<View class="flex-row flex-wrap justify-end gap-2">
 								<Button
 									testID="update-dialog-close-action"
@@ -286,7 +297,13 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 									onPress={() => update.setDialogOpen(false)}
 								>
 									<Text class="font-sans text-xs text-muted-foreground">
-										{() => t("common.close")}
+										{() =>
+											t(
+												readyToRestart()
+													? "settings.updateRestartLater"
+													: "common.close",
+											)
+										}
 									</Text>
 								</Button>
 								<Button
@@ -303,7 +320,18 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 										busy() ? (
 											<Spinner size={14} />
 										) : (
-											<Icon name="Download" size={14} />
+											<Icon
+												name={
+													readyToRestart()
+														? "RotateCcw"
+														: update.status() === "error"
+															? "RefreshCw"
+															: !update.canInstall()
+																? "ExternalLink"
+																: "Download"
+												}
+												size={14}
+											/>
 										)
 									}
 									<Text class="font-sans text-xs text-primary-foreground">
@@ -314,9 +342,13 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 															? "settings.installing"
 															: "settings.downloading",
 													)
-												: update.status() === "error"
-													? t("common.retry")
-													: t("settings.downloadInstall")
+												: readyToRestart()
+													? t("settings.updateRestartNow")
+													: update.status() === "error"
+														? t("common.retry")
+														: !update.canInstall()
+															? t("settings.goToDownload")
+															: t("settings.downloadInstall")
 										}
 									</Text>
 								</Button>

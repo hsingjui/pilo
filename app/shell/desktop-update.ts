@@ -35,6 +35,7 @@ export type DesktopUpdateStatus =
 	| "latest"
 	| "available"
 	| "downloading"
+	| "ready_to_restart"
 	| "installing"
 	| "error";
 
@@ -45,6 +46,7 @@ export interface DesktopUpdaterApi {
 	downloadUpdate: (
 		onProgress?: ((progress: UpdateProgress) => void) | null,
 	) => Promise<void>;
+	installOnQuit?: () => Promise<void>;
 	installAndRestart: () => Promise<void>;
 	openUrl: (url: string) => Promise<unknown>;
 }
@@ -59,6 +61,8 @@ export interface DesktopUpdateOptions {
 	fetchReleaseNotes?: ReleaseNotesFetcher;
 	/** Restarts via the desktop shell after it shuts down the Host. */
 	restart?: () => Promise<void>;
+	/** Returns true while an Agent turn or running terminal would be interrupted by restart. */
+	hasActiveWork?: () => boolean;
 	/** Checks silently on startup when true; defaults to `!isDev`. */
 	autoCheck?: boolean;
 	/** Enables the dev-only preview prompt; defaults to `appInfo().development`. */
@@ -154,6 +158,7 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 				? DesktopUpdates.checkForUpdate
 				: defaultCheckForUpdate),
 		downloadUpdate: options.updater?.downloadUpdate ?? defaultDownloadUpdate,
+		installOnQuit: options.updater?.installOnQuit ?? installOnQuit,
 		installAndRestart:
 			options.updater?.installAndRestart ??
 			(async () => {
@@ -163,6 +168,7 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 			}),
 		openUrl: options.updater?.openUrl ?? defaultOpenUrl,
 	};
+	const hasActiveWork = () => options.hasActiveWork?.() ?? false;
 	const fetchReleaseNotes =
 		options.fetchReleaseNotes ?? fetchGitHubReleaseNotes;
 	const isDev = options.isDev ?? appInfo().development;
@@ -197,7 +203,7 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 	};
 
 	const checkForUpdates = async ({ openDialog = true } = {}) => {
-		if (installing) {
+		if (installing || status() === "ready_to_restart") {
 			if (openDialog) dialogOpen.set(true);
 			return;
 		}
@@ -260,9 +266,28 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 		dialogOpen.set(true);
 	};
 
+	const restartToInstall = async () => {
+		if (installing) return;
+		installing = true;
+		status.set("installing");
+		error.set(null);
+		try {
+			await updater.installAndRestart();
+		} catch (caught) {
+			error.set(formatUpdateError(caught));
+			status.set("error");
+		} finally {
+			installing = false;
+		}
+	};
+
 	const installUpdate = async (onNotice?: (message: string) => void) => {
 		if (isDev && previewMode()) {
 			onNotice?.(t("settings.updatePreviewOnly"));
+			return;
+		}
+		if (status() === "ready_to_restart") {
+			await restartToInstall();
 			return;
 		}
 		if (status() === "error") {
@@ -293,6 +318,12 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 				downloadedBytes.set(event.received);
 				downloadTotalBytes.set(event.total ?? null);
 			});
+			// 有活跃对话或终端时不强杀进程：先暂存为退出时安装，让用户决定何时立即重启。
+			if (hasActiveWork()) {
+				await updater.installOnQuit?.();
+				status.set("ready_to_restart");
+				return;
+			}
 			status.set("installing");
 			await updater.installAndRestart();
 		} catch (caught) {
@@ -325,12 +356,14 @@ export function createDesktopUpdate(options: DesktopUpdateOptions = {}) {
 		downloadTotalBytes,
 		downloadProgress,
 		hasUpdate,
+		hasActiveWork,
 		isDev,
 		fetchReleaseNotes,
 		openUrl: updater.openUrl,
 		setDialogOpen,
 		checkForUpdates,
 		installUpdate,
+		restartToInstall,
 		previewUpdate,
 		dispose,
 	};
