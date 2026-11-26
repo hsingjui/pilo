@@ -14,6 +14,7 @@ use tokio::sync::{broadcast, watch};
 
 use super::debug_trace::runtime_trace;
 
+mod live_images;
 mod model;
 #[cfg(test)]
 mod recovery_tests;
@@ -22,6 +23,7 @@ mod stream;
 mod trace;
 pub mod turn_projection;
 
+pub(crate) use live_images::LIVE_IMAGE_PREFIX;
 pub use model::*;
 pub use stream::{EventBatch, EventQueueLimits, EventStream};
 use trace::traceable_runtime_event;
@@ -151,6 +153,7 @@ pub struct RuntimeEventBus {
     external_read_activity: session_reads::ExternalReadActivity,
     external_activity_refreshes: session_reads::ExternalActivityRefreshes,
     session_completions: Arc<StdMutex<session_reads::SessionCompletionQueue>>,
+    live_images: Arc<StdMutex<live_images::LiveImages>>,
 }
 
 impl Default for RuntimeEventBus {
@@ -171,11 +174,41 @@ impl Default for RuntimeEventBus {
             session_completions: Arc::new(StdMutex::new(
                 session_reads::SessionCompletionQueue::default(),
             )),
+            live_images: Arc::default(),
         }
     }
 }
 
 impl RuntimeEventBus {
+    pub(crate) fn remember_live_images(
+        &self,
+        project_id: &str,
+        session_key: &str,
+        content: Vec<serde_json::Value>,
+    ) -> Vec<LiveUserImage> {
+        self.live_images
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remember(project_id, session_key, content)
+    }
+
+    pub(crate) async fn read_live_image(
+        &self,
+        project_id: &str,
+        session_key: &str,
+        image_id: &str,
+    ) -> Result<Vec<u8>, String> {
+        let data = self
+            .live_images
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(project_id, session_key, image_id)
+            .ok_or_else(|| "live chat image is no longer available".to_owned())?;
+        tokio::task::spawn_blocking(move || live_images::decode(&data))
+            .await
+            .map_err(|error| format!("live chat image decode task failed: {error}"))?
+    }
+
     pub(crate) fn with_publish_lock<T>(&self, action: impl FnOnce() -> T) -> T {
         let _publish_guard = self
             .replay
@@ -385,6 +418,10 @@ impl RuntimeEventBus {
 
 pub trait RuntimeEventSink: Clone + Send + Sync + 'static {
     fn send(&self, event: RuntimeEvent);
+
+    fn send_user_message_start(&self, generation: u64, text: String, _content: serde_json::Value) {
+        self.send(RuntimeEvent::UserMessageStart { generation, text });
+    }
 
     fn send_at(&self, event: RuntimeEvent, _timestamp_ms: i64) {
         self.send(event);

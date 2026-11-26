@@ -57,6 +57,7 @@ pub(crate) fn save(
         session_key: None,
         project_id: None,
         timestamp_ms: None,
+        images: Vec::new(),
         event: RuntimeEvent::PromptEnhancementSettingsChanged {
             settings: settings.clone(),
         },

@@ -16,7 +16,6 @@ import { currentWindow } from "nsh/desktop";
 import type { Project } from "@shared/api/projects-types";
 import { userErrorMessage } from "@shared/app-error";
 import { chatRuntimeShowsActivity } from "@shared/chat/chat-session-runtime-model";
-import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import { CacheKeepAliveNotice } from "../chat/cache-keep-alive-notice";
@@ -31,7 +30,7 @@ import {
 import { ChatPendingQueue } from "../chat/chat-pending-queue";
 import { ChatReadingFont, chatReadingFont } from "../chat/chat-reading-font";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
-import { readChatUserImage } from "../chat/chat-user-image-cache";
+import { createChatUserImageReader } from "../chat/chat-user-image-cache";
 import {
 	ConversationColumn,
 	ConversationColumnLayout,
@@ -194,7 +193,14 @@ export function AppShell(props: AppShellProps) {
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
 	const hasProject = computed(() => project() !== null);
-	const sessionOpen = computed(() => store.state().navigation.session !== null);
+	const sessionOpen = computed(() => store.openSession() !== null);
+	const chatTarget = computed(() => openChatTarget(store.state()), {
+		equals: (previous, next) =>
+			previous?.sessionKey === next?.sessionKey &&
+			previous?.projectId === next?.projectId &&
+			previous?.sessionPath === next?.sessionPath,
+	});
+	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	const toasts = props.toasts ?? new AppToasts();
 	const workspace =
 		props.workspace ??
@@ -220,24 +226,24 @@ export function AppShell(props: AppShellProps) {
 	const mediaActions = {
 		openImage: (image: ChatImagePreview) => previewImage.set(image),
 		sessionMentions: () => composer.sessionsByValue(),
-		readUserImage: (image: ChatConversationImage) => {
-			const session = store.state().navigation.session;
-			const config = props.runConfig?.state();
-			const sessionPath =
-				session?.sessionPath ||
-				(config &&
-				config.sessionKey === chatSessionKey() &&
-				config.projectId === session?.projectId
-					? config.session?.sessionPath
-					: undefined);
+		readUserImage: createChatUserImageReader(() => {
+			const session = store.openSession();
 			const read = props.readHistoryImage;
-			return readChatUserImage(
-				image,
-				session && sessionPath && read
-					? { projectId: session.projectId, sessionPath, read }
-					: null,
-			);
-		},
+			if (!session || !read) return null;
+			const { projectId } = session;
+			let sessionPath = session.sessionPath;
+			if (!sessionPath) {
+				const config = props.runConfig?.state();
+				if (
+					config &&
+					config.sessionKey === chatSessionKey() &&
+					config.projectId === projectId
+				) {
+					sessionPath = config.session?.sessionPath;
+				}
+			}
+			return { projectId, sessionPath, sessionKey: chatSessionKey(), read };
+		}),
 		project,
 		onFileLink: handleFileLink,
 		openFile: fileOpenContext
@@ -375,13 +381,6 @@ export function AppShell(props: AppShellProps) {
 			readingFontFamily: readingFontFamily(),
 		}),
 	);
-	const chatTarget = computed(() => openChatTarget(store.state()), {
-		equals: (previous, next) =>
-			previous?.sessionKey === next?.sessionKey &&
-			previous?.projectId === next?.projectId &&
-			previous?.sessionPath === next?.sessionPath,
-	});
-	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	effect(() => {
 		const target = chatTarget();
 		untracked(() => composer.setTarget(target));

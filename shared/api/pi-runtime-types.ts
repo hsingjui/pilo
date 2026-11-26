@@ -246,6 +246,7 @@ export type PiloRuntimeEvent = {
 			type: "user_message_start";
 			generation: number;
 			text: string;
+			images?: { id: string; mimeType: string }[];
 	  }
 	| {
 			type: "assistant_message_start";

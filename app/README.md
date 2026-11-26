@@ -165,7 +165,7 @@ or closing sessions. The optional window is
 Omit `messageLimit` for all messages. When supplied, the reader clamps it to
 1–256, defaults to the tail when `startMessage` is omitted, and includes the
 message index on request. The result has
-`{ eventSequence, sessionKey, generation, history, live, liveStartedAtMs?, liveElapsedMs? }`.
+`{ eventSequence, sessionKey, generation, history, live, liveStartedAtMs?, liveElapsedMs?, liveUserImages? }`.
 `history` is the existing history response, including its fingerprint; `live`
 is `{ type: "idle" }`, `{ type: "active", events }`, or `{ type: "truncated" }`.
 `liveStartedAtMs` is the active reply segment's original Host start time in Unix
@@ -178,6 +178,11 @@ cut, history ends at the start-of-turn boundary and `live.events` holds the
 ordered runtime event payloads captured through the cut. Replace that session's
 transcript with history, apply all `live.events` if active, then replay stream
 events for the same session and generation strictly above `eventSequence`.
+For an active cut, `liveUserImages` maps each `images` descriptor list to the
+zero-based `userIndex` among `user_message_start` events. Streamed starts carry
+their descriptors directly. For a `live:` image ID, pass the chat key instead
+of the file path to `readHistoryImage`; the bytes come from a bounded Host
+cache, not from the event stream. Saved images still use the session file.
 Discard buffered events at or below that cut only for that transcript, not
 other sessions or global state. A gap or generation change requires a fresh
 cut. On `truncated`, do not apply its empty history or resume replay from that

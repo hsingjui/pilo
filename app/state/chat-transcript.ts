@@ -57,7 +57,7 @@ export function applyChatEvents(
 			action.text === localPromptEcho.text
 		) {
 			if (localPromptEcho.images?.length) {
-				action.images = localPromptEcho.images;
+				action.images ??= localPromptEcho.images;
 				action.sourceEntryId = localPromptEcho.clientMessageId;
 			}
 			action.workClockStartedAtMs =
@@ -134,7 +134,21 @@ export function conversationFromSnapshot(
 		context,
 	);
 	const later = streamed.filter((event) => followsSnapshot(snapshot, event));
-	const live = snapshot.live.type === "active" ? snapshot.live.events : [];
+	let live = snapshot.live.type === "active" ? snapshot.live.events : [];
+	if (snapshot.liveUserImages?.length) {
+		const byUser = new Map(
+			snapshot.liveUserImages.map(({ userIndex, images }) => [
+				userIndex,
+				images,
+			]),
+		);
+		let userIndex = 0;
+		live = live.map((event) => {
+			if (event.type !== "user_message_start") return event;
+			const images = byUser.get(userIndex++);
+			return images ? { ...event, images } : event;
+		});
+	}
 	const echoSequence = localPromptEcho?.sequence;
 	const echoAfterSnapshot =
 		echoSequence !== undefined && echoSequence > snapshot.eventSequence;

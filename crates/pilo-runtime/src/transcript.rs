@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{events::turn_projection::TurnLive, handle::Runtime};
+use super::{
+    events::turn_projection::{ProjectedUserImages, TurnLive},
+    handle::Runtime,
+};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +27,8 @@ pub struct TranscriptSnapshot {
     pub generation: u64,
     pub history: Value,
     pub live: TurnLive,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) live_user_images: Option<Arc<Vec<ProjectedUserImages>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub live_started_at_ms: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]

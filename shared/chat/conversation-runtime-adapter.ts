@@ -9,6 +9,7 @@ export function toConversationAction(
 			return {
 				type: event.type,
 				text: event.text,
+				images: event.images?.map((image) => ({ ...image, source: "live" })),
 				timestampMs: event.timestampMs,
 				pendingAssistant: true,
 			};

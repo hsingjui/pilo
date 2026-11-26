@@ -6,8 +6,8 @@ use std::sync::{
 use serde_json::Value;
 
 use crate::events::{
-    PiProcessState, RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope, RuntimeEventSink,
-    RuntimeLogStream,
+    LiveUserImage, PiProcessState, RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope,
+    RuntimeEventSink, RuntimeLogStream,
 };
 
 use super::InitializationReply;
@@ -32,16 +32,33 @@ pub(super) struct ChatEventSink {
 
 impl RuntimeEventSink for ChatEventSink {
     fn send(&self, event: RuntimeEvent) {
-        self.publish(event, None);
+        self.publish(event, None, Vec::new());
+    }
+
+    fn send_user_message_start(&self, generation: u64, text: String, content: Value) {
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
+        let images = match content {
+            Value::Array(blocks) if blocks.iter().any(|block| block["type"] == "image") => self
+                .events
+                .remember_live_images(&self.project_id, &self.session_key, blocks),
+            _ => Vec::new(),
+        };
+        self.publish(
+            RuntimeEvent::UserMessageStart { generation, text },
+            None,
+            images,
+        );
     }
 
     fn send_at(&self, event: RuntimeEvent, timestamp_ms: i64) {
-        self.publish(event, Some(timestamp_ms));
+        self.publish(event, Some(timestamp_ms), Vec::new());
     }
 }
 
 impl ChatEventSink {
-    fn publish(&self, event: RuntimeEvent, timestamp_ms: Option<i64>) {
+    fn publish(&self, event: RuntimeEvent, timestamp_ms: Option<i64>, images: Vec<LiveUserImage>) {
         if self.closed.load(Ordering::Acquire) {
             return;
         }
@@ -200,6 +217,7 @@ impl ChatEventSink {
         let mut envelope =
             RuntimeEventEnvelope::session(self.session_key.clone(), self.project_id.clone(), event);
         envelope.timestamp_ms = timestamp_ms;
+        envelope.images = images;
         self.events
             .send_observed(envelope, |event| self.turn.observe(event));
     }

@@ -1,3 +1,5 @@
+import { computed } from "nsh";
+
 import { bytesToBase64 } from "@shared/base64";
 import {
 	MAX_CHAT_IMAGE_BYTES,
@@ -6,10 +8,11 @@ import {
 import type { ChatImageAttachment } from "@shared/chat/chat-submission";
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
 
-/** Where a saved message's images are read from (`NshPiloClient.readHistoryImage`). */
+/** Chat identity for reading live or saved images through the Host. */
 export type ChatHistoryImageSource = {
 	projectId: string;
-	sessionPath: string;
+	sessionPath?: string | null;
+	sessionKey?: string | null;
 	read: (
 		projectId: string,
 		sessionPath: string,
@@ -108,8 +111,7 @@ export function rememberLocalChatImages(
 }
 
 /**
- * A user message image as a data URL: a prompt just sent from the cache,
- * a saved one from its session file.
+ * A user image as a data URL, from the pending prompt or the Host.
  */
 export function readChatUserImage(
 	image: ChatConversationImage,
@@ -124,7 +126,9 @@ export function readChatUserImage(
 		localImageUrls.set(key, hit);
 		return hit;
 	}
-	if (!history) return Promise.reject(new Error("no saved session"));
+	const session =
+		image.source === "live" ? history?.sessionKey : history?.sessionPath;
+	if (!history || !session) return Promise.reject(new Error("no image source"));
 	const mimeType = resolveChatImageMimeType({
 		name: image.name ?? "",
 		type: image.mimeType,
@@ -132,18 +136,30 @@ export function readChatUserImage(
 	if (!mimeType) {
 		return Promise.reject(new Error("unsupported image format"));
 	}
-	const { projectId, sessionPath, read } = history;
-	return cachedHistory(
-		`${projectId}\0${sessionPath}\0${image.id}`,
-		async () => {
-			const bytes = await read(projectId, sessionPath, image.id);
-			if (bytes.length > MAX_CHAT_IMAGE_BYTES) {
-				throw new Error("image exceeds chat size limit");
-			}
-			const url = `data:${mimeType};base64,${bytesToBase64(bytes)}`;
-			return { url, bytes: url.length };
-		},
-	);
+	const { projectId, read } = history;
+	return cachedHistory(`${projectId}\0${session}\0${image.id}`, async () => {
+		const bytes = await read(projectId, session, image.id);
+		if (bytes.length > MAX_CHAT_IMAGE_BYTES) {
+			throw new Error("image exceeds chat size limit");
+		}
+		const url = `data:${mimeType};base64,${bytesToBase64(bytes)}`;
+		return { url, bytes: url.length };
+	});
+}
+
+/** Keep thumbnail reads independent of unrelated app and run-config updates. */
+export function createChatUserImageReader(
+	historySource: () => ChatHistoryImageSource | null,
+) {
+	const history = computed(historySource, {
+		equals: (previous, next) =>
+			previous?.projectId === next?.projectId &&
+			previous?.sessionPath === next?.sessionPath &&
+			previous?.sessionKey === next?.sessionKey &&
+			previous?.read === next?.read,
+	});
+	return (image: ChatConversationImage) =>
+		readChatUserImage(image, image.source === "local" ? null : history());
 }
 
 /** Clears cached image URLs; intended for tests. */

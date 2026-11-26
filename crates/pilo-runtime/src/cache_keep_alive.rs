@@ -43,6 +43,7 @@ pub(crate) async fn save(
         session_key: None,
         project_id: None,
         timestamp_ms: None,
+        images: Vec::new(),
         event: RuntimeEvent::CacheKeepAliveSettingsChanged {
             settings: settings.clone(),
         },

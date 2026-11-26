@@ -29,6 +29,7 @@ pub(crate) fn save_model_scope(
         session_key: None,
         project_id: Some(project_id.to_owned()),
         timestamp_ms: None,
+        images: Vec::new(),
         event: RuntimeEvent::ProjectModelScopeChanged {
             scope: scope.clone(),
         },

@@ -213,9 +213,19 @@ pub(super) fn dispatch_pi_rpc<S: RuntimeEventSink>(
     buffer: &mut Vec<RuntimeEvent>,
     adapter: &mut PiEventAdapter,
     generation: u64,
-    data: Value,
+    mut data: Value,
 ) {
-    for event in adapt_pi_rpc(adapter, generation, data) {
+    let events = if data["type"] == "message_start" {
+        adapter.adapt(generation, &data)
+    } else {
+        adapt_pi_rpc(adapter, generation, data.take())
+    };
+    for event in events {
+        if let RuntimeEvent::UserMessageStart { generation, text } = event {
+            flush_runtime_events(sink, buffer);
+            sink.send_user_message_start(generation, text, data["message"]["content"].take());
+            continue;
+        }
         if matches!(&event, RuntimeEvent::AssistantMessageEnd { .. }) {
             let timestamp_ms = adapter
                 .take_completed_at_ms()

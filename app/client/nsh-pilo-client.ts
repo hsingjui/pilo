@@ -216,6 +216,13 @@ export type ChatTranscriptSnapshot = {
 	liveStartedAtMs?: number;
 	/** Monotonic duration of that segment when the Host returned the cut. */
 	liveElapsedMs?: number;
+	/** Images indexed by the zero-based ordinal of user starts in this live cut. */
+	liveUserImages?: {
+		userIndex: number;
+		images: NonNullable<
+			Extract<PiloRuntimeEvent, { type: "user_message_start" }>["images"]
+		>;
+	}[];
 	live:
 		| { type: "idle" }
 		/** The turn in progress, as its events in order up to the cut. */

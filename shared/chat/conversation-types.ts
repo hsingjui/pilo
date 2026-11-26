@@ -8,16 +8,15 @@ import type {
 /**
  * Lightweight image descriptor kept in conversation state.
  *
- * Local images are backed by the bounded Blob URL cache; history images are
- * loaded lazily from the session JSONL. Base64 payloads stay in submissions
- * only for as long as they are needed to send/recover a request.
+ * Pending images are backed by the client cache. Live images are read from
+ * the Host cache and saved images are loaded lazily from the session JSONL.
  */
 export type ChatConversationImage = {
 	id: string;
 	name?: string;
 	mimeType: string;
 	size?: number;
-	source?: "local";
+	source?: "local" | "live";
 };
 
 export type ChatMessage =

@@ -1,6 +1,6 @@
 use super::{Runtime, project, storage};
 use super::{
-    events::{RuntimeEvent, RuntimeEventEnvelope},
+    events::{LIVE_IMAGE_PREFIX, RuntimeEvent, RuntimeEventEnvelope},
     session_history,
     session_index::{self, SessionScanClient},
 };
@@ -428,6 +428,14 @@ pub async fn session_history_image(
     expected_file_size: Option<u64>,
     expected_file_mtime_ns: Option<String>,
 ) -> Result<Vec<u8>, String> {
+    if image_id.starts_with(LIVE_IMAGE_PREFIX) {
+        // For a live descriptor the second argument is the chat key, not a file path.
+        project::get(runtime, &project_id)?;
+        return runtime
+            .events
+            .read_live_image(&project_id, &session_path, &image_id)
+            .await;
+    }
     let project = session_runtime_project(runtime, &project_id)?;
     let expected_fingerprint =
         expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;

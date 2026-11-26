@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{pi_workspace, session_history};
+use crate::{events::LIVE_IMAGE_PREFIX, pi_workspace, session_history};
 
 use super::{RemoteHttpState, api_error, get_project};
 
@@ -199,36 +199,53 @@ pub(super) async fn history_image(
     state: RemoteHttpState,
     Query(query): Query<HistoryImageQuery>,
 ) -> Response {
-    let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
-        pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
-    }) {
+    let live = query.image_id.starts_with(LIVE_IMAGE_PREFIX);
+    let project = match get_project(&state.runtime.paths, &query.project_id) {
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
-    let expected_fingerprint = match expected_session_fingerprint(
-        query.expected_file_size,
-        query.expected_file_mtime_ns.as_deref(),
-    ) {
-        Ok(value) => value,
-        Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
+    let bytes = if live {
+        state
+            .runtime
+            .events
+            .read_live_image(&query.project_id, &query.session_path, &query.image_id)
+            .await
+    } else {
+        let project = match pi_workspace::resolve_session_project_with_paths(
+            &state.runtime.paths,
+            &project,
+        ) {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
+        let expected_fingerprint = match expected_session_fingerprint(
+            query.expected_file_size,
+            query.expected_file_mtime_ns.as_deref(),
+        ) {
+            Ok(value) => value,
+            Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
+        };
+        session_history::read_history_image_bytes(
+            &state.runtime.servers,
+            &state.runtime.session_history_cache,
+            &project,
+            &query.session_path,
+            &query.image_id,
+            expected_fingerprint,
+        )
+        .await
     };
-    let runtime = state.runtime.core.clone();
-    match session_history::read_history_image_bytes(
-        &runtime.servers,
-        &runtime.session_history_cache,
-        &project,
-        &query.session_path,
-        &query.image_id,
-        expected_fingerprint,
-    )
-    .await
-    {
+    match bytes {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/octet-stream")
             .header(
                 header::CACHE_CONTROL,
-                "private, max-age=31536000, immutable",
+                if live {
+                    "no-store"
+                } else {
+                    "private, max-age=31536000, immutable"
+                },
             )
             .body(Body::from(bytes))
             .unwrap_or_else(|error| {

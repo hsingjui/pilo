@@ -52,6 +52,13 @@ pub struct ExtensionUiRequestPayload {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveUserImage {
+    pub id: String,
+    pub mime_type: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimeEvent {
     PreferencesChanged {
@@ -261,6 +268,8 @@ pub struct RuntimeEventEnvelope {
     pub project_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<LiveUserImage>,
     #[serde(flatten)]
     pub event: RuntimeEvent,
 }
@@ -271,6 +280,7 @@ impl RuntimeEventEnvelope {
             session_key: None,
             project_id: None,
             timestamp_ms: None,
+            images: Vec::new(),
             event,
         }
     }
@@ -280,6 +290,7 @@ impl RuntimeEventEnvelope {
             session_key: Some(session_key),
             project_id: Some(project_id),
             timestamp_ms: None,
+            images: Vec::new(),
             event,
         }
     }

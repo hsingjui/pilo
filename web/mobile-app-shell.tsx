@@ -22,7 +22,6 @@ import {
 } from "@shared/api/chat-session-key";
 import { compactMiddlePath } from "@shared/project-path";
 import { userErrorMessage } from "@shared/app-error";
-import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import { resolveMobileComposerBottomPadding } from "@shared/mobile-viewport";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
@@ -61,7 +60,7 @@ import {
 	chatReadingFont,
 } from "../app/chat/chat-reading-font";
 import { ChatTodoCapsule } from "../app/chat/chat-todo-capsule";
-import { readChatUserImage } from "../app/chat/chat-user-image-cache";
+import { createChatUserImageReader } from "../app/chat/chat-user-image-cache";
 import {
 	ConversationColumn,
 	ConversationColumnLayout,
@@ -317,24 +316,24 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		openFile: (path: string, lineRange?: WorkspaceLineRange) =>
 			openToolFilePath(fileOpenContext, path, lineRange),
 		sessionMentions: () => composer.sessionsByValue(),
-		readUserImage: (image: ChatConversationImage) => {
-			const session = store.state().navigation.session;
-			const config = props.runConfig?.state();
-			const sessionPath =
-				session?.sessionPath ||
-				(config &&
-				config.sessionKey === chatSessionKey() &&
-				config.projectId === session?.projectId
-					? config.session?.sessionPath
-					: undefined);
+		readUserImage: createChatUserImageReader(() => {
+			const session = store.openSession();
 			const read = props.readHistoryImage;
-			return readChatUserImage(
-				image,
-				session && sessionPath && read
-					? { projectId: session.projectId, sessionPath, read }
-					: null,
-			);
-		},
+			if (!session || !read) return null;
+			const { projectId } = session;
+			let sessionPath = session.sessionPath;
+			if (!sessionPath) {
+				const config = props.runConfig?.state();
+				if (
+					config &&
+					config.sessionKey === chatSessionKey() &&
+					config.projectId === projectId
+				) {
+					sessionPath = config.session?.sessionPath;
+				}
+			}
+			return { projectId, sessionPath, sessionKey: chatSessionKey(), read };
+		}),
 	};
 
 	const newChat = (projectId?: string) => {

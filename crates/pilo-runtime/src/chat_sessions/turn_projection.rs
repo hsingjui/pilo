@@ -255,14 +255,15 @@ impl SessionTurn {
         mut read: impl FnMut(Option<Arc<TurnBase>>) -> F,
     ) -> Result<TranscriptSnapshot, String> {
         for attempt in 0..3 {
-            let (projection, base, generation, revision, event_sequence, started_at) = events
-                .with_publish_lock(|| {
+            let (projection, user_images, base, generation, revision, event_sequence, started_at) =
+                events.with_publish_lock(|| {
                     let state = self
                         .state
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     (
                         state.projection.snapshot(),
+                        state.projection.user_images(),
                         state.base.clone(),
                         state.generation,
                         state.revision,
@@ -324,6 +325,11 @@ impl SessionTurn {
                 live_started_at_ms: started_at.map(|(timestamp, _)| timestamp),
                 live_elapsed_ms: started_at
                     .and_then(|(_, instant)| u64::try_from(instant.elapsed().as_millis()).ok()),
+                live_user_images: if matches!(live, TurnLive::Active { .. }) {
+                    user_images
+                } else {
+                    None
+                },
                 live,
             });
         }
@@ -697,7 +703,13 @@ impl SessionTurn {
             _ => {}
         }
         if state.active() {
-            state.projection.push(event.clone());
+            if sequenced.event.images.is_empty() {
+                state.projection.push(event.clone());
+            } else {
+                state
+                    .projection
+                    .push_with_images(event.clone(), sequenced.event.images.clone());
+            }
         }
     }
 }

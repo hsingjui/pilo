@@ -4,7 +4,15 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use super::{PayloadSize, RuntimeEvent};
+use super::{LiveUserImage, PayloadSize, RuntimeEvent};
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectedUserImages {
+    // User-message ordinal, unaffected by coalescing or removing assistant events.
+    pub user_index: usize,
+    pub images: Vec<LiveUserImage>,
+}
 
 /// Limits apply to the retained, merged list. Bytes are the sum of each event's
 /// JSON size, excluding array delimiters, Arc overhead and spare allocation capacity.
@@ -33,6 +41,8 @@ pub struct TurnProjection {
     snapshot: TurnSnapshot,
     bytes: usize,
     event_sizes: Vec<usize>,
+    user_count: usize,
+    user_images: Arc<Vec<ProjectedUserImages>>,
 }
 
 impl TurnProjection {
@@ -45,6 +55,8 @@ impl TurnProjection {
             },
             bytes: 0,
             event_sizes: Vec::new(),
+            user_count: 0,
+            user_images: Arc::default(),
         }
     }
 
@@ -68,12 +80,20 @@ impl TurnProjection {
         self.snapshot.clone()
     }
 
+    pub(crate) fn user_images(&self) -> Option<Arc<Vec<ProjectedUserImages>>> {
+        (!self.user_images.is_empty()).then(|| Arc::clone(&self.user_images))
+    }
+
     /// Only adjacent deltas of the same kind and generation merge; tool execution
     /// updates replace earlier updates for the same tool call in the current
     /// assistant segment, and tool execution ends reclaim redundant updates when
     /// a matching start already carries the arguments. Input without a recorded
     /// begin invalidates the projection rather than losing a prefix.
     pub fn push(&mut self, event: RuntimeEvent) {
+        self.push_with_images(event, Vec::new());
+    }
+
+    pub(crate) fn push_with_images(&mut self, event: RuntimeEvent, images: Vec<LiveUserImage>) {
         let TurnLive::Active { events } = &mut self.snapshot.live else {
             self.truncate();
             return;
@@ -163,9 +183,16 @@ impl TurnProjection {
             ) if previous == generation => Some(delta.as_str()),
             _ => None,
         };
+        let user_images = (!images.is_empty()).then_some(ProjectedUserImages {
+            user_index: self.user_count,
+            images,
+        });
         let additional_bytes = match incoming_delta {
             Some(delta) => json_size(delta).and_then(|size| size.checked_sub(2)),
-            None => json_size(&event),
+            None => json_size(&event).and_then(|bytes| match &user_images {
+                Some(images) => bytes.checked_add(json_size(images)?),
+                None => Some(bytes),
+            }),
         };
         let Some(added_bytes) = additional_bytes else {
             self.truncate();
@@ -197,6 +224,12 @@ impl TurnProjection {
                 }
             }
         } else {
+            if matches!(event, RuntimeEvent::UserMessageStart { .. }) {
+                self.user_count += 1;
+                if let Some(images) = user_images {
+                    Arc::make_mut(&mut self.user_images).push(images);
+                }
+            }
             events.push(Arc::new(event));
             self.event_sizes.push(added_bytes);
         }
@@ -207,15 +240,20 @@ impl TurnProjection {
     pub fn truncate(&mut self) {
         self.snapshot.base_size = None;
         self.snapshot.live = TurnLive::Truncated;
-        self.bytes = 0;
-        self.event_sizes.clear();
+        self.clear_retained();
     }
 
     pub fn settle(&mut self) {
         self.snapshot.base_size = None;
         self.snapshot.live = TurnLive::Idle;
+        self.clear_retained();
+    }
+
+    fn clear_retained(&mut self) {
         self.bytes = 0;
         self.event_sizes.clear();
+        self.user_count = 0;
+        self.user_images = Arc::default();
     }
 }
 
