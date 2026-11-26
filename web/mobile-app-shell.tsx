@@ -645,10 +645,10 @@ export function MobileAppShell(props: MobileAppShellProps) {
 				{() =>
 					showHeaderTitle() ? (
 						<View
-							class={`min-w-0 max-w-full flex-row items-center gap-1.5 rounded-(--pilo-mobile-radius-md) px-2 ${
+							class={`min-w-0 max-w-full flex-row items-center gap-1.5 rounded-(--pilo-mobile-radius-md) ${
 								temporaryOpen()
-									? "h-8 border border-dashed border-border/70"
-									: ""
+									? "h-8 border border-dashed border-border/70 px-2"
+									: "pr-2"
 							}`}
 						>
 							{temporaryOpen() ? (

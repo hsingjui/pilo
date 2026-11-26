@@ -622,7 +622,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						}
 						onPress={pickAttachments}
 					>
-						<Icon name="Plus" size={16} color={token("muted-foreground")} />
+						<Icon name="Plus" size={16} />
 					</Button>
 
 					{props.runConfig ? (

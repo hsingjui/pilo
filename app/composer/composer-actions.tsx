@@ -149,6 +149,14 @@ export function ComposerActions(props: {
 			/>
 		</Button>
 	);
+	const sendButtonAppearance = () => {
+		if (!primaryIsStop() && isInterruptMode())
+			return "bg-destructive hover:bg-destructive/90";
+		if (!props.touch) return "bg-foreground hover:bg-foreground/85";
+		return primaryIsStop()
+			? "bg-muted hover:bg-hover"
+			: "bg-primary hover:bg-button-hover";
+	};
 	const sendButton = (
 		<Button
 			testID="chat-composer-send"
@@ -156,9 +164,7 @@ export function ComposerActions(props: {
 			size="icon"
 			class={classNames(
 				"rounded-full disabled:bg-muted-foreground disabled:opacity-100",
-				!primaryIsStop() && isInterruptMode()
-					? "bg-destructive hover:bg-destructive/90"
-					: "bg-foreground hover:bg-foreground/85",
+				sendButtonAppearance(),
 			)}
 			style={sendButtonSize()}
 			accessibilityLabel={actionLabel()}
@@ -190,7 +196,7 @@ export function ComposerActions(props: {
 						name="Square"
 						size={props.touch ? 12 : chatPx(12)}
 						fill
-						color={token("background")}
+						color={token(props.touch ? "foreground" : "background")}
 					/>
 				</View>
 				<View
@@ -213,7 +219,7 @@ export function ComposerActions(props: {
 							<Icon
 								name="ArrowUp"
 								size={props.touch ? 16 : chatPx(16)}
-								color={token("background")}
+								color={token(props.touch ? "primary-foreground" : "background")}
 							/>
 						)
 					}
@@ -229,6 +235,14 @@ export function ComposerActions(props: {
 			if (isBlocked() || !showSendMode()) touchMenuOpen.set(false);
 		});
 	}
+	const sendModeIconColor = () =>
+		token(
+			option().mode === "send_now"
+				? "destructive"
+				: touch
+					? "foreground"
+					: "muted-foreground",
+		);
 	const sendModeTrigger = () => (
 		<Button
 			testID="chat-composer-send-mode"
@@ -250,17 +264,13 @@ export function ComposerActions(props: {
 				<Icon
 					name={option().icon}
 					size={touch ? 15 : chatPx(14)}
-					color={token(
-						option().mode === "send_now" ? "destructive" : "muted-foreground",
-					)}
+					color={sendModeIconColor()}
 				/>
 			)}
 			<Icon
 				name="ChevronDown"
 				size={touch ? 13 : chatPx(12)}
-				color={token(
-					option().mode === "send_now" ? "destructive" : "muted-foreground",
-				)}
+				color={sendModeIconColor()}
 			/>
 		</Button>
 	);

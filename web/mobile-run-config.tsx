@@ -427,7 +427,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 				})}
 				onPress={() => open.set(true)}
 			>
-				<PiLogo size={16} />
+				<PiLogo size={16} color={token("foreground")} />
 				{() =>
 					modelPending()
 						? untracked(() => (
@@ -436,7 +436,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 						: untracked(() => (
 								<>
 									<Text
-										class="min-w-0 shrink truncate font-sans text-muted-foreground"
+										class="min-w-0 shrink truncate font-sans text-foreground"
 										style={MOBILE_TEXT.xs}
 									>
 										{modelLabel}
