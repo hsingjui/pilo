@@ -63,12 +63,34 @@ type HostVisualViewport = {
 	): void;
 };
 
+type HostElement = {
+	closest?(selector: string): HostElement | null;
+};
+
+type HostTouchPressEvent = {
+	type: "pointerdown" | "touchend";
+	pointerType?: string;
+	cancelable: boolean;
+	target: HostElement | null;
+	preventDefault(): void;
+};
+
 type HostAppElement = {
 	style: {
 		top: string;
 		bottom: string;
 		height: string;
 	};
+	addEventListener(
+		type: HostTouchPressEvent["type"],
+		listener: (event: HostTouchPressEvent) => void,
+		options: { capture: boolean; passive: boolean },
+	): void;
+	removeEventListener(
+		type: HostTouchPressEvent["type"],
+		listener: (event: HostTouchPressEvent) => void,
+		capture: boolean,
+	): void;
 };
 
 type HostWindow = {
@@ -77,6 +99,7 @@ type HostWindow = {
 	scrollY?: number;
 	visualViewport?: HostVisualViewport | null;
 	document?: {
+		activeElement: HostElement | null;
 		getElementById(id: string): HostAppElement | null;
 		addEventListener(type: string, listener: () => void): void;
 		removeEventListener(type: string, listener: () => void): void;
@@ -221,6 +244,24 @@ export function installMobileViewportSync(): MobileViewportState {
 		sync();
 	};
 
+	const keepComposerFocus = (event: HostTouchPressEvent) => {
+		if (!event.cancelable) return;
+		if (event.type === "pointerdown" && event.pointerType === "mouse") return;
+		if (
+			event.target?.closest?.('[data-testid="chat-scroll-latest"]') &&
+			host.document?.activeElement?.closest?.(
+				'[data-testid="mobile-textarea-input"]',
+			)
+		) {
+			// Keep native tap focus changes out of the way; nsh presses on pointerup.
+			event.preventDefault();
+		}
+	};
+	const touchCapture = { capture: true, passive: false };
+	app.addEventListener("pointerdown", keepComposerFocus, touchCapture);
+	// Some iOS WebKit versions still synthesize mouse events after a canceled pointerdown.
+	app.addEventListener("touchend", keepComposerFocus, touchCapture);
+
 	sync();
 	// Update #app before nsh measures its insets. Offset-only changes don't
 	// trigger the host's ResizeObserver, so it must read the new position here.
@@ -241,6 +282,8 @@ export function installMobileViewportSync(): MobileViewportState {
 		host.removeEventListener?.("resize", sync, true);
 		host.removeEventListener?.("orientationchange", scheduleSync);
 		host.document?.removeEventListener("focusout", scheduleSync);
+		app.removeEventListener("pointerdown", keepComposerFocus, true);
+		app.removeEventListener("touchend", keepComposerFocus, true);
 		app.style.top = "";
 		app.style.bottom = "";
 		app.style.height = "";
