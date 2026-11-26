@@ -75,9 +75,6 @@ pub(super) async fn local_pi_resources_set(
     .await
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) if error == pi_workspace::RESOURCES_BUSY => {
-            api_error(StatusCode::CONFLICT, &error)
-        }
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
 }

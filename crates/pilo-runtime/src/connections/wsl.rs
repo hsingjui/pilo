@@ -36,7 +36,7 @@ fn ensure_wsl_connection(connection: &Connection) -> Result<(), String> {
         return Err("only WSL connections can be managed here".to_owned());
     }
     if connection.pi_runtime != pilo_domain::PiRuntime::Workspace {
-        return Err("Pi 运行位置仅对 SSH 连接可配置".to_owned());
+        return Err("Pi runtime location is only configurable for SSH connections".to_owned());
     }
     if connection.id.trim().is_empty() || connection.name.trim().is_empty() {
         return Err("WSL connection id and name are required".to_owned());
@@ -51,6 +51,7 @@ pub fn wsl_connection_save(
     ensure_wsl_connection(&connection)?;
     let db = storage::open(&runtime.paths)?;
     storage::upsert_connection(&db, &connection)?;
+    crate::connection_models::invalidate(&connection.id);
     Ok(WslConnectionInfo {
         project_count: storage::connection_project_count(&db, &connection.id)?,
         connection,
@@ -61,6 +62,7 @@ pub async fn wsl_connection_remove(runtime: &Runtime, id: String) -> Result<(), 
     stop_connection_projects(runtime, &id).await?;
     let db = storage::open(&runtime.paths)?;
     storage::remove_connection(&db, &id)?;
+    crate::connection_models::invalidate(&id);
     Ok(())
 }
 

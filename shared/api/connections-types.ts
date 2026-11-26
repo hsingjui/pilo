@@ -37,3 +37,10 @@ export type SshAgentIdentity = {
 	fingerprint: string;
 	comment: string;
 };
+
+export type SshConfigHost = {
+	host: string;
+	hostname?: string | null;
+	user?: string | null;
+	port?: number | null;
+};

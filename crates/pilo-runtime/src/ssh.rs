@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, fs, io::Write, process::Stdio, time::Duration};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Read, Write},
+    process::Stdio,
+    time::Duration,
+};
 
 use base64::{Engine as _, engine::general_purpose};
 use serde::Serialize;
@@ -26,6 +32,278 @@ pub struct SshAgentIdentity {
     public_key: String,
     fingerprint: String,
     comment: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfigHost {
+    pub host: String,
+    pub hostname: Option<String>,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+}
+
+fn user_ssh_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)?;
+    Some(home.join(".ssh"))
+}
+
+const MAX_SSH_CONFIG_BYTES: u64 = 256 * 1024;
+const PRIVATE_KEY_HEADER_SNIFF_BYTES: u64 = 64;
+
+fn wildcard_matches(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    let mut star_pi: Option<usize> = None;
+    let mut star_ti = 0usize;
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star_pi = Some(pi);
+            pi += 1;
+            star_ti = ti;
+        } else if let Some(sp) = star_pi {
+            pi = sp + 1;
+            star_ti += 1;
+            ti = star_ti;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+    pi == p.len()
+}
+
+fn read_bounded_utf8(path: &std::path::Path, limit: u64) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut content = String::new();
+    file.take(limit).read_to_string(&mut content).ok()?;
+    Some(content)
+}
+
+fn looks_like_private_key_file(path: &std::path::Path) -> bool {
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut head = Vec::with_capacity(PRIVATE_KEY_HEADER_SNIFF_BYTES as usize);
+    if file
+        .take(PRIVATE_KEY_HEADER_SNIFF_BYTES)
+        .read_to_end(&mut head)
+        .is_err()
+    {
+        return false;
+    }
+    head.windows(b"PRIVATE KEY".len())
+        .any(|window| window == b"PRIVATE KEY")
+}
+
+fn parse_ssh_config_file(
+    path: &std::path::Path,
+    ssh_dir: &std::path::Path,
+    depth: usize,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    hosts: &mut Vec<SshConfigHost>,
+    seen_hosts: &mut std::collections::HashSet<String>,
+) {
+    if depth > 4 {
+        return;
+    }
+    let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if !visited.insert(canonical) {
+        return;
+    }
+    let Some(content) = read_bounded_utf8(path, MAX_SSH_CONFIG_BYTES) else {
+        return;
+    };
+    let mut current_indices: Vec<usize> = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((keyword, value)) = line
+            .split_once(|c: char| c.is_whitespace() || c == '=')
+            .map(|(k, v)| {
+                (
+                    k.trim().to_ascii_lowercase(),
+                    v.trim().trim_start_matches('=').trim(),
+                )
+            })
+        else {
+            continue;
+        };
+        if value.is_empty() {
+            continue;
+        }
+        match keyword.as_str() {
+            "include" => {
+                for pattern in value.split_whitespace() {
+                    let expanded = if let Some(rest) = pattern.strip_prefix("~/") {
+                        ssh_dir
+                            .parent()
+                            .map(|home| home.join(rest))
+                            .unwrap_or_else(|| ssh_dir.join(pattern))
+                    } else if std::path::Path::new(pattern).is_absolute() {
+                        std::path::PathBuf::from(pattern)
+                    } else {
+                        ssh_dir.join(pattern)
+                    };
+                    if let Some(name) = expanded.file_name().and_then(|n| n.to_str())
+                        && (name.contains('*') || name.contains('?'))
+                        && let Some(parent) = expanded.parent()
+                        && let Ok(entries) = fs::read_dir(parent)
+                    {
+                        let mut paths: Vec<_> = entries
+                            .filter_map(Result::ok)
+                            .map(|e| e.path())
+                            .filter(|p| {
+                                p.is_file()
+                                    && p.file_name()
+                                        .and_then(|file_name| file_name.to_str())
+                                        .is_some_and(|file_name| wildcard_matches(name, file_name))
+                            })
+                            .collect();
+                        paths.sort();
+                        for child in paths {
+                            parse_ssh_config_file(
+                                &child,
+                                ssh_dir,
+                                depth + 1,
+                                visited,
+                                hosts,
+                                seen_hosts,
+                            );
+                        }
+                    } else if expanded.is_file() {
+                        parse_ssh_config_file(
+                            &expanded,
+                            ssh_dir,
+                            depth + 1,
+                            visited,
+                            hosts,
+                            seen_hosts,
+                        );
+                    }
+                }
+            }
+            "host" => {
+                current_indices.clear();
+                for alias in value.split_whitespace() {
+                    let alias = alias.trim_matches('"');
+                    if alias.is_empty()
+                        || alias.contains('*')
+                        || alias.contains('?')
+                        || alias.starts_with('!')
+                    {
+                        continue;
+                    }
+                    if seen_hosts.insert(alias.to_owned()) {
+                        let idx = hosts.len();
+                        hosts.push(SshConfigHost {
+                            host: alias.to_owned(),
+                            hostname: None,
+                            user: None,
+                            port: None,
+                        });
+                        current_indices.push(idx);
+                    }
+                }
+            }
+            "match" => {
+                current_indices.clear();
+            }
+            "hostname" => {
+                let cleaned = value.trim_matches('"').to_owned();
+                for &idx in &current_indices {
+                    if hosts[idx].hostname.is_none() {
+                        hosts[idx].hostname = Some(cleaned.clone());
+                    }
+                }
+            }
+            "user" => {
+                let cleaned = value.trim_matches('"').to_owned();
+                for &idx in &current_indices {
+                    if hosts[idx].user.is_none() {
+                        hosts[idx].user = Some(cleaned.clone());
+                    }
+                }
+            }
+            "port" => {
+                if let Ok(port) = value.trim_matches('"').parse::<u16>() {
+                    for &idx in &current_indices {
+                        if hosts[idx].port.is_none() {
+                            hosts[idx].port = Some(port);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(crate) fn list_config_hosts() -> Vec<SshConfigHost> {
+    let Some(ssh_dir) = user_ssh_dir() else {
+        return Vec::new();
+    };
+    let config_path = ssh_dir.join("config");
+    if !config_path.is_file() {
+        return Vec::new();
+    }
+    let mut visited = std::collections::HashSet::new();
+    let mut seen_hosts = std::collections::HashSet::new();
+    let mut hosts = Vec::new();
+    parse_ssh_config_file(
+        &config_path,
+        &ssh_dir,
+        0,
+        &mut visited,
+        &mut hosts,
+        &mut seen_hosts,
+    );
+    hosts
+}
+
+pub(crate) fn list_local_private_keys() -> Vec<String> {
+    let Some(ssh_dir) = user_ssh_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(&ssh_dir) else {
+        return Vec::new();
+    };
+    let mut keys = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.')
+            || name.ends_with(".pub")
+            || matches!(
+                name,
+                "config" | "known_hosts" | "known_hosts.old" | "authorized_keys" | "environment"
+            )
+        {
+            continue;
+        }
+        let has_pub = ssh_dir.join(format!("{name}.pub")).is_file();
+        let looks_like_key = has_pub || looks_like_private_key_file(&path);
+        if looks_like_key {
+            keys.push(format!("~/.ssh/{name}"));
+        }
+    }
+    keys.sort();
+    keys
 }
 
 pub(crate) async fn list_agent_identities() -> Result<Vec<SshAgentIdentity>, String> {
@@ -470,5 +748,49 @@ mod tests {
     #[test]
     fn shell_quote_handles_single_quotes() {
         assert_eq!(shell_quote("/srv/it's pilo"), "'/srv/it'\"'\"'s pilo'");
+    }
+
+    #[test]
+    fn wildcard_matches_filters_ssh_include_filenames() {
+        assert!(wildcard_matches("*.conf", "work.conf"));
+        assert!(!wildcard_matches("*.conf", "id_ed25519"));
+        assert!(!wildcard_matches("*.conf", "work.conf.bak"));
+        assert!(wildcard_matches("host-?.cfg", "host-1.cfg"));
+        assert!(!wildcard_matches("host-?.cfg", "host-12.cfg"));
+        assert!(wildcard_matches("*", "anything"));
+    }
+
+    #[test]
+    fn parse_ssh_config_include_only_reads_matching_files() {
+        let dir =
+            std::env::temp_dir().join(format!("pilo-ssh-include-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let main_cfg = dir.join("config");
+        fs::write(&main_cfg, "Include *.conf\n").unwrap();
+        fs::write(dir.join("prod.conf"), "Host prod\n  HostName 10.0.0.1\n").unwrap();
+        fs::write(
+            dir.join("id_ed25519"),
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nHost leaked\n",
+        )
+        .unwrap();
+
+        let mut visited = std::collections::HashSet::new();
+        let mut seen_hosts = std::collections::HashSet::new();
+        let mut hosts = Vec::new();
+        parse_ssh_config_file(
+            &main_cfg,
+            &dir,
+            0,
+            &mut visited,
+            &mut hosts,
+            &mut seen_hosts,
+        );
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].host, "prod");
+        assert!(looks_like_private_key_file(&dir.join("id_ed25519")));
+        assert!(!looks_like_private_key_file(&dir.join("prod.conf")));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

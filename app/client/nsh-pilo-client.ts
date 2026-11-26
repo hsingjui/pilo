@@ -26,6 +26,7 @@ import type {
 	ConnectionTestResult,
 	PiExecutableInfo,
 	SshAgentIdentity,
+	SshConfigHost,
 	SshConnectionInfo,
 	WslConnectionInfo,
 } from "@shared/api/connections-types";
@@ -154,6 +155,8 @@ export type PiloNative = Pick<
 		Pick<
 			Pilo,
 			| "systemFontFamilies"
+			| "listSshConfigHosts"
+			| "listSshLocalKeys"
 			| "projectOpenInApp"
 			| "openFileLink"
 			| "projectGitStatus"
@@ -165,6 +168,7 @@ export type PiloNative = Pick<
 			| "resizeTerminal"
 			| "closeTerminal"
 			| "nextTerminalEvents"
+			| "pauseCacheKeepAlive"
 		>
 	>;
 
@@ -352,6 +356,18 @@ export class NshPiloClient implements PiloClient {
 	/** The SSH agent's public identities, for the connection editor. */
 	async listSshAgentIdentities(): Promise<SshAgentIdentity[]> {
 		return (await this.pilo.listSshAgentIdentities()) as SshAgentIdentity[];
+	}
+
+	/** Host aliases parsed from `~/.ssh/config`. */
+	async listSshConfigHosts(): Promise<SshConfigHost[]> {
+		if (!this.pilo.listSshConfigHosts) return [];
+		return (await this.pilo.listSshConfigHosts()) as SshConfigHost[];
+	}
+
+	/** Private key files discovered under `~/.ssh/`. */
+	async listSshLocalKeys(): Promise<string[]> {
+		if (!this.pilo.listSshLocalKeys) return [];
+		return (await this.pilo.listSshLocalKeys()) as string[];
 	}
 
 	/** Saves an SSH connection draft; `password` replaces its stored secret. */
@@ -649,6 +665,10 @@ export class NshPiloClient implements PiloClient {
 		return (await this.pilo.saveCacheKeepAliveSettings(
 			settings,
 		)) as CacheKeepAliveSettings;
+	}
+
+	async pauseCacheKeepAlive(sessionKey: string): Promise<void> {
+		await this.pilo.pauseCacheKeepAlive?.(sessionKey);
 	}
 
 	/** The connection's next-prompt settings; disabled when never saved. */

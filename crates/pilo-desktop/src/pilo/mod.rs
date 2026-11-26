@@ -13,15 +13,18 @@ use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
     Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream, TranscriptWindow,
     appearance::{system_font_families, theme_settings_get, theme_settings_set},
-    cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
+    cache_keep_alive::{
+        cache_keep_alive_pause, cache_keep_alive_settings_list, cache_keep_alive_settings_set,
+    },
     connections::{
         connection_health_get, connection_models_get, connection_naming_model_list,
         connection_naming_model_set, connection_pi_probe, connection_settings_update,
         connection_shown_in_home_set, local_connection_get, local_connection_test,
         ssh::{
-            SaveSshConnectionRequest, ssh_agent_identities_list, ssh_connection_list,
-            ssh_connection_password_get, ssh_connection_remove, ssh_connection_save,
-            ssh_connection_test, ssh_connection_test_draft,
+            SaveSshConnectionRequest, ssh_agent_identities_list, ssh_config_hosts_list,
+            ssh_connection_list, ssh_connection_password_get, ssh_connection_remove,
+            ssh_connection_save, ssh_connection_test, ssh_connection_test_draft,
+            ssh_local_keys_list,
         },
         wsl::{
             wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
@@ -376,6 +379,18 @@ impl Pilo {
         .await
     }
 
+    /// Host aliases parsed from `~/.ssh/config` (and its `Include` files).
+    pub async fn list_ssh_config_hosts(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_config_hosts_list(runtime)?))
+            .await
+    }
+
+    /// Private key files discovered under `~/.ssh/`.
+    pub async fn list_ssh_local_keys(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_local_keys_list(runtime)?))
+            .await
+    }
+
     /// Saves an SSH connection draft; `password` replaces its stored secret.
     pub async fn save_ssh_connection(
         this: Instance<Self>,
@@ -691,6 +706,17 @@ impl Pilo {
             let settings = serde_json::from_value(settings).map_err(|error| error.to_string())?;
             let settings = cache_keep_alive_settings_set(&runtime, settings).await?;
             serde_json::to_value(settings).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Pauses active prompt-cache keep-alive for one session without changing saved settings.
+    pub async fn pause_cache_keep_alive(
+        this: Instance<Self>,
+        session_key: String,
+    ) -> Result<(), String> {
+        Self::with_runtime(this, move |runtime| async move {
+            cache_keep_alive_pause(&runtime, session_key).await
         })
         .await
     }

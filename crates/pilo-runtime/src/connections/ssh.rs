@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Deserialize;
 
-use crate::ssh::{self, SshAgentIdentity};
+use crate::ssh::{self, SshAgentIdentity, SshConfigHost};
 use pilo_domain::{Connection, ConnectionKind, SshAuthMethod};
 
 use super::stop_connection_projects;
@@ -29,6 +29,14 @@ pub async fn ssh_agent_identities_list(
     _runtime: &Runtime,
 ) -> Result<Vec<SshAgentIdentity>, String> {
     ssh::list_agent_identities().await
+}
+
+pub fn ssh_config_hosts_list(_runtime: &Runtime) -> Result<Vec<SshConfigHost>, String> {
+    Ok(ssh::list_config_hosts())
+}
+
+pub fn ssh_local_keys_list(_runtime: &Runtime) -> Result<Vec<String>, String> {
+    Ok(ssh::list_local_private_keys())
 }
 
 fn ensure_ssh_connection(connection: &Connection) -> Result<(), String> {
@@ -108,6 +116,7 @@ pub async fn ssh_connection_save(
         connection: request.connection,
     };
     db.commit().map_err(|error| error.to_string())?;
+    crate::connection_models::invalidate(&info.connection.id);
     runtime
         .events
         .send(crate::events::RuntimeEventEnvelope::global(
@@ -130,9 +139,26 @@ pub fn ssh_connection_password_get(
 pub async fn ssh_connection_remove(runtime: &Runtime, id: String) -> Result<(), String> {
     let _policy = runtime.pi_resource_policy.write().await;
     stop_connection_projects(runtime, &id).await?;
+    let project_ids = {
+        let db = storage::open(&runtime.paths)?;
+        storage::list_projects(&db)?
+            .into_iter()
+            .filter(|project| project.connection.id == id)
+            .map(|project| project.id)
+            .collect::<Vec<_>>()
+    };
     let db = storage::open(&runtime.paths)?;
     storage::remove_connection(&db, &id)?;
     credentials::delete_ssh_password(&id)?;
+    for project_id in project_ids {
+        let _ = crate::pi_workspace::remove_session_anchor(&runtime.paths, &project_id);
+    }
+    crate::connection_models::invalidate(&id);
+    runtime
+        .events
+        .send(crate::events::RuntimeEventEnvelope::global(
+            crate::events::RuntimeEvent::ConfigurationChanged,
+        ));
     Ok(())
 }
 
