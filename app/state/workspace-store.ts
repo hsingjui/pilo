@@ -96,10 +96,21 @@ export class WorkspaceStore {
 		});
 	}
 
+	refreshFile(projectId: string, file: WorkspaceFile): void {
+		this.workspacesSignal.update((state) =>
+			reduceProjectWorkspaces(state, {
+				type: "refresh-file",
+				projectId,
+				file,
+			}),
+		);
+	}
+
 	selectFile(
 		projectId: string,
 		path: string | null,
 		lineRange?: WorkspaceLineRange,
+		navigate = false,
 	): void {
 		batch(() => {
 			this.workspacesSignal.update((state) =>
@@ -110,7 +121,7 @@ export class WorkspaceStore {
 					lineRange,
 				}),
 			);
-			if (path !== null && lineRange) {
+			if (path !== null && (lineRange || navigate)) {
 				this.navigationTokenSignal.update((value) => value + 1);
 			}
 		});

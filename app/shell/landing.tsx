@@ -40,7 +40,7 @@ export function SessionLanding(
 		| {
 				store: AppStore;
 				project: Accessor<Project | null>;
-				onAddProject: () => void;
+				onAddProject?: () => void;
 		  },
 ) {
 	const loading = "loading" in props;
@@ -89,7 +89,7 @@ export function SessionLanding(
 						project={props.project}
 						onSelect={(projectId) => props.store.selectProject(projectId)}
 					/>
-				) : (
+				) : props.onAddProject ? (
 					<>
 						<Text class="font-sans text-center text-sm text-muted-foreground">
 							{() => t("app.addProjectFirst")}
@@ -98,6 +98,10 @@ export function SessionLanding(
 							<Text class="font-sans">{() => t("project.addProject")}</Text>
 						</Button>
 					</>
+				) : (
+					<Text class="font-sans text-center text-sm text-muted-foreground">
+						{() => t("app.addProjectOnDesktop")}
+					</Text>
 				)
 			}
 		</View>

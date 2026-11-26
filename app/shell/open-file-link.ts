@@ -8,9 +8,10 @@ import {
 } from "@shared/chat/chat-markdown-links";
 import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
-import type {
-	WorkspaceFile,
-	WorkspaceLineRange,
+import {
+	workspaceFileKey,
+	type WorkspaceFile,
+	type WorkspaceLineRange,
 } from "@shared/project-workspace";
 
 import type { ChatMarkdownFileLink } from "../chat/chat-markdown";
@@ -41,6 +42,8 @@ export interface FileLinkOpenContext {
 	toasts: AppToasts;
 	onFileActivated?: () => void;
 }
+
+const backgroundRefreshSeq = new Map<string, number>();
 
 /** Opens a resolved file link in the image lightbox, a workspace tab or the system app. */
 export function openMarkdownFileLink(
@@ -118,8 +121,22 @@ export function openMarkdownFileLink(
 	const preview = fileLinkPreviewKind(decodedPath) !== null;
 	const existing = preview && workspace.findFile(project.id, decodedPath);
 	if (existing) {
-		workspace.selectFile(project.id, existing.path, link.lineRange);
+		workspace.selectFile(project.id, existing.path, link.lineRange, true);
 		ctx.onFileActivated?.();
+		// 后台静默重读磁盘最新内容，避免 Agent 改完文件后预览一直停留在旧缓存；
+		// 仅原地更新已打开标签的内容，不抢占用户当前视图。
+		const refreshKey = `${project.id}:${workspaceFileKey(existing.path)}`;
+		const seq = (backgroundRefreshSeq.get(refreshKey) ?? 0) + 1;
+		backgroundRefreshSeq.set(refreshKey, seq);
+		void openFileLink(project.id, link.url, true)
+			.then((refreshed) => {
+				if (backgroundRefreshSeq.get(refreshKey) !== seq || !refreshed) return;
+				const current = workspace.findFile(project.id, refreshed.path);
+				if (current && refreshed.content !== current.content) {
+					workspace.refreshFile(project.id, refreshed);
+				}
+			})
+			.catch(() => {});
 		return;
 	}
 	void openFileLink(project.id, link.url, preview)

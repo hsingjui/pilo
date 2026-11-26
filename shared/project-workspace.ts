@@ -62,6 +62,11 @@ type WorkspaceAction =
 			lineRange?: WorkspaceLineRange;
 	  }
 	| {
+			type: "refresh-file";
+			projectId: string;
+			file: WorkspaceFile;
+	  }
+	| {
 			type: "select";
 			projectId: string;
 			path: string | null;
@@ -108,6 +113,22 @@ export function reduceProjectWorkspaces(
 					path: existing?.path ?? action.file.path,
 					...(action.lineRange ? { lineRange: action.lineRange } : {}),
 				},
+			};
+			break;
+		}
+		case "refresh-file": {
+			const key = workspaceFileKey(action.file.path);
+			const existing = current.files.find(
+				(file) => workspaceFileKey(file.path) === key,
+			);
+			if (!existing || existing.content === action.file.content) return state;
+			next = {
+				...current,
+				files: current.files.map((file) =>
+					workspaceFileKey(file.path) === key
+						? { ...action.file, path: existing.path, html: undefined }
+						: file,
+				),
 			};
 			break;
 		}

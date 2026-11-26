@@ -14,6 +14,7 @@ import { t } from "./i18n";
 import {
 	chooseProjectOpener,
 	chosenProjectOpener,
+	defaultProjectOpenerFor,
 	openProject,
 	type ProjectOpenerId,
 	projectOpeners,
@@ -82,7 +83,12 @@ export function ProjectOpenMenu(props: {
 	);
 	const selected = computed(() => {
 		const chosen = chosenProjectOpener();
-		return openers().find(({ id }) => id === chosen) ?? openers()[0]!;
+		const fallback = defaultProjectOpenerFor(props.project());
+		return (
+			openers().find(({ id }) => id === chosen) ??
+			openers().find(({ id }) => id === fallback) ??
+			openers()[0]!
+		);
 	});
 	const openLabel = () =>
 		t("chat.openProjectWithEditor", { editor: selected().name });

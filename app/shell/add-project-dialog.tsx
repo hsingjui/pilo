@@ -12,7 +12,7 @@ import {
 
 import type { FsEntry } from "@shared/api/files-types";
 import type { Connection } from "@shared/api/pi-runtime-types";
-import type { Project } from "@shared/api/projects-types";
+import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -23,6 +23,7 @@ import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { scrollbarLook } from "../ui/scrollbar";
+import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
@@ -62,7 +63,10 @@ export function AddProjectDialog(props: {
 	onAdd: (connectionId: string, path: string) => Promise<Project>;
 	/** The target set by the opener; null uses the local connection. */
 	connectionId: () => string | null;
+	/** Existing projects, used to seed remote directory browsing from a recent parent directory. */
+	projects?: () => readonly Project[];
 }) {
+	const connections = signal<Connection[]>([]);
 	const connection = signal<Connection | null>(null);
 	const path = signal("");
 	const busy = signal(false);
@@ -77,6 +81,7 @@ export function AddProjectDialog(props: {
 	const isLocal = () => connection()?.kind.type === "local";
 	// A late response must not update a reopened dialog for another connection.
 	let openVersion = 0;
+	let browseVersion = 0;
 	const directories = computed(() => {
 		const query = filter().trim().toLocaleLowerCase();
 		return entries().filter(
@@ -90,6 +95,7 @@ export function AddProjectDialog(props: {
 		if (!props.open()) return;
 		const connectionId = untracked(props.connectionId);
 		const version = openVersion;
+		connections.set([]);
 		connection.set(null);
 		path.set("");
 		busy.set(false);
@@ -103,11 +109,13 @@ export function AddProjectDialog(props: {
 		void props.api.listConnections().then(
 			(listed) => {
 				if (version !== openVersion) return;
-				const target = listed.find((entry) =>
-					connectionId === null
-						? entry.kind.type === "local"
-						: entry.id === connectionId,
-				);
+				connections.set(listed);
+				const target =
+					listed.find((entry) =>
+						connectionId === null
+							? entry.kind.type === "local"
+							: entry.id === connectionId,
+					) ?? listed[0];
 				if (target) connection.set(target);
 				else error.set(t("errors.connectionUnavailable"));
 			},
@@ -117,6 +125,7 @@ export function AddProjectDialog(props: {
 		);
 		return () => {
 			openVersion += 1;
+			browseVersion += 1;
 		};
 	});
 
@@ -137,28 +146,50 @@ export function AddProjectDialog(props: {
 		}
 	};
 
-	const loadDirectory = async (nextPath: string) => {
+	const loadDirectory = async (nextPath: string): Promise<boolean> => {
 		const target = connection();
-		if (!target || target.kind.type === "local") return;
+		if (!target || target.kind.type === "local") return false;
 		const version = openVersion;
+		const req = ++browseVersion;
 		const normalized = absoluteRemotePath(nextPath);
 		loadingEntries.set(true);
 		error.set(null);
 		try {
 			const listed = await props.api.readConnectionDir(target.id, normalized);
-			if (version !== openVersion) return;
+			if (version !== openVersion || req !== browseVersion) return false;
 			entries.set(listed);
 			browserPath.set(normalized);
 			filter.set("");
+			return true;
 		} catch (caught) {
-			if (version === openVersion) {
+			if (version === openVersion && req === browseVersion) {
 				error.set(
 					`${t("project.readDirectoryFailed")}: ${errorMessage(caught)}`,
 				);
 			}
+			return false;
 		} finally {
-			if (version === openVersion) loadingEntries.set(false);
+			if (version === openVersion && req === browseVersion)
+				loadingEntries.set(false);
 		}
+	};
+
+	const initialRemoteBrowsePath = (target: Connection) => {
+		const typed = path().trim();
+		if (typed.startsWith("/")) return absoluteRemotePath(typed);
+		const sameConnection = (props.projects?.() ?? []).filter(
+			(p) =>
+				p.connection.id === target.id &&
+				!isDefaultWorkspace(p) &&
+				p.path.startsWith("/"),
+		);
+		if (sameConnection.length > 0) {
+			const recent = [...sameConnection].sort(
+				(a, b) => (b.lastOpenedAtMs ?? 0) - (a.lastOpenedAtMs ?? 0),
+			)[0];
+			if (recent) return parentRemotePath(recent.path);
+		}
+		return "/";
 	};
 
 	const browse = async () => {
@@ -179,11 +210,22 @@ export function AddProjectDialog(props: {
 			return;
 		}
 		if (browserOpen()) {
+			browseVersion += 1;
+			loadingEntries.set(false);
 			browserOpen.set(false);
 			return;
 		}
 		browserOpen.set(true);
-		await loadDirectory("/");
+		const startPath = initialRemoteBrowsePath(target);
+		const ok = await loadDirectory(startPath);
+		if (
+			!ok &&
+			startPath !== "/" &&
+			untracked(browserOpen) &&
+			untracked(connection)?.id === target.id
+		) {
+			await loadDirectory("/");
+		}
 	};
 
 	return (
@@ -208,6 +250,40 @@ export function AddProjectDialog(props: {
 					}}
 				</DialogDescription>
 			</DialogHeader>
+			{() => {
+				const list = connections();
+				const active = connection();
+				if (list.length <= 1 || !active) return null;
+				return (
+					<View class="gap-1.5">
+						<Text class="font-sans text-xs font-medium text-muted-foreground">
+							{() => t("project.targetConnection")}
+						</Text>
+						<Select
+							size="sm"
+							testID="add-project-connection"
+							items={list.map((entry) => ({
+								value: entry.id,
+								title: connectionLabel(entry),
+							}))}
+							value={active.id}
+							disabled={busy() || picking()}
+							onChange={(event) => {
+								const next = list.find((entry) => entry.id === event.value);
+								if (!next) return;
+								browseVersion += 1;
+								connection.set(next);
+								browserOpen.set(false);
+								loadingEntries.set(false);
+								browserPath.set("/");
+								entries.set([]);
+								filter.set("");
+								error.set(null);
+							}}
+						/>
+					</View>
+				);
+			}}
 			<View class="gap-1.5">
 				<Text class="font-sans text-xs font-medium text-muted-foreground">
 					{() => t("project.projectDirectory")}

@@ -320,10 +320,8 @@ function GitWorkspacePanel(props: {
 		);
 	});
 
-	const status = computed(() => {
-		const current = snapshot();
-		return current && current.revision === revision() ? current.status : null;
-	});
+	const status = computed(() => snapshot()?.status ?? null);
+	const userSelectedMode = signal(false);
 
 	const workingCount = computed(
 		() => (status()?.files ?? []).filter((file) => file.unstaged).length,
@@ -400,7 +398,6 @@ function GitWorkspacePanel(props: {
 			!target ||
 			result.path !== target ||
 			result.mode !== mode() ||
-			result.status !== currentStatus ||
 			result.retry !== diffRetry()
 		) {
 			return null;
@@ -409,18 +406,30 @@ function GitWorkspacePanel(props: {
 	});
 
 	// Fetch status only when active or manually refreshed — never background poll.
+	// 切回 Git 时采用 SWR 保留上次结果静默刷新，避免清空 Diff 闪骨架屏。
+	const refreshingStatus = signal(false);
 	effect(() => {
 		const isVisible = props.visible();
 		const currentRevision = revision();
 		if (!isVisible) return;
 		let cancelled = false;
-		loading.set(true);
+		refreshingStatus.set(true);
+		if (!untracked(snapshot)) loading.set(true);
 		error.set(null);
 		void untracked(() => props.git.getProjectGitStatus(props.projectId))
 			.then((next) => {
 				if (cancelled) return;
+				const firstLoad = !untracked(snapshot);
 				snapshot.set({ revision: currentRevision, status: next });
 				loading.set(false);
+				refreshingStatus.set(false);
+				if (firstLoad && !untracked(userSelectedMode)) {
+					const working = next.files.filter((file) => file.unstaged).length;
+					const staged = next.files.filter((file) => file.staged).length;
+					if (working === 0 && staged > 0 && untracked(mode) === "working") {
+						props.onViewChange({ mode: "staged" });
+					}
+				}
 			})
 			.catch((cause: unknown) => {
 				if (cancelled) return;
@@ -428,9 +437,11 @@ function GitWorkspacePanel(props: {
 				diff.set(null);
 				error.set(gitErrorDetail(cause, t("file.gitRepoHint")));
 				loading.set(false);
+				refreshingStatus.set(false);
 			});
 		return () => {
 			cancelled = true;
+			refreshingStatus.set(false);
 		};
 	});
 
@@ -441,8 +452,10 @@ function GitWorkspacePanel(props: {
 		const target = activePath();
 		const currentMode = mode();
 		const isLoading = loading();
+		const isRefreshing = refreshingStatus();
 		const currentRetry = diffRetry();
-		if (!isVisible || !currentStatus || !target || isLoading) return;
+		if (!isVisible || !currentStatus || !target || isLoading || isRefreshing)
+			return;
 		let cancelled = false;
 		void untracked(() =>
 			props.git.getProjectGitDiff(props.projectId, {
@@ -658,12 +671,13 @@ function GitWorkspacePanel(props: {
 													)}
 													style={tactileTransition("background-color, color")}
 													focusVisibleStyle={focusRingStyle(token("ring"))}
-													onPress={() =>
+													onPress={() => {
+														userSelectedMode.set(true);
 														props.onViewChange({
 															mode: value,
 															showDetail: false,
-														})
-													}
+														});
+													}}
 												>
 													<Text
 														class={classNames(
@@ -879,7 +893,7 @@ function GitWorkspacePanel(props: {
 													focusVisibleStyle={focusRingStyle(token("ring"))}
 													tooltip={
 														canOpen
-															? tooltip(() => t("file.openFile"))
+															? tooltip(() => t("file.previewFile"))
 															: undefined
 													}
 													onPress={() => {

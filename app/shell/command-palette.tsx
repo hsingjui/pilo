@@ -34,6 +34,10 @@ export interface CommandPaletteProps {
 	searchSessions?: Pick<NshPiloClient, "searchSessions">;
 	/** Opens the settings dialog; the settings action is absent without it. */
 	onOpenSettings?: () => void;
+	onNewTemporaryChat?: (projectId: string) => void;
+	onOpenGit?: (projectId: string) => void;
+	onOpenTerminal?: (projectId: string) => void;
+	onShowChat?: (projectId?: string) => void;
 	onClose: () => void;
 }
 
@@ -146,21 +150,67 @@ export function CommandPalette(props: CommandPaletteProps) {
 	const newSessionProject = () => activeProject(store.state());
 	const actionResults = computed(() => {
 		const q = normalized();
-		const actions: { id: string; label: string; shortcut?: string }[] = [];
-		if (newSessionProject())
+		const project = newSessionProject();
+		const actions: {
+			id: string;
+			label: string;
+			icon: IconName;
+			meta?: string;
+			shortcut?: string;
+			keywords: string[];
+		}[] = [];
+		if (project) {
 			actions.push({
 				id: "action:new-session",
 				label: t("app.newChat"),
+				icon: "SquarePen",
+				meta: project.name,
 				shortcut: props.shortcuts()["new-chat"],
+				keywords: ["new", "chat", "session", "新建", "对话", "会话"],
 			});
+			if (props.onNewTemporaryChat) {
+				actions.push({
+					id: "action:temporary-chat",
+					label: t("app.temporaryChat"),
+					icon: "MessageSquareDashed",
+					meta: project.name,
+					keywords: ["temp", "temporary", "incognito", "临时", "会话"],
+				});
+			}
+			if (props.onOpenGit) {
+				actions.push({
+					id: "action:open-git",
+					label: t("file.viewChanges"),
+					icon: "GitBranch",
+					meta: project.name,
+					keywords: ["git", "diff", "changes", "变更", "差异"],
+				});
+			}
+			if (props.onOpenTerminal) {
+				actions.push({
+					id: "action:open-terminal",
+					label: t("terminal.new"),
+					icon: "SquareTerminal",
+					meta: project.name,
+					keywords: ["terminal", "shell", "console", "终端"],
+				});
+			}
+		}
 		if (props.onOpenSettings)
 			actions.push({
 				id: "action:settings",
 				label: t("settings.title"),
+				icon: "Settings",
 				shortcut: props.shortcuts()["open-settings"],
+				keywords: ["settings", "preferences", "options", "设置", "偏好"],
 			});
 		return actions.filter(
-			(action) => !q || action.label.toLocaleLowerCase().includes(q),
+			(action) =>
+				!q ||
+				action.label.toLocaleLowerCase().includes(q) ||
+				action.keywords.some((keyword) =>
+					keyword.toLocaleLowerCase().includes(q),
+				),
 		);
 	});
 
@@ -179,17 +229,11 @@ export function CommandPalette(props: CommandPaletteProps) {
 					label: action.label,
 					group: t("commandPalette.actionGroup"),
 					shortcut: action.shortcut,
-					keywords:
-						action.id === "action:settings"
-							? ["settings", "preferences", "options"]
-							: ["new", "chat", "session"],
+					keywords: action.keywords,
 				},
 				{
-					icon: action.id === "action:settings" ? "Settings" : "SquarePen",
-					meta:
-						action.id === "action:settings"
-							? undefined
-							: newSessionProject()?.name,
+					icon: action.icon,
+					meta: action.meta,
 					metaAlign: "inline",
 				},
 			);
@@ -306,18 +350,37 @@ export function CommandPalette(props: CommandPaletteProps) {
 	const select = (id: string) => {
 		if (id === "action:new-session") {
 			const project = newSessionProject();
-			if (project) store.selectProject(project.id);
+			if (project) {
+				props.onShowChat?.(project.id);
+				store.selectProject(project.id);
+			}
+		} else if (id === "action:temporary-chat") {
+			const project = newSessionProject();
+			if (project) props.onNewTemporaryChat?.(project.id);
+		} else if (id === "action:open-git") {
+			const project = newSessionProject();
+			if (project) props.onOpenGit?.(project.id);
+		} else if (id === "action:open-terminal") {
+			const project = newSessionProject();
+			if (project) props.onOpenTerminal?.(project.id);
 		} else if (id === "action:settings") {
 			props.onOpenSettings?.();
 		} else if (id.startsWith("project:")) {
-			store.selectProject(id.slice("project:".length));
+			const projectId = id.slice("project:".length);
+			props.onShowChat?.(projectId);
+			store.selectProject(projectId);
 		} else if (id.startsWith("session:")) {
 			const rest = id.slice("session:".length);
 			const separator = rest.indexOf(":");
-			store.selectSession(rest.slice(0, separator), rest.slice(separator + 1));
+			const projectId = rest.slice(0, separator);
+			props.onShowChat?.(projectId);
+			store.selectSession(projectId, rest.slice(separator + 1));
 		} else if (id.startsWith("content:")) {
 			const match = content()[Number(id.slice("content:".length))];
-			if (match) store.selectSession(match.projectId, match.sessionPath);
+			if (match) {
+				props.onShowChat?.(match.projectId);
+				store.selectSession(match.projectId, match.sessionPath);
+			}
 		}
 		props.onClose();
 	};

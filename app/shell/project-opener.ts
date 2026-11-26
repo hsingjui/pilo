@@ -69,8 +69,27 @@ export function opensDirectory(opener: ProjectOpenerId) {
 const chosen = signal<ProjectOpenerId | null>(null);
 let loading: Promise<void> | undefined;
 
-/** The app the user last opened a project in; Zed until they chose one. */
-export function chosenProjectOpener(): ProjectOpenerId {
+/** 无历史偏好时优先回退到平台自带文件管理器，避免未安装第三方编辑器首点报错。 */
+export function defaultProjectOpenerFor(
+	project: Pick<Project, "connection">,
+): ProjectOpenerId {
+	const available = projectOpeners(project);
+	const preferred: ProjectOpenerId =
+		platform.os === "macos"
+			? "finder"
+			: platform.os === "windows"
+				? "explorer"
+				: "vscode";
+	return (
+		available.find(({ id }) => id === preferred)?.id ??
+		available.find(({ id }) => id === "vscode")?.id ??
+		available[0]?.id ??
+		PROJECT_EDITORS[0].id
+	);
+}
+
+/** The app the user last opened a project in, or null if not chosen yet. */
+export function chosenProjectOpener(): ProjectOpenerId | null {
 	loading ??= Storage.getItem(STORAGE_KEY)
 		.then((stored) => {
 			const opener = PROJECT_OPENERS.find(({ id }) => id === stored);
@@ -79,7 +98,7 @@ export function chosenProjectOpener(): ProjectOpenerId {
 		.catch((error: unknown) => {
 			console.warn("Failed to read the chosen project app", error);
 		});
-	return chosen() ?? PROJECT_EDITORS[0].id;
+	return chosen();
 }
 
 /** Remembers the app for the next quick open, also across launches. */

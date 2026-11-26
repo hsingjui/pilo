@@ -28,7 +28,7 @@ test("clicking a code link opens a preview tab at the target line, reuses on new
 	await app.waitFor("text:Project p2");
 	expect(app.shows("id:file-tab:/work/demo/src/main.ts")).toBe(false);
 
-	// Switch back to p1, return to chat, and jump to a different line without re-fetching.
+	// Switch back to p1, return to chat, and jump to a different line while refreshing disk content.
 	await app.press("id:switch-project");
 	await app.waitFor("id:file-tab:/work/demo/src/main.ts");
 	await app.press("id:session-header");
@@ -36,7 +36,7 @@ test("clicking a code link opens a preview tab at the target line, reuses on new
 	await app.press("text:line three");
 	await app.waitFor("text:export const line3 = 3;");
 	expect(app.texts().find((text) => text.startsWith("calls:"))).toBe(
-		"calls:preview:file:///work/demo/src/main.ts",
+		"calls:preview:file:///work/demo/src/main.ts|preview:file:///work/demo/src/main.ts",
 	);
 
 	// Closing the tab returns to chat.
@@ -65,6 +65,13 @@ test("markdown files render as Markdown by default and switch to source with lin
 	await app.waitFor("text:notes doc");
 	await app.press("text:notes doc");
 	await app.waitFor("id:file-preview-markdown");
+
+	// Switching to source manually persists across tab switches until an explicit link navigation.
+	await app.press("id:file-preview-toggle-source");
+	await app.waitFor("id:file-preview-editor");
+	await app.press("id:session-header");
+	await app.press("id:file-tab:/work/demo/docs/notes.md >> text:notes.md");
+	await app.waitFor("id:file-preview-editor");
 });
 
 test("html links delegate to the system app and missing files show an error toast", async () => {

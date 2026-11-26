@@ -18,6 +18,8 @@ export function HeaderActions(props: {
 	onOpenTerminal?: () => void;
 	/** The project has a shell that has not exited. */
 	terminalRunning: () => boolean;
+	/** A terminal tab is currently shown in place of chat. */
+	terminalActive?: () => boolean;
 	terminalOpening: () => boolean;
 	onNewTemporaryChat: () => void;
 	/** The open chat is temporary. */
@@ -39,6 +41,12 @@ export function HeaderActions(props: {
 			<Text class="font-sans">{label}</Text>
 		</Tooltip>
 	);
+	const terminalLabel = () =>
+		props.terminalActive?.()
+			? t("terminal.hide")
+			: props.terminalRunning()
+				? t("terminal.show")
+				: t("terminal.new");
 	return (
 		<View class="shrink-0 flex-row items-center gap-1">
 			{props.onOpenTerminal ? (
@@ -47,15 +55,20 @@ export function HeaderActions(props: {
 					variant="ghost"
 					size="icon"
 					class="size-7"
+					selected={props.terminalActive?.() ?? false}
 					disabled={props.terminalOpening()}
-					accessibilityLabel={t("terminal.new")}
-					tooltip={tooltip(() => t("terminal.new"))}
+					accessibilityLabel={terminalLabel()}
+					tooltip={tooltip(terminalLabel)}
 					onPress={props.onOpenTerminal}
 				>
 					<Icon
 						name="SquareTerminal"
 						size={16}
-						color={props.terminalRunning() ? token("primary") : undefined}
+						color={
+							props.terminalActive?.() || props.terminalRunning()
+								? token("primary")
+								: undefined
+						}
 					/>
 				</Button>
 			) : null}

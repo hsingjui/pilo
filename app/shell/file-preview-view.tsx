@@ -4,6 +4,7 @@ import {
 	effect,
 	Scroll,
 	signal,
+	Text,
 	token,
 	untracked,
 	View,
@@ -26,8 +27,11 @@ import type {
 	ActiveWorkspaceFile,
 	WorkspaceStore,
 } from "../state/workspace-store";
+import { Button } from "../ui/button";
+import { Icon } from "../ui/icon";
 import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { useEnterFade } from "../ui/motion";
+import { t } from "./i18n";
 
 const DEFAULT_CODE_FONT_SIZE = 12;
 
@@ -82,7 +86,7 @@ function lineRangeDecorations(
 
 function FilePreviewPanel(props: {
 	project: () => Pick<Project, "id" | "path"> | null;
-	file: WorkspaceFile;
+	file: () => WorkspaceFile;
 	visible: () => boolean;
 	lineRange: () => WorkspaceLineRange | undefined;
 	navigationToken: () => number;
@@ -90,7 +94,8 @@ function FilePreviewPanel(props: {
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
 }) {
-	const isMarkdown = fileLinkPreviewKind(props.file.path) === "markdown";
+	const filePath = untracked(props.file).path;
+	const isMarkdown = fileLinkPreviewKind(filePath) === "markdown";
 	// Markdown opens in rendered view, but jumps to source view with line numbers when targeted by lineRange.
 	const showSource = signal(!isMarkdown || props.lineRange() !== undefined);
 	let editorRef: EditorRef | undefined;
@@ -110,7 +115,7 @@ function FilePreviewPanel(props: {
 		expectedNavToken?: number,
 	) => {
 		if (!ref || !range) return;
-		const line = clampLineIndex(props.file.content, range.start);
+		const line = clampLineIndex(untracked(props.file).content, range.start);
 		ref.goToLine(line);
 		cancelPendingReveal();
 		// Also scroll after layout settles (e.g. first mount or switching from `display: none`).
@@ -141,21 +146,21 @@ function FilePreviewPanel(props: {
 		const range = props.lineRange();
 		const navToken = props.navigationToken();
 		if (!visible) return;
+		if (navToken === lastNavToken) return;
+		lastNavToken = navToken;
 		if (isMarkdown) {
 			const wantSource = range !== undefined;
 			if (untracked(showSource) !== wantSource) {
 				showSource.set(wantSource);
 			}
 		}
-		if (navToken === lastNavToken) return;
-		lastNavToken = navToken;
 		if (range) {
 			untracked(() => revealTargetLine(editorRef, range, navToken));
 		}
 	});
 
 	const decorations = computed(() =>
-		lineRangeDecorations(props.file.content, props.lineRange()),
+		lineRangeDecorations(props.file().content, props.lineRange()),
 	);
 	const fontSize = computed(() => resolveCodeFontSize(props.preferences()));
 	const lineHeight = computed(() => Math.max(22, Math.round(fontSize() * 1.7)));
@@ -164,19 +169,46 @@ function FilePreviewPanel(props: {
 		const current = props.project();
 		if (!current) return undefined;
 		return (
-			projectMarkdownImageScope(current, props.file.path)?.baseDirectory ??
-			undefined
+			projectMarkdownImageScope(current, filePath)?.baseDirectory ?? undefined
 		);
 	});
-	const fileName = fileBasename(props.file.path) || props.file.path;
+	const fileName = fileBasename(filePath) || filePath;
 	const fade = useEnterFade(props.visible);
 
 	return (
 		<View
-			testID={`file-preview:${props.file.path}`}
+			testID={`file-preview:${filePath}`}
 			class="absolute inset-0 flex-col bg-background"
 			style={[fade.style, { display: props.visible() ? "flex" : "none" }]}
 		>
+			<View
+				testID="file-preview-toolbar"
+				class="h-8 shrink-0 flex-row items-center justify-between gap-2 border-b border-border/60 bg-background/95 px-4"
+			>
+				<View selectable class="min-w-0 flex-1">
+					<Text class="truncate font-mono text-[11px] text-muted-foreground">
+						{filePath}
+					</Text>
+				</View>
+				{isMarkdown ? (
+					<Button
+						testID="file-preview-toggle-source"
+						variant="ghost"
+						size="sm"
+						class="h-6 shrink-0 gap-1 px-2"
+						onPress={() => showSource.update((current) => !current)}
+					>
+						<Icon
+							name={showSource() ? "Eye" : "Code2"}
+							size={12}
+							color={token("muted-foreground")}
+						/>
+						<Text class="font-sans text-[11px] text-muted-foreground">
+							{() => t(showSource() ? "file.previewMode" : "file.sourceMode")}
+						</Text>
+					</Button>
+				) : null}
+			</View>
 			{() =>
 				showSource() ? (
 					<Editor
@@ -192,7 +224,7 @@ function FilePreviewPanel(props: {
 							}
 						}}
 						class="min-h-0 flex-1 bg-background"
-						value={props.file.content}
+						value={props.file().content}
 						language={fileName}
 						readOnly
 						lineNumbers
@@ -226,8 +258,8 @@ function FilePreviewPanel(props: {
 						scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 					>
 						<ChatMarkdown
-							text={() => props.file.content}
-							textKey={() => `file:${props.file.path}`}
+							text={() => props.file().content}
+							textKey={() => `file:${filePath}`}
 							project={props.project}
 							imageBaseDirectory={imageBaseDirectory}
 							readProjectImage={props.readProjectImage}
@@ -275,7 +307,7 @@ export function FilePreviewLayer(props: {
 					return (
 						<FilePreviewPanel
 							project={() => props.projectFor(current.projectId)}
-							file={current.file}
+							file={() => entry().file}
 							visible={isVisible}
 							lineRange={() =>
 								isVisible() ? props.active()?.lineRange : undefined
