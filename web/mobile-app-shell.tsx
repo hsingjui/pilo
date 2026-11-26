@@ -850,7 +850,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 														class="min-h-0 flex-1 justify-center"
 													>
 														<ConversationColumn>
-															<SessionLanding loading />
+															<SessionLanding loading touch />
 														</ConversationColumn>
 													</View>
 													<View
@@ -963,7 +963,12 @@ export function MobileAppShell(props: MobileAppShellProps) {
 															</View>
 														)}
 														empty={() => (
-															<SessionLanding store={store} project={project} />
+															<SessionLanding
+																store={store}
+																project={project}
+																touch
+																availableHeight={viewport.availableHeight}
+															/>
 														)}
 													/>
 												</View>

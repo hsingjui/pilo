@@ -167,6 +167,79 @@ test("mobile dropdown menu anchors below top-right trigger on phone idiom instea
 	expect(app.shows("id:probe-header-menu-item")).toBe(false);
 });
 
+test("mobile landing project picker anchors below centered trigger on phone idiom and switches project", async () => {
+	const probe = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: { "fixture.scenario": "landing-project-picker" },
+	});
+
+	await probe.waitFor("id:landing-project-picker");
+	await probe.press("id:landing-project-picker");
+	await probe.waitFor("id:landing-project-picker-popup");
+	await probe.waitFor("id:landing-project:p2");
+
+	const triggerEntry = probe
+		.texts()
+		.find((entry) => entry.startsWith("trigger:"));
+	const popupEntry = probe.texts().find((entry) => entry.startsWith("bottom:"));
+	expect(triggerEntry).toBeDefined();
+	expect(popupEntry).toBeDefined();
+
+	const triggerMatch = /^trigger:(\d+),(\d+),(\d+)x(\d+)$/.exec(
+		triggerEntry ?? "",
+	);
+	const popupMatch = /^bottom:(\d+),(\d+),(\d+)x(\d+)$/.exec(popupEntry ?? "");
+	expect(triggerMatch).not.toBeNull();
+	expect(popupMatch).not.toBeNull();
+
+	const triggerX = Number(triggerMatch![1]);
+	const triggerY = Number(triggerMatch![2]);
+	const triggerW = Number(triggerMatch![3]);
+	const triggerH = Number(triggerMatch![4]);
+	const popupX = Number(popupMatch![1]);
+	const popupY = Number(popupMatch![2]);
+	const popupW = Number(popupMatch![3]);
+
+	// Anchored directly beneath the centered trigger (not pushed to the bottom sheet area).
+	expect(popupY).toBeGreaterThanOrEqual(triggerY + triggerH);
+	expect(popupY).toBeLessThanOrEqual(triggerY + triggerH + 24);
+	// Horizontally centered relative to the trigger on a 390pt viewport.
+	const triggerCenter = triggerX + triggerW / 2;
+	const popupCenter = popupX + popupW / 2;
+	expect(Math.abs(popupCenter - triggerCenter)).toBeLessThanOrEqual(4);
+
+	await probe.press("id:landing-project:p2");
+	await probe.waitFor("text:selected:p2");
+	expect(probe.shows("id:landing-project-picker-popup")).toBe(false);
+
+	// End-to-end check inside MobileAppShell on phone idiom.
+	const app = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: { "fixture.scenario": "multi-project" },
+	});
+
+	await app.waitFor("id:landing-project-picker");
+	expect(app.shows("id:landing-project-picker >> text:pilo")).toBe(true);
+	await app.press("id:landing-project-picker");
+	await app.waitFor("id:landing-project-picker-popup");
+	await app.waitFor("id:landing-project:p2");
+	await app.press("id:landing-project:p2");
+	await app.waitFor("id:landing-project-picker-popup", { state: "gone" });
+	await app.waitFor("id:landing-project-picker >> text:api");
+
+	// Escape dismisses the anchored popover cleanly.
+	await app.press("id:landing-project-picker");
+	await app.waitFor("id:landing-project-picker-popup");
+	await app.keyboard.press("escape");
+	await app.waitFor("id:landing-project-picker-popup", { state: "gone" });
+});
+
 test("nsh web pairing auto-completes for single address", async () => {
 	const app = await open("./mobile-web-fixture.tsx", {
 		locale: "en-US",

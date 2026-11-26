@@ -9,6 +9,7 @@ import { createChatSubmission } from "@shared/chat/chat-submission";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 
 import { initializeI18n } from "../shell/i18n";
+import { LandingProjectPicker } from "../shell/landing";
 import { conversationContext, followOpenSession } from "../shell/open-chat";
 import type {
 	WebRemoteConnectionState,
@@ -45,6 +46,18 @@ const project = {
 	},
 } as Project;
 
+const secondProject = {
+	id: "p2",
+	name: "api",
+	path: "/Users/pilo/code/api",
+	connection: {
+		id: "local",
+		name: "Local",
+		shownInHome: true,
+		kind: { type: "local" },
+	},
+} as Project;
+
 const sessions: SessionIndexEntry[] = [
 	{
 		piSessionId: "s1",
@@ -65,6 +78,44 @@ const sessions: SessionIndexEntry[] = [
 
 async function run() {
 	const scenario = (await Storage.getItem("fixture.scenario")) ?? "ready";
+	if (scenario === "landing-project-picker") {
+		const projects = [project, secondProject];
+		const active = signal<Project>(project);
+		const triggerBounds = signal("unmeasured");
+		const positionText = signal("unpositioned");
+		mount(() => (
+			<View class="flex-1 flex-col items-center justify-center bg-background">
+				<View
+					onLayout={({ bounds }) => {
+						triggerBounds.set(
+							`trigger:${Math.round(bounds.origin.x)},${Math.round(bounds.origin.y)},${Math.round(bounds.size.width)}x${Math.round(bounds.size.height)}`,
+						);
+					}}
+				>
+					<LandingProjectPicker
+						touch
+						projects={() => projects}
+						project={active}
+						onSelect={(id) => {
+							const found = projects.find((item) => item.id === id);
+							if (found) active.set(found);
+						}}
+						onPosition={({ placement, bounds }) => {
+							positionText.set(
+								`${placement}:${Math.round(bounds.origin.x)},${Math.round(bounds.origin.y)},${Math.round(bounds.size.width)}x${Math.round(bounds.size.height)}`,
+							);
+						}}
+					/>
+				</View>
+				<Text testID="probe-landing-trigger">{triggerBounds}</Text>
+				<Text testID="probe-landing-position">{positionText}</Text>
+				<Text testID="probe-landing-selected">
+					{() => `selected:${active().id}`}
+				</Text>
+			</View>
+		));
+		return;
+	}
 	if (scenario === "header-menu") {
 		const positionText = signal("unpositioned");
 		const selected = signal(0);
@@ -214,7 +265,8 @@ async function run() {
 		themeFamily: "lody",
 	} as ThemeSettings;
 	const runtime = scriptedClient({
-		projects: [project],
+		projects:
+			scenario === "multi-project" ? [project, secondProject] : [project],
 		sessions: async (projectId) => (projectId === "p1" ? sessions : []),
 		chatSessions: queueScenario
 			? ([
