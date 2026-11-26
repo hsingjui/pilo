@@ -194,7 +194,10 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 											testID={`chat-pending-send-now-${index()}`}
 											variant="ghost"
 											size="icon"
-											class={touch ? "size-10 rounded-md" : "size-7 rounded-md"}
+											class={classNames(
+												touch ? "size-10 rounded-md" : "size-7 rounded-md",
+												"hover:bg-destructive/10",
+											)}
 											accessibilityLabel={t("chat.interruptSend")}
 											tooltip={
 												touch
@@ -214,7 +217,32 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 											}}
 										>
 											<Icon
-												name="Send"
+												name="Zap"
+												size={touch ? 16 : 14}
+												color={token("destructive")}
+											/>
+										</Button>
+										<Button
+											testID={`chat-pending-remove-${index()}`}
+											variant="ghost"
+											size="icon"
+											class={touch ? "size-10 rounded-md" : "size-7 rounded-md"}
+											accessibilityLabel={t("chat.removeQueuedMessage")}
+											tooltip={
+												touch
+													? undefined
+													: textTooltip(() => t("chat.removeQueuedMessage"))
+											}
+											disabled={actionsDisabled() || entry().id === null}
+											onPress={() => {
+												const id = entry().id;
+												if (id !== null) {
+													void props.queue.change(props.composer, id, "remove");
+												}
+											}}
+										>
+											<Icon
+												name="X"
 												size={touch ? 16 : 14}
 												color={token("muted-foreground")}
 											/>

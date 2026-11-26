@@ -365,8 +365,8 @@ export class ChatQueueStore implements ComposerQueue {
 	async change(
 		composer: ComposerStore,
 		id: number,
-		action: "edit" | "send_now",
-	) {
+		action: "edit" | "send_now" | "remove",
+	): Promise<ChatSubmission | null> {
 		const target = composer.target();
 		if (
 			!target ||
@@ -375,13 +375,14 @@ export class ChatQueueStore implements ComposerQueue {
 			composer.compacting() ||
 			!this.canMutate(target.sessionKey)
 		)
-			return;
+			return null;
 		const known = this.localEntries(target.sessionKey);
-		if (!known.some((entry) => entry.id === id)) return;
+		if (!known.some((entry) => entry.id === id)) return null;
 
 		const change = this.startChange(target.sessionKey);
 		const canDispatch = () => !change.stopped;
 		const unsent: ChatSubmission[] = [];
+		let removedSubmission: ChatSubmission | null = null;
 		try {
 			const cleared = await this.clearOwnedQueue(target.sessionKey);
 
@@ -421,12 +422,15 @@ export class ChatQueueStore implements ComposerQueue {
 				if (result?.disposition === "handled") {
 					// The extension handled the input without starting a turn.
 					composer.restoreQueuedDraft(target, unsent);
-					return;
+					return null;
 				}
-			} else if (selected) {
+			} else if (selected && action === "edit") {
 				composer.restoreQueuedDraft(target, [selected.submission]);
+			} else if (selected && action === "remove") {
+				removedSubmission = selected.submission;
 			}
 			await this.replayRemaining(target, remaining, unsent, canDispatch);
+			return removedSubmission;
 		} catch (error) {
 			composer.restoreQueuedDraft(target, unsent);
 			if (!change.stopped) {
@@ -438,6 +442,7 @@ export class ChatQueueStore implements ComposerQueue {
 					target.sessionKey,
 				);
 			}
+			return null;
 		} finally {
 			this.finishChange(target.sessionKey);
 		}

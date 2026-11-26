@@ -23,7 +23,7 @@ test("shows queued steer/follow_up items, supports retrieve-to-edit and interrup
 	await app.type("id:chat-composer-input", "after that run tests");
 	await app.submit("id:chat-composer-input");
 	await app.waitFor("id:chat-pending-queue >> text:2");
-	expect(app.shows("id:chat-pending-item-1 >> text:Later")).toBe(true);
+	expect(app.shows("id:chat-pending-item-1 >> text:Queue")).toBe(true);
 	expect(app.shows("id:chat-pending-item-1 >> text:after that run tests")).toBe(
 		true,
 	);
