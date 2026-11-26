@@ -108,6 +108,9 @@ export function getProjectScopeDraft(
 export type ProjectScopeDraft = {
 	initial: readonly ProjectScopedModel[];
 	models: ProjectScopedModel[];
+	/** 草稿中是否显式选择了“恢复 Pi 默认”（保存时写 null，取消时可收回）。 */
+	inheritPi?: boolean;
+	initialInherited?: boolean;
 };
 
 function scopeMemberMatches(
@@ -133,10 +136,12 @@ export function projectScopeDraftHasModel(
 export function isProjectScopeDraftDirty(
 	draft: ProjectScopeDraft | null,
 ): boolean {
-	return (
-		draft !== null &&
-		JSON.stringify(draft.initial) !== JSON.stringify(draft.models)
-	);
+	if (draft === null) return false;
+	if (Boolean(draft.inheritPi) !== Boolean(draft.initialInherited)) {
+		return true;
+	}
+	if (draft.inheritPi) return false;
+	return JSON.stringify(draft.initial) !== JSON.stringify(draft.models);
 }
 
 /** Keep removed initial members visible so they can be re-added. */
@@ -165,6 +170,7 @@ export function toggleProjectScopeDraftModel(
 	if (draft.models.some(matches)) {
 		return {
 			...draft,
+			inheritPi: false,
 			models: draft.models.filter((entry) => !matches(entry)),
 		};
 	}
@@ -175,6 +181,7 @@ export function toggleProjectScopeDraftModel(
 	};
 	return {
 		...draft,
+		inheritPi: false,
 		models: [...draft.models, { ...entry, isDefault: false }],
 	};
 }
@@ -196,7 +203,12 @@ export function addProjectScopeDraftModels(
 				)?.thinkingLevel ?? null,
 			isDefault: false,
 		}));
-	return { ...draft, models: [...draft.models, ...additions] };
+	if (additions.length === 0) return draft;
+	return {
+		...draft,
+		inheritPi: false,
+		models: [...draft.models, ...additions],
+	};
 }
 
 export function toggleProjectScopeDefaultModel(
@@ -266,6 +278,16 @@ export function getPiQuickCycleThinkingLevel(
 	return typeof model.scopeOrder === "number"
 		? (model.scopeThinkingLevel ?? model.defaultThinkingLevel ?? null)
 		: (model.defaultThinkingLevel ?? null);
+}
+
+/** 检查模型是否明确不支持图片输入；未声明 `input` 能力时保守放行。 */
+export function piModelSupportsImages(
+	model: PiModel | null | undefined,
+): boolean {
+	if (!model || !Array.isArray(model.input) || model.input.length === 0) {
+		return true;
+	}
+	return model.input.some((item) => item.toLowerCase() === "image");
 }
 
 /** Display names of the thinking levels, as the picker shows them. */
