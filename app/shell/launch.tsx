@@ -190,8 +190,8 @@ export async function launch(
 		activeModel: () => runConfig.state()?.model ?? null,
 		catalog,
 		queue,
-		beforeSend: (sessionKey, ensureReady) =>
-			runConfig.prepareToSend(sessionKey, ensureReady),
+		beforeSend: (sessionKey, ensureReady, inBackground) =>
+			runConfig.prepareToSend(sessionKey, ensureReady, inBackground),
 		transcript: chat,
 		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
 		onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),

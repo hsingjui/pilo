@@ -4,7 +4,7 @@ import { chatSessionKey } from "@shared/api/chat-session-key";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import {
-	getProjectScopeDefaultModel,
+	getPiQuickCycleThinkingLevel,
 	isPiScopeCatalogResolved,
 } from "@shared/pi-model-selection";
 import {
@@ -13,7 +13,10 @@ import {
 	isTemporarySessionId,
 } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
-import type { ChatRunConfigStore } from "../state/chat-run-config";
+import type {
+	ChatRunConfigOptions,
+	ChatRunConfigStore,
+} from "../state/chat-run-config";
 import type {
 	ChatTranscriptStore,
 	ChatTranscriptTarget,
@@ -300,28 +303,30 @@ export function endLeftTemporaryChats(
 	});
 }
 
-/**
- * A new chat's initial run configuration: the project Scope's default model
- * and thinking level; empty while the catalog or the scope is unresolved.
- */
-function initialRunConfig(catalog: ModelCatalogStore, projectId: string) {
+/** Only a starred project default overrides Pi; the probed default is a preview. */
+function initialRunConfig(
+	catalog: ModelCatalogStore,
+	projectId: string,
+): ChatRunConfigOptions {
 	const state = catalog.state();
-	if (!state?.loaded || state.projectId !== projectId) return {};
-	const models = state.catalog?.models;
-	if (!models) return {};
-	const scopeResolved =
-		state.scope?.models != null || isPiScopeCatalogResolved(models);
-	const model = scopeResolved
-		? (getProjectScopeDefaultModel(models, state.scope) ??
-			state.catalog?.defaultModel ??
-			null)
-		: null;
+	if (!state?.loaded || !state.scope || state.projectId !== projectId) {
+		return { initialSource: "pending" };
+	}
+	const snapshot = state.provisional ? null : state.catalog;
+	const projectDefault = snapshot ? catalog.scopeDefaultModel : null;
+	if (
+		!projectDefault &&
+		state.scope.models?.some((model) => model.isDefault) &&
+		(!snapshot || !isPiScopeCatalogResolved(snapshot.models))
+	) {
+		return { initialSource: "pending" };
+	}
 	return {
-		initialModel: model ?? undefined,
-		initialThinkingLevel:
-			model?.scopeThinkingLevel ??
-			state.catalog?.defaultThinkingLevel ??
-			undefined,
+		initialSource: projectDefault ? "scope" : "pi",
+		initialModel: projectDefault ?? snapshot?.defaultModel ?? undefined,
+		initialThinkingLevel: projectDefault
+			? (getPiQuickCycleThinkingLevel(projectDefault) ?? undefined)
+			: (snapshot?.defaultThinkingLevel ?? undefined),
 	};
 }
 
@@ -394,14 +399,13 @@ export function followRunConfig(
 		if (next.sessionPath) {
 			untracked(() => runConfig.enrichSavedModel());
 		} else {
-			const { initialModel, initialThinkingLevel } = initialRunConfig(
-				catalog,
-				next.projectId,
-			);
+			const { initialModel, initialThinkingLevel, initialSource } =
+				initialRunConfig(catalog, next.projectId);
 			untracked(() =>
 				runConfig.adoptInitial(
 					initialModel ?? null,
 					initialThinkingLevel ?? null,
+					initialSource,
 				),
 			);
 		}

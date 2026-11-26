@@ -789,6 +789,10 @@ const enUS = {
 		runConfigLabel: "Run config: {{model}} · {{thinking}}",
 		model: "Model",
 		loadingModels: "Loading…",
+		modelDefaultsPending:
+			"Wait for the project's model defaults to load, then send again.",
+		modelScopeLoadFailed:
+			"Couldn't load the project model scope. Switch projects and try again.",
 		readingModels: "Loading…",
 		noModels: "No models available",
 		refreshModels: "Refresh models",

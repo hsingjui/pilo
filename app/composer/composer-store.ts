@@ -153,6 +153,7 @@ export type ComposerQueue = {
 type PrepareToSend = (
 	sessionKey: string,
 	ensureReady?: () => Promise<boolean>,
+	inBackground?: boolean,
 ) => Promise<boolean>;
 
 type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
@@ -1285,17 +1286,11 @@ export class ComposerStore {
 			!submit.stopped &&
 			(inBackground || this.targetSignal()?.sessionKey === target.sessionKey);
 		const ensureReady = () => this.ensureStarted(target, canSend, onStarting);
-		if (inBackground && this.beforeSend) {
-			// Capture the original chat's config before startup yields to navigation.
-			return (
-				(await this.beforeSend(target.sessionKey, ensureReady)) && canSend()
-			);
-		}
-		if (!(await ensureReady())) return false;
-		return (
-			(!this.beforeSend || (await this.beforeSend(target.sessionKey))) &&
-			canSend()
-		);
+		// Let run config check defaults before startup and apply them before sending.
+		const ready = this.beforeSend
+			? await this.beforeSend(target.sessionKey, ensureReady, inBackground)
+			: await ensureReady();
+		return ready && canSend();
 	}
 
 	private async ensureStarted(

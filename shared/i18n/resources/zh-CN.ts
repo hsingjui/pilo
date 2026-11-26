@@ -750,6 +750,8 @@ const zhCN = {
 		applyProjectScope: "保存到项目",
 		runConfigLabel: "运行配置：{{model}} · {{thinking}}",
 		loadingModels: "加载中…",
+		modelDefaultsPending: "请等项目默认模型加载完成后再发送。",
+		modelScopeLoadFailed: "无法加载项目模型范围。请切换回此项目后重试。",
 		readingModels: "加载中…",
 		noModels: "暂无可用模型",
 		refreshModels: "刷新模型",

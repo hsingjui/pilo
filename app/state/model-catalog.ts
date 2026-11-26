@@ -60,7 +60,7 @@ export class ModelCatalogStore {
 	private disconnect: (() => void) | undefined;
 	/** Counts `open` calls so a late read cannot overwrite a newer project. */
 	private opens = 0;
-	private refreshing: Promise<void> | undefined;
+	private readonly refreshes = new Map<string, Promise<void>>();
 	/** Each connection's model list, read once and shared across projects. */
 	private readonly connectionModels = new Map<string, Promise<PiModel[]>>();
 
@@ -69,8 +69,8 @@ export class ModelCatalogStore {
 	}
 
 	/**
-	 * Reads the project's cached catalog and Scope and shows them. Without a
-	 * cached catalog, the connection's model list is shown until a refresh.
+	 * Reads the cached catalog and Scope. When opening with a connection,
+	 * probe missing project metadata and show its model list in the meantime.
 	 */
 	async open(projectId: string, connectionId?: string): Promise<void> {
 		const open = ++this.opens;
@@ -82,7 +82,7 @@ export class ModelCatalogStore {
 			provisional: false,
 			scope: null,
 			loaded: false,
-			refreshing: false,
+			refreshing: this.refreshes.has(projectId),
 			savingScope: false,
 			error: null,
 		});
@@ -111,9 +111,22 @@ export class ModelCatalogStore {
 			this.client.loadModelScope(projectId).catch(() => null),
 		]);
 		if (open !== this.opens) return;
-		this.current.set({ ...this.current()!, catalog, scope, loaded: true });
-		if (!catalog && connectionId) {
-			await this.showConnectionModels(open, projectId, connectionId);
+		const state = this.current()!;
+		const snapshot = state.catalog ?? catalog;
+		const needsProbe =
+			connectionId !== undefined &&
+			(!snapshot || !isPiScopeCatalogResolved(snapshot.models));
+		this.current.set({
+			...state,
+			catalog: snapshot,
+			scope,
+			loaded: true,
+			refreshing: state.refreshing || needsProbe,
+		});
+		if (needsProbe) {
+			void this.refresh();
+			if (!snapshot)
+				await this.showConnectionModels(open, projectId, connectionId);
 		}
 	}
 
@@ -196,9 +209,11 @@ export class ModelCatalogStore {
 	/** Re-reads the catalog through a probe Pi and persists the snapshot. */
 	async refresh(catalogTimeoutMs?: number): Promise<void> {
 		const state = this.current();
-		if (!state || this.refreshing) return this.refreshing;
-		this.update({ refreshing: true, error: null });
+		if (!state) return;
 		const projectId = state.projectId;
+		const inFlight = this.refreshes.get(projectId);
+		if (inFlight) return inFlight;
+		this.update({ refreshing: true, error: null });
 		const run = probeProjectPiModels(
 			projectId,
 			{
@@ -209,14 +224,14 @@ export class ModelCatalogStore {
 			},
 			{ catalogTimeoutMs },
 		);
-		this.refreshing = run.then(
+		const refreshing = run.then(
 			(catalog) => {
-				this.refreshing = undefined;
+				this.refreshes.delete(projectId);
 				if (this.current()?.projectId !== projectId) return;
 				this.update({ catalog, provisional: false, refreshing: false });
 			},
 			(error: unknown) => {
-				this.refreshing = undefined;
+				this.refreshes.delete(projectId);
 				if (this.current()?.projectId !== projectId) return;
 				this.update({
 					refreshing: false,
@@ -224,7 +239,8 @@ export class ModelCatalogStore {
 				});
 			},
 		);
-		return this.refreshing;
+		this.refreshes.set(projectId, refreshing);
+		return refreshing;
 	}
 
 	/** Saves the project Scope; the runtime event applies it here too. */

@@ -159,8 +159,8 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 			extensionUi.waitForStartupApproval(sessionKey),
 		catalog,
 		activeModel: () => runConfig.state()?.model ?? null,
-		beforeSend: (sessionKey, ensureReady) =>
-			runConfig.prepareToSend(sessionKey, ensureReady),
+		beforeSend: (sessionKey, ensureReady, inBackground) =>
+			runConfig.prepareToSend(sessionKey, ensureReady, inBackground),
 		transcript: chat,
 		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
 		onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),

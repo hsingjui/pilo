@@ -48,19 +48,23 @@ or session JSONL. Both transports use the Host's database.
   first or another member. Existing unmarked lists now follow Pi, with no
   automatic promotion of their former first member. Apply the marked member's
   thinking override or model profile default unless the user picked another level.
+  The probed Pi default is only a draft preview: never send it back as an
+  override. Replace it with the live selection from Pi's `get_state`.
 - Drafts store only explicit selections; derive project defaults from the current
   Scope/catalog so late responses and menu reloads cannot overwrite user intent.
   Without an explicit model selection, wait for Scope loading and (when a Scope
-  default is marked) the model catalog before allowing startup. Preference/catalog
-  failures remain visible, not an implicit fallback to unknown defaults. Scope
-  changes never reapply startup defaults to an already identified/live session.
+  default is marked) its project model catalog before allowing startup. A
+  connection-wide provisional list cannot resolve a project's marked default.
+  The shared composer rejects an early send before Pi starts and restores the
+  draft with a loading or failure message. A resolved catalog where the marked
+  model is absent can follow Pi; a failed read cannot. Scope changes never
+  reapply startup defaults to an already identified/live session.
 - New-chat model/thinking presentation waits for the initial Scope response and,
   for a marked default, its available model catalog. Until resolved, expose no
   tentative Pi-default model or thinking level; the shared composer shows its
   localized model-loading label. Revalidating an already resolved Scope keeps
   the current presentation, and explicit user choices remain visible immediately.
-  This applies to desktop, WebUI and temporary drafts; startup precedence and
-  submission readiness are unchanged.
+  This applies to desktop, WebUI and temporary drafts.
 - One atomic upsert replaces all members. `updatedAtMs` is monotonically
   increasing per project (`MAX(now, previous + 1)`), even for restoring null.
   Consumers reject lower revisions and stale project/transport requests.
@@ -265,10 +269,11 @@ not mean its Pi process is still running when reopened.
 - `project_model_cache_set` accepts optional commands alongside model fields.
 - Authenticated `GET /api/v1/models?projectId=...` reads the shared snapshot;
   `POST /api/v1/models` saves it and assigns the Host timestamp.
-- `WebPiloClient.loadModels(projectId, force = false)` reads cache first and
-  invokes `refreshProjectPiModels(projectId, transport)` only when forced or
-  incomplete. Desktop reads and saves the cache through the native
-  `loadModels` / `saveModels`.
+- `loadModels(projectId)` reads the saved snapshot on both transports.
+  The shared `ModelCatalogStore.open(projectId, connectionId)` starts a project
+  probe when the snapshot is missing or lacks Scope metadata. The connection's
+  model list may populate All in the meantime, but does not supply the
+  project's Pi default or inherited Scope. Refreshes deduplicate per project.
 
 ### 3. Contracts
 

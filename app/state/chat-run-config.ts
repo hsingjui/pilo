@@ -23,6 +23,7 @@ import {
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { requestPiRpcReply, type PiCommandClient } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { t } from "../shell/i18n";
 import { isTemporarySessionKey } from "./app-state";
 import type { ChatTranscriptTarget } from "./chat-transcript-store";
 import type { ModelCatalogState } from "./model-catalog";
@@ -35,10 +36,14 @@ export type SessionHistoryMetadata = Pick<
 export type ChatRunConfigClient = PiCommandClient &
 	Pick<NshPiloClient, "startChat" | "chatState" | "loadHistory">;
 
+type InitialSelectionSource = "pending" | "pi" | "scope";
+
 export type ChatRunConfigOptions = {
 	/** A new chat's scope-resolved defaults; absent while a scope is pending. */
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
+	/** Pending defaults block startup; a Pi preview never overrides live Pi. */
+	initialSource?: InitialSelectionSource;
 	/** This unindexed draft already has an initialized Pi; read its live selection. */
 	readLiveDraft?: boolean;
 	/** Skip a separate `loadHistory` call when the transcript store supplies history metadata. */
@@ -69,6 +74,7 @@ export type ChatRunConfigState = {
 type InitialSelection = {
 	model: PiModel | null;
 	level: PiThinkingLevel | null;
+	source: InitialSelectionSource;
 };
 
 type BackgroundSend = {
@@ -135,6 +141,7 @@ export class ChatRunConfigStore {
 				: {
 						model: options.initialModel ?? null,
 						level: options.initialThinkingLevel ?? null,
+						source: options.initialSource ?? "scope",
 					};
 		this.current.set({
 			sessionKey: target.sessionKey,
@@ -190,28 +197,20 @@ export class ChatRunConfigStore {
 		await this.refresh(open, !background);
 	}
 
-	/**
-	 * A scope default that arrived after `open` still becomes the new chat's
-	 * initial config — until Pi's first agent state applied it, and only
-	 * while the user has not picked anything.
-	 */
-	adoptInitial(model: PiModel | null, level: PiThinkingLevel | null): void {
+	/** A late catalog can update the defaults until Pi or a manual pick takes over. */
+	adoptInitial(
+		model: PiModel | null,
+		level: PiThinkingLevel | null,
+		source: InitialSelectionSource = "scope",
+	): void {
 		const initial = this.pendingInitial;
 		const state = this.current();
-		if (
-			!initial ||
-			!state ||
-			state.changing ||
-			state.modelDirty ||
-			state.thinkingDirty
-		)
-			return;
-		initial.model = model ?? initial.model;
-		initial.level = level ?? initial.level;
+		if (!initial || !state || state.changing || state.modelDirty) return;
+		Object.assign(initial, { model, level, source });
 		this.update({
-			model: initial.model,
-			thinkingLevel: initial.level,
-			thinkingLevels: [...getPiModelThinkingLevels(initial.model)],
+			model,
+			thinkingLevel: state.thinkingDirty ? state.thinkingLevel : level,
+			thinkingLevels: [...getPiModelThinkingLevels(model)],
 		});
 	}
 
@@ -331,12 +330,13 @@ export class ChatRunConfigStore {
 		const state = this.catalog();
 		if (
 			!state?.catalog ||
+			!state.scope ||
 			state.catalog.projectId !== this.current()?.projectId
 		)
 			return false;
 		return (
-			state.scope?.models != null ||
-			isPiScopeCatalogResolved(state.catalog.models)
+			state.scope.models !== null ||
+			(!state.provisional && isPiScopeCatalogResolved(state.catalog.models))
 		);
 	}
 
@@ -390,19 +390,32 @@ export class ChatRunConfigStore {
 				name: agentState.sessionName,
 			},
 		};
-		// The process can report its own defaults before the first send applies Scope.
+		// Only a resolved Pi preview yields to live Pi. Keep unresolved defaults pending.
+		const followsPi = this.pendingInitial?.source === "pi";
+		if (followsPi) this.pendingInitial = null;
 		const initial = this.pendingInitial;
-		if (!current.modelDirty && !initial?.model && agentState.model) {
-			patch.model = agentState.model;
+		const defaultsPending = initial?.source === "pending";
+		if (
+			!defaultsPending &&
+			!current.modelDirty &&
+			!initial?.model &&
+			(followsPi || agentState.model)
+		) {
+			patch.model = agentState.model ?? null;
 			patch.thinkingLevels = [...getPiModelThinkingLevels(agentState.model)];
 		}
-		if (!current.thinkingDirty && !initial?.level && !current.changing) {
+		if (
+			!defaultsPending &&
+			!current.thinkingDirty &&
+			!initial?.level &&
+			!current.changing
+		) {
 			patch.thinkingLevel = agentState.thinkingLevel;
 		}
 		this.update(patch);
 		const [, thinking] = await Promise.all([
 			this.refreshStats(),
-			initial?.model
+			defaultsPending || initial?.model
 				? undefined
 				: this.rpc<{ levels: PiThinkingLevel[] }>(sessionKey, {
 						type: "get_available_thinking_levels",
@@ -413,6 +426,7 @@ export class ChatRunConfigStore {
 			open === this.opens &&
 			thinking?.levels &&
 			!this.pendingInitial?.model &&
+			this.pendingInitial?.source !== "pending" &&
 			!this.current()?.changing
 		) {
 			this.update({ thinkingLevels: thinking.levels });
@@ -466,17 +480,37 @@ export class ChatRunConfigStore {
 	async prepareToSend(
 		sessionKey: string,
 		ensureReady?: () => Promise<boolean>,
+		inBackground = false,
 	): Promise<boolean> {
 		const open = this.opens;
 		const state = this.current();
 		if (state?.sessionKey !== sessionKey) return false;
-		if (!ensureReady) {
+		const requireDefaults = (initial: InitialSelection | null) => {
+			if (initial?.source !== "pending") return;
+			const catalog = this.catalog();
+			const projectCatalog =
+				catalog?.projectId === state.projectId ? catalog : null;
+			throw new Error(
+				projectCatalog?.error ??
+					(projectCatalog?.loaded && !projectCatalog.scope
+						? t("chat.modelScopeLoadFailed")
+						: t("chat.modelDefaultsPending")),
+			);
+		};
+		requireDefaults(this.pendingInitial);
+		if (!inBackground || !ensureReady) {
+			if (ensureReady && !(await ensureReady())) return false;
+			if (open !== this.opens) return false;
+			requireDefaults(this.pendingInitial);
 			await this.applySelection();
 			return open === this.opens;
 		}
 		const background = { open, state, initial: this.pendingInitial };
 		const ready = Promise.resolve().then(async () => {
 			if (!(await ensureReady())) return false;
+			requireDefaults(
+				open === this.opens ? this.pendingInitial : background.initial,
+			);
 			await this.applySelection(false, background);
 			return true;
 		});
@@ -534,7 +568,7 @@ export class ChatRunConfigStore {
 			return;
 		const open = this.opens;
 		this.requests += 1;
-		this.pendingInitial = null;
+		if (patch.modelDirty) this.pendingInitial = null;
 		this.update({ ...patch, error: null });
 		if (state.sessionPath) return;
 		try {
@@ -562,7 +596,9 @@ export class ChatRunConfigStore {
 		}
 		const state = isOpen() ? this.current() : background?.state;
 		if (!state) return;
-		const initial = isOpen() ? this.pendingInitial : background?.initial;
+		const pending = isOpen() ? this.pendingInitial : background?.initial;
+		if (pending?.source === "pending") return;
+		const initial = pending?.source === "scope" ? pending : null;
 		const model = state.modelDirty ? state.model : initial?.model;
 		const level = state.thinkingDirty ? state.thinkingLevel : initial?.level;
 		if (!model && !level) return;
