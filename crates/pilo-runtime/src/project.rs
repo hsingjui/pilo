@@ -39,7 +39,17 @@ pub(crate) fn save_model_scope(
 pub fn list(runtime: &Runtime) -> Result<Vec<Project>, String> {
     let db = storage::open(&runtime.paths)?;
     storage::ensure_local_connection(&db)?;
+    let existing_projects = storage::list_projects(&db)?;
+    let existing_ids: std::collections::HashSet<&str> = existing_projects
+        .iter()
+        .map(|project| project.id.as_str())
+        .collect();
+    let mut inserted = false;
     for connection in storage::list_connections(&db)? {
+        let default_id = Project::default_workspace_id(&connection.id);
+        if existing_ids.contains(default_id.as_str()) {
+            continue;
+        }
         let key = default_workspace_key(&connection.id);
         let root = if cfg!(debug_assertions) {
             ".pilo-dev"
@@ -49,7 +59,7 @@ pub fn list(runtime: &Runtime) -> Result<Vec<Project>, String> {
         let path = format!("~/{root}/workspaces/{key}");
         let now = storage::now_ms();
         let project = Project {
-            id: Project::default_workspace_id(&connection.id),
+            id: default_id,
             name: "Default workspace".to_owned(),
             path: path.clone(),
             connection,
@@ -64,8 +74,13 @@ pub fn list(runtime: &Runtime) -> Result<Vec<Project>, String> {
         };
         // Catalog entries are cheap; creating directories or contacting remotes is not.
         storage::insert_project_if_missing(&db, &project)?;
+        inserted = true;
     }
-    storage::list_projects(&db)
+    if inserted {
+        storage::list_projects(&db)
+    } else {
+        Ok(existing_projects)
+    }
 }
 
 fn default_workspace_key(connection_id: &str) -> String {

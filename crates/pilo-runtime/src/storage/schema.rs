@@ -30,7 +30,12 @@ pub(crate) fn open_with_paths(paths: &HostPaths) -> Result<SqliteConnection, Str
         .busy_timeout(Duration::from_secs(2))
         .map_err(|error| format!("failed to configure Pilo SQLite busy timeout: {error}"))?;
     connection
-        .execute_batch("PRAGMA foreign_keys = ON;")
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -16000;",
+        )
         .map_err(|error| format!("failed to configure Pilo SQLite connection: {error}"))?;
     ensure_schema(&path, &connection, !database_existed)?;
     Ok(connection)
@@ -151,6 +156,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            indexed_at_ms INTEGER NOT NULL
          );
          CREATE INDEX IF NOT EXISTS idx_sessions_project_mtime ON sessions(project_id, file_mtime_ns DESC);
+         CREATE INDEX IF NOT EXISTS idx_sessions_path ON sessions(session_path);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_project_pi_id ON sessions(project_id, pi_session_id);
          CREATE TABLE IF NOT EXISTS session_ui_state (
            session_path TEXT PRIMARY KEY,
@@ -197,6 +203,8 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     ensure_session_project_keys(db)?;
+    db.execute_batch("CREATE INDEX IF NOT EXISTS idx_sessions_path ON sessions(session_path);")
+        .map_err(|error| format!("failed to ensure Pilo SQLite session index: {error}"))?;
     ensure_session_columns(db)?;
     ensure_connection_columns(db)?;
     ensure_project_columns(db)?;

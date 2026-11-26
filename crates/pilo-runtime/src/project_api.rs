@@ -48,6 +48,13 @@ pub fn project_model_scope_set(
     project::save_model_scope(runtime, &runtime.events, &project_id, models)
 }
 
+pub fn project_model_cache_get(
+    runtime: &Runtime,
+    project_id: &str,
+) -> Result<Option<ProjectModelCache>, String> {
+    storage::get_project_model_cache(&storage::open(&runtime.paths)?, project_id)
+}
+
 pub fn project_model_cache_list(runtime: &Runtime) -> Result<Vec<ProjectModelCache>, String> {
     storage::list_project_model_cache(&storage::open(&runtime.paths)?)
 }

@@ -29,6 +29,7 @@ struct CachedConnectionModels {
 struct ModelCatalogCache {
     generation: u64,
     entries: HashMap<String, CachedConnectionModels>,
+    inflight: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
 fn cache() -> &'static Mutex<ModelCatalogCache> {
@@ -59,6 +60,23 @@ pub(crate) async fn load(
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
     let cache_key = format!("{scope}::{connection_id}");
+    let key_lock = {
+        let mut guard = cache()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(entry) = guard.entries.get(&cache_key)
+            && entry.cached_at.elapsed() < MODEL_CATALOG_TTL
+        {
+            return Ok(entry.models.clone());
+        }
+        Arc::clone(
+            guard
+                .inflight
+                .entry(cache_key.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        )
+    };
+    let _singleflight = key_lock.lock().await;
     let started_generation = if let Ok(guard) = cache().lock() {
         if let Some(entry) = guard.entries.get(&cache_key)
             && entry.cached_at.elapsed() < MODEL_CATALOG_TTL

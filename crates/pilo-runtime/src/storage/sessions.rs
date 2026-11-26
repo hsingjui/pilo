@@ -186,15 +186,22 @@ pub fn remove_missing_sessions(
     project_id: &str,
     paths: &[String],
 ) -> Result<u64, String> {
-    let existing = list_sessions(db, project_id)?;
+    let mut statement = db
+        .prepare("SELECT session_path FROM sessions WHERE project_id=?1")
+        .map_err(|error| error.to_string())?;
+    let existing = statement
+        .query_map(params![project_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     let paths = paths.iter().map(String::as_str).collect::<HashSet<_>>();
     let mut removed = 0;
-    for session in existing {
-        if !paths.contains(session.session_path.as_str()) {
+    for session_path in existing {
+        if !paths.contains(session_path.as_str()) {
             removed += db
                 .execute(
                     "DELETE FROM sessions WHERE project_id=?1 AND session_path=?2",
-                    params![project_id, session.session_path],
+                    params![project_id, session_path],
                 )
                 .map_err(|error| error.to_string())? as u64;
         }

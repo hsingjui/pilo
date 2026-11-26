@@ -40,7 +40,7 @@ use pilo_runtime::{
     project_api::{
         self, connection_fs_read_dir, project_add, project_chat_file_remove,
         project_chat_file_upload, project_fs_read_image, project_fs_search,
-        project_model_cache_list, project_model_cache_set, project_model_scope_get,
+        project_model_cache_get, project_model_cache_set, project_model_scope_get,
         project_model_scope_set, project_remove,
     },
     project_opener::ProjectApp,
@@ -607,9 +607,7 @@ impl Pilo {
         project_id: String,
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
-            let snapshot = project_model_cache_list(runtime)?
-                .into_iter()
-                .find(|snapshot| snapshot.project_id == project_id);
+            let snapshot = project_model_cache_get(runtime, &project_id)?;
             serde_json::to_value(snapshot).map_err(|error| error.to_string())
         })
         .await

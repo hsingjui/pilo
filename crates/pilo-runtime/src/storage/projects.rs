@@ -152,6 +152,58 @@ pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, S
     .map_err(|error| error.to_string())
 }
 
+fn project_model_cache_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectModelCache> {
+    let models_json: String = row.get(1)?;
+    let models = serde_json::from_str(&models_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let default_model_json: Option<String> = row.get(2)?;
+    let default_model = default_model_json
+        .map(|json| {
+            serde_json::from_str(&json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        })
+        .transpose()?;
+    let commands_json: Option<String> = row.get(5)?;
+    let commands = commands_json
+        .map(|json| {
+            serde_json::from_str(&json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        })
+        .transpose()?;
+    Ok(ProjectModelCache {
+        project_id: row.get(0)?,
+        models,
+        commands,
+        default_model,
+        default_thinking_level: row.get(3)?,
+        refreshed_at_ms: row.get::<_, i64>(4)? as u64,
+    })
+}
+
+pub fn get_project_model_cache(
+    db: &SqliteConnection,
+    project_id: &str,
+) -> Result<Option<ProjectModelCache>, String> {
+    db.query_row(
+        "SELECT project_id,models_json,default_model_json,default_thinking_level,refreshed_at_ms,commands_json FROM project_model_cache WHERE project_id=?1",
+        params![project_id],
+        project_model_cache_from_row,
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
 pub fn list_project_model_cache(db: &SqliteConnection) -> Result<Vec<ProjectModelCache>, String> {
     let mut statement = db
         .prepare(
@@ -159,48 +211,7 @@ pub fn list_project_model_cache(db: &SqliteConnection) -> Result<Vec<ProjectMode
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([], |row| {
-            let models_json: String = row.get(1)?;
-            let models = serde_json::from_str(&models_json).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    1,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
-            let default_model_json: Option<String> = row.get(2)?;
-            let default_model = default_model_json
-                .map(|json| {
-                    serde_json::from_str(&json).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            2,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })
-                })
-                .transpose()?;
-            let commands_json: Option<String> = row.get(5)?;
-            let commands = commands_json
-                .map(|json| {
-                    serde_json::from_str(&json).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })
-                })
-                .transpose()?;
-            Ok(ProjectModelCache {
-                project_id: row.get(0)?,
-                models,
-                commands,
-                default_model,
-                default_thinking_level: row.get(3)?,
-                refreshed_at_ms: row.get::<_, i64>(4)? as u64,
-            })
-        })
+        .query_map([], project_model_cache_from_row)
         .map_err(|error| error.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())

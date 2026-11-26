@@ -18,16 +18,20 @@ pub(super) struct ModelsQuery {
 
 /// Project model and command catalog shared by Desktop and WebUI.
 pub(super) async fn models(state: RemoteHttpState, Query(query): Query<ModelsQuery>) -> Response {
-    match storage::open_with_paths(&state.runtime.paths)
-        .and_then(|db| storage::list_project_model_cache(&db))
+    let paths = state.runtime.paths.clone();
+    let project_id = query.project_id;
+    match tokio::task::spawn_blocking(move || {
+        let db = storage::open_with_paths(&paths)?;
+        storage::get_project_model_cache(&db, &project_id)
+    })
+    .await
     {
-        Ok(caches) => {
-            let cache = caches
-                .into_iter()
-                .find(|cache| cache.project_id == query.project_id);
-            Json(cache).into_response()
-        }
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Ok(Ok(cache)) => Json(cache).into_response(),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("failed to load project models: {error}"),
+        ),
     }
 }
 
