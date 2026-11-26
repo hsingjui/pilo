@@ -39,6 +39,7 @@ import {
 import { RemoteDevicesSection } from "./remote-devices-section";
 import { RemoteLanAddressPicker } from "./remote-lan-address-picker";
 import { RemotePairingSection } from "./remote-pairing-section";
+import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 import type { SettingsClient } from "./settings-dialog";
 
 const MAX_ADDRESSES = 32;
@@ -59,6 +60,7 @@ export function RemotePane(props: {
 	const error = signal<string | null>(null);
 	const toasts = AppToaster();
 	const portDraft = signal<string | null>(null);
+	const pendingPortConfirm = signal<number | null>(null);
 	const addressDraft = signal<RemoteAccessAddress[] | null>(null);
 	const savingAddressDraft = signal(false);
 	/* The same guards as React's refs: a save in flight blocks refresh, and
@@ -127,7 +129,7 @@ export function RemotePane(props: {
 	const enabled = computed(() => state()?.enabled ?? false);
 	effect(() => {
 		if (!enabled()) return;
-		const timer = setInterval(() => void refresh(), 3_000);
+		const timer = setInterval(() => void refresh(), 10_000);
 		return () => clearInterval(timer);
 	});
 
@@ -152,10 +154,30 @@ export function RemotePane(props: {
 		}
 	};
 
+	const commitPort = async (port: number) => {
+		if (busy()) return;
+		busy.set("port");
+		try {
+			state.set(await client.remoteSetPort(port));
+			portDraft.set(null);
+			pendingPortConfirm.set(null);
+			error.set(null);
+			showToast(toasts, {
+				variant: "success",
+				title: t("settings.remotePortSaved"),
+			});
+		} catch (caught) {
+			fail(caught);
+		} finally {
+			busy.set(null);
+		}
+	};
+
 	const savePort = async () => {
 		const current = state();
 		const draft = portDraft();
-		if (busy() || !current || draft === null) return;
+		if (busy() || pendingPortConfirm() !== null || !current || draft === null)
+			return;
 		const port = Number(draft);
 		if (port === current.port) {
 			portDraft.set(null);
@@ -169,20 +191,11 @@ export function RemotePane(props: {
 			portDraft.set(null);
 			return;
 		}
-		busy.set("port");
-		try {
-			state.set(await client.remoteSetPort(port));
-			portDraft.set(null);
-			error.set(null);
-			showToast(toasts, {
-				variant: "success",
-				title: t("settings.remotePortSaved"),
-			});
-		} catch (caught) {
-			fail(caught);
-		} finally {
-			busy.set(null);
+		if (activeDevices().length > 0) {
+			pendingPortConfirm.set(port);
+			return;
 		}
+		await commitPort(port);
 	};
 
 	const saveAddresses = async (
@@ -411,7 +424,31 @@ export function RemotePane(props: {
 										}
 										ghostEdge="both"
 									>
-										<SettingsActionButton onPress={() => void toggle(true)}>
+										<SettingsActionButton
+											onPress={() => {
+												if (error()) {
+													void refresh();
+													return;
+												}
+												if (
+													!current().lastError &&
+													current().addressConfigError
+												) {
+													const list = addressDraft() ?? addresses();
+													const first = list[0];
+													if (first) {
+														addressInputs.get(first.id)?.focus();
+													} else if (list.length < MAX_ADDRESSES) {
+														const id = randomId();
+														draftRevision += 1;
+														addressDraft.set([{ id, name: "", baseUrl: "" }]);
+														setTimeout(() => addressInputs.get(id)?.focus(), 0);
+													}
+													return;
+												}
+												void toggle(true);
+											}}
+										>
 											<Icon name="RefreshCw" size={14} />
 											<Text class="font-sans text-xs">{t("common.retry")}</Text>
 										</SettingsActionButton>
@@ -509,9 +546,40 @@ export function RemotePane(props: {
 										</View>
 									)}
 								</Each>
-								<Text class="font-sans text-xs leading-5 text-muted-foreground">
-									{t("settings.remoteAddressConfigHint")}
-								</Text>
+								<View class="flex-row items-center justify-between gap-2 pt-0.5">
+									<Text class="min-w-0 flex-1 font-sans text-xs leading-5 text-muted-foreground">
+										{t("settings.remoteAddressConfigHint")}
+									</Text>
+									<SettingsActionButton
+										testID="remote-address-add"
+										disabled={
+											Boolean(busy()) ||
+											savingAddressDraft() ||
+											(addressDraft() ?? addresses()).length >= MAX_ADDRESSES
+										}
+										onPress={() => {
+											const list = addressDraft() ?? addresses();
+											const empty = list.find((item) => !item.baseUrl.trim());
+											if (empty) {
+												addressInputs.get(empty.id)?.focus();
+												return;
+											}
+											if (list.length >= MAX_ADDRESSES) return;
+											const id = randomId();
+											draftRevision += 1;
+											addressDraft.set([
+												...list,
+												{ id, name: "", baseUrl: "" },
+											]);
+											setTimeout(() => addressInputs.get(id)?.focus(), 0);
+										}}
+									>
+										<Icon name="Plus" size={13} />
+										<Text class="font-sans text-xs">
+											{t("settings.remoteAddAddress")}
+										</Text>
+									</SettingsActionButton>
+								</View>
 							</View>
 						</SettingsSection>
 
@@ -542,6 +610,28 @@ export function RemotePane(props: {
 					</>
 				) : null
 			}
+			<SettingsConfirmDialog
+				testID="remote-port-confirm-dialog"
+				open={pendingPortConfirm() !== null}
+				title={t("settings.remotePortConfirmTitle")}
+				description={t("settings.remotePortConfirmDescription", {
+					port: String(pendingPortConfirm() ?? current()?.port ?? ""),
+					count: activeDevices().length,
+				})}
+				confirmLabel={t("common.confirm")}
+				busyLabel={t("common.saving")}
+				busy={busy() === "port"}
+				destructive
+				onOpenChange={(open) => {
+					if (!open) {
+						pendingPortConfirm.set(null);
+					}
+				}}
+				onConfirm={() => {
+					const targetPort = pendingPortConfirm();
+					if (targetPort !== null) void commitPort(targetPort);
+				}}
+			/>
 		</View>
 	);
 }

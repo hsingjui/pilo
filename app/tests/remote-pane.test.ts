@@ -42,6 +42,8 @@ test("editing the port saves a valid value and rejects an invalid one", async ()
 	await app.clear("id:remote-port-input");
 	await app.type("id:remote-port-input", "48002");
 	await app.submit("id:remote-port-input");
+	await app.waitFor("id:remote-port-confirm-dialog-confirm");
+	await app.press("id:remote-port-confirm-dialog-confirm");
 	await app.waitFor("text:Port updated");
 	// An out-of-range port is rejected with the hint, not saved.
 	await app.clear("id:remote-port-input");
@@ -59,10 +61,14 @@ test("regenerating refreshes the pairing link", async () => {
 test("revoking a device removes it from the list", async () => {
 	const app = await openPane();
 	await app.press("id:remote-device:dev-ipad:revoke");
+	await app.waitFor("text:Confirm revoke");
+	await app.press("id:remote-device:dev-ipad:revoke");
 	await app.waitFor("text:1 active");
 	expect(app.shows("text:iPad 192.168.1.21")).toBe(false);
 	expect(app.shows("text:Jui's iPhone 192.168.1.20")).toBe(true);
 	// Revoking the last device shows the empty state.
+	await app.press("id:remote-device:dev-iphone:revoke");
+	await app.waitFor("text:Confirm revoke");
 	await app.press("id:remote-device:dev-iphone:revoke");
 	await app.waitFor("text:No authorized devices");
 });

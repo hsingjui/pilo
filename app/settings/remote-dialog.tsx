@@ -1,4 +1,11 @@
-import { type Accessor, effect, signal, untracked, windowSize } from "nsh";
+import {
+	type Accessor,
+	effect,
+	Scroll,
+	signal,
+	untracked,
+	windowSize,
+} from "nsh";
 
 import type { RemoteHostState } from "@shared/api/remote-types";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
@@ -8,11 +15,12 @@ import { DialogClose } from "../ui/dialog-close";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { useMountedDialog } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { SETTINGS_SM_WIDTH } from "./layout";
 import { RemotePane } from "./remote-pane";
 import type { SettingsClient } from "./settings-dialog";
 
-const POLL_MS = 3_000;
+const POLL_MS = 15_000;
 const MAX_WIDTH = 600;
 
 /**
@@ -58,6 +66,7 @@ export function RemoteDialog(props: {
 		const win = windowSize().width;
 		return Math.min(MAX_WIDTH, win - (win < SETTINGS_SM_WIDTH ? 32 : 64));
 	};
+	const maxBodyHeight = () => Math.max(320, windowSize().height - 160);
 	return (
 		<Dialog
 			testID="remote-dialog"
@@ -82,9 +91,17 @@ export function RemoteDialog(props: {
 						<DialogHeader>
 							<DialogTitle>{() => t("settings.remote")}</DialogTitle>
 						</DialogHeader>
-						<AppToaster.Provider value={toasts}>
-							<RemotePane client={props.client} initialState={initial} />
-						</AppToaster.Provider>
+						<Scroll
+							class="-mx-(--pilo-dialog-padding) min-h-0"
+							contentClass="px-(--pilo-dialog-padding) py-0.5"
+							style={{ maxHeight: maxBodyHeight() }}
+							bounces={false}
+							scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
+						>
+							<AppToaster.Provider value={toasts}>
+								<RemotePane client={props.client} initialState={initial} />
+							</AppToaster.Provider>
+						</Scroll>
 						<DialogClose
 							testID="remote-dialog-close"
 							accessibilityLabel={t("common.close")}

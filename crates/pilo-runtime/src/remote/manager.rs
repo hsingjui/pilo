@@ -105,15 +105,19 @@ impl RemoteServerManager {
         if config.port == port {
             return self.snapshot(runtime).await;
         }
-        let (was_running, lan_base_url) = {
+        let (was_running, running_lan_base_url) = {
             let inner = self.inner.lock().await;
             (
                 inner.running.is_some(),
-                inner.running.as_ref().map_or_else(
-                    || format!("http://{}:{}", lan_ip(), config.port),
-                    |running| running.lan_base_url.clone(),
-                ),
+                inner
+                    .running
+                    .as_ref()
+                    .map(|running| running.lan_base_url.clone()),
             )
+        };
+        let lan_base_url = match running_lan_base_url {
+            Some(url) => url,
+            None => format!("http://{}:{}", lan_ip().await, config.port),
         };
         let paths_for_config = paths.clone();
         let previous_port = config.port;
@@ -211,6 +215,14 @@ impl RemoteServerManager {
     ) -> Result<RemoteHostState, String> {
         let config = access::normalize_config(config)?;
         let paths = runtime.paths.clone();
+        let fallback_lan_ip = {
+            let needs_fallback = self.inner.lock().await.running.is_none();
+            if needs_fallback {
+                Some(lan_ip().await)
+            } else {
+                None
+            }
+        };
         let inner = self.inner.lock().await;
         let lan_base_url = inner
             .running
@@ -222,8 +234,13 @@ impl RemoteServerManager {
             .map(|running| running.pairing.clone());
         tokio::task::spawn_blocking(move || {
             let host = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
-            let lan_base_url =
-                lan_base_url.unwrap_or_else(|| format!("http://{}:{}", lan_ip(), host.port));
+            let lan_base_url = lan_base_url.unwrap_or_else(|| {
+                format!(
+                    "http://{}:{}",
+                    fallback_lan_ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                    host.port
+                )
+            });
             let before = load_access_config(&paths, &lan_base_url)?;
             let changed = access::targets_changed(&before, &config);
             if changed && let Some(pairing) = &pairing {
@@ -265,7 +282,7 @@ impl RemoteServerManager {
             addresses.push(RemoteAccessAddress {
                 id: "lan".to_owned(),
                 name: String::new(),
-                base_url: format!("http://{}:{}", lan_ip(), state.port),
+                base_url: format!("http://{}:{}", lan_ip().await, state.port),
             });
         }
         let entry_address_id = addresses
@@ -333,13 +350,24 @@ impl RemoteServerManager {
         });
         let last_error = inner.last_error.clone();
         drop(inner);
+        let fallback_lan_ip = if running.is_none() {
+            Some(lan_ip().await)
+        } else {
+            None
+        };
         tokio::task::spawn_blocking(move || {
             let db = storage::open_with_paths(&paths)?;
             let host = storage::get_remote_host_config(&db)?;
             let _ = storage::delete_expired_remote_devices(&db, storage::now_ms());
             let devices = storage::list_remote_devices(&db)?;
             let lan_base_url = running.as_ref().map_or_else(
-                || format!("http://{}:{}", lan_ip(), host.port),
+                || {
+                    format!(
+                        "http://{}:{}",
+                        fallback_lan_ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        host.port
+                    )
+                },
                 |(_, lan, _)| lan.clone(),
             );
             let config = load_access_config(&paths, &lan_base_url)?;
@@ -423,6 +451,7 @@ impl RemoteServerManager {
     }
 
     async fn start(&self, runtime: &Runtime, port: u16) -> Result<(), String> {
+        let detected_lan_ip = lan_ip().await;
         let mut inner = self.inner.lock().await;
         if inner.running.is_some() {
             return Ok(());
@@ -434,7 +463,7 @@ impl RemoteServerManager {
             .local_addr()
             .map_err(|error| format!("failed to read Remote WebUI listener address: {error}"))?
             .port();
-        let lan_base_url = format!("http://{}:{actual_port}", lan_ip());
+        let lan_base_url = format!("http://{detected_lan_ip}:{actual_port}");
         let paths = runtime.paths.clone();
         let pairing = Arc::new(PairingSession::default());
         let pairing_for_init = pairing.clone();
@@ -533,16 +562,21 @@ fn normalize_public_base_url(input: &str) -> Result<String, String> {
     }
 }
 
-fn lan_ip() -> IpAddr {
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0));
-    let Ok(socket) = socket else {
-        return IpAddr::V4(Ipv4Addr::LOCALHOST);
-    };
-    if socket.connect((Ipv4Addr::new(8, 8, 8, 8), 80)).is_ok()
-        && let Ok(address) = socket.local_addr()
-        && !address.ip().is_unspecified()
+async fn lan_ip() -> IpAddr {
+    if let Ok(ips) = super::lan::list_lan_ips().await
+        && let Some(ip) = ips.into_iter().find_map(|raw| raw.parse::<Ipv4Addr>().ok())
     {
-        return address.ip();
+        return IpAddr::V4(ip);
+    }
+    if let Ok(socket) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
+        && socket.connect((Ipv4Addr::new(8, 8, 8, 8), 80)).is_ok()
+        && let Ok(address) = socket.local_addr()
+        && let IpAddr::V4(ip) = address.ip()
+        && !ip.is_unspecified()
+        && !ip.is_loopback()
+        && !ip.is_link_local()
+    {
+        return IpAddr::V4(ip);
     }
     IpAddr::V4(Ipv4Addr::LOCALHOST)
 }

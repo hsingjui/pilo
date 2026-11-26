@@ -186,12 +186,13 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 			if (!entry || nextInfo.expiresAtMs <= Date.now()) {
 				throw new RemotePairingError(401, "invalid or expired pairing link");
 			}
-			const target = pairingTargetAddress(
-				nextInfo.addresses,
-				context.addressId,
-				currentBoot.target,
-				origin,
-			);
+			const target =
+				pairingTargetAddress(
+					nextInfo.addresses,
+					context.addressId,
+					currentBoot.target,
+					origin,
+				) ?? nextInfo.addresses.find((address) => address.baseUrl === origin);
 			const nextContext = refreshPairingContext(storage, {
 				...context,
 				addressId: target?.id ?? context.addressId,
@@ -226,6 +227,18 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 			const result = await pair(request.secret, target.id, request.requestId);
 			if (cancelled) return;
 			await saveToken(result.token);
+			info.update((current) =>
+				current
+					? {
+							...current,
+							addresses: current.addresses.map((address) =>
+								address.id === target.id
+									? { ...address, issued: true }
+									: address,
+							),
+						}
+					: current,
+			);
 			authorized.set(true);
 			if (autoOpen) openWorkspace(result.token);
 		})()
@@ -242,6 +255,25 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 				if (!cancelled) busy.set(false);
 			});
 
+		cleanup(() => {
+			cancelled = true;
+		});
+	});
+
+	// Allow an already-paired device that scanned an expired link to return to Pilo.
+	effect(() => {
+		if (authorized() || boot().context) return;
+		let cancelled = false;
+		void (async () => {
+			const storedToken = await loadToken();
+			if (!storedToken || cancelled) return;
+			try {
+				await verifyToken(storedToken);
+				if (!cancelled) authorized.set(true);
+			} catch {
+				// Keep unauthorized when the saved token is expired or unreachable.
+			}
+		})();
 		cleanup(() => {
 			cancelled = true;
 		});
@@ -536,23 +568,21 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 									</Button>
 								) : null}
 
-								<Button
-									testID="remote-pairing-open"
-									variant={authorized() ? "default" : "outline"}
-									class="min-h-11 px-4"
-									onPress={() => openWorkspace()}
-								>
-									<Text
-										class={
-											authorized()
-												? "font-sans font-medium text-primary-foreground"
-												: "font-sans text-foreground"
-										}
-										style={MOBILE_TEXT.sm}
+								{authorized() ? (
+									<Button
+										testID="remote-pairing-open"
+										variant="default"
+										class="min-h-11 px-4"
+										onPress={() => openWorkspace()}
 									>
-										{() => t("settings.remoteOpenPilo")}
-									</Text>
-								</Button>
+										<Text
+											class="font-sans font-medium text-primary-foreground"
+											style={MOBILE_TEXT.sm}
+										>
+											{() => t("settings.remoteOpenPilo")}
+										</Text>
+									</Button>
+								) : null}
 							</View>
 						</View>
 					</Scroll>

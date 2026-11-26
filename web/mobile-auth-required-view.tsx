@@ -76,12 +76,20 @@ export function MobileAuthRequiredView(props: {
 
 					<Button
 						testID="mobile-toggle-token-input"
-						variant="outline"
-						class="min-h-11 w-full"
+						variant="ghost"
+						size="sm"
+						class="min-h-9 w-full"
 						onPress={() => showTokenInput.update((v) => !v)}
 					>
-						<Text class="font-sans text-foreground" style={MOBILE_TEXT.sm}>
-							{() => (showTokenInput() ? t("common.cancel") : "Device Token")}
+						<Text
+							class="font-sans text-muted-foreground"
+							style={MOBILE_TEXT.xs}
+						>
+							{() =>
+								showTokenInput()
+									? t("common.cancel")
+									: t("settings.remoteManualTokenToggle")
+							}
 						</Text>
 					</Button>
 				</View>
@@ -90,11 +98,11 @@ export function MobileAuthRequiredView(props: {
 					open={showTokenInput()}
 					{...collapsibleRevealProps()}
 					content={
-						<View class="gap-2 pt-4">
+						<View class="gap-2 pt-3">
 							<Input
 								testID="mobile-token-input"
 								value={tokenDraft()}
-								placeholder="Device token..."
+								placeholder={t("settings.remoteManualTokenPlaceholder")}
 								autoCorrect={false}
 								autoCapitalize="none"
 								class="min-h-11"

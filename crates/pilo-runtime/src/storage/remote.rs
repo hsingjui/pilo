@@ -247,6 +247,9 @@ fn row_to_remote_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<(RemoteDevi
     ))
 }
 
+pub(crate) const DEVICE_TOKEN_TTL_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
+const DEVICE_SLIDING_RENEW_THRESHOLD_MS: u64 = 15 * 24 * 60 * 60 * 1_000;
+
 pub(crate) fn authenticate_remote_device(
     db: &SqliteConnection,
     token_hash: &str,
@@ -265,13 +268,38 @@ pub(crate) fn authenticate_remote_device(
     let Some((mut device, _)) = result else {
         return Ok(None);
     };
-    if now_ms.saturating_sub(device.last_seen_at_ms) >= 60_000 {
-        db.execute(
-            "UPDATE remote_devices SET last_seen_at_ms=?1 WHERE id=?2",
-            params![as_i64(now_ms, "device last-seen time")?, device.id],
-        )
-        .map_err(|error| format!("failed to update Remote WebUI device activity: {error}"))?;
-        device.last_seen_at_ms = now_ms;
+    let should_touch = now_ms.saturating_sub(device.last_seen_at_ms) >= 60_000;
+    let remaining_ms = device.expires_at_ms.saturating_sub(now_ms);
+    let should_slide = remaining_ms < DEVICE_SLIDING_RENEW_THRESHOLD_MS;
+    if should_touch || should_slide {
+        let next_last_seen = if should_touch {
+            now_ms
+        } else {
+            device.last_seen_at_ms
+        };
+        let next_expires = if should_slide {
+            now_ms.saturating_add(DEVICE_TOKEN_TTL_MS)
+        } else {
+            device.expires_at_ms
+        };
+        let updated = db
+            .execute(
+                "UPDATE remote_devices
+                 SET last_seen_at_ms=?1, expires_at_ms=?2
+                 WHERE id=?3 AND revoked_at_ms IS NULL AND expires_at_ms>=?4",
+                params![
+                    as_i64(next_last_seen, "device last-seen time")?,
+                    as_i64(next_expires, "device expiry")?,
+                    device.id,
+                    as_i64(now_ms, "authentication time")?,
+                ],
+            )
+            .map_err(|error| format!("failed to update Remote WebUI device activity: {error}"))?;
+        if updated == 0 {
+            return Ok(None);
+        }
+        device.last_seen_at_ms = next_last_seen;
+        device.expires_at_ms = next_expires;
     }
     Ok(Some(device))
 }

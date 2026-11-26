@@ -5,7 +5,6 @@ use crate::{host_paths::HostPaths, storage};
 use pilo_domain::RemoteDevice;
 
 const PAIRING_TTL_MS: u64 = 10 * 60 * 1_000;
-const DEVICE_TOKEN_TTL_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[derive(Clone)]
 pub(crate) struct PairingSecret {
@@ -67,7 +66,7 @@ pub(crate) fn create_device(
         pair_ip: pair_ip.trim().to_owned(),
         created_at_ms: now_ms,
         last_seen_at_ms: now_ms,
-        expires_at_ms: now_ms.saturating_add(DEVICE_TOKEN_TTL_MS),
+        expires_at_ms: now_ms.saturating_add(storage::DEVICE_TOKEN_TTL_MS),
         revoked_at_ms: None,
     };
     Ok(PairedDevice { device, token })
@@ -85,7 +84,7 @@ pub(crate) fn authenticate(paths: &HostPaths, token: &str) -> Result<Option<Remo
 /// 设备已撤销或过期时返回 `None`。
 pub(crate) fn renew_device(paths: &HostPaths, device_id: &str) -> Result<Option<u64>, String> {
     let mut db = storage::open_with_paths(paths)?;
-    storage::renew_remote_device(&mut db, device_id, DEVICE_TOKEN_TTL_MS)
+    storage::renew_remote_device(&mut db, device_id, storage::DEVICE_TOKEN_TTL_MS)
 }
 
 #[cfg(test)]

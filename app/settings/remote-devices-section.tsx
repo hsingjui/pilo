@@ -90,6 +90,7 @@ export function RemoteDevicesSection(props: {
 	onRevoke: (deviceId: string) => void;
 }) {
 	const hasDevices = computed(() => props.devices().length > 0);
+	const confirmingId = signal<string | null>(null);
 	return (
 		<SettingsSection
 			title={t("settings.remoteDevices")}
@@ -106,34 +107,68 @@ export function RemoteDevicesSection(props: {
 			{() =>
 				hasDevices() ? (
 					<Each of={props.devices()} key={(device) => device.id}>
-						{(device) => (
-							<SettingsRow
-								ghostEdge="both"
-								label={
-									<DeviceNameCell
-										device={device}
-										onRename={(name) => props.onRename(device().id, name)}
-									/>
-								}
-							>
-								<SettingsActionButton
-									testID={`remote-device:${device().id}:revoke`}
-									disabled={props.isRevoking(device().id)}
-									onPress={() => props.onRevoke(device().id)}
-								>
-									{() =>
-										props.isRevoking(device().id) ? (
-											<Spinner class="size-3.5" />
-										) : (
-											<Icon name="Trash2" size={14} />
-										)
+						{(device) => {
+							const isConfirming = () => confirmingId() === device().id;
+							return (
+								<SettingsRow
+									ghostEdge="both"
+									label={
+										<DeviceNameCell
+											device={device}
+											onRename={(name) => props.onRename(device().id, name)}
+										/>
 									}
-									<Text class="font-sans text-xs">
-										{t("settings.remoteRevoke")}
-									</Text>
-								</SettingsActionButton>
-							</SettingsRow>
-						)}
+								>
+									<View class="flex-row items-center gap-1.5">
+										{() =>
+											isConfirming() ? (
+												<SettingsActionButton
+													testID={`remote-device:${device().id}:revoke-cancel`}
+													disabled={props.isRevoking(device().id)}
+													onPress={() => confirmingId.set(null)}
+												>
+													<Text class="font-sans text-xs">
+														{t("common.cancel")}
+													</Text>
+												</SettingsActionButton>
+											) : null
+										}
+										<SettingsActionButton
+											testID={`remote-device:${device().id}:revoke`}
+											class={
+												isConfirming()
+													? "border-destructive/40 bg-destructive/10 text-destructive"
+													: undefined
+											}
+											disabled={props.isRevoking(device().id)}
+											onPress={() => {
+												if (!isConfirming()) {
+													confirmingId.set(device().id);
+													return;
+												}
+												confirmingId.set(null);
+												props.onRevoke(device().id);
+											}}
+										>
+											{() =>
+												props.isRevoking(device().id) ? (
+													<Spinner class="size-3.5" />
+												) : (
+													<Icon name="Trash2" size={14} />
+												)
+											}
+											<Text class="font-sans text-xs">
+												{() =>
+													isConfirming()
+														? t("settings.remoteRevokeConfirm")
+														: t("settings.remoteRevoke")
+												}
+											</Text>
+										</SettingsActionButton>
+									</View>
+								</SettingsRow>
+							);
+						}}
 					</Each>
 				) : (
 					<SettingsRow
