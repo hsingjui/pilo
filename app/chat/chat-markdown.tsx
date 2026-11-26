@@ -20,7 +20,7 @@ import type {
 import type { Project } from "@shared/api/projects-types";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
 import {
-	annotateMarkdownDocumentFileLinks,
+	createMarkdownFileLinkAnnotator,
 	resolveChatFileLink,
 } from "@shared/chat/chat-markdown-links";
 import { bytesToBase64 } from "@shared/base64";
@@ -218,10 +218,11 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 	const projectId = computed(() => activeProject()?.id);
 	const projectPath = computed(() => activeProject()?.path);
 	const fileLinkHandler = () => props.onFileLink ?? media.onFileLink;
+	const annotateDocument = createMarkdownFileLinkAnnotator();
 	const document = computed<TextViewDocument>(() => {
 		const parsed = TextView.parse(props.text(), { streaming: true });
 		if (!fileLinkHandler()) return parsed;
-		return annotateMarkdownDocumentFileLinks(parsed, projectPath());
+		return annotateDocument(parsed, projectPath());
 	});
 	// Keep a path's first read while streaming, not across recycled rows.
 	const imageCache = computed(() => {

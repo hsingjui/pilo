@@ -15,8 +15,15 @@ export type ConversationOutlineEntry = {
 	weight: 0 | 1 | 2 | 3;
 };
 
-function plainText(value: string) {
-	return value
+function plainText(value: string, maxChars?: number) {
+	// Without fenced code blocks, a bounded prefix always covers a truncated preview.
+	const source =
+		maxChars !== undefined &&
+		value.length > maxChars * 8 &&
+		!value.includes("```")
+			? value.slice(0, maxChars * 8)
+			: value;
+	return source
 		.replace(/```[\s\S]*?```/g, " ")
 		.replace(/`([^`]+)`/g, "$1")
 		.replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
@@ -45,12 +52,15 @@ function weightForLength(length: number): 0 | 1 | 2 | 3 {
 }
 
 /** 供大纲与会话内查找复用的消息纯文本化。 */
-export function messageSearchText(message: ConversationOutlineMessage): string {
+export function messageSearchText(
+	message: ConversationOutlineMessage,
+	maxChars?: number,
+): string {
 	const source =
 		message.role === "user"
 			? (skillInvocationSummary(message.text) ?? message.text)
 			: message.text;
-	return plainText(source);
+	return plainText(source, maxChars);
 }
 
 function buildOutlineTail(
@@ -76,7 +86,8 @@ function buildOutlineTail(
 		const message = messages[messageIndex];
 		if (message.role === "compaction") continue;
 		if (message.role === "user" || !current) {
-			const summary = messageSearchText(message);
+			const limit = message.role === "assistant" ? 240 : 72;
+			const summary = messageSearchText(message, limit);
 			closeRound();
 			current = {
 				key: message.id,
@@ -91,7 +102,7 @@ function buildOutlineTail(
 		}
 		currentLength += message.text.length;
 		if (!current.preview) {
-			current.preview = truncate(messageSearchText(message), 240);
+			current.preview = truncate(messageSearchText(message, 240), 240);
 		}
 	}
 	closeRound();

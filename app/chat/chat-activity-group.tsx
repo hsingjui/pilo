@@ -170,36 +170,47 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 				open={open()}
 				{...collapsibleRevealProps()}
 				content={
-					<View class="gap-0.5 pt-0.5">
-						{/* Kept by place and kind, as the reply's segments are. */}
-						<Each
-							of={activity()}
-							key={(item, index) =>
-								`${index}:${item.type === "thinking" ? "thinking" : "tool"}`
-							}
-						>
-							{(item) =>
-								untracked(item).type === "thinking" ? (
-									<ChatThinkingActivity
-										activity={item as () => ThinkingActivity}
-										expansion={expansion}
-										expansionKey={() =>
-											chatThinkingExpansionKey(props.expansionKey(), item().id)
+					<>
+						{() =>
+							open() ? (
+								<View class="gap-0.5 pt-0.5">
+									{/* Kept by place and kind, as the reply's segments are. */}
+									<Each
+										of={activity()}
+										key={(item, index) =>
+											`${index}:${item.type === "thinking" ? "thinking" : "tool"}`
 										}
-										showDuration={() => props.preferences().showWorkDuration}
-									/>
-								) : (
-									<ChatToolActivity
-										activity={item as () => ToolCallActivity}
-										expansion={expansion}
-										expansionKey={() =>
-											chatToolExpansionKey(props.messageId(), item().id)
+									>
+										{(item) =>
+											untracked(item).type === "thinking" ? (
+												<ChatThinkingActivity
+													activity={item as () => ThinkingActivity}
+													expansion={expansion}
+													expansionKey={() =>
+														chatThinkingExpansionKey(
+															props.expansionKey(),
+															item().id,
+														)
+													}
+													showDuration={() =>
+														props.preferences().showWorkDuration
+													}
+												/>
+											) : (
+												<ChatToolActivity
+													activity={item as () => ToolCallActivity}
+													expansion={expansion}
+													expansionKey={() =>
+														chatToolExpansionKey(props.messageId(), item().id)
+													}
+												/>
+											)
 										}
-									/>
-								)
-							}
-						</Each>
-					</View>
+									</Each>
+								</View>
+							) : null
+						}
+					</>
 				}
 			/>
 		</View>

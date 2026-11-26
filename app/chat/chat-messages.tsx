@@ -369,7 +369,10 @@ export function ChatMessages(props: ChatMessagesProps) {
 				onScroll={follow}
 				onScrollDragStart={web ? () => webEnd?.setDragging(true) : undefined}
 				onScrollDragEnd={web ? () => webEnd?.setDragging(false) : undefined}
-				onScrollEnd={web ? () => webEnd?.endWheel() : undefined}
+				onScrollEnd={() => {
+					if (web) webEnd?.endWheel();
+					keepPosition();
+				}}
 				onViewableItemsChange={reportVisible}
 			>
 				{(message, index) => (

@@ -234,13 +234,21 @@ function WorkedRegion(
 				open={open()}
 				{...collapsibleRevealProps()}
 				content={
-					<View class="pt-0.5">
-						<WorkSegments
-							{...props}
-							content={props.content}
-							followedByTextAfterContent={props.followedByTextAfterContent}
-						/>
-					</View>
+					<>
+						{() =>
+							open() ? (
+								<View class="pt-0.5">
+									<WorkSegments
+										{...props}
+										content={props.content}
+										followedByTextAfterContent={
+											props.followedByTextAfterContent
+										}
+									/>
+								</View>
+							) : null
+						}
+					</>
 				}
 			/>
 		</View>
@@ -365,20 +373,28 @@ export function ChatAssistantWork(
 								open={completedOpen()}
 								{...collapsibleRevealProps()}
 								content={
-									<Scroll
-										testID="chat-compact-activity-body"
-										class="-mx-1 mt-0.5 max-h-80"
-										bounces={false}
-										scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
-									>
-										<View class="px-1 pr-3 pb-0.5">
-											<WorkSegments
-												{...props}
-												content={() => sections().work}
-												compact="expanded"
-											/>
-										</View>
-									</Scroll>
+									<>
+										{() =>
+											completedOpen() ? (
+												<Scroll
+													testID="chat-compact-activity-body"
+													class="-mx-1 mt-0.5 max-h-80"
+													bounces={false}
+													scrollbar={scrollbarTheme({
+														vertical: scrollbarLook(),
+													})}
+												>
+													<View class="px-1 pr-3 pb-0.5">
+														<WorkSegments
+															{...props}
+															content={() => sections().work}
+															compact="expanded"
+														/>
+													</View>
+												</Scroll>
+											) : null
+										}
+									</>
 								}
 							/>
 						</View>

@@ -76,9 +76,13 @@ export function ChatMessageList(props: ChatMessageListProps) {
 		}
 		return expansion;
 	};
-	const view = computed(() =>
-		chatListView(transcript(), props.messages().length),
-	);
+	const view = computed(() => {
+		const current = transcript();
+		const count =
+			current.historyPrefix.length +
+			(current.conversation?.messages.length ?? 0);
+		return chatListView(current, count);
+	});
 	return (
 		<View testID="chat-message-list" class="min-h-0 min-w-0 flex-1">
 			{() => {

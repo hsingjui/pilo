@@ -130,30 +130,38 @@ export function ChatThinkingActivity(props: {
 				open={showDetails()}
 				{...collapsibleRevealProps()}
 				content={
-					<View class="items-start pt-0.5">
-						<ChatMarkdown
-							class="text-muted-foreground"
-							compact
-							text={() => activity().text.slice(0, visibleEnd())}
-						/>
+					<>
 						{() =>
-							hasHiddenText() ? (
-								<Button
-									variant="ghost"
-									size="sm"
-									onPress={() =>
-										disclose(() =>
-											revealed.update((value) => value + THINKING_REVEAL_CHARS),
-										)
+							showDetails() ? (
+								<View class="items-start pt-0.5">
+									<ChatMarkdown
+										class="text-muted-foreground"
+										compact
+										text={() => activity().text.slice(0, visibleEnd())}
+									/>
+									{() =>
+										hasHiddenText() ? (
+											<Button
+												variant="ghost"
+												size="sm"
+												onPress={() =>
+													disclose(() =>
+														revealed.update(
+															(value) => value + THINKING_REVEAL_CHARS,
+														),
+													)
+												}
+											>
+												<Text class="font-sans">
+													{() => t("chat.showMoreThinking")}
+												</Text>
+											</Button>
+										) : null
 									}
-								>
-									<Text class="font-sans">
-										{() => t("chat.showMoreThinking")}
-									</Text>
-								</Button>
+								</View>
 							) : null
 						}
-					</View>
+					</>
 				}
 			/>
 		</View>

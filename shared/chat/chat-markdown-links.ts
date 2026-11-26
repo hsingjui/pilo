@@ -2,10 +2,13 @@ import { languageForPath } from "@shared/code-languages";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 function hasUnsafePathCharacters(value: string): boolean {
-	return Array.from(value).some((char) => {
-		const code = char.charCodeAt(0);
-		return char === "\\" || code < 32 || (code >= 127 && code <= 159);
-	});
+	for (let index = 0; index < value.length; index += 1) {
+		const code = value.charCodeAt(index);
+		if (code === 92 || code < 32 || (code >= 127 && code <= 159)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /** File links are user-activated previews/system opens, never browser navigation. */
@@ -867,6 +870,117 @@ function annotateBlocks(
 		}
 	}
 	return result;
+}
+
+function sameMarkdownValue(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true;
+	if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+	if (Array.isArray(a)) {
+		if (!Array.isArray(b) || a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i += 1) {
+			if (!sameMarkdownValue(a[i], b[i])) return false;
+		}
+		return true;
+	}
+	if (Array.isArray(b)) return false;
+	const aObj = a as Record<string, unknown>;
+	const bObj = b as Record<string, unknown>;
+	const keys = Object.keys(aObj);
+	if (keys.length !== Object.keys(bObj).length) return false;
+	for (let i = 0; i < keys.length; i += 1) {
+		const key = keys[i];
+		if (!Object.hasOwn(bObj, key) || !sameMarkdownValue(aObj[key], bObj[key])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function annotateSingleBlock(
+	block: MarkdownBlockLike,
+	projectPath?: string,
+): MarkdownBlockLike {
+	return annotateBlocks([block], projectPath)[0] ?? block;
+}
+
+/**
+ * Stateful annotator for streaming Markdown documents: reuses annotated
+ * blocks for unchanged prefixes so streaming tokens only re-annotate the
+ * active trailing block(s) instead of walking the full AST on every delta.
+ */
+export function createMarkdownFileLinkAnnotator() {
+	let lastProjectPath: string | undefined;
+	let lastRawBlocks: readonly MarkdownBlockLike[] = [];
+	let lastAnnotatedBlocks: MarkdownBlockLike[] = [];
+	let lastRawFootnotes: MarkdownDocumentLike["footnotes"];
+	let lastAnnotatedFootnotes: MarkdownDocumentLike["footnotes"];
+
+	return function annotate<T extends MarkdownDocumentLike>(
+		document: T,
+		projectPath?: string,
+	): T {
+		if (projectPath !== lastProjectPath) {
+			lastProjectPath = projectPath;
+			lastRawBlocks = [];
+			lastAnnotatedBlocks = [];
+			lastRawFootnotes = undefined;
+			lastAnnotatedFootnotes = undefined;
+		}
+
+		const blocks = document.blocks;
+		let unchangedPrefix = 0;
+		const limit = Math.min(blocks.length, lastRawBlocks.length);
+		while (
+			unchangedPrefix < limit &&
+			sameMarkdownValue(blocks[unchangedPrefix], lastRawBlocks[unchangedPrefix])
+		) {
+			unchangedPrefix += 1;
+		}
+
+		let annotatedBlocks: MarkdownBlockLike[];
+		if (
+			unchangedPrefix === blocks.length &&
+			blocks.length === lastAnnotatedBlocks.length
+		) {
+			annotatedBlocks = lastAnnotatedBlocks;
+		} else {
+			annotatedBlocks = lastAnnotatedBlocks.slice(0, unchangedPrefix);
+			for (let i = unchangedPrefix; i < blocks.length; i += 1) {
+				annotatedBlocks.push(annotateSingleBlock(blocks[i], projectPath));
+			}
+			lastRawBlocks = blocks;
+			lastAnnotatedBlocks = annotatedBlocks;
+		}
+
+		let footnotes = document.footnotes;
+		if (footnotes) {
+			if (
+				lastRawFootnotes &&
+				sameMarkdownValue(footnotes, lastRawFootnotes) &&
+				lastAnnotatedFootnotes
+			) {
+				footnotes = lastAnnotatedFootnotes;
+			} else {
+				const nextFootnotes = footnotes.map((footnote) =>
+					Object.assign({}, footnote, {
+						children: annotateBlocks(footnote.children, projectPath),
+					}),
+				);
+				lastRawFootnotes = footnotes;
+				lastAnnotatedFootnotes = nextFootnotes;
+				footnotes = nextFootnotes;
+			}
+		} else {
+			lastRawFootnotes = undefined;
+			lastAnnotatedFootnotes = undefined;
+		}
+
+		return {
+			...document,
+			blocks: annotatedBlocks,
+			...(footnotes ? { footnotes } : {}),
+		} as T;
+	};
 }
 
 /** Annotate a parsed Markdown document (`TextView.parse`) with clickable file links from inline code and plain text. */
