@@ -202,22 +202,32 @@ pub(crate) fn fs_read_dir(params: FsPathParams) -> Result<Value, String> {
             fs_entry(&project_root, &entry.path())
         })
         .collect::<Result<Vec<_>, String>>()?;
-    entries.sort_by(|a, b| {
+    entries.sort_by_cached_key(|entry| {
         (
-            (a.kind != FsEntryKind::Directory) as u8,
-            a.name.to_lowercase(),
+            (entry.kind != FsEntryKind::Directory) as u8,
+            entry.name.to_lowercase(),
         )
-            .cmp(&(
-                (b.kind != FsEntryKind::Directory) as u8,
-                b.name.to_lowercase(),
-            ))
     });
     to_value(entries)
 }
 
 pub(crate) fn fs_read_file(params: FsPathParams) -> Result<Vec<u8>, String> {
     let (_, path) = checked_existing_path(&params.project, &params.path, false)?;
-    let metadata = std::fs::metadata(&path).map_err(|error| error.to_string())?;
+    let before_open = std::fs::metadata(&path).map_err(|error| error.to_string())?;
+    if !before_open.is_file() {
+        return Err("file read requires a regular file".to_owned());
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+
+        // A file replaced by a FIFO after the check must not block open.
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file() {
         return Err("file read requires a regular file".to_owned());
     }
@@ -228,10 +238,8 @@ pub(crate) fn fs_read_file(params: FsPathParams) -> Result<Vec<u8>, String> {
             params.path, MAX_BINARY_PAYLOAD_BYTES
         ));
     }
-    let mut data = Vec::new();
-    std::fs::File::open(path)
-        .map_err(|error| error.to_string())?
-        .take(MAX_BINARY_PAYLOAD_BYTES as u64 + 1)
+    let mut data = Vec::with_capacity(size as usize);
+    file.take(MAX_BINARY_PAYLOAD_BYTES as u64 + 1)
         .read_to_end(&mut data)
         .map_err(|error| error.to_string())?;
     if data.len() > MAX_BINARY_PAYLOAD_BYTES {
@@ -292,17 +300,27 @@ pub(crate) fn fs_remove(params: FsPathParams) -> Result<Value, String> {
 }
 
 pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
+    const MAX_EMPTY_QUERY_SCAN_ENTRIES: usize = 20_000;
+    const EMPTY_QUERY_RESULT_LIMIT: usize = 5;
+
     fn visit(
         root: &Path,
         current: &Path,
         query: &str,
+        visited: &mut usize,
         result: &mut Vec<(String, u128)>,
     ) -> Result<(), String> {
         if !query.is_empty() && result.len() >= 200 {
             return Ok(());
         }
+        if query.is_empty() && *visited >= MAX_EMPTY_QUERY_SCAN_ENTRIES {
+            return Ok(());
+        }
         for entry in std::fs::read_dir(current).map_err(|error| error.to_string())? {
             if !query.is_empty() && result.len() >= 200 {
+                break;
+            }
+            if query.is_empty() && *visited >= MAX_EMPTY_QUERY_SCAN_ENTRIES {
                 break;
             }
             let entry = entry.map_err(|error| error.to_string())?;
@@ -313,17 +331,34 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
                 continue;
             }
             if file_type.is_dir() {
-                if matches!(name.as_str(), ".git" | "node_modules" | "target" | "dist") {
+                if matches!(name.as_str(), ".git" | "node_modules" | "target" | "dist")
+                    || (query.is_empty()
+                        && matches!(
+                            name.as_str(),
+                            ".venv"
+                                | "venv"
+                                | "__pycache__"
+                                | ".next"
+                                | ".nuxt"
+                                | "build"
+                                | "out"
+                                | ".cache"
+                                | "vendor"
+                                | ".gradle"
+                                | "Pods"
+                        ))
+                {
                     continue;
                 }
-                visit(root, &path, query, result)?;
+                visit(root, &path, query, visited, result)?;
             } else if file_type.is_file() {
+                *visited += 1;
                 let relative = path
                     .strip_prefix(root)
                     .map_err(|error| error.to_string())?
                     .to_string_lossy()
                     .replace('\\', "/");
-                if query.is_empty() || relative.to_lowercase().contains(query) {
+                if query.is_empty() {
                     let modified = entry
                         .metadata()
                         .ok()
@@ -331,11 +366,19 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
                         .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
                         .map(|value| value.as_millis())
                         .unwrap_or_default();
-                    result.push((relative, modified));
-                    if query.is_empty() {
+                    if result.len() < EMPTY_QUERY_RESULT_LIMIT {
+                        result.push((relative, modified));
+                        if result.len() == EMPTY_QUERY_RESULT_LIMIT {
+                            result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                        }
+                    } else if let Some(last) = result.last()
+                        && (modified > last.1 || (modified == last.1 && relative < last.0))
+                    {
+                        result[EMPTY_QUERY_RESULT_LIMIT - 1] = (relative, modified);
                         result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-                        result.truncate(5);
                     }
+                } else if relative.to_lowercase().contains(query) {
+                    result.push((relative, 0));
                 }
             }
         }
@@ -343,8 +386,13 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
     }
     let root = canonical_project(&params.project)?;
     let query = params.query.trim().to_lowercase();
-    let mut result = Vec::new();
-    visit(&root, &root, &query, &mut result)?;
+    let mut visited = 0;
+    let mut result = Vec::with_capacity(if query.is_empty() {
+        EMPTY_QUERY_RESULT_LIMIT
+    } else {
+        64
+    });
+    visit(&root, &root, &query, &mut visited, &mut result)?;
     if query.is_empty() {
         result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     }

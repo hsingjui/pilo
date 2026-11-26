@@ -55,8 +55,18 @@ function resolveCodeFontSize(
 }
 
 function clampLineIndex(content: string, oneBasedLine: number): number {
-	const lineCount = Math.max(1, content.split(/\r\n|\r|\n/).length);
-	return Math.min(lineCount - 1, Math.max(0, oneBasedLine - 1));
+	const target = Math.max(0, oneBasedLine - 1);
+	if (target === 0) return 0;
+	let line = 0;
+	for (let i = 0; i < content.length; i += 1) {
+		const code = content.charCodeAt(i);
+		if (code === 10 || code === 13) {
+			line += 1;
+			if (line >= target) return target;
+			if (code === 13 && content.charCodeAt(i + 1) === 10) i += 1;
+		}
+	}
+	return line;
 }
 
 function lineRangeDecorations(
@@ -64,11 +74,31 @@ function lineRangeDecorations(
 	range: WorkspaceLineRange | undefined,
 ): EditorDecoration[] {
 	if (!range) return [];
-	const lines = content.split(/\r\n|\r|\n/);
-	const maxLine = Math.max(0, lines.length - 1);
-	const startLine = Math.min(maxLine, Math.max(0, range.start - 1));
-	const endLine = Math.min(maxLine, Math.max(startLine, range.end - 1));
-	const endColumn = lines[endLine]?.length ?? 0;
+	const targetStart = Math.max(0, range.start - 1);
+	const targetEnd = Math.max(targetStart, range.end - 1);
+	let line = 0;
+	let lineStart = 0;
+	let lastLineStart = 0;
+	let lastLineEnd = content.length;
+	for (let i = 0; i < content.length; i += 1) {
+		const code = content.charCodeAt(i);
+		if (code === 10 || code === 13) {
+			if (line === targetEnd) {
+				lastLineStart = lineStart;
+				lastLineEnd = i;
+				break;
+			}
+			if (code === 13 && content.charCodeAt(i + 1) === 10) i += 1;
+			line += 1;
+			lineStart = i + 1;
+			lastLineStart = lineStart;
+			lastLineEnd = content.length;
+		}
+	}
+	const maxLine = line === targetEnd ? targetEnd : line;
+	const startLine = Math.min(maxLine, targetStart);
+	const endLine = Math.min(maxLine, targetEnd);
+	const endColumn = Math.max(0, lastLineEnd - lastLineStart);
 	return [
 		{
 			range: {

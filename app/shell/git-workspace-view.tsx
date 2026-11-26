@@ -1,6 +1,8 @@
 import {
+	cleanup,
 	computed,
 	effect,
+	List,
 	Scroll,
 	signal,
 	Text,
@@ -516,6 +518,20 @@ function GitWorkspacePanel(props: {
 	});
 
 	const fade = useEnterFade(props.visible);
+	let resizeCommitTimer: ReturnType<typeof setTimeout> | undefined;
+	cleanup(() => {
+		if (resizeCommitTimer !== undefined) {
+			clearTimeout(resizeCommitTimer);
+			resizeCommitTimer = undefined;
+		}
+	});
+	const scheduleListWidthCommit = (pct: number) => {
+		if (resizeCommitTimer !== undefined) clearTimeout(resizeCommitTimer);
+		resizeCommitTimer = setTimeout(() => {
+			resizeCommitTimer = undefined;
+			props.onViewChange({ listWidth: pct });
+		}, 100);
+	};
 
 	return (
 		<View
@@ -628,7 +644,7 @@ function GitWorkspacePanel(props: {
 								return;
 							}
 							const pct = Math.min(50, (listSize / width) * 100);
-							props.onViewChange({ listWidth: pct });
+							scheduleListWidthCommit(pct);
 						}}
 					>
 						{/* Left file list panel */}
@@ -703,110 +719,102 @@ function GitWorkspacePanel(props: {
 								</View>
 
 								{/* Changed files list */}
-								<Scroll
+								<List
 									testID="git-file-list"
 									class="min-h-0 flex-1"
 									contentClass="px-2"
+									contentStyle={{ gap: 2 }}
 									bounces={false}
 									scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
-								>
-									{() => {
-										if (!hasVisibleFiles()) {
-											return (
-												<EmptyState
-													testID="git-files-empty"
-													variant="compact"
-													icon={
-														<Icon
-															name="CheckCheck"
-															size={16}
-															color={token("status-success")}
-														/>
-													}
-													title={() => t("file.noChanges")}
-													description={() =>
-														mode() === "working"
-															? t("file.workingClean")
-															: t("file.stagedClean")
-													}
+									each={visibleFiles()}
+									keyExtractor={(file) => file.path}
+									estimatedItemSize={34}
+									empty={() => (
+										<EmptyState
+											testID="git-files-empty"
+											variant="compact"
+											icon={
+												<Icon
+													name="CheckCheck"
+													size={16}
+													color={token("status-success")}
 												/>
+											}
+											title={() => t("file.noChanges")}
+											description={() =>
+												mode() === "working"
+													? t("file.workingClean")
+													: t("file.stagedClean")
+											}
+										/>
+									)}
+								>
+									{(entry) => {
+										const path = () => entry().path;
+										const name = () => {
+											const currentPath = path();
+											return currentPath.slice(
+												currentPath.lastIndexOf("/") + 1,
 											);
-										}
+										};
+										const hintText = () => {
+											const current = entry();
+											return current.originalPath
+												? `${current.originalPath} → ${current.path}`
+												: current.path;
+										};
+										const selected = () => activePath() === path();
+										const counts = computed(() => lineChanges(entry(), mode()));
+										const label = () => {
+											const changes = counts();
+											return changes
+												? `${hintText()} · ${t("file.lineChanges", changes)}`
+												: hintText();
+										};
+										const pointerBlur = blurOnPointerPress();
 										return (
-											<View class="gap-0.5">
-												<Each of={visibleFiles()} key={(file) => file.path}>
-													{(entry) => {
-														const file = untracked(entry);
-														const split = file.path.lastIndexOf("/");
-														const name = file.path.slice(split + 1);
-														const hintText = () => {
-															const original = entry().originalPath;
-															return original
-																? `${original} → ${file.path}`
-																: file.path;
-														};
-														const selected = () => activePath() === file.path;
-														const counts = computed(() =>
-															lineChanges(entry(), mode()),
-														);
-														const label = () => {
-															const changes = counts();
-															return changes
-																? `${hintText()} · ${t("file.lineChanges", changes)}`
-																: hintText();
-														};
-														const pointerBlur = blurOnPointerPress();
-														return (
-															<BaseButton
-																testID={`git-file-row:${file.path}`}
-																ref={pointerBlur.ref}
-																onMouseUp={pointerBlur.onMouseUp}
-																selected={selected()}
-																accessibilityLabel={label()}
-																tooltip={
-																	<Tooltip>
-																		<Text class="font-mono text-xs">
-																			{hintText}
-																		</Text>
-																	</Tooltip>
-																}
-																class={classNames(
-																	"min-h-8 w-full flex-row items-center gap-2.5 rounded-(--pilo-radius-md) px-3 py-1.5 transition-colors focus-visible:outline-hidden",
-																	selected() ? "bg-muted" : "hover:bg-hover/70",
-																)}
-																focusVisibleStyle={focusRingStyle(
-																	token("ring"),
-																)}
-																onPress={() =>
-																	props.onViewChange({
-																		selectedPath: file.path,
-																		showDetail: true,
-																	})
-																}
-															>
-																<Icon
-																	name="FileCode"
-																	size={16}
-																	color={token("muted-foreground")}
-																/>
-																<Text class="min-w-0 flex-1 truncate font-sans text-xs font-medium text-foreground">
-																	{name}
-																</Text>
-																{() => {
-																	const changes = counts();
-																	return changes ? (
-																		<LineChangeCounts {...changes} />
-																	) : null;
-																}}
-																<FileStatusBadge file={entry} mode={mode} />
-															</BaseButton>
-														);
-													}}
-												</Each>
-											</View>
+											<BaseButton
+												testID={`git-file-row:${path()}`}
+												ref={pointerBlur.ref}
+												onMouseUp={pointerBlur.onMouseUp}
+												selected={selected()}
+												accessibilityLabel={label()}
+												tooltip={
+													<Tooltip>
+														<Text class="font-mono text-xs">{hintText}</Text>
+													</Tooltip>
+												}
+												class={classNames(
+													"min-h-8 w-full flex-row items-center gap-2.5 rounded-(--pilo-radius-md) px-3 py-1.5 transition-colors focus-visible:outline-hidden",
+													selected() ? "bg-muted" : "hover:bg-hover/70",
+												)}
+												focusVisibleStyle={focusRingStyle(token("ring"))}
+												onPress={() =>
+													props.onViewChange({
+														selectedPath: path(),
+														showDetail: true,
+													})
+												}
+											>
+												<Icon
+													name="FileCode"
+													size={16}
+													color={token("muted-foreground")}
+												/>
+												<Text class="min-w-0 flex-1 truncate font-sans text-xs font-medium text-foreground">
+													{name}
+												</Text>
+												{() => {
+													const changes = counts();
+													return changes ? (
+														<LineChangeCounts {...changes} />
+													) : null;
+												}}
+												<FileStatusBadge file={entry} mode={mode} />
+											</BaseButton>
 										);
 									}}
-								</Scroll>
+								</List>
 							</View>
 						</ResizablePanel>
 

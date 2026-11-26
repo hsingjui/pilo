@@ -36,10 +36,8 @@ pub struct GitStatus {
 }
 
 pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitStatus, String> {
-    let prefix = run_checked(servers, project, "git", &["rev-parse", "--show-prefix"]).await?;
-    let prefix = String::from_utf8_lossy(&prefix);
-    let prefix = prefix.trim_end_matches(['\r', '\n']);
-    let (branch, output, unstaged_stats, staged_stats) = tokio::join!(
+    let (prefix, branch, output) = tokio::join!(
+        run_checked(servers, project, "git", &["rev-parse", "--show-prefix"]),
         branch(servers, project),
         run_checked(
             servers,
@@ -55,32 +53,53 @@ pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitSta
                 ".",
             ],
         ),
-        numstat(servers, project, false),
-        numstat(servers, project, true),
     );
+    let prefix = prefix?;
+    let prefix = String::from_utf8_lossy(&prefix);
+    let prefix = prefix.trim_end_matches(['\r', '\n']);
     let output = output?;
-    Ok(GitStatus {
-        branch,
-        files: parse_porcelain_v1_z(&output)
-            .into_iter()
-            .filter_map(|mut file| {
-                file.path = file.path.strip_prefix(prefix)?.to_owned();
-                if let Some(original) = &file.original_path {
-                    file.original_path =
-                        Some(original.strip_prefix(prefix).unwrap_or(original).to_owned());
+    let mut files: Vec<GitFileStatus> = parse_porcelain_v1_z(&output)
+        .into_iter()
+        .filter_map(|mut file| {
+            file.path = file.path.strip_prefix(prefix)?.to_owned();
+            if let Some(original) = &file.original_path {
+                file.original_path =
+                    Some(original.strip_prefix(prefix).unwrap_or(original).to_owned());
+            }
+            Some(file)
+        })
+        .collect();
+    let has_staged = files.iter().any(|file| file.staged);
+    let has_unstaged = files.iter().any(|file| file.unstaged && !file.untracked);
+    if has_staged || has_unstaged {
+        let (unstaged_stats, staged_stats) = tokio::join!(
+            async {
+                if has_unstaged {
+                    numstat(servers, project, false).await
+                } else {
+                    HashMap::new()
                 }
-                if let Some(&(additions, deletions)) = staged_stats.get(&file.path) {
-                    file.staged_additions = Some(additions);
-                    file.staged_deletions = Some(deletions);
+            },
+            async {
+                if has_staged {
+                    numstat(servers, project, true).await
+                } else {
+                    HashMap::new()
                 }
-                if let Some(&(additions, deletions)) = unstaged_stats.get(&file.path) {
-                    file.unstaged_additions = Some(additions);
-                    file.unstaged_deletions = Some(deletions);
-                }
-                Some(file)
-            })
-            .collect(),
-    })
+            },
+        );
+        for file in &mut files {
+            if let Some(&(additions, deletions)) = staged_stats.get(&file.path) {
+                file.staged_additions = Some(additions);
+                file.staged_deletions = Some(deletions);
+            }
+            if let Some(&(additions, deletions)) = unstaged_stats.get(&file.path) {
+                file.unstaged_additions = Some(additions);
+                file.unstaged_deletions = Some(deletions);
+            }
+        }
+    }
+    Ok(GitStatus { branch, files })
 }
 
 pub async fn diff(
