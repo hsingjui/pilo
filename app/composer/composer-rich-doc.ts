@@ -266,6 +266,72 @@ export function richDocImageIds(
 	return ids;
 }
 
+/**
+ * 构造在文档 `pos` 处插入内联图片所需的节点序列：
+ * - 若插入点紧贴前文内容/引用，则补一个前导空格；
+ * - 连续多张图片之间以单个空格分隔；
+ * - 若插入点在段尾或紧贴后续非空白内容，则补一个尾随空格，便于继续粘贴或输入。
+ */
+export function buildRichImageInsertNodes(
+	doc: RichNodeJSON | null | undefined,
+	pos: number,
+	images: readonly Pick<ChatImageAttachment, "id" | "name" | "size">[],
+): RichNodeJSON[] {
+	if (images.length === 0) return [];
+	let beforeKind: "none" | "space" | "content" = "none";
+	let afterKind: "none" | "space" | "content" = "none";
+
+	let cursor = 0;
+	for (const block of doc?.content ?? []) {
+		const blockStart = cursor + 1;
+		const children = block.content ?? [];
+		const blockLen = children.reduce(
+			(sum, child) => sum + inlineNodeSize(child),
+			0,
+		);
+		const blockEnd = blockStart + blockLen;
+		if (pos >= blockStart && pos <= blockEnd) {
+			let childPos = blockStart;
+			for (const child of children) {
+				const size = inlineNodeSize(child);
+				const childEnd = childPos + size;
+				if (childPos < pos && pos <= childEnd) {
+					if (child.type === "text") {
+						const ch = (child.text ?? "")[pos - childPos - 1] ?? "";
+						beforeKind = /\s/.test(ch) ? "space" : "content";
+					} else if (child.type === "hardBreak") {
+						beforeKind = "space";
+					} else {
+						beforeKind = "content";
+					}
+				}
+				if (childPos <= pos && pos < childEnd) {
+					if (child.type === "text") {
+						const ch = (child.text ?? "")[pos - childPos] ?? "";
+						afterKind = /\s/.test(ch) ? "space" : "content";
+					} else if (child.type === "hardBreak") {
+						afterKind = "space";
+					} else {
+						afterKind = "content";
+					}
+				}
+				childPos = childEnd;
+			}
+			break;
+		}
+		cursor = blockEnd + 1;
+	}
+
+	const nodes: RichNodeJSON[] = [];
+	if (beforeKind === "content") nodes.push({ type: "text", text: " " });
+	for (let i = 0; i < images.length; i++) {
+		if (i > 0) nodes.push({ type: "text", text: " " });
+		nodes.push(createImageMentionNode(images[i]!));
+	}
+	if (afterKind !== "space") nodes.push({ type: "text", text: " " });
+	return nodes;
+}
+
 /** 计算待移除内联图片节点在文档中的精确位置范围。 */
 export function findRichImageNodeRanges(
 	doc: RichNodeJSON | null | undefined,
@@ -288,6 +354,105 @@ export function findRichImageNodeRanges(
 			pos += size;
 		}
 		pos += 1; // paragraph end
+	}
+	return ranges;
+}
+
+type ParagraphSlot = "remove" | "space" | "whitespace" | "content";
+
+/**
+ * 计算从文档移除内联图片时的删除范围，并顺带清理归属于被移除图片的单个分隔空格，
+ * 同时保证不会把原本由空格隔开的相邻正文或引用粘连到一起。
+ */
+export function findRichImageRemovalRanges(
+	doc: RichNodeJSON | null | undefined,
+	removeIds: ReadonlySet<string>,
+): RichRange[] {
+	if (removeIds.size === 0) return [];
+	const ranges: RichRange[] = [];
+	let pos = 0;
+	for (const block of doc?.content ?? []) {
+		const blockStart = pos + 1;
+		const slots: ParagraphSlot[] = [];
+		let hasRemove = false;
+		for (const child of block.content ?? []) {
+			if (child.type === "text") {
+				const text = child.text ?? "";
+				// Editor positions count UTF-16 code units, including both halves of a surrogate pair.
+				for (let i = 0; i < text.length; i++) {
+					const ch = text.charAt(i);
+					slots.push(
+						ch === " " ? "space" : /\s/.test(ch) ? "whitespace" : "content",
+					);
+				}
+			} else if (child.type === "hardBreak") {
+				slots.push("whitespace");
+			} else if (
+				child.type === CHAT_MENTION_NODE_TYPE &&
+				child.attrs?.kind === "image" &&
+				typeof child.attrs.path === "string" &&
+				removeIds.has(child.attrs.path)
+			) {
+				slots.push("remove");
+				hasRemove = true;
+			} else {
+				slots.push("content");
+			}
+		}
+		if (hasRemove) {
+			const drop = slots.map((slot) => slot === "remove");
+			const prevKept = (from: number) => {
+				for (let j = from; j >= 0; j--) {
+					if (!drop[j]) return j;
+				}
+				return -1;
+			};
+			const nextKept = (from: number) => {
+				for (let j = from; j < slots.length; j++) {
+					if (!drop[j]) return j;
+				}
+				return -1;
+			};
+			for (let i = 0; i < slots.length; i++) {
+				if (slots[i] !== "remove") continue;
+				const leftIdx = prevKept(i - 1);
+				const leftKind = leftIdx >= 0 ? slots[leftIdx]! : "none";
+				const rightImmediate = i + 1;
+				if (
+					rightImmediate < slots.length &&
+					!drop[rightImmediate] &&
+					slots[rightImmediate] === "space"
+				) {
+					const afterSpaceIdx = nextKept(rightImmediate + 1);
+					const afterSpaceKind =
+						afterSpaceIdx >= 0 ? slots[afterSpaceIdx]! : "none";
+					if (leftKind !== "content" || afterSpaceKind !== "content") {
+						drop[rightImmediate] = true;
+						continue;
+					}
+				}
+				if (leftIdx >= 0 && slots[leftIdx] === "space") {
+					const rightIdx = nextKept(i + 1);
+					const rightKind = rightIdx >= 0 ? slots[rightIdx]! : "none";
+					const beforeSpaceIdx = prevKept(leftIdx - 1);
+					const beforeSpaceKind =
+						beforeSpaceIdx >= 0 ? slots[beforeSpaceIdx]! : "none";
+					if (rightKind !== "content" || beforeSpaceKind !== "content") {
+						drop[leftIdx] = true;
+					}
+				}
+			}
+			let runStart = -1;
+			for (let i = 0; i <= slots.length; i++) {
+				if (i < slots.length && drop[i]) {
+					if (runStart < 0) runStart = i;
+				} else if (runStart >= 0) {
+					ranges.push({ from: blockStart + runStart, to: blockStart + i });
+					runStart = -1;
+				}
+			}
+		}
+		pos = blockStart + slots.length + 1;
 	}
 	return ranges;
 }
@@ -351,6 +516,7 @@ export function activeRichSuggestion(
 			let segStartValueOffset = valueOffset;
 			let segText = "";
 			let hasLeadingContent = blockIndex > 0;
+			let hasLeadingImage = false;
 
 			for (const child of children) {
 				const size = inlineNodeSize(child);
@@ -377,8 +543,15 @@ export function activeRichSuggestion(
 								? "\n"
 								: "";
 					valueOffset += raw.length;
-					hasLeadingContent ||=
-						segText.length > 0 || child.attrs?.kind !== "image";
+					if (
+						child.type === CHAT_MENTION_NODE_TYPE &&
+						child.attrs?.kind === "image"
+					) {
+						hasLeadingImage = true;
+						hasLeadingContent ||= segText.trim().length > 0;
+					} else {
+						hasLeadingContent = true;
+					}
 					segText = "";
 					segStartPos = childEnd;
 					segStartValueOffset = valueOffset;
@@ -396,7 +569,15 @@ export function activeRichSuggestion(
 			const token = segText.slice(tokenOffsetInSeg);
 			const trigger = token[0];
 			if (trigger !== "@" && trigger !== "/") return null;
-			if (trigger === "/" && (hasLeadingContent || tokenOffsetInSeg !== 0)) {
+			if (
+				trigger === "/" &&
+				(hasLeadingContent ||
+					(tokenOffsetInSeg !== 0 &&
+						!(
+							hasLeadingImage &&
+							segText.slice(0, tokenOffsetInSeg).trim().length === 0
+						)))
+			) {
 				return null;
 			}
 			if (token.slice(1).includes(" ")) return null;

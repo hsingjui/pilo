@@ -1,5 +1,4 @@
-import { colorScheme, Image, Text, token, View } from "nsh";
-import { Button as BaseButton } from "nsh/base";
+import { colorScheme, Image, Text, View } from "nsh";
 
 import { createHover } from "../ui/hover";
 import { FileTypeIcon, fileTypePresentation } from "../ui/file-type-icon";
@@ -41,12 +40,8 @@ export function ChatMentionInline(props: {
 	testID?: string;
 	accessibilityLabel?: string;
 	onPress?: () => void;
-	onRemove?: () => void;
-	removeLabel?: string;
-	disabled?: boolean;
 }) {
 	const hover = createHover();
-	const removeHover = createHover();
 	const interactive = () => props.interactive ?? Boolean(props.onPress);
 	const accentColor = () => inlineMentionColor(props.kind, props.path);
 	const iconSize = () =>
@@ -60,8 +55,8 @@ export function ChatMentionInline(props: {
 	return (
 		<View
 			testID={props.testID}
-			role={interactive() && !props.onRemove ? "button" : undefined}
-			accessible={!props.onRemove}
+			role={interactive() ? "button" : undefined}
+			accessible
 			accessibilityLabel={props.accessibilityLabel ?? props.label}
 			{...hover.props}
 			onPress={interactive() ? props.onPress : undefined}
@@ -70,14 +65,11 @@ export function ChatMentionInline(props: {
 					? "bg-primary/15"
 					: interactive() && hover.hovered()
 						? "bg-muted/70"
-						: props.onRemove
-							? "bg-muted/55"
-							: ""
+						: ""
 			}`}
 			style={{
 				gap: chatPx(4),
-				paddingLeft: chatPx(4),
-				paddingRight: props.onRemove ? chatPx(2) : chatPx(4),
+				paddingHorizontal: chatPx(3),
 				paddingVertical: 1,
 				cursor: interactive() ? "pointer" : "default",
 				verticalAlign: "middle",
@@ -123,30 +115,6 @@ export function ChatMentionInline(props: {
 			>
 				{props.label}
 			</Text>
-			{props.onRemove ? (
-				<BaseButton
-					{...removeHover.props}
-					class="ml-0.5 items-center justify-center rounded-[3px] transition-colors hover:bg-hover"
-					style={{
-						width: Math.max(chatPx(16), Math.round(props.fontSize * 1.15)),
-						height: Math.max(chatPx(16), Math.round(props.fontSize * 1.15)),
-						cursor: props.disabled ? "default" : "pointer",
-					}}
-					disabled={props.disabled}
-					accessibilityLabel={props.removeLabel ?? props.label}
-					onPress={() => {
-						if (!props.disabled) props.onRemove?.();
-					}}
-				>
-					<Icon
-						name="X"
-						size={chatPx(11)}
-						color={token(
-							removeHover.hovered() ? "foreground" : "muted-foreground",
-						)}
-					/>
-				</BaseButton>
-			) : null}
 		</View>
 	);
 }

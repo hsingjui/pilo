@@ -45,10 +45,10 @@ import type { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatPx } from "../chat/layout";
 import {
 	activeRichSuggestion,
+	buildRichImageInsertNodes,
 	CHAT_MENTION_NODE_TYPE,
-	createImageMentionNode,
 	createMentionNode,
-	findRichImageNodeRanges,
+	findRichImageRemovalRanges,
 	richDocEndPos,
 	richDocImageIds,
 	richDocImageOffsets,
@@ -93,7 +93,6 @@ export interface ComposerRichInputProps {
 	onHandle?: (handle: ComposerRichInputHandle) => () => void;
 	onValueChange: (value: string) => void;
 	onRemoveImage: (id: string) => void;
-	onRemoveMention?: (kind: "file" | "session", path: string) => void;
 	onSuggestionChange: (match: RichSuggestionMatch | null) => void;
 	onContentHeightChange: (height: number) => void;
 	onFocusChange: (focused: boolean) => void;
@@ -262,16 +261,6 @@ function SessionRichInput(session: {
 										? t("chat.openFile", { path })
 										: undefined
 							}
-							removeLabel={t("chat.removeAttachment", { name: label })}
-							disabled={props.disabled()}
-							onRemove={() => {
-								if (!isCurrent() || props.disabled()) return;
-								if (kind === "image") {
-									props.onRemoveImage(path);
-								} else {
-									props.onRemoveMention?.(kind, path);
-								}
-							}}
 							onPress={
 								kind === "session"
 									? undefined
@@ -373,7 +362,7 @@ function SessionRichInput(session: {
 		const noTrigger =
 			revision === syncedRevision &&
 			!lastSyncedValue.includes("@") &&
-			!lastSyncedValue.startsWith("/");
+			!lastSyncedValue.trimStart().startsWith("/");
 		props.onSuggestionChange(
 			disabled || noTrigger
 				? null
@@ -382,7 +371,7 @@ function SessionRichInput(session: {
 	};
 
 	const removeImageNodes = (doc: RichNodeJSON, ids: ReadonlySet<string>) => {
-		const ranges = findRichImageNodeRanges(doc, ids);
+		const ranges = findRichImageRemovalRanges(doc, ids);
 		if (!ranges.length) return;
 		editor.dispatch({
 			steps: ranges
@@ -515,10 +504,11 @@ function SessionRichInput(session: {
 						selection.type === "text"
 							? (selection.head ?? selection.anchor)
 							: undefined;
+					const insertPos = pos ?? richDocEndPos(editor.doc);
 					editor.run(
 						insertContentAt(
-							pos ?? richDocEndPos(editor.doc),
-							addedImages.map(createImageMentionNode),
+							insertPos,
+							buildRichImageInsertNodes(editor.doc, insertPos, addedImages),
 							{ updateSelection: true },
 						),
 					);
@@ -527,7 +517,12 @@ function SessionRichInput(session: {
 			const doc = editor.doc;
 			syncedRevision = editor.revision;
 			knownDocImageIds = new Set(richDocImageIds(doc));
-			if (!disabled) rememberLayout(doc, nextValue);
+			const docValue = richDocToValue(doc);
+			if (docValue !== lastSyncedValue) {
+				lastSyncedValue = docValue;
+				if (!disabled) props.onValueChange(docValue);
+			}
+			if (!disabled) rememberLayout(doc, lastSyncedValue);
 			syncSuggestion(doc);
 		});
 	});

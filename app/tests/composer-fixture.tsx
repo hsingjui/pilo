@@ -213,6 +213,16 @@ export function composerFixtureRoot(activeTurn = false) {
 				<Text>attach-image</Text>
 			</View>
 			<View
+				testID="fixture-attach-second-image"
+				onPress={() => {
+					void store.addFiles([
+						new File([SAMPLE_PNG], "shot-2.png", { type: "image/png" }),
+					]);
+				}}
+			>
+				<Text>attach-second-image</Text>
+			</View>
+			<View
 				testID="fixture-switch-chat"
 				onPress={() => {
 					store.setTarget({

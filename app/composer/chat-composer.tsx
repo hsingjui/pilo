@@ -1,4 +1,5 @@
 import {
+	Image,
 	type JSX,
 	Overlay,
 	Picker,
@@ -18,13 +19,16 @@ import {
 	untracked,
 	windowSize,
 } from "nsh";
+import { Button as BaseButton } from "nsh/base";
 
 import { userErrorMessage } from "@shared/app-error";
 import {
+	fileMentionName,
 	fileMentionPath,
 	prepareMentionDraftForEnhancement,
 	restoreMentionDraftFromEnhancement,
 } from "@shared/chat/chat-mentions";
+import { formatChatImageSize } from "@shared/chat/chat-submission";
 import {
 	FILE_SUGGESTION_LIMIT,
 	TRIGGER_META,
@@ -40,11 +44,16 @@ import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
+import {
+	ChatMediaActions,
+	chatAttachmentImage,
+} from "../chat/chat-media-actions";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
 import { bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
 import { FileTypeIcon } from "../ui/file-type-icon";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { menuPopupClass, menuPopupStyle } from "../ui/menu";
@@ -210,6 +219,7 @@ export interface ChatComposerProps {
  */
 export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
+	const media = ChatMediaActions();
 	const readingFont = ChatReadingFont();
 	const surfaceWidth = signal(0);
 	const toolbarWidth = signal(0);
@@ -805,6 +815,99 @@ export function ChatComposer(props: ChatComposerProps) {
 				class={disabled() ? COMPOSER_SURFACE_MUTED : COMPOSER_SURFACE}
 				style={surfaceStyle(focused(), disabled())}
 			>
+				{() =>
+					hasAttachments() ? (
+						<View
+							testID="chat-composer-attachments"
+							class="min-w-0 flex-row flex-wrap items-center"
+							style={{
+								marginBottom: chatPx(4),
+								gap: chatPx(6),
+								padding: chatPx(4),
+							}}
+						>
+							<Each of={images()} key={(image) => image.id}>
+								{(image) => (
+									<AttachmentChip
+										testID="chat-composer-image"
+										label={image().name}
+										tooltip={`${image().name} · ${formatChatImageSize(image().size)}`}
+										removeLabel={t("chat.removeAttachment", {
+											name: image().name,
+										})}
+										leading={
+											<Image
+												src={`data:${image().mimeType};base64,${image().data}`}
+												class="shrink-0 overflow-hidden rounded-[3px] border border-foreground/10"
+												style={{
+													width: chatPx(16),
+													height: chatPx(16),
+													objectFit: "cover",
+												}}
+											/>
+										}
+										disabled={disabled()}
+										onPress={
+											media.openImage
+												? () => media.openImage?.(chatAttachmentImage(image()))
+												: undefined
+										}
+										onRemove={() => {
+											if (!disabled()) store.removeImage(image().id);
+										}}
+									/>
+								)}
+							</Each>
+							<Each of={references()} key={(ref) => `${ref.kind}:${ref.path}`}>
+								{(reference, index) => {
+									const name = () => {
+										const ref = reference();
+										return ref.kind === "session"
+											? ref.session.title
+											: fileMentionName(ref.path);
+									};
+									const tooltip = () => {
+										const ref = reference();
+										return ref.kind === "session" && ref.session.projectName
+											? `${ref.session.projectName}\n${ref.path}`
+											: ref.path;
+									};
+									return (
+										<AttachmentChip
+											testID={`chat-composer-attachment:${reference().kind}`}
+											label={name()}
+											tooltip={tooltip()}
+											removeLabel={t("chat.removeAttachment", { name: name() })}
+											leading={
+												reference().kind === "session" ? (
+													<Icon
+														name="MessageSquare"
+														size={chatPx(13)}
+														color={token("muted-foreground")}
+													/>
+												) : (
+													<FileTypeIcon
+														path={reference().path}
+														size={chatPx(13)}
+													/>
+												)
+											}
+											disabled={disabled()}
+											onPress={
+												reference().kind === "file" && media.openFile
+													? () => media.openFile?.(reference().path)
+													: undefined
+											}
+											onRemove={() => {
+												if (!disabled()) store.removeReference(index());
+											}}
+										/>
+									);
+								}}
+							</Each>
+						</View>
+					) : null
+				}
 				<View class="relative min-w-0 flex-row items-start">
 					<ComposerRichInput
 						testID="chat-composer-input"
@@ -853,9 +956,6 @@ export function ChatComposer(props: ChatComposerProps) {
 						}}
 						onRemoveImage={(id) => {
 							if (!disabled()) store.removeImage(id);
-						}}
-						onRemoveMention={(kind, path) => {
-							if (!disabled()) store.removeMention(kind, path);
 						}}
 						onSuggestionChange={(match) => activeSuggestion.set(match)}
 						onContentHeightChange={(height) => contentHeight.set(height)}
@@ -1328,6 +1428,82 @@ function MentionTabs(props: {
 					</View>
 				) : null
 			}
+		</View>
+	);
+}
+
+/** 统一单行附件芯片：上传图片、上传文件、`@文件` 与 `@会话` 共用同一套外观与交互。 */
+function AttachmentChip(props: {
+	testID?: string;
+	label: string;
+	tooltip?: string;
+	removeLabel: string;
+	leading: JSX.Element;
+	onPress?: () => void;
+	disabled?: boolean;
+	onRemove: () => void;
+}) {
+	const removeHover = createHover();
+	const readingFont = ChatReadingFont();
+	const openBlur = blurOnPointerPress();
+	const removeBlur = blurOnPointerPress();
+	return (
+		<View
+			testID={props.testID}
+			class="min-w-0 flex-row items-center rounded-md bg-muted/60"
+			style={{
+				height: Math.max(chatPx(28), inputLineHeight(readingFont().fontSize)),
+				maxWidth: chatPx(216),
+			}}
+		>
+			<BaseButton
+				ref={openBlur.ref}
+				onMouseUp={openBlur.onMouseUp}
+				class={`h-full min-w-0 flex-1 flex-row items-center rounded-l-md transition-colors focus-visible:outline-hidden ${props.onPress ? "hover:bg-hover" : ""}`}
+				style={{
+					gap: chatPx(6),
+					paddingLeft: chatPx(8),
+					paddingRight: chatPx(6),
+					cursor: props.onPress ? "pointer" : "default",
+				}}
+				focusVisibleStyle={focusRingStyle(token("ring"))}
+				accessibilityLabel={props.label}
+				tooltip={
+					props.tooltip ? (
+						<Tooltip class="max-w-96" delay={250} margin={12}>
+							<Text class="font-mono text-xs">{props.tooltip}</Text>
+						</Tooltip>
+					) : undefined
+				}
+				onPress={props.onPress}
+			>
+				{props.leading}
+				<Text
+					class="min-w-0 shrink truncate font-sans text-foreground"
+					style={{ fontSize: chatPx(12) }}
+				>
+					{() => props.label}
+				</Text>
+			</BaseButton>
+			<BaseButton
+				ref={removeBlur.ref}
+				onMouseUp={removeBlur.onMouseUp}
+				class="h-full shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover focus-visible:outline-hidden"
+				style={{ width: chatPx(24), cursor: "pointer" }}
+				focusVisibleStyle={focusRingStyle(token("ring"))}
+				accessibilityLabel={props.removeLabel}
+				disabled={props.disabled}
+				{...removeHover.props}
+				onPress={props.onRemove}
+			>
+				<Icon
+					name="X"
+					size={chatPx(12)}
+					color={token(
+						removeHover.hovered() ? "foreground" : "muted-foreground",
+					)}
+				/>
+			</BaseButton>
 		</View>
 	);
 }

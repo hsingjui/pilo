@@ -93,7 +93,10 @@ test("@ starts on its file tab; Tab switches to sessions and renders inline + tr
 	await app.keyboard.press("down");
 	await app.keyboard.press("enter");
 	expect(app.shows("id:chat-composer-suggestions")).toBe(false);
-	// 输入框内联展示会话标题，不暴露原始路径文本且不重复堆砌顶部附件行。
+	// 上方附件区和输入框都展示会话标题，不暴露原始路径文本。
+	expect(
+		app.shows("id:chat-composer-attachment:session >> text:Earlier chat"),
+	).toBe(true);
 	expect(
 		app.shows("id:chat-composer-mention:session >> text:Earlier chat"),
 	).toBe(true);
@@ -126,6 +129,11 @@ test("the @ tabs and rows take the pointer, hover shows full path, and tray remo
 
 	expect(
 		app.shows(
+			"id:chat-composer-attachment:file >> text:chat-user-message-body.tsx",
+		),
+	).toBe(true);
+	expect(
+		app.shows(
 			"id:chat-composer-mention:file >> text:chat-user-message-body.tsx",
 		),
 	).toBe(true);
@@ -137,30 +145,59 @@ test("the @ tabs and rows take the pointer, hover shows full path, and tray remo
 	await app.hover("id:chat-composer-mention:file");
 	await app.waitFor("text:src/chat-user-message-body.tsx");
 
-	// 上传图片在输入框内部单一内联展示，悬停展示详情，移除同步生效。
+	// 上传图片在上方附件区和输入框内部均展示，悬停展示详情，移除同步生效。
 	await app.press("id:fixture-attach-image");
-	await app.waitFor("id:chat-composer-mention:image >> text:shot.png");
+	await app.waitFor("id:chat-composer-image >> text:shot.png");
+	expect(app.shows("id:chat-composer-mention:image >> text:shot.png")).toBe(
+		true,
+	);
 	await app.press("id:chat-composer-mention:image");
 	await app.hover("id:chat-composer-mention:image");
 	await app.waitFor("text:/shot\\.png · /");
 
-	// 点内联文件芯片上的移除按钮直接移除文件节点，图片不受影响。
+	// 移除上方文件芯片同步从输入框移除内联节点，图片不受影响。
 	await app.press("label:Remove chat-user-message-body.tsx");
+	expect(app.shows("id:chat-composer-attachment:file")).toBe(false);
 	expect(app.shows("id:chat-composer-mention:file")).toBe(false);
+	expect(app.shows("id:chat-composer-image >> text:shot.png")).toBe(true);
 	expect(app.shows("id:chat-composer-mention:image >> text:shot.png")).toBe(
 		true,
 	);
 
 	// 同项目切换会话按会话隔离图片；切回原会话仍保留，移除后不再恢复。
 	await app.press("id:fixture-switch-chat");
-	await app.waitFor("id:chat-composer-mention:image", { state: "gone" });
-	await app.press("id:fixture-switch-chat");
-	await app.waitFor("id:chat-composer-mention:image >> text:shot.png");
-	await app.press("label:Remove shot.png");
-	await app.waitFor("id:chat-composer-mention:image", { state: "gone" });
-	await app.press("id:fixture-switch-chat");
-	await app.press("id:fixture-switch-chat");
+	await app.waitFor("id:chat-composer-image", { state: "gone" });
 	expect(app.shows("id:chat-composer-mention:image")).toBe(false);
+	await app.press("id:fixture-switch-chat");
+	await app.waitFor("id:chat-composer-image >> text:shot.png");
+	expect(app.shows("id:chat-composer-mention:image >> text:shot.png")).toBe(
+		true,
+	);
+	await app.press("label:Remove shot.png");
+	await app.waitFor("id:chat-composer-image", { state: "gone" });
+	await app.waitFor("id:chat-composer-mention:image", { state: "gone" });
+	await app.press("id:fixture-switch-chat");
+	await app.press("id:fixture-switch-chat");
+	expect(app.shows("id:chat-composer-image")).toBe(false);
+	expect(app.shows("id:chat-composer-mention:image")).toBe(false);
+});
+
+test("attaching images consecutively separates them with spaces and shows them in the attachment tray", async () => {
+	const app = await open("./composer-idle-fixture.tsx", { platform: "macos" });
+	await app.press("id:fixture-attach-image");
+	await app.waitFor("id:chat-composer-image >> text:shot.png");
+	await app.press("id:fixture-attach-second-image");
+	await app.waitFor("id:chat-composer-image >> text:shot-2.png");
+	expect(app.count("id:chat-composer-image")).toBe(2);
+	expect(app.count("id:chat-composer-mention:image")).toBe(2);
+	expect(app.shows("id:chat-composer-input >> text:\ufffc \ufffc ")).toBe(true);
+	await app.press("label:Send");
+	await app.waitFor("text:sent:prompt");
+	expect(
+		app.shows(
+			"id:composer-last-message >> text:[Image 1: shot.png] [Image 2: shot-2.png]",
+		),
+	).toBe(true);
 });
 
 test("an @ query without matches, or whose search fails, says so", async () => {

@@ -2,6 +2,7 @@ import {
 	createRichEditor,
 	defineExtension,
 	Document,
+	insertContentAt,
 	Paragraph,
 	richExtension,
 	setTextSelection,
@@ -14,9 +15,11 @@ import {
 } from "@shared/chat/session-mentions";
 import {
 	activeRichSuggestion,
+	buildRichImageInsertNodes,
 	CHAT_MENTION_NODE_TYPE,
 	sliceToPlainText,
 	findRichImageNodeRanges,
+	findRichImageRemovalRanges,
 	richDocEndPos,
 	richDocImageIds,
 	richDocToValue,
@@ -142,4 +145,94 @@ test("pasting a rich paragraph keeps a single line around its mention", () => {
 	const raw = '看看 @"src/a.tsx" 吧';
 	const doc = valueToRichDoc(`${raw}\n下一行`, sessions);
 	expect(sliceToPlainText({ content: doc.content })).toBe(`${raw}\n下一行`);
+});
+
+test("buildRichImageInsertNodes adds spaces around and between consecutive images, and removal cleans them up", () => {
+	const mention = defineExtension({
+		name: CHAT_MENTION_NODE_TYPE,
+		node: {
+			inline: true,
+			group: "inline",
+			atom: true,
+			attrs: { kind: {}, path: {}, label: {}, detail: {}, raw: {} },
+		},
+	});
+	const editor = createRichEditor({
+		doc: valueToRichDoc("", sessions),
+		extensions: [Document, Paragraph, richExtension("text"), mention],
+	});
+	const img1 = { id: "img-1", name: "a.png", size: 10 };
+	const img2 = { id: "img-2", name: "b.png", size: 20 };
+
+	// 1) Consecutive single pastes add a single space between images and a trailing space.
+	const pos1 = richDocEndPos(editor.doc);
+	editor.run(
+		insertContentAt(pos1, buildRichImageInsertNodes(editor.doc, pos1, [img1]), {
+			updateSelection: true,
+		}),
+	);
+	const pos2 = editor.selection.head ?? richDocEndPos(editor.doc);
+	editor.run(
+		insertContentAt(pos2, buildRichImageInsertNodes(editor.doc, pos2, [img2]), {
+			updateSelection: true,
+		}),
+	);
+	expect(
+		(editor.doc.content?.[0]?.content ?? []).map((node) =>
+			node.type === "text" ? node.text : node.attrs?.path,
+		),
+	).toEqual(["img-1", " ", "img-2", " "]);
+
+	// 2) Slash trigger still works right after leading images + trailing space.
+	editor.run(
+		insertContentAt(
+			richDocEndPos(editor.doc),
+			{ type: "text", text: "/new" },
+			{ updateSelection: true },
+		),
+	);
+	expect(activeRichSuggestion(editor.doc, editor.selection)?.trigger).toBe("/");
+
+	// 3) Removing the first image cleans its trailing space; removing the second leaves "/new".
+	const ranges1 = findRichImageRemovalRanges(editor.doc, new Set(["img-1"]));
+	editor.dispatch({
+		steps: ranges1.reverse().map((r) => ({ stepType: "replace", ...r })),
+	});
+	expect(richDocImageIds(editor.doc)).toEqual(["img-2"]);
+	expect(richDocToValue(editor.doc)).toBe(" /new");
+
+	const ranges2 = findRichImageRemovalRanges(editor.doc, new Set(["img-2"]));
+	editor.dispatch({
+		steps: ranges2.reverse().map((r) => ({ stepType: "replace", ...r })),
+	});
+	expect(richDocImageIds(editor.doc)).toEqual([]);
+	expect(richDocToValue(editor.doc)).toBe("/new");
+
+	// 4) Inserting between words adds spaces without doubling existing spaces, and removing does not glue words.
+	const betweenDoc = valueToRichDoc("hello world", sessions);
+	const betweenEditor = createRichEditor({
+		doc: betweenDoc,
+		extensions: [Document, Paragraph, richExtension("text"), mention],
+	});
+	// Cursor right after "hello" (before " world"): pos = 1 + 5 = 6.
+	betweenEditor.run(
+		insertContentAt(
+			6,
+			buildRichImageInsertNodes(betweenEditor.doc, 6, [img1, img2]),
+			{ updateSelection: true },
+		),
+	);
+	expect(
+		(betweenEditor.doc.content?.[0]?.content ?? []).map((node) =>
+			node.type === "text" ? node.text : node.attrs?.path,
+		),
+	).toEqual(["hello ", "img-1", " ", "img-2", " world"]);
+	const removeBoth = findRichImageRemovalRanges(
+		betweenEditor.doc,
+		new Set(["img-1", "img-2"]),
+	);
+	betweenEditor.dispatch({
+		steps: removeBoth.reverse().map((r) => ({ stepType: "replace", ...r })),
+	});
+	expect(richDocToValue(betweenEditor.doc)).toBe("hello world");
 });
