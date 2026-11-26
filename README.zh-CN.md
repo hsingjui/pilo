@@ -58,7 +58,7 @@ Pilo 当前以源码构建为主。开发需要 Node.js 22、pnpm（CI 使用 10
 
 Pilo 默认从 `PATH` 自动发现 `pi`。也可以在 Settings 中为每个 Connection 单独指定 Pi 可执行文件路径。
 
-桌面端基于 [nsh](https://github.com/longbridge/nsh) 构建。在 macOS、Windows、Linux 上使用相同的开发启动命令，需将 `nsh` 0.7.0 CLI 加入 `PATH`。桌面端目前只在 macOS 上验证。
+桌面端基于 [nsh](https://github.com/longbridge/nsh) 构建。在 macOS、Windows、Linux 上使用相同的开发启动命令，需将 `nsh` 0.7.1 CLI 加入 `PATH`。桌面端目前只在 macOS 上验证。
 
 ```bash
 pnpm install

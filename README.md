@@ -58,7 +58,7 @@ Pilo is currently built from source. Development requires Node.js 22, pnpm (CI u
 
 Pilo discovers `pi` from `PATH` by default. Each connection can also be configured with a custom Pi executable path in Settings.
 
-The desktop app is built with [nsh](https://github.com/longbridge/nsh). The same development command is used on macOS, Windows, and Linux; it requires the `nsh` 0.7.0 CLI on `PATH`. The desktop app has only been verified on macOS.
+The desktop app is built with [nsh](https://github.com/longbridge/nsh). The same development command is used on macOS, Windows, and Linux; it requires the `nsh` 0.7.1 CLI on `PATH`. The desktop app has only been verified on macOS.
 
 ```bash
 pnpm install
