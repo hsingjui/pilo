@@ -423,6 +423,10 @@ const enUS = {
 		fontSizeInputLabel: "{{font}} size (px)",
 		fontSizeRange:
 			"{{min}}–{{max}}px; press Enter or leave the field to apply.",
+		textSize: "Text size",
+		textSizeSmall: "Small",
+		textSizeDefault: "Standard",
+		textSizeLarge: "Large",
 		builtIn: "Built-in",
 		systemFonts: "System fonts",
 		systemMonospace: "System monospace",

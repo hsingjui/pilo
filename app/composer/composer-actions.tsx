@@ -32,13 +32,6 @@ import {
 	composerSendSize,
 } from "./composer-layout";
 
-/** Mobile text sizes aligned with `web/mobile-typography.ts` (`MOBILE_TEXT`). */
-const TOUCH_TEXT = {
-	"2xs": { fontSize: 12.5, lineHeight: 16 },
-	xs: { fontSize: 13.75, lineHeight: 18 },
-	sm: { fontSize: 16, lineHeight: 20 },
-} as const;
-
 const SEND_MODE_OPTIONS = [
 	{
 		mode: "steer",
@@ -309,10 +302,7 @@ export function ComposerActions(props: {
 					}}
 				>
 					<View testID="chat-composer-send-mode-popup" class="w-full">
-						<Text
-							class="px-2.5 pt-1.5 pb-1 font-sans font-semibold uppercase tracking-[0.6px] text-muted-foreground"
-							style={TOUCH_TEXT["2xs"]}
-						>
+						<Text class="px-2.5 pt-1.5 pb-1 font-sans text-xs text-(length:--pilo-ui-text-2xs) leading-tight font-semibold uppercase tracking-[0.6px] text-muted-foreground">
 							{() => t("chat.sendMode")}
 						</Text>
 						<ToggleGroup class="gap-0.5">
@@ -355,21 +345,17 @@ export function ComposerActions(props: {
 											<View class="min-w-0 flex-1 gap-0.5">
 												<Text
 													class={classNames(
-														"font-sans",
+														"font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight",
 														destructive
 															? "font-medium text-destructive"
 															: active()
 																? "font-semibold text-foreground"
 																: "font-medium text-foreground",
 													)}
-													style={TOUCH_TEXT.sm}
 												>
 													{() => t(entry.label)}
 												</Text>
-												<Text
-													class="font-sans text-muted-foreground"
-													style={TOUCH_TEXT.xs}
-												>
+												<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 													{() => t(entry.detail)}
 												</Text>
 											</View>

@@ -36,14 +36,6 @@ import { Popover } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { composerToolbarGap } from "./composer-layout";
 
-/** Mobile text sizes aligned with `web/mobile-typography.ts` (`MOBILE_TEXT`). */
-const TOUCH_TEXT = {
-	"2xs": { fontSize: 12.5, lineHeight: 16 },
-	xs: { fontSize: 13.75, lineHeight: 18 },
-	sm: { fontSize: 16, lineHeight: 20 },
-	note: { fontSize: 12.5, lineHeight: 18 },
-} as const;
-
 /** At most one decimal, as the React composer's `formatPercent`. */
 function formatPercent(value: number | undefined) {
 	if (value === undefined) return "—";
@@ -101,12 +93,19 @@ function DetailRow(props: {
 				props.class,
 			)}
 		>
-			<Text class={rowLabel} style={props.touch ? TOUCH_TEXT.xs : undefined}>
+			<Text
+				class={classNames(
+					rowLabel,
+					props.touch && "text-(length:--pilo-ui-text-xs) leading-snug",
+				)}
+			>
 				{props.label}
 			</Text>
 			<Text
-				class={rowValue}
-				style={props.touch ? TOUCH_TEXT["2xs"] : undefined}
+				class={classNames(
+					rowValue,
+					props.touch && "text-(length:--pilo-ui-text-2xs) leading-tight",
+				)}
 			>
 				{props.value}
 			</Text>
@@ -222,10 +221,13 @@ export function ComposerContextUsage(props: {
 			? untracked(() => (
 					<>
 						<Text
-							class={triggerTextClass()}
+							class={classNames(
+								triggerTextClass(),
+								touch && "text-xs text-(length:--pilo-ui-text-xs) leading-snug",
+							)}
 							style={
 								touch
-									? TOUCH_TEXT.xs
+									? undefined
 									: { fontSize: chatPx(12), lineHeight: chatPx(12) }
 							}
 						>
@@ -289,8 +291,10 @@ export function ComposerContextUsage(props: {
 			>
 				<View class="flex-row flex-wrap items-center gap-x-2">
 					<Text
-						class={sectionTitle}
-						style={touch ? TOUCH_TEXT["2xs"] : undefined}
+						class={classNames(
+							sectionTitle,
+							touch && "text-(length:--pilo-ui-text-2xs) leading-tight",
+						)}
 					>
 						{() => t("chat.contextSection")}
 					</Text>
@@ -320,8 +324,10 @@ export function ComposerContextUsage(props: {
 											)
 										}
 										<Text
-											class="font-sans text-xs text-muted-foreground"
-											style={touch ? TOUCH_TEXT.xs : undefined}
+											class={classNames(
+												"font-sans text-xs text-muted-foreground",
+												touch && "text-(length:--pilo-ui-text-xs) leading-snug",
+											)}
 										>
 											{() =>
 												compacting()
@@ -336,14 +342,18 @@ export function ComposerContextUsage(props: {
 				</View>
 				<View class="flex-row items-baseline justify-between gap-3">
 					<Text
-						class="font-sans text-sm font-semibold tabular-nums text-popover-foreground"
-						style={touch ? TOUCH_TEXT.sm : undefined}
+						class={classNames(
+							"font-sans text-sm font-semibold tabular-nums text-popover-foreground",
+							touch && "text-(length:--pilo-ui-text-sm) leading-tight",
+						)}
 					>
 						{() => formatPercent(percent())}
 					</Text>
 					<Text
-						class="font-mono text-[11px] tabular-nums text-muted-foreground"
-						style={touch ? TOUCH_TEXT["2xs"] : undefined}
+						class={classNames(
+							"font-mono text-[11px] tabular-nums text-muted-foreground",
+							touch && "text-(length:--pilo-ui-text-2xs) leading-tight",
+						)}
 					>
 						{() => {
 							const { contextTokens, contextWindow } = context();
@@ -370,8 +380,10 @@ export function ComposerContextUsage(props: {
 					if (note === "unknown") {
 						return (
 							<Text
-								class="font-sans text-[11px] leading-4 text-muted-foreground"
-								style={touch ? TOUCH_TEXT.note : undefined}
+								class={classNames(
+									"font-sans text-[11px] leading-4 text-muted-foreground",
+									touch && "text-(length:--pilo-ui-text-2xs) leading-snug",
+								)}
 							>
 								{() => t("chat.contextUsageUnknown")}
 							</Text>
@@ -380,8 +392,10 @@ export function ComposerContextUsage(props: {
 					if (note === "stale") {
 						return (
 							<Text
-								class="font-sans text-[11px] leading-4 text-muted-foreground"
-								style={touch ? TOUCH_TEXT.note : undefined}
+								class={classNames(
+									"font-sans text-[11px] leading-4 text-muted-foreground",
+									touch && "text-(length:--pilo-ui-text-2xs) leading-snug",
+								)}
 							>
 								{() => t("chat.contextUsageAfterCompaction")}
 							</Text>
@@ -404,8 +418,10 @@ export function ComposerContextUsage(props: {
 									onPress={props.onCancelPendingCompact}
 								>
 									<Text
-										class="font-sans text-xs text-muted-foreground"
-										style={touch ? TOUCH_TEXT.xs : undefined}
+										class={classNames(
+											"font-sans text-xs text-muted-foreground",
+											touch && "text-(length:--pilo-ui-text-xs) leading-snug",
+										)}
 									>
 										{() => t("chat.compactPending")}
 									</Text>
@@ -425,8 +441,10 @@ export function ComposerContextUsage(props: {
 						}
 					>
 						<Text
-							class={sectionTitle}
-							style={touch ? TOUCH_TEXT["2xs"] : undefined}
+							class={classNames(
+								sectionTitle,
+								touch && "text-(length:--pilo-ui-text-2xs) leading-tight",
+							)}
 						>
 							{() => t("chat.tokensSection")}
 						</Text>
@@ -472,14 +490,18 @@ export function ComposerContextUsage(props: {
 								}
 							>
 								<Text
-									class={rowLabel}
-									style={touch ? TOUCH_TEXT.xs : undefined}
+									class={classNames(
+										rowLabel,
+										touch && "text-(length:--pilo-ui-text-xs) leading-snug",
+									)}
 								>
 									{() => t("chat.totalCost")}
 								</Text>
 								<Text
-									class="font-mono text-[11px] tabular-nums text-foreground"
-									style={touch ? TOUCH_TEXT["2xs"] : undefined}
+									class={classNames(
+										"font-mono text-[11px] tabular-nums text-foreground",
+										touch && "text-(length:--pilo-ui-text-2xs) leading-tight",
+									)}
 								>
 									{() => formatCost(cost())}
 								</Text>

@@ -92,11 +92,15 @@ const uiTextTokens = Object.entries(lody.cssVars.theme)
 	.filter(([name]) => name.startsWith("pilo-ui-text-"))
 	.map(([name, size]) => [name, Number.parseFloat(size)] as const);
 
-/** Scale the app's named UI text sizes without changing nsh's OS fontScale. */
-function uiTextSizes(size: number) {
-	const scale =
+function desktopUiTextScale(size: number) {
+	return (
 		Math.min(MAX_UI_FONT_SIZE, Math.max(MIN_UI_FONT_SIZE, size)) /
-		DEFAULT_UI_FONT_SIZE;
+		DEFAULT_UI_FONT_SIZE
+	);
+}
+
+/** Scale the app's named UI text sizes without changing nsh's OS fontScale. */
+function uiTextSizes(scale: number) {
 	return Object.fromEntries(
 		uiTextTokens.map(([name, base]) => [
 			name,
@@ -121,18 +125,33 @@ const STARTUP_THEME_KEY = "pilo.startupTheme";
  */
 export async function showStartupTheme(options?: {
 	schemeOverride?: Theme;
+	uiTextScale?: number;
+	codeFontSize?: number;
 }): Promise<StartupTheme | null> {
 	const saved = parseStartupTheme(
 		await Storage.getItem(STARTUP_THEME_KEY).catch(() => null),
 	);
 	const override = options?.schemeOverride;
+	const uiScale =
+		options?.uiTextScale ?? desktopUiTextScale(DEFAULT_UI_FONT_SIZE);
 	if (saved) {
 		showTheme(
 			override ? { ...saved, theme: override } : saved,
 			getPageFontFamilyStack(DEFAULT_PAGE_FONT_FAMILY),
 			getMonospaceFontFamilyStack(DEFAULT_CODE_FONT_FAMILY),
-			undefined,
-			DEFAULT_UI_FONT_SIZE,
+			options?.codeFontSize,
+			uiScale,
+		);
+	} else if (
+		options?.uiTextScale !== undefined ||
+		options?.codeFontSize !== undefined
+	) {
+		showTheme(
+			override ? { theme: override, themeFamily: "lody" } : null,
+			getPageFontFamilyStack(DEFAULT_PAGE_FONT_FAMILY),
+			getMonospaceFontFamilyStack(DEFAULT_CODE_FONT_FAMILY),
+			options?.codeFontSize,
+			uiScale,
 		);
 	} else if (override) {
 		setColorScheme(override);
@@ -173,7 +192,11 @@ function parseStartupTheme(stored: string | null): StartupTheme | null {
 /** Follow saved appearance, using platform fonts until preferences load. */
 export function followSavedAppearance(
 	state: Accessor<AppState>,
-	options?: { schemeOverride?: Accessor<Theme> },
+	options?: {
+		schemeOverride?: Accessor<Theme>;
+		uiTextScale?: Accessor<number>;
+		codeFontSizeOverride?: Accessor<number>;
+	},
 ) {
 	const locale = computed(() => state().preferences?.values.locale);
 	const pageSans = computed(() =>
@@ -186,9 +209,17 @@ export function followSavedAppearance(
 			state().preferences?.values.codeFontFamily ?? DEFAULT_CODE_FONT_FAMILY,
 		),
 	);
-	const codeFontSize = computed(() => state().preferences?.values.codeFontSize);
-	const uiFontSize = computed(
-		() => state().preferences?.values.uiFontSize ?? DEFAULT_UI_FONT_SIZE,
+	const codeFontSize = computed(
+		() =>
+			options?.codeFontSizeOverride?.() ??
+			state().preferences?.values.codeFontSize,
+	);
+	const uiTextScale = computed(
+		() =>
+			options?.uiTextScale?.() ??
+			desktopUiTextScale(
+				state().preferences?.values.uiFontSize ?? DEFAULT_UI_FONT_SIZE,
+			),
 	);
 	const theme = computed(() => state().themeSettings);
 	const schemeOverride = options?.schemeOverride;
@@ -226,7 +257,7 @@ export function followSavedAppearance(
 				pageSans(),
 				codeMono(),
 				codeFontSize(),
-				uiFontSize(),
+				uiTextScale(),
 			] as const,
 	);
 	// Effects run after rendering; set the theme before building the first layout.
@@ -247,7 +278,7 @@ function showTheme(
 	pageSans: string,
 	codeMono: string,
 	codeSize: number | undefined,
-	uiSize: number,
+	uiScale: number,
 ) {
 	const key = JSON.stringify([
 		settings?.theme ?? "system",
@@ -258,7 +289,7 @@ function showTheme(
 		pageSans,
 		codeMono,
 		codeSize ?? null,
-		uiSize,
+		uiScale,
 	]);
 	if (key === lastThemeKey) return;
 	lastThemeKey = key;
@@ -276,7 +307,7 @@ function showTheme(
 			...vars,
 			theme: {
 				...vars.theme,
-				...uiTextSizes(uiSize),
+				...uiTextSizes(uiScale),
 				"font-sans": pageSans,
 				"font-mono": codeMono,
 				...(codeSize === undefined

@@ -2,6 +2,7 @@ import { cleanup, computed, mount, signal, UrlScheme, View } from "nsh";
 import { Head } from "nsh/web";
 
 import { isRemotePairingUrl } from "@shared/remote-pairing";
+import { resolveWebFontMetrics } from "@shared/web-font-scale";
 
 import { showStartupTheme } from "../app/shell/appearance";
 import { appLocale, initializeI18n, t } from "../app/shell/i18n";
@@ -12,6 +13,7 @@ import type { MobileRemoteWorkspaceProps } from "./mobile-remote-workspace";
 import { installMobileViewportSync, MobileViewport } from "./mobile-viewport";
 import { RemotePairingPage } from "./pairing-page";
 import { createWebColorScheme, WebColorScheme } from "./web-color-scheme";
+import { createWebFontScale, WebFontScale } from "./web-font-scale";
 import {
 	clearRemoteDeviceToken,
 	loadRemoteDeviceToken,
@@ -87,6 +89,7 @@ function LazyMobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 function WebAppRoot() {
 	const mobileViewport = installMobileViewportSync();
 	const webColorScheme = createWebColorScheme();
+	const webFontScale = createWebFontScale();
 	const currentUrl = signal(resolveCurrentPageUrl());
 	const isPairingRoute = computed(() => isRemotePairingUrl(currentUrl()));
 	const token = signal<string | null>(null);
@@ -107,8 +110,15 @@ function WebAppRoot() {
 		void loadWorkspaceModule().catch(() => {});
 	}
 	void Promise.all([
-		webColorScheme.ready.then((schemeOverride) =>
-			showStartupTheme({ schemeOverride }),
+		Promise.all([webColorScheme.ready, webFontScale.ready]).then(
+			([schemeOverride, fontScale]) => {
+				const metrics = resolveWebFontMetrics(fontScale);
+				return showStartupTheme({
+					schemeOverride,
+					uiTextScale: metrics.uiTextScale,
+					codeFontSize: metrics.codeFontSize,
+				});
+			},
 		),
 		loadRemoteDeviceToken(),
 	])
@@ -152,52 +162,54 @@ function WebAppRoot() {
 
 	return (
 		<WebColorScheme.Provider value={webColorScheme}>
-			<MobileViewport.Provider value={mobileViewport}>
-				<View class="flex-1 bg-background">
-					<Head
-						title="Pilo"
-						lang={appLocale()}
-						meta={[
-							{ name: "apple-mobile-web-app-capable", content: "yes" },
-							{
-								name: "apple-mobile-web-app-status-bar-style",
-								content: "black-translucent",
-							},
-							{ name: "apple-mobile-web-app-title", content: "Pilo" },
-						]}
-					/>
-					{() => {
-						if (isPairingRoute()) {
-							return (
-								<RemotePairingPage
-									onPaired={(pairedToken) => enterWorkspace(pairedToken)}
-									onOpenApp={() => enterWorkspace()}
-								/>
-							);
-						}
-						if (!ready()) return <View class="flex-1 bg-background" />;
-						if (!token()) {
-							return (
-								<MobileAuthRequiredView
-									error={authError}
-									onSubmitToken={handleSubmitToken}
-								/>
-							);
-						}
-						return (
-							<Each of={tokens()} key={(value) => value}>
-								{(value) => (
-									<LazyMobileRemoteWorkspace
-										token={value()}
-										onAuthExpired={handleAuthExpired}
-										onSignOut={handleSignOut}
+			<WebFontScale.Provider value={webFontScale}>
+				<MobileViewport.Provider value={mobileViewport}>
+					<View class="flex-1 bg-background">
+						<Head
+							title="Pilo"
+							lang={appLocale()}
+							meta={[
+								{ name: "apple-mobile-web-app-capable", content: "yes" },
+								{
+									name: "apple-mobile-web-app-status-bar-style",
+									content: "black-translucent",
+								},
+								{ name: "apple-mobile-web-app-title", content: "Pilo" },
+							]}
+						/>
+						{() => {
+							if (isPairingRoute()) {
+								return (
+									<RemotePairingPage
+										onPaired={(pairedToken) => enterWorkspace(pairedToken)}
+										onOpenApp={() => enterWorkspace()}
 									/>
-								)}
-							</Each>
-						);
-					}}
-				</View>
-			</MobileViewport.Provider>
+								);
+							}
+							if (!ready()) return <View class="flex-1 bg-background" />;
+							if (!token()) {
+								return (
+									<MobileAuthRequiredView
+										error={authError}
+										onSubmitToken={handleSubmitToken}
+									/>
+								);
+							}
+							return (
+								<Each of={tokens()} key={(value) => value}>
+									{(value) => (
+										<LazyMobileRemoteWorkspace
+											token={value()}
+											onAuthExpired={handleAuthExpired}
+											onSignOut={handleSignOut}
+										/>
+									)}
+								</Each>
+							);
+						}}
+					</View>
+				</MobileViewport.Provider>
+			</WebFontScale.Provider>
 		</WebColorScheme.Provider>
 	);
 }

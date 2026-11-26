@@ -15,11 +15,12 @@ test("mobile shell uses textarea composer only and removes React/engine switcher
 	expect(app.shows("id:mobile-header-engine-toggle")).toBe(false);
 	expect(app.shows("id:chat-composer")).toBe(false);
 
-	// Open session drawer, verify no engine/React switches and a theme switch, and pick the saved session.
+	// Open session drawer, verify no engine/React switches, theme & font scale switches are present, and pick the saved session.
 	await app.press("id:mobile-menu-button");
 	await app.waitFor("id:mobile-drawer");
 	await app.waitFor("id:mobile-env-menu:local");
 	expect(app.shows("id:mobile-drawer-classic")).toBe(false);
+	expect(app.shows("id:mobile-drawer-font-scale")).toBe(true);
 	expect(app.shows("id:mobile-drawer-theme")).toBe(true);
 	expect(app.shows("id:mobile-engine:rich")).toBe(false);
 	expect(app.shows("id:mobile-engine:textarea")).toBe(false);
@@ -460,4 +461,51 @@ test("mobile shell follows system color scheme automatically and allows manual o
 	await restored.waitUntil(
 		() => restored.viewStyle("id:mobile-app")?.backgroundColor === "#101010ff",
 	);
+});
+
+test("mobile shell applies unified mobile UI font scale and allows per-browser small/default/large override", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: { "fixture.scenario": "font-scale" },
+	});
+	await app.waitFor("id:mobile-app");
+	await app.waitFor("text:fontScale uiSm=16 code=14");
+
+	// Switch to Small in drawer.
+	await app.press("id:mobile-menu-button");
+	await app.waitFor("id:mobile-drawer-font-scale");
+	await app.press("id:mobile-drawer-font-scale");
+	await app.waitFor("id:mobile-drawer-font-scale-popup");
+	await app.press("id:mobile-drawer-font-scale:small");
+	await app.waitFor("id:mobile-drawer-font-scale-popup", { state: "gone" });
+	await app.waitFor("text:fontScale uiSm=14 code=12");
+
+	// Switch to Large in drawer.
+	await app.press("id:mobile-drawer-font-scale");
+	await app.waitFor("id:mobile-drawer-font-scale-popup");
+	await app.press("id:mobile-drawer-font-scale:large");
+	await app.waitFor("id:mobile-drawer-font-scale-popup", { state: "gone" });
+	await app.waitFor("text:fontScale uiSm=18 code=15");
+
+	// Switch back to Standard.
+	await app.press("id:mobile-drawer-font-scale");
+	await app.waitFor("id:mobile-drawer-font-scale-popup");
+	await app.press("id:mobile-drawer-font-scale:default");
+	await app.waitFor("id:mobile-drawer-font-scale-popup", { state: "gone" });
+	await app.waitFor("text:fontScale uiSm=16 code=14");
+
+	// Saved preset is restored on reload.
+	const restored = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: {
+			"fixture.scenario": "font-scale",
+			"pilo.web.font-scale.v1": "large",
+		},
+	});
+	await restored.waitFor("id:mobile-app");
+	await restored.waitFor("text:fontScale uiSm=18 code=15");
 });

@@ -31,6 +31,7 @@ import {
 } from "@shared/chat/composer-suggestions";
 import { sessionMentionValue } from "@shared/chat/session-mentions";
 import type { SendMessageShortcut } from "@shared/host-preferences-types";
+import { webInputFontSize } from "@shared/web-font-scale";
 
 import { t } from "../app/shell/i18n";
 import {
@@ -305,7 +306,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 			});
 	};
 
-	const fontSize = () => Math.max(16, readingFont().fontSize);
+	const fontSize = () => webInputFontSize(readingFont().fontSize);
 	const leading = () => inputLineHeight(fontSize());
 	const height = () =>
 		clampInputHeight(
@@ -341,7 +342,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						role="alert"
 						class="mb-1.5 min-w-0 flex-row items-start justify-between gap-2 rounded-xl border border-border/60 bg-muted py-1.5 pl-3 pr-1.5"
 					>
-						<Text class="min-w-0 flex-1 py-0.5 font-sans text-xs leading-5 text-destructive">
+						<Text class="min-w-0 flex-1 py-0.5 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-destructive">
 							{() => state().status ?? ""}
 						</Text>
 						<Button
@@ -394,7 +395,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 								size={14}
 								color={token("status-warning")}
 							/>
-							<Text class="min-w-0 flex-1 font-sans text-xs leading-4 text-status-warning">
+							<Text class="min-w-0 flex-1 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-status-warning">
 								{() => t("chat.sessionHeaderMissing")}
 							</Text>
 						</View>
@@ -404,7 +405,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 							class="flex-row items-center gap-1.5 rounded-lg bg-background/60 px-2 py-1.5"
 						>
 							<Icon name="Lock" size={14} color={token("muted-foreground")} />
-							<Text class="min-w-0 flex-1 font-sans text-xs leading-4 text-muted-foreground">
+							<Text class="min-w-0 flex-1 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 								{() => t("chat.externalReadOnly")}
 							</Text>
 						</View>
@@ -435,7 +436,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 												class="size-4 shrink-0 overflow-hidden rounded-[3px] border border-foreground/10"
 												style={{ objectFit: "cover" }}
 											/>
-											<Text class="max-w-36 truncate font-sans text-xs text-foreground">
+											<Text class="max-w-36 truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-foreground">
 												{`${image().name} · ${formatChatImageSize(image().size)}`}
 											</Text>
 										</BaseButton>
@@ -487,7 +488,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 												) : (
 													<FileTypeIcon path={reference().path} size={13} />
 												)}
-												<Text class="max-w-36 truncate font-sans text-xs text-foreground">
+												<Text class="max-w-36 truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-foreground">
 													{label}
 												</Text>
 											</BaseButton>
@@ -720,7 +721,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 												}`}
 												onPress={() => mentionTab.set(tab.id)}
 											>
-												<Text class="font-sans text-xs font-medium text-foreground">
+												<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug font-medium text-foreground">
 													{tab.label}
 												</Text>
 											</BaseButton>
@@ -742,7 +743,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 											: t(TRIGGER_META[active?.trigger ?? "@"].titleKey);
 									if (entries.length === 0) {
 										return (
-											<Text class="px-3 py-4 text-center font-sans text-xs text-muted-foreground">
+											<Text class="px-3 py-4 text-center font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 												{active?.query
 													? t("chat.noSuggestionMatch", {
 															query: active.query,
@@ -768,11 +769,11 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 														color={token("muted-foreground")}
 													/>
 													<View class="min-w-0 flex-1">
-														<Text class="truncate font-sans text-xs font-medium text-foreground">
+														<Text class="truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug font-medium text-foreground">
 															{entry.label}
 														</Text>
 														{entry.detail ? (
-															<Text class="truncate font-sans text-[11px] text-muted-foreground">
+															<Text class="truncate font-sans text-xs text-(length:--pilo-ui-text-2xs) leading-tight text-muted-foreground">
 																{entry.detail}
 															</Text>
 														) : null}

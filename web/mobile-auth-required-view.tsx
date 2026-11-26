@@ -9,13 +9,13 @@ import {
 } from "nsh";
 import { Collapsible } from "nsh/base";
 
+import { webInputFontSize } from "@shared/web-font-scale";
 import { t } from "../app/shell/i18n";
 import { Button } from "../app/ui/button";
 import { Icon } from "../app/ui/icon";
 import { Input } from "../app/ui/input";
 import { collapsibleRevealProps } from "../app/ui/motion";
 import { styleVar } from "../app/ui/theme-style";
-import { MOBILE_TEXT } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
 
 /**
@@ -60,16 +60,10 @@ export function MobileAuthRequiredView(props: {
 				<View class="gap-4">
 					<View class="items-center">
 						<Icon name="WifiOff" size={24} color={token("muted-foreground")} />
-						<Text
-							class="mt-4 text-center font-sans font-semibold text-foreground"
-							style={MOBILE_TEXT.base}
-						>
+						<Text class="mt-4 text-center font-sans text-lg text-(length:--pilo-ui-text-lg) leading-snug font-semibold text-foreground">
 							Pilo Remote
 						</Text>
-						<Text
-							class="mt-2 text-center font-sans text-muted-foreground"
-							style={MOBILE_TEXT.smRelaxed}
-						>
+						<Text class="mt-2 text-center font-sans text-sm text-(length:--pilo-ui-text-sm) leading-normal text-muted-foreground">
 							{() => props.error?.() || t("settings.remotePairRequired")}
 						</Text>
 					</View>
@@ -81,10 +75,7 @@ export function MobileAuthRequiredView(props: {
 						class="min-h-9 w-full"
 						onPress={() => showTokenInput.update((v) => !v)}
 					>
-						<Text
-							class="font-sans text-muted-foreground"
-							style={MOBILE_TEXT.xs}
-						>
+						<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 							{() =>
 								showTokenInput()
 									? t("common.cancel")
@@ -106,6 +97,9 @@ export function MobileAuthRequiredView(props: {
 								autoCorrect={false}
 								autoCapitalize="none"
 								class="min-h-11"
+								style={{
+									fontSize: webInputFontSize(token("pilo-ui-text-sm")),
+								}}
 								onChange={(event) => tokenDraft.set(event.value)}
 								onSubmit={submit}
 							/>
@@ -116,10 +110,7 @@ export function MobileAuthRequiredView(props: {
 								disabled={!tokenDraft().trim()}
 								onPress={submit}
 							>
-								<Text
-									class="font-sans font-medium text-primary-foreground"
-									style={MOBILE_TEXT.sm}
-								>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-primary-foreground">
 									{() => t("common.confirm")}
 								</Text>
 							</Button>

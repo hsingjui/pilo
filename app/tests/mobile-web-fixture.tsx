@@ -1,4 +1,4 @@
-import { mount, signal, Storage, Text, View } from "nsh";
+import { mount, signal, Storage, Text, token, View } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
@@ -399,7 +399,7 @@ async function run() {
 		scope: { projectId: "p1", models: null, updatedAtMs: 1_763_863_200_000 },
 	});
 
-	mount(MobileAppShell, {
+	const shellProps = {
 		store,
 		chat,
 		composer,
@@ -408,7 +408,7 @@ async function run() {
 			state: runConfigState,
 			scopeModels: models,
 			catalogReady: true,
-			setModel: async (model) => {
+			setModel: async (model: PiModel) => {
 				runConfigState.update((current) => ({ ...current, model }));
 			},
 			setThinkingLevel: async (thinkingLevel: PiThinkingLevel) => {
@@ -427,7 +427,21 @@ async function run() {
 			connectionState.set("connected");
 			recoveryState.set("recovered");
 		},
-	});
+	};
+	if (scenario === "font-scale") {
+		mount(() => (
+			<View class="flex-1 bg-background">
+				<MobileAppShell {...shellProps} />
+				<Text testID="probe-font-scale">
+					{() =>
+						`fontScale uiSm=${Math.round(token("pilo-ui-text-sm"))} code=${Math.round(token("pilo-code-font-size"))}`
+					}
+				</Text>
+			</View>
+		));
+	} else {
+		mount(MobileAppShell, shellProps);
+	}
 	await store.start();
 	if (queueScenario) {
 		store.selectSession("p1", "/sessions/s1.jsonl");

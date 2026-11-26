@@ -17,12 +17,6 @@ import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { textTooltip, Tooltip } from "../ui/tooltip";
 
-/** Touch text scale aligned with Mobile WebUI's 16/14 typography ratio. */
-const TOUCH_TEXT = {
-	badge: { fontSize: 12.5, lineHeight: 16 },
-	body: { fontSize: 13.75, lineHeight: 18 },
-} as const;
-
 export interface ChatPendingQueueProps {
 	queue: ChatQueueStore;
 	composer: ComposerStore;
@@ -82,20 +76,18 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 					<Text
 						role="header"
 						class={classNames(
-							"font-sans font-medium text-foreground/80",
-							!touch && "text-xs",
+							"font-sans text-xs font-medium text-foreground/80",
+							touch && "text-(length:--pilo-ui-text-xs) leading-snug",
 						)}
-						style={touch ? TOUCH_TEXT.body : undefined}
 					>
 						{() => t("chat.pendingMessages")}
 					</Text>
 					<Text
 						testID="chat-pending-queue-count"
 						class={classNames(
-							"min-w-7 shrink-0 text-center font-sans tabular-nums text-muted-foreground",
-							!touch && "text-xs",
+							"min-w-7 shrink-0 text-center font-sans text-xs tabular-nums text-muted-foreground",
+							touch && "text-(length:--pilo-ui-text-xs) leading-snug",
 						)}
-						style={touch ? TOUCH_TEXT.body : undefined}
 					>
 						{() => String(items().length)}
 					</Text>
@@ -127,9 +119,10 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 									<Text
 										class={classNames(
 											"shrink-0 font-sans text-muted-foreground",
-											!touch && "text-[11px]",
+											touch
+												? "text-xs text-(length:--pilo-ui-text-2xs) leading-tight"
+												: "text-[11px]",
 										)}
-										style={touch ? TOUCH_TEXT.badge : undefined}
 									>
 										{() =>
 											t(
@@ -151,10 +144,11 @@ export function ChatPendingQueue(props: ChatPendingQueueProps) {
 									>
 										<Text
 											class={classNames(
-												"font-sans text-foreground/80",
-												touch ? "line-clamp-2" : "truncate text-xs",
+												"font-sans text-xs text-foreground/80",
+												touch
+													? "line-clamp-2 text-(length:--pilo-ui-text-xs) leading-snug"
+													: "truncate",
 											)}
-											style={touch ? TOUCH_TEXT.body : undefined}
 										>
 											{label}
 										</Text>

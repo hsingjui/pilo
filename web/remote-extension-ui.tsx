@@ -1,7 +1,8 @@
-import { type Accessor, cleanup, signal, Text, View } from "nsh";
+import { type Accessor, cleanup, signal, Text, token, View } from "nsh";
 
 import { userErrorMessage } from "@shared/app-error";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { webInputFontSize } from "@shared/web-font-scale";
 import type {
 	ComposerStore,
 	ComposerTarget,
@@ -273,7 +274,7 @@ function ExtensionDialog(props: {
 				{() => {
 					const seconds = remainingSeconds();
 					return seconds !== null && seconds > 0 ? (
-						<Text class="font-sans text-xs text-muted-foreground">
+						<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 							{t("chat.extensionTimeoutSeconds", { seconds })}
 						</Text>
 					) : null;
@@ -296,6 +297,7 @@ function ExtensionDialog(props: {
 						value={value()}
 						placeholder={request.placeholder ?? undefined}
 						disabled={busy()}
+						style={{ fontSize: webInputFontSize(token("pilo-ui-text-sm")) }}
 						onChange={({ value: next }) => value.set(next)}
 						onSubmit={() => respond({ value: value() })}
 					/>
@@ -305,6 +307,7 @@ function ExtensionDialog(props: {
 						accessibilityLabel={title}
 						value={value()}
 						disabled={busy()}
+						style={{ fontSize: webInputFontSize(token("pilo-ui-text-sm")) }}
 						onChange={({ value: next }) => value.set(next)}
 					/>
 				) : null}

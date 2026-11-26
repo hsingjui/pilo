@@ -25,6 +25,7 @@ import {
 	toggleProjectScopeDefaultModel,
 } from "@shared/pi-model-selection";
 import type { ProjectScopedModel } from "@shared/project-model-scope";
+import { webInputFontSize } from "@shared/web-font-scale";
 
 import { t } from "../app/shell/i18n";
 import { PiLogo } from "../app/shell/pi-logo";
@@ -39,7 +40,6 @@ import { Spinner } from "../app/ui/spinner";
 import { Tab } from "../app/ui/tab";
 import { Tabs } from "../app/ui/tabs";
 import { styleVar } from "../app/ui/theme-style";
-import { MOBILE_TEXT } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
 
 function identity(provider: string, id: string) {
@@ -283,16 +283,10 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 					onPress={() => props.onModel(model)}
 				>
 					<View class="min-w-0 flex-1">
-						<Text
-							class="font-sans font-medium text-popover-foreground"
-							style={{ fontSize: 16, lineHeight: 21 }}
-						>
+						<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-snug font-medium text-popover-foreground">
 							{name}
 						</Text>
-						<Text
-							class="mt-0.5 font-sans text-muted-foreground"
-							style={{ fontSize: 13, lineHeight: 17 }}
-						>
+						<Text class="mt-0.5 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 							{subtitle}
 						</Text>
 					</View>
@@ -364,7 +358,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 					placeholder={t("chat.searchModels")}
 					accessibilityLabel={t("chat.searchModels")}
 					class="min-h-11 rounded-(--pilo-sheet-item-radius) pl-10 pr-3"
-					style={{ fontSize: 16 }}
+					style={{ fontSize: webInputFontSize(token("pilo-ui-text-sm")) }}
 					onChange={(event) => query.set(event.value)}
 				/>
 				<View class="pointer-events-none absolute inset-y-0 left-3 justify-center">
@@ -377,7 +371,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 	const renderError = () =>
 		listError() ? (
 			<View class="mx-3 mb-2 rounded-lg bg-destructive/5 p-2">
-				<Text class="font-sans text-destructive" style={MOBILE_TEXT.xs}>
+				<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-destructive">
 					{listError}
 				</Text>
 			</View>
@@ -387,7 +381,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 		props.loading() && (!showModels() || visibleModels().length === 0) ? (
 			<View class="flex-row items-center justify-center gap-2 px-4 py-6">
 				<Spinner size={14} color={token("muted-foreground")} />
-				<Text class="font-sans text-muted-foreground" style={MOBILE_TEXT.xs}>
+				<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 					{() => t("chat.readingModels")}
 				</Text>
 			</View>
@@ -395,10 +389,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 
 	const renderEmpty = (message: string) => (
 		<View class="px-3 py-6">
-			<Text
-				class="text-center font-sans text-muted-foreground"
-				style={MOBILE_TEXT.xs}
-			>
+			<Text class="text-center font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 				{message}
 			</Text>
 		</View>
@@ -435,17 +426,13 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 							))
 						: untracked(() => (
 								<>
-									<Text
-										class="min-w-0 shrink truncate font-sans text-foreground"
-										style={MOBILE_TEXT.xs}
-									>
+									<Text class="min-w-0 shrink truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-foreground">
 										{modelLabel}
 									</Text>
 									<Text
 										accessible={false}
 										accessibilityElementsHidden
-										class="shrink-0 font-sans text-muted-foreground/60"
-										style={MOBILE_TEXT.xs}
+										class="shrink-0 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground/60"
 									>
 										·
 									</Text>
@@ -455,10 +442,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 													<Skeleton class="h-2.5 w-8 shrink-0 rounded-full" />
 												))
 											: untracked(() => (
-													<Text
-														class="shrink-0 font-sans text-muted-foreground"
-														style={MOBILE_TEXT.xs}
-													>
+													<Text class="shrink-0 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 														{thinkingLabel}
 													</Text>
 												))
@@ -512,10 +496,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 										<View class="h-1 w-9 rounded-full bg-muted-foreground/30" />
 									</View>
 									<View class="shrink-0 flex-row items-center justify-between pl-4 pr-2 pt-0.5">
-										<Text
-											class="font-sans font-medium text-popover-foreground"
-											style={MOBILE_TEXT.sm}
-										>
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-popover-foreground">
 											{() => t("chat.model")}
 										</Text>
 										<Button
@@ -560,12 +541,11 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 												>
 													<Text
 														class={classNames(
-															"font-sans",
+															"font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight",
 															view() === option
 																? "text-popover-foreground"
 																: "text-muted-foreground",
 														)}
-														style={MOBILE_TEXT.sm}
 													>
 														{() =>
 															option === "scope"
@@ -618,10 +598,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 									{/* Reasoning level grid */}
 									<View class="border-t border-border/60 px-3 pt-3 pb-1">
 										<View class="mb-2 flex-row items-center gap-2">
-											<Text
-												class="font-sans font-medium text-muted-foreground"
-												style={MOBILE_TEXT.sm}
-											>
+											<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-muted-foreground">
 												{() => t("chat.reasoning")}
 											</Text>
 											{() =>
@@ -637,10 +614,7 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 											const levels = thinkingLevels();
 											if (levels.length === 0) {
 												return untracked(() => (
-													<Text
-														class="py-2 font-sans text-muted-foreground"
-														style={MOBILE_TEXT.sm}
-													>
+													<Text class="py-2 font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-muted-foreground">
 														{() =>
 															props.config()?.ready
 																? t("chat.noReasoning")
@@ -672,12 +646,11 @@ export function MobileRunConfig(props: MobileRunConfigProps) {
 															>
 																<Text
 																	class={classNames(
-																		"font-sans",
+																		"font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight",
 																		active()
 																			? "font-medium text-foreground"
 																			: "text-popover-foreground",
 																	)}
-																	style={MOBILE_TEXT.sm}
 																>
 																	{piThinkingLevelLabel(level)}
 																</Text>

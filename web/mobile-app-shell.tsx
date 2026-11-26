@@ -24,6 +24,7 @@ import { compactMiddlePath } from "@shared/project-path";
 import { userErrorMessage } from "@shared/app-error";
 import { resolveMobileComposerBottomPadding } from "@shared/mobile-viewport";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
+import { webInputFontSize } from "@shared/web-font-scale";
 
 import {
 	AppToaster,
@@ -97,9 +98,9 @@ import {
 	MobileComposerSkeleton,
 	MobileTextareaComposer,
 } from "./mobile-textarea-composer";
-import { MOBILE_TEXT } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
 import { createWebColorScheme, WebColorScheme } from "./web-color-scheme";
+import { createWebFontScale, WebFontScale } from "./web-font-scale";
 
 export { MobileAuthRequiredView } from "./mobile-auth-required-view";
 
@@ -188,15 +189,13 @@ export function MobileAppShell(props: MobileAppShellProps) {
 	});
 
 	const webColorScheme = WebColorScheme() ?? createWebColorScheme();
-	const readingFontSize = computed(
-		() => store.state().preferences?.values.readingFontSize,
-	);
+	const webFontScale = WebFontScale() ?? createWebFontScale();
 	const readingFontFamily = computed(
 		() => store.state().preferences?.values.readingFontFamily,
 	);
 	const readingFont = computed(() =>
 		chatReadingFont({
-			readingFontSize: readingFontSize(),
+			readingFontSize: webFontScale.metrics().readingFontSize,
 			readingFontFamily: readingFontFamily(),
 		}),
 	);
@@ -241,6 +240,8 @@ export function MobileAppShell(props: MobileAppShellProps) {
 
 	followSavedAppearance(store.state, {
 		schemeOverride: webColorScheme.preference,
+		uiTextScale: () => webFontScale.metrics().uiTextScale,
+		codeFontSizeOverride: () => webFontScale.metrics().codeFontSize,
 	});
 
 	const openSessionEntry = computed(() => {
@@ -543,10 +544,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 					<Spinner size={14} color={token("muted-foreground")} />
 				)}
 				<View class="min-w-0 flex-1">
-					<Text
-						class="truncate font-sans font-medium text-foreground/85"
-						style={MOBILE_TEXT.xs}
-					>
+					<Text class="truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug font-medium text-foreground/85">
 						{recovered
 							? t("settings.remoteConnected")
 							: offline
@@ -554,10 +552,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								: t("settings.remoteConnectionLost")}
 					</Text>
 					{!recovered ? (
-						<Text
-							class="mt-0.5 font-sans text-muted-foreground"
-							style={MOBILE_TEXT.xs}
-						>
+						<Text class="mt-0.5 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 							{offline
 								? t("settings.remoteOfflineDescription")
 								: t("settings.remoteReconnecting")}
@@ -577,10 +572,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 							size={13}
 							color={token("muted-foreground")}
 						/>
-						<Text
-							class="font-sans text-muted-foreground"
-							style={MOBILE_TEXT.xs}
-						>
+						<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 							{() => t("common.retry")}
 						</Text>
 					</Button>
@@ -601,10 +593,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 				class="mb-1.5 min-w-0 flex-row items-center gap-2 rounded-xl border border-border/60 bg-muted py-1 pl-3 pr-1.5"
 			>
 				<Icon name="Bell" size={14} color={token("status-warning")} />
-				<Text
-					class="min-w-0 flex-1 truncate font-sans font-medium text-foreground/85"
-					style={MOBILE_TEXT.xs}
-				>
+				<Text class="min-w-0 flex-1 truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug font-medium text-foreground/85">
 					{() => t("chat.extensionPendingInOtherSession")}
 				</Text>
 				<Button
@@ -619,7 +608,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 						)
 					}
 				>
-					<Text class="font-sans text-foreground" style={MOBILE_TEXT.xs}>
+					<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-foreground">
 						{() => t("chat.extensionSwitchToSession")}
 					</Text>
 				</Button>
@@ -664,8 +653,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 							) : null}
 							<Text
 								testID="mobile-header-title"
-								class="min-w-0 shrink truncate font-sans text-foreground"
-								style={MOBILE_TEXT.sm}
+								class="min-w-0 shrink truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground"
 							>
 								{headerTitle}
 							</Text>
@@ -1063,6 +1051,8 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								connectionState={props.connectionState}
 								colorScheme={webColorScheme.preference}
 								onColorSchemeChange={webColorScheme.setPreference}
+								fontScale={webFontScale.preference}
+								onFontScaleChange={webFontScale.setPreference}
 								onReconnect={props.onReconnect}
 								onSignOut={props.onSignOut}
 								onRenameSession={openRenameDialog}
@@ -1107,6 +1097,9 @@ export function MobileAppShell(props: MobileAppShellProps) {
 											value={renameValue()}
 											placeholder={t("sidebar.renamePlaceholder")}
 											disabled={renaming()}
+											style={{
+												fontSize: webInputFontSize(token("pilo-ui-text-sm")),
+											}}
 											onChange={({ value }) => renameValue.set(value)}
 											onSubmit={submitRename}
 										/>

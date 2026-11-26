@@ -33,7 +33,6 @@ import { Button } from "../app/ui/button";
 import { Icon } from "../app/ui/icon";
 import { Spinner } from "../app/ui/spinner";
 import { styleVar } from "../app/ui/theme-style";
-import { MOBILE_TEXT } from "./mobile-typography";
 import {
 	browserRandomBytes,
 	browserSessionStorage,
@@ -385,10 +384,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 								class="flex-row items-center gap-2"
 							>
 								<Spinner size={16} color={token("muted-foreground")} />
-								<Text
-									class="font-sans text-muted-foreground"
-									style={MOBILE_TEXT.sm}
-								>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-muted-foreground">
 									{() => t("settings.remoteConnecting")}
 								</Text>
 							</View>
@@ -417,16 +413,10 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 									size={28}
 									color={token("muted-foreground")}
 								/>
-								<Text
-									class="font-sans font-semibold text-foreground"
-									style={MOBILE_TEXT.lg}
-								>
+								<Text class="font-sans text-lg text-(length:--pilo-ui-text-lg) leading-snug font-semibold text-foreground">
 									{() => t("settings.remotePairingPageTitle")}
 								</Text>
-								<Text
-									class="font-sans text-muted-foreground"
-									style={MOBILE_TEXT.smRelaxed}
-								>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-normal text-muted-foreground">
 									{() => t("settings.remotePairingPageHint")}
 								</Text>
 							</View>
@@ -434,10 +424,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 							{busy() ? (
 								<View class="flex-row items-center gap-2">
 									<Spinner size={16} color={token("muted-foreground")} />
-									<Text
-										class="font-sans text-muted-foreground"
-										style={MOBILE_TEXT.sm}
-									>
+									<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-muted-foreground">
 										{() => t("settings.remoteConnecting")}
 									</Text>
 								</View>
@@ -451,17 +438,11 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 											size={20}
 											color={token("status-success")}
 										/>
-										<Text
-											class="font-sans font-medium text-foreground"
-											style={MOBILE_TEXT.sm}
-										>
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-foreground">
 											{() => t("settings.remotePairingComplete")}
 										</Text>
 									</View>
-									<Text
-										class="font-mono text-muted-foreground"
-										style={MOBILE_TEXT.xs}
-									>
+									<Text class="font-mono text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 										{origin}
 									</Text>
 								</View>
@@ -473,20 +454,14 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 									role="alert"
 									class="rounded-lg border border-border bg-muted/50 p-3"
 								>
-									<Text
-										class="font-sans text-foreground"
-										style={MOBILE_TEXT.smRelaxed}
-									>
+									<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-normal text-foreground">
 										{currentError}
 									</Text>
 								</View>
 							) : null}
 
 							{!currentBoot.context && !failure() ? (
-								<Text
-									class="font-sans text-muted-foreground"
-									style={MOBILE_TEXT.smRelaxed}
-								>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-normal text-muted-foreground">
 									{() => t("settings.remotePairRequired")}
 								</Text>
 							) : null}
@@ -509,17 +484,11 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 												onPress={() => navigate(href)}
 											>
 												<View class="min-w-0 flex-1 gap-1">
-													<Text
-														class="font-sans font-medium text-foreground"
-														style={MOBILE_TEXT.sm}
-													>
+													<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-foreground">
 														{address.baseUrl}
 													</Text>
 													{address.issued ? (
-														<Text
-															class="font-sans text-muted-foreground"
-															style={MOBILE_TEXT.xs}
-														>
+														<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 															{() => t("settings.remotePairingIssued")}
 														</Text>
 													) : null}
@@ -543,10 +512,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 										disabled={busy()}
 										onPress={() => generation.update((n) => n + 1)}
 									>
-										<Text
-											class="font-sans font-medium text-primary-foreground"
-											style={MOBILE_TEXT.sm}
-										>
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-primary-foreground">
 											{() => t("common.retry")}
 										</Text>
 									</Button>
@@ -559,10 +525,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 										class="min-h-11 px-4"
 										onPress={() => navigate(pairingReturnUrl(currentEntry))}
 									>
-										<Text
-											class="font-sans text-foreground"
-											style={MOBILE_TEXT.sm}
-										>
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
 											{() => t("settings.remotePairingContinue")}
 										</Text>
 									</Button>
@@ -575,10 +538,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 										class="min-h-11 px-4"
 										onPress={() => openWorkspace()}
 									>
-										<Text
-											class="font-sans font-medium text-primary-foreground"
-											style={MOBILE_TEXT.sm}
-										>
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-primary-foreground">
 											{() => t("settings.remoteOpenPilo")}
 										</Text>
 									</Button>

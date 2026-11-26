@@ -20,6 +20,7 @@ import { Button as BaseButton } from "nsh/base";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { SidebarSession } from "@shared/sidebar/sidebar-types";
 import type { Theme } from "@shared/theme-settings-types";
+import type { WebFontScalePreset } from "@shared/web-font-scale";
 
 import { AppToaster } from "../app/shell/app-toasts";
 import { connectionLabel } from "../app/shell/connection-label";
@@ -44,7 +45,7 @@ import {
 import { Spinner } from "../app/ui/spinner";
 import { styleVar } from "../app/ui/theme-style";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
-import { MOBILE_TEXT, mobileSelectedRingStyle } from "./mobile-typography";
+import { mobileSelectedRingStyle } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
 
 export interface MobileDrawerProps {
@@ -58,6 +59,8 @@ export interface MobileDrawerProps {
 	connectionState: Accessor<WebRemoteConnectionState>;
 	colorScheme?: Accessor<Theme>;
 	onColorSchemeChange?: (scheme: Theme) => void;
+	fontScale?: Accessor<WebFontScalePreset>;
+	onFontScaleChange?: (scale: WebFontScalePreset) => void;
 	onReconnect?: () => void;
 	onSignOut?: () => void;
 	onRenameSession?: (target: {
@@ -116,6 +119,29 @@ function colorSchemeLabelKey(
 	if (scheme === "dark") return "settings.dark";
 	if (scheme === "light") return "settings.light";
 	return "settings.system";
+}
+
+const FONT_SCALE_OPTIONS: readonly {
+	value: WebFontScalePreset;
+	labelKey:
+		| "settings.textSizeSmall"
+		| "settings.textSizeDefault"
+		| "settings.textSizeLarge";
+}[] = [
+	{ value: "small", labelKey: "settings.textSizeSmall" },
+	{ value: "default", labelKey: "settings.textSizeDefault" },
+	{ value: "large", labelKey: "settings.textSizeLarge" },
+];
+
+function fontScaleLabelKey(
+	scale: WebFontScalePreset,
+):
+	| "settings.textSizeSmall"
+	| "settings.textSizeDefault"
+	| "settings.textSizeLarge" {
+	if (scale === "small") return "settings.textSizeSmall";
+	if (scale === "large") return "settings.textSizeLarge";
+	return "settings.textSizeDefault";
 }
 
 function connectionStatusLabel(state: WebRemoteConnectionState): string {
@@ -391,12 +417,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
 						) : null}
 					</View>
 					<Text
-						class={`min-w-0 flex-1 truncate font-sans ${
+						class={`min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight ${
 							selected()
 								? "text-sidebar-selection-foreground"
 								: "text-sidebar-foreground"
 						}`}
-						style={MOBILE_TEXT.sm}
 					>
 						{session.title}
 					</Text>
@@ -407,10 +432,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 							class="h-11 px-2 hover:bg-sidebar-hover active:bg-sidebar-hover"
 							onPress={() => confirmingDeleteKey.set(null)}
 						>
-							<Text
-								class="font-sans text-sidebar-foreground"
-								style={MOBILE_TEXT.sm}
-							>
+							<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground">
 								{() => t("common.cancel")}
 							</Text>
 						</Button>
@@ -430,7 +452,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								);
 							}}
 						>
-							<Text class="font-sans text-destructive" style={MOBILE_TEXT.sm}>
+							<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-destructive">
 								{() =>
 									session.active
 										? t("sidebar.deleteRunningConfirm")
@@ -465,14 +487,13 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					</View>
 					<View class="min-w-0 flex-1">
 						<Text
-							class={`min-w-0 truncate font-sans ${
+							class={`min-w-0 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight ${
 								selected() || session.unread ? "font-medium" : ""
 							} ${
 								selected()
 									? "text-sidebar-selection-foreground"
 									: "text-sidebar-foreground"
 							}`}
-							style={MOBILE_TEXT.sm}
 						>
 							{session.title}
 						</Text>
@@ -484,10 +505,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									class="opacity-80"
 									color={token("sidebar-foreground-muted")}
 								/>
-								<Text
-									class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted"
-									style={MOBILE_TEXT.xs}
-								>
+								<Text class="min-w-0 flex-1 truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-sidebar-foreground-muted">
 									{projectName}
 								</Text>
 							</View>
@@ -534,7 +552,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 										});
 									}}
 								>
-									<Text class="font-sans" style={MOBILE_TEXT.sm}>
+									<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight">
 										{() => t("sidebar.rename")}
 									</Text>
 								</MobileDropdownItem>
@@ -545,7 +563,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								disabled={session.active}
 								onSelect={() => void store.loadSessions(session.projectId)}
 							>
-								<Text class="font-sans" style={MOBILE_TEXT.sm}>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight">
 									{() => t("chat.refreshSession")}
 								</Text>
 							</MobileDropdownItem>
@@ -555,7 +573,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								icon={<Icon name="Trash2" size={14} />}
 								onSelect={() => confirmingDeleteKey.set(key)}
 							>
-								<Text class="font-sans" style={MOBILE_TEXT.sm}>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight">
 									{() => t("common.delete")}
 								</Text>
 							</MobileDropdownItem>
@@ -603,10 +621,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 							>
 								{/* Header */}
 								<View class="min-h-14 shrink-0 flex-row items-center pl-5 pr-3">
-									<Text
-										class="min-w-0 flex-1 truncate font-sans font-semibold tracking-tight text-sidebar-foreground"
-										style={MOBILE_TEXT.lg}
-									>
+									<Text class="min-w-0 flex-1 truncate font-sans text-lg text-(length:--pilo-ui-text-lg) leading-snug font-semibold tracking-tight text-sidebar-foreground">
 										Pilo
 									</Text>
 									{props.onOpenSearch ? (
@@ -658,10 +673,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 											strokeWidth={1.5}
 											color={token("sidebar-foreground")}
 										/>
-										<Text
-											class="truncate font-sans text-sidebar-foreground"
-											style={MOBILE_TEXT.sm}
-										>
+										<Text class="truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground">
 											{() => t("sidebar.newSession")}
 										</Text>
 									</BaseButton>
@@ -713,15 +725,12 @@ export function MobileDrawer(props: MobileDrawerProps) {
 											onPress={() => mode.set(tab.value)}
 										>
 											<Text
-												class={`truncate font-sans font-medium ${
+												class={`truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-tight font-medium ${
 													mode() === tab.value
 														? "text-sidebar-foreground"
 														: "text-sidebar-foreground-muted"
 												}`}
-												style={[
-													tactileTransition("color"),
-													MOBILE_TEXT.segment,
-												]}
+												style={tactileTransition("color")}
 											>
 												{tab.label}
 											</Text>
@@ -741,10 +750,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 											const items = recent();
 											if (items.length === 0) {
 												return (
-													<Text
-														class="px-3 py-10 text-center font-sans text-sidebar-foreground-muted"
-														style={MOBILE_TEXT.sm}
-													>
+													<Text class="px-3 py-10 text-center font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground-muted">
 														{() => t("sidebar.noSessions")}
 													</Text>
 												);
@@ -761,10 +767,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 										const envGroups = groups();
 										if (envGroups.length === 0) {
 											return (
-												<Text
-													class="px-3 py-10 text-center font-sans text-sidebar-foreground-muted"
-													style={MOBILE_TEXT.sm}
-												>
+												<Text class="px-3 py-10 text-center font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground-muted">
 													{() => t("sidebar.noSessions")}
 												</Text>
 											);
@@ -796,10 +799,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																		size={16}
 																		color={token("sidebar-foreground-muted")}
 																	/>
-																	<Text
-																		class="min-w-0 flex-1 truncate font-sans font-medium text-sidebar-foreground-muted"
-																		style={MOBILE_TEXT.xs}
-																	>
+																	<Text class="min-w-0 flex-1 truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug font-medium text-sidebar-foreground-muted">
 																		{envName}
 																	</Text>
 																	<View
@@ -853,10 +853,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																			)
 																		}
 																	>
-																		<Text
-																			class="min-w-0 flex-1 font-sans"
-																			style={MOBILE_TEXT.sm}
-																		>
+																		<Text class="min-w-0 flex-1 font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight">
 																			{() => t("sidebar.showDefaultWorkspace")}
 																		</Text>
 																	</MobileDropdownItem>
@@ -927,12 +924,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																							)}
 																						/>
 																						<Text
-																							class={`min-w-0 flex-1 truncate font-sans text-sidebar-foreground ${
+																							class={`min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground ${
 																								isSelectedProject
 																									? "font-semibold"
 																									: "font-medium"
 																							}`}
-																							style={MOBILE_TEXT.sm}
 																						>
 																							{projectDisplayName(project)}
 																						</Text>
@@ -944,10 +940,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																								)}
 																							/>
 																						) : sessionCount > 0 ? (
-																							<Text
-																								class="shrink-0 font-sans tabular-nums text-sidebar-foreground-muted"
-																								style={MOBILE_TEXT.xs}
-																							>
+																							<Text class="shrink-0 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug tabular-nums text-sidebar-foreground-muted">
 																								{String(sessionCount)}
 																							</Text>
 																						) : null}
@@ -992,10 +985,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																				{projExpanded ? (
 																					sessions.length === 0 ? (
 																						loading ? (
-																							<Text
-																								class="py-4 pl-8 pr-2 font-sans text-sidebar-foreground-muted"
-																								style={MOBILE_TEXT.sm}
-																							>
+																							<Text class="py-4 pl-8 pr-2 font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground-muted">
 																								{() => t("common.loading")}
 																							</Text>
 																						) : (
@@ -1013,10 +1003,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																										"sidebar-foreground-muted",
 																									)}
 																								/>
-																								<Text
-																									class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted"
-																									style={MOBILE_TEXT.sm}
-																								>
+																								<Text class="min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground-muted">
 																									{() =>
 																										`${t("sidebar.noSessions")} · ${t("sidebar.newSession")}`
 																									}
@@ -1033,10 +1020,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																							{sessions.length >
 																							PROJECT_SESSION_BATCH_SIZE ? (
 																								<View class="items-center gap-1 pt-1">
-																									<Text
-																										class="px-2 text-center font-sans text-sidebar-foreground-muted"
-																										style={MOBILE_TEXT.xs}
-																									>
+																									<Text class="px-2 text-center font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-sidebar-foreground-muted">
 																										{t(
 																											"sidebar.loadedSessionCount",
 																											{
@@ -1062,10 +1046,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																												)
 																											}
 																										>
-																											<Text
-																												class="font-sans text-sidebar-foreground-muted"
-																												style={MOBILE_TEXT.xs}
-																											>
+																											<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-sidebar-foreground-muted">
 																												{() =>
 																													t("sidebar.viewAll")
 																												}
@@ -1103,10 +1084,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 														class="h-11 px-3 hover:bg-sidebar-hover active:bg-sidebar-hover"
 														onPress={() => confirmingSignOut.set(false)}
 													>
-														<Text
-															class="font-sans text-sidebar-foreground-muted"
-															style={MOBILE_TEXT.xs}
-														>
+														<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-sidebar-foreground-muted">
 															{() => t("common.cancel")}
 														</Text>
 													</Button>
@@ -1121,10 +1099,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 															props.onSignOut?.();
 														}}
 													>
-														<Text
-															class="font-sans text-destructive"
-															style={MOBILE_TEXT.xs}
-														>
+														<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-destructive">
 															{() => t("settings.remoteSignOutConfirm")}
 														</Text>
 													</Button>
@@ -1152,15 +1127,55 @@ export function MobileDrawer(props: MobileDrawerProps) {
 														strokeWidth={1.5}
 														color={token("sidebar-foreground-muted")}
 													/>
-													<Text
-														class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted"
-														style={MOBILE_TEXT.sm}
-													>
+													<Text class="min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground-muted">
 														{() =>
 															connectionStatusLabel(props.connectionState())
 														}
 													</Text>
 												</BaseButton>
+												{props.fontScale && props.onFontScaleChange ? (
+													<MobileDropdownMenu
+														placement="top"
+														align="end"
+														popupClass="w-40"
+														trigger={
+															<Button
+																testID="mobile-drawer-font-scale"
+																variant="ghost"
+																size="icon"
+																class={ROW_ACTION_CLASS}
+																accessibilityLabel={`${t("settings.textSize")}: ${t(fontScaleLabelKey(props.fontScale()))}`}
+															>
+																<Icon
+																	name="Type"
+																	size={16}
+																	color={token("sidebar-foreground-muted")}
+																/>
+															</Button>
+														}
+													>
+														<View
+															testID="mobile-drawer-font-scale-popup"
+															class="gap-0.5"
+														>
+															{FONT_SCALE_OPTIONS.map((option) => (
+																<MobileDropdownItem
+																	testID={`mobile-drawer-font-scale:${option.value}`}
+																	class="gap-2.5 px-2.5 py-1.5"
+																	role="menuitemradio"
+																	checked={props.fontScale?.() === option.value}
+																	onSelect={() =>
+																		props.onFontScaleChange?.(option.value)
+																	}
+																>
+																	<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+																		{() => t(option.labelKey)}
+																	</Text>
+																</MobileDropdownItem>
+															))}
+														</View>
+													</MobileDropdownMenu>
+												) : null}
 												{props.colorScheme && props.onColorSchemeChange ? (
 													<MobileDropdownMenu
 														placement="top"
@@ -1199,10 +1214,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																		props.onColorSchemeChange?.(option.value)
 																	}
 																>
-																	<Text
-																		class="font-sans text-foreground"
-																		style={MOBILE_TEXT.sm}
-																	>
+																	<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
 																		{() => t(option.labelKey)}
 																	</Text>
 																</MobileDropdownItem>
