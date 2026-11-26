@@ -19,6 +19,7 @@ import { Button as BaseButton } from "nsh/base";
 
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { SidebarSession } from "@shared/sidebar/sidebar-types";
+import type { Theme } from "@shared/theme-settings-types";
 
 import { AppToaster } from "../app/shell/app-toasts";
 import { connectionLabel } from "../app/shell/connection-label";
@@ -33,7 +34,7 @@ import {
 import type { WebRemoteConnectionState } from "./web-remote-client";
 import type { AppStore } from "../app/state/app-store";
 import { Button } from "../app/ui/button";
-import { Icon } from "../app/ui/icon";
+import { Icon, type IconName } from "../app/ui/icon";
 import {
 	chevronRotateStyle,
 	MOTION,
@@ -55,6 +56,8 @@ export interface MobileDrawerProps {
 	/** Release velocity (in progress/sec) from the open swipe gesture. */
 	dragVelocity?: Accessor<number>;
 	connectionState: Accessor<WebRemoteConnectionState>;
+	colorScheme?: Accessor<Theme>;
+	onColorSchemeChange?: (scheme: Theme) => void;
 	onReconnect?: () => void;
 	onSignOut?: () => void;
 	onRenameSession?: (target: {
@@ -91,6 +94,30 @@ function projectDisplayName(project: Project): string {
 		: project.name;
 }
 
+const COLOR_SCHEME_OPTIONS: readonly {
+	value: Theme;
+	icon: IconName;
+	labelKey: "settings.system" | "settings.light" | "settings.dark";
+}[] = [
+	{ value: "system", icon: "Monitor", labelKey: "settings.system" },
+	{ value: "light", icon: "Sun", labelKey: "settings.light" },
+	{ value: "dark", icon: "Moon", labelKey: "settings.dark" },
+];
+
+function colorSchemeIcon(scheme: Theme): IconName {
+	if (scheme === "dark") return "Moon";
+	if (scheme === "light") return "Sun";
+	return "Monitor";
+}
+
+function colorSchemeLabelKey(
+	scheme: Theme,
+): "settings.system" | "settings.light" | "settings.dark" {
+	if (scheme === "dark") return "settings.dark";
+	if (scheme === "light") return "settings.light";
+	return "settings.system";
+}
+
 function connectionStatusLabel(state: WebRemoteConnectionState): string {
 	switch (state) {
 		case "connected":
@@ -108,7 +135,7 @@ function connectionStatusLabel(state: WebRemoteConnectionState): string {
  * - Search + Close header actions, New Session row, Projects / Recent segment toggle
  * - Environment, Project, and Session rows with 44pt+ touch targets, active/unread dots,
  *   per-session actions menu, inline delete confirmation, and batched session loading
- * - Footer with connection status (theme follows host settings automatically)
+ * - Footer with connection status, per-browser appearance switch, and sign out
  */
 export function MobileDrawer(props: MobileDrawerProps) {
 	const { store } = props;
@@ -1134,6 +1161,55 @@ export function MobileDrawer(props: MobileDrawerProps) {
 														}
 													</Text>
 												</BaseButton>
+												{props.colorScheme && props.onColorSchemeChange ? (
+													<MobileDropdownMenu
+														placement="top"
+														align="end"
+														popupClass="w-44"
+														trigger={
+															<Button
+																testID="mobile-drawer-theme"
+																variant="ghost"
+																size="icon"
+																class={ROW_ACTION_CLASS}
+																accessibilityLabel={`${t("settings.theme")}: ${t(colorSchemeLabelKey(props.colorScheme()))}`}
+															>
+																<Icon
+																	name={colorSchemeIcon(props.colorScheme())}
+																	size={16}
+																	color={token("sidebar-foreground-muted")}
+																/>
+															</Button>
+														}
+													>
+														<View
+															testID="mobile-drawer-theme-popup"
+															class="gap-0.5"
+														>
+															{COLOR_SCHEME_OPTIONS.map((option) => (
+																<MobileDropdownItem
+																	testID={`mobile-drawer-theme:${option.value}`}
+																	class="gap-2.5 px-2.5 py-1.5"
+																	role="menuitemradio"
+																	checked={
+																		props.colorScheme?.() === option.value
+																	}
+																	icon={<Icon name={option.icon} size={14} />}
+																	onSelect={() =>
+																		props.onColorSchemeChange?.(option.value)
+																	}
+																>
+																	<Text
+																		class="font-sans text-foreground"
+																		style={MOBILE_TEXT.sm}
+																	>
+																		{() => t(option.labelKey)}
+																	</Text>
+																</MobileDropdownItem>
+															))}
+														</View>
+													</MobileDropdownMenu>
+												) : null}
 												{props.onSignOut ? (
 													<Button
 														testID="mobile-drawer-signout"

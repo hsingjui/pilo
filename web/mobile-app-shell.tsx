@@ -99,6 +99,7 @@ import {
 } from "./mobile-textarea-composer";
 import { MOBILE_TEXT } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
+import { createWebColorScheme, WebColorScheme } from "./web-color-scheme";
 
 export { MobileAuthRequiredView } from "./mobile-auth-required-view";
 
@@ -186,6 +187,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		};
 	});
 
+	const webColorScheme = WebColorScheme() ?? createWebColorScheme();
 	const readingFontSize = computed(
 		() => store.state().preferences?.values.readingFontSize,
 	);
@@ -237,7 +239,9 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		});
 	});
 
-	followSavedAppearance(store.state);
+	followSavedAppearance(store.state, {
+		schemeOverride: webColorScheme.preference,
+	});
 
 	const openSessionEntry = computed(() => {
 		const state = store.state();
@@ -1057,6 +1061,8 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								dragProgress={drawerDragProgress}
 								dragVelocity={drawerDragVelocity}
 								connectionState={props.connectionState}
+								colorScheme={webColorScheme.preference}
+								onColorSchemeChange={webColorScheme.setPreference}
 								onReconnect={props.onReconnect}
 								onSignOut={props.onSignOut}
 								onRenameSession={openRenameDialog}

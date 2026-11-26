@@ -20,6 +20,7 @@ import {
 	type BuiltinThemeFamily,
 	isBuiltinThemeFamily,
 	isThemeFamily,
+	type Theme,
 	type ThemeSettings,
 } from "@shared/theme-settings-types";
 import {
@@ -118,18 +119,23 @@ const STARTUP_THEME_KEY = "pilo.startupTheme";
  * Shows the theme the last run saved, so a launch or reload does not flash
  * the default theme before the Host's settings arrive.
  */
-export async function showStartupTheme(): Promise<StartupTheme | null> {
+export async function showStartupTheme(options?: {
+	schemeOverride?: Theme;
+}): Promise<StartupTheme | null> {
 	const saved = parseStartupTheme(
 		await Storage.getItem(STARTUP_THEME_KEY).catch(() => null),
 	);
+	const override = options?.schemeOverride;
 	if (saved) {
 		showTheme(
-			saved,
+			override ? { ...saved, theme: override } : saved,
 			getPageFontFamilyStack(DEFAULT_PAGE_FONT_FAMILY),
 			getMonospaceFontFamilyStack(DEFAULT_CODE_FONT_FAMILY),
 			undefined,
 			DEFAULT_UI_FONT_SIZE,
 		);
+	} else if (override) {
+		setColorScheme(override);
 	}
 	return saved;
 }
@@ -165,7 +171,10 @@ function parseStartupTheme(stored: string | null): StartupTheme | null {
 }
 
 /** Follow saved appearance, using platform fonts until preferences load. */
-export function followSavedAppearance(state: Accessor<AppState>) {
+export function followSavedAppearance(
+	state: Accessor<AppState>,
+	options?: { schemeOverride?: Accessor<Theme> },
+) {
 	const locale = computed(() => state().preferences?.values.locale);
 	const pageSans = computed(() =>
 		getPageFontFamilyStack(
@@ -182,6 +191,16 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 		() => state().preferences?.values.uiFontSize ?? DEFAULT_UI_FONT_SIZE,
 	);
 	const theme = computed(() => state().themeSettings);
+	const schemeOverride = options?.schemeOverride;
+	const effectiveTheme = computed<StartupTheme | null>(() => {
+		const settings = theme();
+		const override = schemeOverride?.();
+		if (!override) return settings;
+		if (!settings) {
+			return { theme: override, themeFamily: "lody" };
+		}
+		return { ...settings, theme: override };
+	});
 	const startupTheme = computed(() => {
 		const settings = theme();
 		if (!settings) return null;
@@ -202,7 +221,13 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 	});
 	const themeInputs = computed(
 		() =>
-			[theme(), pageSans(), codeMono(), codeFontSize(), uiFontSize()] as const,
+			[
+				effectiveTheme(),
+				pageSans(),
+				codeMono(),
+				codeFontSize(),
+				uiFontSize(),
+			] as const,
 	);
 	// Effects run after rendering; set the theme before building the first layout.
 	let applied = untracked(themeInputs);

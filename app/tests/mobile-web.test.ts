@@ -15,12 +15,12 @@ test("mobile shell uses textarea composer only and removes React/engine switcher
 	expect(app.shows("id:mobile-header-engine-toggle")).toBe(false);
 	expect(app.shows("id:chat-composer")).toBe(false);
 
-	// Open session drawer, verify no engine/React/theme switches, and pick the saved session.
+	// Open session drawer, verify no engine/React switches and a theme switch, and pick the saved session.
 	await app.press("id:mobile-menu-button");
 	await app.waitFor("id:mobile-drawer");
 	await app.waitFor("id:mobile-env-menu:local");
 	expect(app.shows("id:mobile-drawer-classic")).toBe(false);
-	expect(app.shows("id:mobile-drawer-theme")).toBe(false);
+	expect(app.shows("id:mobile-drawer-theme")).toBe(true);
 	expect(app.shows("id:mobile-engine:rich")).toBe(false);
 	expect(app.shows("id:mobile-engine:textarea")).toBe(false);
 
@@ -399,4 +399,65 @@ test("mobile pending queue disables actions while offline and re-enables after r
 	await app.waitFor("text:Remote connected");
 	await app.press("id:chat-pending-send-now-0");
 	await app.waitFor("id:chat-pending-queue", { state: "gone" });
+});
+
+test("mobile shell follows system color scheme automatically and allows manual override in drawer", async () => {
+	// Even when the desktop host saved `theme: "light"`, Web defaults to following system appearance.
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		colorScheme: "dark",
+	});
+	await app.waitFor("id:mobile-app");
+	expect(app.viewStyle("id:mobile-app")?.backgroundColor).toBe("#101010ff");
+
+	// Automatic switching follows system light/dark changes.
+	await app.setColorScheme("light");
+	await app.waitUntil(
+		() => app.viewStyle("id:mobile-app")?.backgroundColor === "#ffffffff",
+	);
+
+	// Manual dark override stays dark even while the system is light.
+	await app.press("id:mobile-menu-button");
+	await app.waitFor("id:mobile-drawer-theme");
+	await app.press("id:mobile-drawer-theme");
+	await app.waitFor("id:mobile-drawer-theme-popup");
+	await app.press("id:mobile-drawer-theme:dark");
+	await app.waitFor("id:mobile-drawer-theme-popup", { state: "gone" });
+	await app.waitUntil(
+		() => app.viewStyle("id:mobile-app")?.backgroundColor === "#101010ff",
+	);
+
+	// Manual light override stays light even when the system switches to dark.
+	await app.setColorScheme("dark");
+	await app.press("id:mobile-drawer-theme");
+	await app.waitFor("id:mobile-drawer-theme-popup");
+	await app.press("id:mobile-drawer-theme:light");
+	await app.waitFor("id:mobile-drawer-theme-popup", { state: "gone" });
+	await app.waitUntil(
+		() => app.viewStyle("id:mobile-app")?.backgroundColor === "#ffffffff",
+	);
+
+	// Returning to system follows the current dark system scheme again.
+	await app.press("id:mobile-drawer-theme");
+	await app.waitFor("id:mobile-drawer-theme-popup");
+	await app.press("id:mobile-drawer-theme:system");
+	await app.waitFor("id:mobile-drawer-theme-popup", { state: "gone" });
+	await app.waitUntil(
+		() => app.viewStyle("id:mobile-app")?.backgroundColor === "#101010ff",
+	);
+
+	// Saved manual preference is restored on reload.
+	const restored = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		colorScheme: "light",
+		storage: { "pilo.web.color-scheme.v1": "dark" },
+	});
+	await restored.waitFor("id:mobile-app");
+	await restored.waitUntil(
+		() => restored.viewStyle("id:mobile-app")?.backgroundColor === "#101010ff",
+	);
 });

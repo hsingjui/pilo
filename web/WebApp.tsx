@@ -11,6 +11,7 @@ import { MobileAuthRequiredView } from "./mobile-auth-required-view";
 import type { MobileRemoteWorkspaceProps } from "./mobile-remote-workspace";
 import { installMobileViewportSync, MobileViewport } from "./mobile-viewport";
 import { RemotePairingPage } from "./pairing-page";
+import { createWebColorScheme, WebColorScheme } from "./web-color-scheme";
 import {
 	clearRemoteDeviceToken,
 	loadRemoteDeviceToken,
@@ -85,6 +86,7 @@ function LazyMobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 
 function WebAppRoot() {
 	const mobileViewport = installMobileViewportSync();
+	const webColorScheme = createWebColorScheme();
 	const currentUrl = signal(resolveCurrentPageUrl());
 	const isPairingRoute = computed(() => isRemotePairingUrl(currentUrl()));
 	const token = signal<string | null>(null);
@@ -104,7 +106,12 @@ function WebAppRoot() {
 		// Prefetch the workspace bundle in parallel with startup theme & token hydration.
 		void loadWorkspaceModule().catch(() => {});
 	}
-	void Promise.all([showStartupTheme(), loadRemoteDeviceToken()])
+	void Promise.all([
+		webColorScheme.ready.then((schemeOverride) =>
+			showStartupTheme({ schemeOverride }),
+		),
+		loadRemoteDeviceToken(),
+	])
 		.then(([, loadedToken]) => {
 			token.set(loadedToken);
 		})
@@ -144,52 +151,54 @@ function WebAppRoot() {
 	};
 
 	return (
-		<MobileViewport.Provider value={mobileViewport}>
-			<View class="flex-1 bg-background">
-				<Head
-					title="Pilo"
-					lang={appLocale()}
-					meta={[
-						{ name: "apple-mobile-web-app-capable", content: "yes" },
-						{
-							name: "apple-mobile-web-app-status-bar-style",
-							content: "black-translucent",
-						},
-						{ name: "apple-mobile-web-app-title", content: "Pilo" },
-					]}
-				/>
-				{() => {
-					if (isPairingRoute()) {
-						return (
-							<RemotePairingPage
-								onPaired={(pairedToken) => enterWorkspace(pairedToken)}
-								onOpenApp={() => enterWorkspace()}
-							/>
-						);
-					}
-					if (!ready()) return <View class="flex-1 bg-background" />;
-					if (!token()) {
-						return (
-							<MobileAuthRequiredView
-								error={authError}
-								onSubmitToken={handleSubmitToken}
-							/>
-						);
-					}
-					return (
-						<Each of={tokens()} key={(value) => value}>
-							{(value) => (
-								<LazyMobileRemoteWorkspace
-									token={value()}
-									onAuthExpired={handleAuthExpired}
-									onSignOut={handleSignOut}
+		<WebColorScheme.Provider value={webColorScheme}>
+			<MobileViewport.Provider value={mobileViewport}>
+				<View class="flex-1 bg-background">
+					<Head
+						title="Pilo"
+						lang={appLocale()}
+						meta={[
+							{ name: "apple-mobile-web-app-capable", content: "yes" },
+							{
+								name: "apple-mobile-web-app-status-bar-style",
+								content: "black-translucent",
+							},
+							{ name: "apple-mobile-web-app-title", content: "Pilo" },
+						]}
+					/>
+					{() => {
+						if (isPairingRoute()) {
+							return (
+								<RemotePairingPage
+									onPaired={(pairedToken) => enterWorkspace(pairedToken)}
+									onOpenApp={() => enterWorkspace()}
 								/>
-							)}
-						</Each>
-					);
-				}}
-			</View>
-		</MobileViewport.Provider>
+							);
+						}
+						if (!ready()) return <View class="flex-1 bg-background" />;
+						if (!token()) {
+							return (
+								<MobileAuthRequiredView
+									error={authError}
+									onSubmitToken={handleSubmitToken}
+								/>
+							);
+						}
+						return (
+							<Each of={tokens()} key={(value) => value}>
+								{(value) => (
+									<LazyMobileRemoteWorkspace
+										token={value()}
+										onAuthExpired={handleAuthExpired}
+										onSignOut={handleSignOut}
+									/>
+								)}
+							</Each>
+						);
+					}}
+				</View>
+			</MobileViewport.Provider>
+		</WebColorScheme.Provider>
 	);
 }
 
