@@ -32,7 +32,7 @@ use fs_ops::{
 use output::ServerWriter;
 use pilo_protocol::{
     Envelope, MAX_BINARY_PAYLOAD_BYTES, PROTOCOL_VERSION, SERVER_CAPABILITIES, ServerPing,
-    ServerStatus, read_frame, write_frame,
+    ServerStatus, read_frame,
 };
 use runtime_streams::{
     PiProcess, TerminalSession, pi_check_idle, pi_send, pi_start, pi_stop, preview_ports,
@@ -150,10 +150,14 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn serve_connection(
     state: &ServerState,
-    mut input: impl tokio::io::AsyncRead + Unpin,
+    input: impl tokio::io::AsyncRead + Unpin,
     mut output: impl tokio::io::AsyncWrite + Unpin + Send + 'static,
     replaced: impl std::future::Future<Output = ()>,
 ) -> io::Result<()> {
+    use tokio::io::AsyncWriteExt as _;
+
+    const WRITE_BATCH_BYTES: usize = 64 * 1024;
+    let mut input = tokio::io::BufReader::new(input);
     tokio::pin!(replaced);
     let (writer_tx, mut writer_rx) = mpsc::channel::<output::QueuedOutput>(256);
     state.writer.set_sender(Some(writer_tx.clone()));
@@ -161,9 +165,40 @@ async fn serve_connection(
     let (writer_done, mut writer_closed) = tokio::sync::oneshot::channel::<()>();
     let writer_task = tokio::spawn(async move {
         let _done = writer_done;
-        while let Some(queued) = writer_rx.recv().await {
-            // Keep the byte reservation until the frame has actually been written.
-            if let Err(error) = write_frame(&mut output, queued.message).await {
+        let mut batch: Vec<output::QueuedOutput> = Vec::new();
+        let mut buffer: Vec<u8> = Vec::new();
+        while let Some(first) = writer_rx.recv().await {
+            // Keep the byte reservations until the frames have actually been written.
+            let mut total = first.frame.len();
+            batch.push(first);
+            while total < WRITE_BATCH_BYTES {
+                match writer_rx.try_recv() {
+                    Ok(next) => {
+                        total = total.saturating_add(next.frame.len());
+                        batch.push(next);
+                    }
+                    Err(_) => break,
+                }
+            }
+            let write_result = if batch.len() == 1 {
+                output.write_all(&batch[0].frame).await
+            } else {
+                buffer.clear();
+                buffer.reserve(total);
+                for item in &batch {
+                    buffer.extend_from_slice(&item.frame);
+                }
+                output.write_all(&buffer).await
+            };
+            let flush_result = match write_result {
+                Ok(()) => output.flush().await,
+                Err(error) => Err(error),
+            };
+            batch.clear();
+            if buffer.capacity() > 256 * 1024 {
+                buffer = Vec::new();
+            }
+            if let Err(error) = flush_result {
                 eprintln!(
                     "[runtime-diagnostics] server stdout failed pid={} kind={:?} error={error}",
                     std::process::id(),

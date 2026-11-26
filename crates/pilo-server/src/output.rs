@@ -1,15 +1,12 @@
-use std::{
-    io::{self, Write},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use pilo_protocol::Envelope;
+use pilo_protocol::{Envelope, encode_frame};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 
 const OUTPUT_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 pub(crate) struct QueuedOutput {
-    pub(crate) message: Envelope,
+    pub(crate) frame: Vec<u8>,
     pub(crate) _bytes: OwnedSemaphorePermit,
 }
 
@@ -19,20 +16,6 @@ pub(crate) struct ServerWriter {
     bytes: Arc<Semaphore>,
     runtime: tokio::runtime::Handle,
     retain_pi: bool,
-}
-
-#[derive(Default)]
-struct PayloadSize(usize);
-
-impl Write for PayloadSize {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0 = self.0.saturating_add(bytes.len());
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
 }
 
 impl ServerWriter {
@@ -61,7 +44,7 @@ impl ServerWriter {
         }
     }
 
-    pub(crate) async fn send(&self, mut message: Envelope) -> Result<(), String> {
+    pub(crate) async fn send(&self, message: Envelope) -> Result<(), String> {
         let sender = self
             .sender
             .lock()
@@ -76,55 +59,42 @@ impl ServerWriter {
                 Err("server output is closed".to_owned())
             };
         };
-        let (value, binary, overhead) = match &message {
-            Envelope::Request {
-                method,
-                params,
-                binary,
-                ..
-            } => (Some(params), binary, method.len()),
-            Envelope::Response {
-                result,
-                binary,
-                error,
-                ..
-            } => (
-                result.as_ref(),
-                binary,
-                error.as_ref().map_or(0, |error| {
-                    error.code.len().saturating_add(error.message.len())
-                }),
-            ),
-            Envelope::Event {
-                stream_id,
-                event,
-                data,
-                binary,
-            } => (
-                Some(data),
-                binary,
-                stream_id.len().saturating_add(event.len()),
-            ),
+        let response_id = match &message {
+            Envelope::Response { id, .. } => Some(*id),
+            _ => None,
         };
-        let mut size = PayloadSize(overhead.saturating_add(64));
-        if let Some(value) = value {
-            serde_json::to_writer(&mut size, value).map_err(|error| error.to_string())?;
-        }
-        let mut bytes = binary
-            .iter()
-            .fold(size.0, |sum, payload| sum.saturating_add(payload.len()));
-        if bytes > OUTPUT_MAX_BYTES {
-            if let Envelope::Response { id, .. } = &message {
-                message = Envelope::error(
-                    *id,
-                    "output_too_large",
-                    "server output exceeds the byte budget",
-                );
-                bytes = 256;
-            } else {
-                return Err("server output exceeds the byte budget".to_owned());
+        let binary_bytes = match &message {
+            Envelope::Request { binary, .. }
+            | Envelope::Response { binary, .. }
+            | Envelope::Event { binary, .. } => binary
+                .iter()
+                .fold(0_usize, |sum, payload| sum.saturating_add(payload.len())),
+        };
+        let frame = if binary_bytes > OUTPUT_MAX_BYTES {
+            None
+        } else {
+            match encode_frame(message) {
+                Ok(frame) if frame.len() <= OUTPUT_MAX_BYTES => Some(frame),
+                Ok(_) => None,
+                Err(_) => None,
             }
-        }
+        };
+        let frame = match frame {
+            Some(frame) => frame,
+            None => {
+                if let Some(id) = response_id {
+                    encode_frame(Envelope::error(
+                        id,
+                        "output_too_large",
+                        "server output exceeds the byte budget",
+                    ))
+                    .map_err(|error| error.to_string())?
+                } else {
+                    return Err("server output exceeds the byte budget".to_owned());
+                }
+            }
+        };
+        let bytes = frame.len().max(1);
         // Reserve a queue slot first: waiting producers must not retain byte permits.
         let slot = match sender.reserve().await {
             Ok(slot) => slot,
@@ -136,7 +106,7 @@ impl ServerWriter {
             .await
             .map_err(|_| "server output is closed".to_owned())?;
         slot.send(QueuedOutput {
-            message,
+            frame,
             _bytes: permit,
         });
         Ok(())

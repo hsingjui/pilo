@@ -282,7 +282,11 @@ fn into_wire(envelope: Envelope) -> io::Result<wire::Envelope> {
         } => Payload::Request(wire::Request {
             id,
             method,
-            json: encode_json(&params)?,
+            json: if params.is_null() {
+                Vec::new()
+            } else {
+                encode_json(&params)?
+            },
             binary,
         }),
         Envelope::Response {
@@ -311,7 +315,11 @@ fn into_wire(envelope: Envelope) -> io::Result<wire::Envelope> {
         } => Payload::Event(wire::Event {
             stream_id,
             event,
-            json: encode_json(&data)?,
+            json: if data.is_null() {
+                Vec::new()
+            } else {
+                encode_json(&data)?
+            },
             binary,
         }),
     };
@@ -380,10 +388,7 @@ where
     from_wire(wire).map(Some)
 }
 
-pub async fn write_frame<W>(writer: &mut W, envelope: Envelope) -> io::Result<()>
-where
-    W: AsyncWrite + Unpin,
-{
+pub fn encode_frame(envelope: Envelope) -> io::Result<Vec<u8>> {
     let wire = into_wire(envelope)?;
     let length = wire.encoded_len();
     if length == 0 || length > MAX_FRAME_BYTES {
@@ -392,11 +397,19 @@ where
             format!("invalid pilo protocol payload length {length}"),
         ));
     }
-    writer.write_all(&(length as u32).to_le_bytes()).await?;
-    let mut payload = Vec::with_capacity(length);
-    wire.encode(&mut payload)
+    let mut frame = Vec::with_capacity(4 + length);
+    frame.extend_from_slice(&(length as u32).to_le_bytes());
+    wire.encode(&mut frame)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    writer.write_all(&payload).await?;
+    Ok(frame)
+}
+
+pub async fn write_frame<W>(writer: &mut W, envelope: Envelope) -> io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let frame = encode_frame(envelope)?;
+    writer.write_all(&frame).await?;
     writer.flush().await
 }
 

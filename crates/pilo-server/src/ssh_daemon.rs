@@ -22,7 +22,7 @@ use crate::{ServerState, cleanup, control, serve_connection};
 const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 // A lost Host cannot renew the bridge or cancel a blocked tool/dialog.
 const MAX_BRIDGE_ABSENCE: Duration = Duration::from_secs(60 * 60);
-const POLL_INTERVAL: Duration = Duration::from_millis(250);
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 fn socket_path(scope: &str) -> io::Result<PathBuf> {
     if scope.len() != 16 || !scope.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -99,7 +99,7 @@ pub async fn bridge(scope: &str) -> io::Result<()> {
     tokio::select! {
         result = tokio::io::copy(&mut input, &mut remote_write) => { result?; }
         result = async {
-            let mut buffer = [0; 8192];
+            let mut buffer = vec![0_u8; 64 * 1024];
             loop {
                 let read = remote_read.read(&mut buffer).await?;
                 if read == 0 {
