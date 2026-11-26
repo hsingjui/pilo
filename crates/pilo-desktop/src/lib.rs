@@ -5,6 +5,7 @@
 use nsh_core::prelude::*;
 
 mod dock;
+mod editor_links;
 mod notifications;
 mod pilo;
 #[cfg(debug_assertions)]
@@ -19,6 +20,7 @@ fn native(registry: &mut Registry) {
     }
     registry.module::<AppInfo>();
     registry.module::<dock::DesktopDock>();
+    registry.module::<editor_links::DesktopEditorLinks>();
     registry.module::<notifications::DesktopNotifications>();
     registry.module::<updater::DesktopUpdates>();
     registry.class::<pilo::Pilo>();

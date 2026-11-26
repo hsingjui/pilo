@@ -32,7 +32,13 @@ mac-notification-sys = "0.6.15"
 objc2 = "0.6"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Networking_WinHttp"] }
+windows-sys = { version = "0.61.2", features = [
+	"Win32_Networking_WinHttp",
+	"Win32_System_Com",
+	"Win32_System_Registry",
+	"Win32_UI_Shell",
+	"Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 tempfile = "3"

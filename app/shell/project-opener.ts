@@ -1,4 +1,5 @@
-import { openUrl, platform, signal, Storage } from "nsh";
+import { platform, signal, Storage } from "nsh";
+import { DesktopEditorLinks } from "app/native";
 
 import type { Project } from "@shared/api/projects-types";
 import type { ProjectNativeApp } from "../client/nsh-pilo-client";
@@ -195,7 +196,9 @@ export async function openProject(
 		throw new Error("This app is not supported for the current project");
 	}
 	if (opener === "zed" || opener === "vscode" || opener === "cursor") {
-		const { opened } = await openUrl(projectEditorUrl(project, opener, path));
+		const opened = await DesktopEditorLinks.open(
+			projectEditorUrl(project, opener, path),
+		);
 		if (!opened) throw new Error(`No app opens ${opener} links`);
 		return;
 	}

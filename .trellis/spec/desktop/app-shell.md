@@ -27,6 +27,11 @@
 - 托盘退出、`quitRequest` 和需要退出的关闭请求共用幂等流程：停止监听运行时事件，等 `client.shutdown()`，再 `Application.quit()`。监听 `quitRequest` 后调用 `Application.setQuitRequestOptions({ system: true })`，把 macOS 注销、重启和关机也接入该流程。不要把等待放进最终的 `quit` 事件：nsh 只为该事件提供 200 ms。
 - 登录启动只读写 nsh 原生系统开关；当前 API 不提供登录启动标记，不能实现只在登录启动时后台隐藏。开发宿主和安装包的系统能力不同，不以 headless 结果代替原生验收。
 
+## 编辑器快速打开
+
+- `DesktopEditorLinks.open(url)` 只接受 `zed://`、`vscode://`、`cursor://`，继续检查 nsh 的 URL 格式和 `openUrl` capability。原有 Local / WSL / SSH URL 不变，启动失败仍由快速打开菜单提示。
+- nsh 0.7.0 的 Windows `openUrl` 在持有 mounter 借用时同步执行 `ShellExecuteW`，Windows 消息重入会导致 `RefCell already borrowed`。快速打开必须在独立线程调用系统处理程序；延后 JS 回调仍会进入同一个挂载批次，不能替代线程隔离。其他平台继续走 nsh。原生验收：从菜单和快捷按钮打开已安装编辑器，确认目标正确且 Pilo 保持运行；编辑器未安装时应提示失败而不退出。
+
 ## 桌面设置与会话通知
 
 - **范围**：仅 nsh 主窗口。桌面设置不上 WebUI API，不改变 Host 事件或会话读写协议。
