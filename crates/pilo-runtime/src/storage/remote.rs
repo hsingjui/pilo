@@ -7,6 +7,24 @@ fn as_i64(value: u64, field: &str) -> Result<i64, String> {
 }
 
 pub(crate) fn get_remote_host_config(db: &SqliteConnection) -> Result<RemoteHostConfig, String> {
+    let read = |db: &SqliteConnection| {
+        db.query_row(
+            "SELECT enabled, port, public_base_url FROM remote_host_config WHERE id=1",
+            [],
+            |row| {
+                Ok(RemoteHostConfig {
+                    enabled: row.get::<_, i64>(0)? != 0,
+                    port: row.get::<_, u16>(1)?,
+                    public_base_url: row.get::<_, String>(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| format!("failed to read Remote WebUI configuration: {error}"))
+    };
+    if let Some(config) = read(db)? {
+        return Ok(config);
+    }
     // 首次读取时插入随机五位数端口(INSERT OR IGNORE 幂等);
     // 已有配置不受影响,后续修改经 set_remote_host_config 持久化。
     db.execute(
@@ -14,18 +32,7 @@ pub(crate) fn get_remote_host_config(db: &SqliteConnection) -> Result<RemoteHost
         params![i64::from(random_remote_port())],
     )
     .map_err(|error| format!("failed to initialize Remote WebUI configuration: {error}"))?;
-    db.query_row(
-        "SELECT enabled, port, public_base_url FROM remote_host_config WHERE id=1",
-        [],
-        |row| {
-            Ok(RemoteHostConfig {
-                enabled: row.get::<_, i64>(0)? != 0,
-                port: row.get::<_, u16>(1)?,
-                public_base_url: row.get::<_, String>(2)?,
-            })
-        },
-    )
-    .map_err(|error| format!("failed to read Remote WebUI configuration: {error}"))
+    read(db)?.ok_or_else(|| "failed to read Remote WebUI configuration: row missing".to_owned())
 }
 
 pub(crate) fn set_remote_host_config(

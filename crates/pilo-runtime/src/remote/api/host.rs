@@ -21,15 +21,24 @@ pub(super) struct BootstrapResponse {
 
 pub(super) async fn bootstrap(state: RemoteHttpState) -> Response {
     let latest_sequence = state.runtime.events.snapshot_sequence();
-    let projects = match crate::project::list(&state.runtime) {
-        Ok(projects) => projects,
-        Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    let runtime_for_blocking = state.runtime.clone();
+    let (projects, local_pi_resources) = match tokio::task::spawn_blocking(move || {
+        let projects = crate::project::list(&runtime_for_blocking)?;
+        let local_pi_resources = local_pi_resources_snapshot(&runtime_for_blocking.paths)?;
+        Ok::<_, String>((projects, local_pi_resources))
+    })
+    .await
+    {
+        Ok(Ok(data)) => data,
+        Ok(Err(error)) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => {
+            return api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("bootstrap task failed: {error}"),
+            );
+        }
     };
     let runtime = state.runtime.core.clone();
-    let local_pi_resources = match local_pi_resources_snapshot(&state.runtime.paths) {
-        Ok(settings) => settings,
-        Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    };
     Json(BootstrapResponse {
         projects,
         chat_sessions: runtime.chat_sessions.states().await,
@@ -43,17 +52,30 @@ fn local_pi_resources_snapshot(
     paths: &crate::host_paths::HostPaths,
 ) -> Result<std::collections::HashMap<String, bool>, String> {
     let db = storage::open_with_paths(paths)?;
-    storage::list_connections(&db)?
-        .into_iter()
-        .filter(|connection| {
-            connection.pi_runtime == pilo_domain::PiRuntime::Local
-                && matches!(connection.kind, pilo_domain::ConnectionKind::Ssh { .. })
+    let mut statement = db
+        .prepare(
+            "SELECT id, kind_json, local_pi_resources FROM connections WHERE pi_runtime='local'",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? != 0,
+            ))
         })
-        .map(|connection| {
-            let enabled = storage::get_local_pi_resources(&db, &connection.id)?;
-            Ok((connection.id, enabled))
-        })
-        .collect()
+        .map_err(|error| error.to_string())?;
+    let mut result = std::collections::HashMap::new();
+    for row in rows {
+        let (id, kind_json, enabled) = row.map_err(|error| error.to_string())?;
+        if let Ok(pilo_domain::ConnectionKind::Ssh { .. }) =
+            serde_json::from_str::<pilo_domain::ConnectionKind>(&kind_json)
+        {
+            result.insert(id, enabled);
+        }
+    }
+    Ok(result)
 }
 
 #[derive(Deserialize)]
@@ -80,9 +102,14 @@ pub(super) async fn local_pi_resources_set(
 }
 
 pub(super) async fn preferences_get(state: RemoteHttpState) -> Response {
-    match crate::preferences::load(&state.runtime.paths) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    let paths = state.runtime.paths.clone();
+    match tokio::task::spawn_blocking(move || crate::preferences::load(&paths)).await {
+        Ok(Ok(settings)) => Json(settings).into_response(),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("preferences load task failed: {error}"),
+        ),
     }
 }
 
@@ -90,9 +117,19 @@ pub(super) async fn preferences_patch(
     state: RemoteHttpState,
     Json(patch): Json<serde_json::Map<String, Value>>,
 ) -> Response {
-    match crate::preferences::save(&state.runtime.paths, &state.runtime.events, patch, false) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    let paths = state.runtime.paths.clone();
+    let events = state.runtime.events.clone();
+    match tokio::task::spawn_blocking(move || {
+        crate::preferences::save(&paths, &events, patch, false)
+    })
+    .await
+    {
+        Ok(Ok(settings)) => Json(settings).into_response(),
+        Ok(Err(error)) => api_error(StatusCode::BAD_REQUEST, &error),
+        Err(error) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("preferences save task failed: {error}"),
+        ),
     }
 }
 

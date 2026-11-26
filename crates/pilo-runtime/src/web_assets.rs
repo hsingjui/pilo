@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct WebAsset {
     pub bytes: Vec<u8>,
     pub mime_type: String,

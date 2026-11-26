@@ -301,9 +301,13 @@ impl SessionWatcherManager {
 
     pub async fn stop_all(watchers: &AsyncMutex<Self>) {
         let handles = watchers.lock().await.watchers.drain().collect::<Vec<_>>();
+        let mut tasks = tokio::task::JoinSet::new();
         for (id, handle) in handles {
-            stop_handle(&id, handle).await;
+            tasks.spawn(async move {
+                stop_handle(&id, handle).await;
+            });
         }
+        while tasks.join_next().await.is_some() {}
     }
 
     pub(crate) fn covers(&self, project: &Project) -> bool {

@@ -143,14 +143,13 @@ impl Runtime {
         self.terminal_events.close();
         self.servers.begin_shutdown();
         let teardown = async {
-            log::info!(target: "shutdown", "remote webui: stopping");
-            self.remote.stop().await;
-            log::info!(target: "shutdown", "chat sessions: stopping");
-            self.chat_sessions.stop_all().await;
-            log::info!(target: "shutdown", "session watchers: stopping");
-            crate::session_watcher::SessionWatcherManager::stop_all(&self.session_watchers).await;
-            log::info!(target: "shutdown", "terminals: closing");
-            self.terminals.close_all().await;
+            log::info!(target: "shutdown", "stopping remote webui, chat sessions, watchers, and terminals");
+            tokio::join!(
+                self.remote.stop(),
+                self.chat_sessions.stop_all(),
+                crate::session_watcher::SessionWatcherManager::stop_all(&self.session_watchers),
+                self.terminals.close_all(),
+            );
         };
         if tokio::time::timeout(std::time::Duration::from_secs(5), teardown)
             .await

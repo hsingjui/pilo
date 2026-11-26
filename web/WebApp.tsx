@@ -21,6 +21,20 @@ import {
 
 initializeI18n();
 
+let workspaceModulePromise:
+	| Promise<typeof import("./mobile-remote-workspace")>
+	| undefined;
+
+function loadWorkspaceModule() {
+	workspaceModulePromise ??= import("./mobile-remote-workspace").catch(
+		(error) => {
+			workspaceModulePromise = undefined;
+			throw error;
+		},
+	);
+	return workspaceModulePromise;
+}
+
 function LazyMobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	const workspace = signal<
 		typeof import("./mobile-remote-workspace") | "error" | null
@@ -30,7 +44,7 @@ function LazyMobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 		alive = false;
 	});
 
-	void import("./mobile-remote-workspace").then(
+	void loadWorkspaceModule().then(
 		(module) => {
 			if (alive) workspace.set(module);
 		},
@@ -86,6 +100,10 @@ function WebAppRoot() {
 	});
 	cleanup(stopUrlWatch);
 
+	if (!isPairingRoute()) {
+		// Prefetch the workspace bundle in parallel with startup theme & token hydration.
+		void loadWorkspaceModule().catch(() => {});
+	}
 	void Promise.all([showStartupTheme(), loadRemoteDeviceToken()])
 		.then(([, loadedToken]) => {
 			token.set(loadedToken);

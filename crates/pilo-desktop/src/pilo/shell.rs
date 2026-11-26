@@ -19,7 +19,21 @@ use pilo_runtime::{
 use serde_json::json;
 use tokio::{io::AsyncReadExt, runtime::Runtime as Executor};
 
-pub(super) struct ShellWebAssets(pub(super) PathBuf);
+pub(super) struct ShellWebAssets {
+    root: PathBuf,
+    canonical_root: OnceLock<Option<PathBuf>>,
+    cache: Mutex<std::collections::HashMap<String, Option<WebAsset>>>,
+}
+
+impl ShellWebAssets {
+    pub(super) fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            canonical_root: OnceLock::new(),
+            cache: Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+}
 
 /// The nsh host's shell: opening paths, desktop settings and a cache under the data dir.
 pub(super) struct NshHostShell {
@@ -441,25 +455,47 @@ impl WebAssets for ShellWebAssets {
 }
 
 impl ShellWebAssets {
+    fn canonical_root(&self) -> Option<&Path> {
+        self.canonical_root
+            .get_or_init(|| self.root.canonicalize().ok())
+            .as_deref()
+    }
+
     fn read_asset(&self, path: &str, mime_path: &str) -> Option<WebAsset> {
-        let path = Path::new(path);
-        if !path
+        let rel = Path::new(path);
+        if !rel
             .components()
             .all(|part| matches!(part, Component::Normal(_)))
         {
             return None;
         }
-        let root = self.0.canonicalize().ok()?;
-        let file = root.join(path).canonicalize().ok()?;
-        if !file.starts_with(root) || !file.is_file() {
-            return None;
+        let cacheable = path.starts_with("assets/");
+        if cacheable {
+            let cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(cached) = cache.get(path) {
+                return cached.clone();
+            }
         }
-        Some(WebAsset {
-            bytes: std::fs::read(file).ok()?,
-            mime_type: mime_guess::from_path(mime_path)
-                .first_or_octet_stream()
-                .to_string(),
-        })
+        let root = self.canonical_root()?;
+        let file = root.join(rel).canonicalize().ok()?;
+        let asset = if !file.starts_with(root) || !file.is_file() {
+            None
+        } else {
+            Some(WebAsset {
+                bytes: std::fs::read(file).ok()?,
+                mime_type: mime_guess::from_path(mime_path)
+                    .first_or_octet_stream()
+                    .to_string(),
+            })
+        };
+        if cacheable {
+            let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+            if cache.len() >= 128 {
+                cache.clear();
+            }
+            cache.insert(path.to_owned(), asset.clone());
+        }
+        asset
     }
 }
 
@@ -623,7 +659,7 @@ mod tests {
         std::fs::write(root.join("index.html"), b"<p>Pilo</p>").unwrap();
         std::fs::write(&external, b"not an asset").unwrap();
         std::os::unix::fs::symlink(external, root.join("link")).unwrap();
-        let assets = ShellWebAssets(root);
+        let assets = ShellWebAssets::new(root);
         let index = assets.get("index.html").unwrap();
         assert_eq!(index.mime_type, "text/html");
         assert_eq!(index.bytes, b"<p>Pilo</p>");

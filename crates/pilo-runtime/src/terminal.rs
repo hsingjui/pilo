@@ -455,9 +455,13 @@ impl TerminalManager {
             .drain()
             .map(|(_, session)| session)
             .collect::<Vec<_>>();
+        let mut tasks = tokio::task::JoinSet::new();
         for session in taken {
-            let _ = session.close().await;
+            tasks.spawn(async move {
+                let _ = session.close().await;
+            });
         }
+        while tasks.join_next().await.is_some() {}
     }
 }
 

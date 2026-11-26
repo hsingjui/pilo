@@ -63,11 +63,16 @@ fn next_auth_generation() -> u64 {
 
 #[derive(Clone, Default)]
 pub(crate) struct RemoteServerManager {
+    lifecycle: Arc<Mutex<()>>,
     inner: Arc<Mutex<RemoteServerInner>>,
 }
 
 impl RemoteServerManager {
     pub(crate) async fn restore(&self, runtime: &Runtime) -> Result<(), String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        if runtime.servers.is_shutting_down() {
+            return Ok(());
+        }
         let paths = runtime.paths.clone();
         let config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if !config.enabled {
@@ -85,13 +90,14 @@ impl RemoteServerManager {
         runtime: &Runtime,
         enabled: bool,
     ) -> Result<RemoteHostState, String> {
+        let _lifecycle = self.lifecycle.lock().await;
         let paths = runtime.paths.clone();
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if enabled {
             self.start(runtime, config.port).await?;
             config.enabled = true;
         } else {
-            self.stop().await;
+            self.stop_listener().await;
             config.enabled = false;
             storage::clear_remote_pairing(&storage::open_with_paths(&paths)?)?;
         }
@@ -109,6 +115,7 @@ impl RemoteServerManager {
                 "Remote WebUI port must be between {MIN_REMOTE_PORT} and 65535"
             ));
         }
+        let _lifecycle = self.lifecycle.lock().await;
         let paths = runtime.paths.clone();
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if config.port == port {
@@ -168,7 +175,7 @@ impl RemoteServerManager {
         .await
         .map_err(|_| "Remote WebUI address task failed".to_owned())??;
         if was_running {
-            self.stop().await;
+            self.stop_listener().await;
         }
         config.port = port;
         tokio::task::spawn_blocking(move || {
@@ -436,6 +443,11 @@ impl RemoteServerManager {
     }
 
     pub(crate) async fn stop(&self) {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.stop_listener().await;
+    }
+
+    async fn stop_listener(&self) {
         let running = {
             let mut inner = self.inner.lock().await;
             let Some(running) = inner.running.take() else {
@@ -483,6 +495,9 @@ impl RemoteServerManager {
         })
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
+        if runtime.servers.is_shutting_down() {
+            return Err("Remote WebUI cannot start while Pilo is shutting down".to_owned());
+        }
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(next_auth_generation());
         let mut shutdown_for_task = shutdown.subscribe();

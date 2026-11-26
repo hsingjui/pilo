@@ -101,8 +101,7 @@ pub struct Pilo {
 
 impl Pilo {
     async fn load_bootstrap(host: Host) -> Result<Bootstrap, String> {
-        let host = host.lock().await;
-        let runtime = host.as_ref().ok_or(CLOSED)?.clone();
+        let runtime = { host.lock().await.as_ref().ok_or(CLOSED)?.clone() };
         let executor = tokio::runtime::Handle::current();
         let snapshot =
             tokio::task::spawn_blocking(move || executor.block_on(runtime.bootstrap_snapshot()))
@@ -231,22 +230,18 @@ impl Pilo {
                 cache_dir: data_dir.join("cache"),
                 paths: paths.clone(),
             }))?
-            .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
+            .with_web_assets(Arc::new(ShellWebAssets::new(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
         let terminal_events = Arc::new(runtime.subscribe_terminal_events(TERMINAL_QUEUE_MAX_BYTES));
         runtime.start_idle_reaper();
         // Covers unavailable watchers and external Pi exits without a file write.
         runtime.start_external_activity_poll();
-        let host = Arc::new(Mutex::new(None));
-        // Finish restoring the saved listener before commands or shutdown can reach the Host.
-        let mut startup = Arc::clone(&host)
-            .try_lock_owned()
-            .map_err(|error| format!("failed to initialize the Pilo host: {error}"))?;
+        let host = Arc::new(Mutex::new(Some(runtime.clone())));
+        // Restore the saved Remote WebUI listener in the background without blocking startup IPC.
         executor.spawn(async move {
             if let Err(error) = runtime.restore_remote().await {
                 eprintln!("failed to restore Remote WebUI: {error}");
             }
-            *startup = Some(runtime);
         });
         Ok(Self {
             host,
