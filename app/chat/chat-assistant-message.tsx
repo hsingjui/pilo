@@ -39,8 +39,8 @@ export const defaultChatWorkPreferences: ChatWorkPreferences = {
 	showWorkDuration: true,
 };
 
-const markdownText: ChatTextBody = (text, textKey) => (
-	<ChatMarkdown text={text} textKey={textKey} />
+const markdownText: ChatTextBody = (text, textKey, streaming) => (
+	<ChatMarkdown text={text} textKey={textKey} streaming={streaming} />
 );
 
 function FooterSeparator() {

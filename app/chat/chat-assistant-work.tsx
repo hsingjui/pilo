@@ -124,6 +124,7 @@ function WorkSegments(
 										return value.type === "text" ? value.text : "";
 									},
 									() => `${messageId()}:${segment().id}`,
+									() => props.message().streaming === true,
 								)}
 							</View>
 						);

@@ -1,10 +1,14 @@
 import {
+	cleanup,
 	computed,
+	effect,
 	Image,
 	openUrl,
+	platform,
 	signal,
 	Text,
 	token,
+	untracked,
 	View,
 	type Signal,
 } from "nsh";
@@ -29,6 +33,7 @@ import {
 	resolveChatImageMimeType,
 } from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
+import { createStreamingTextThrottle } from "@shared/chat/streaming-text-throttle";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import { AppToaster } from "../shell/app-toasts";
@@ -47,6 +52,8 @@ export interface ChatMarkdownProps {
 	text: () => string;
 	/** The text segment currently shown in a recycled message row. */
 	textKey?: () => string;
+	/** Whether the text is currently streaming in. */
+	streaming?: () => boolean;
 	/**
 	 * The project the chat belongs to: project-relative file links and
 	 * images resolve against its path; without it they render but cannot
@@ -194,10 +201,11 @@ function MarkdownImageFrame(props: {
  * A reply as Markdown: `TextView` typesets it natively (headings, lists,
  * quotes, tables, syntax-highlighted code with a copy action, formulas)
  * and re-renders only the blocks that changed while the text streams in
- * (`options.streaming`), so no JS parser adapter or throttle is needed.
- * External links open with `openUrl`; file links and project images use
- * the shared resolvers of `shared/chat` — the same path limits and
- * errors as the WebUI.
+ * (`options.streaming`). On Web, streaming deltas are throttled to avoid
+ * rebuilding the trailing DOM subtree on every frame while flushing
+ * immediately when settled or switching rows. External links open with
+ * `openUrl`; file links and project images use the shared resolvers of
+ * `shared/chat` — the same path limits and errors as the WebUI.
  */
 export function ChatMarkdown(props: ChatMarkdownProps) {
 	const readingFont = ChatReadingFont();
@@ -212,6 +220,23 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 		),
 	);
 	const textKey = computed(() => props.textKey?.());
+	const isStreaming = computed(() => props.streaming?.() ?? false);
+	const web = platform.os === "web";
+	let renderedText = props.text;
+	if (web) {
+		const displayedText = signal(untracked(props.text));
+		const throttle = createStreamingTextThrottle({
+			onCommit: (next) => displayedText.set(next),
+		});
+		effect(() => {
+			const text = props.text();
+			const streaming = isStreaming();
+			const key = textKey();
+			untracked(() => throttle.push(text, streaming, key));
+		});
+		cleanup(() => throttle.dispose());
+		renderedText = displayedText;
+	}
 	const activeProject = computed(
 		() => props.project?.() ?? media.project?.() ?? null,
 	);
@@ -220,7 +245,7 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 	const fileLinkHandler = () => props.onFileLink ?? media.onFileLink;
 	const annotateDocument = createMarkdownFileLinkAnnotator();
 	const document = computed<TextViewDocument>(() => {
-		const parsed = TextView.parse(props.text(), { streaming: true });
+		const parsed = TextView.parse(renderedText(), { streaming: isStreaming() });
 		if (!fileLinkHandler()) return parsed;
 		return annotateDocument(parsed, projectPath());
 	});

@@ -21,6 +21,7 @@ export type ChatMessageBody<T extends ChatMessage> = (
 export type ChatTextBody = (
 	text: () => string,
 	textKey: () => string,
+	streaming?: () => boolean,
 ) => JSX.Element;
 
 /** The Host preferences that shape how a reply shows its work. */

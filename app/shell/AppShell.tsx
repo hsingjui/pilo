@@ -990,10 +990,11 @@ export function AppShell(props: AppShellProps) {
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
 										<ChatMessageList
-											assistantText={(text, textKey) => (
+											assistantText={(text, textKey, streaming) => (
 												<ChatMarkdown
 													text={text}
 													textKey={textKey}
+													streaming={streaming}
 													project={project}
 													readProjectImage={props.readProjectImage}
 													onFileLink={handleFileLink}

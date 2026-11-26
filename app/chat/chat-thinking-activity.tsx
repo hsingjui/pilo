@@ -138,6 +138,8 @@ export function ChatThinkingActivity(props: {
 										class="text-muted-foreground"
 										compact
 										text={() => activity().text.slice(0, visibleEnd())}
+										textKey={activityId}
+										streaming={running}
 									/>
 									{() =>
 										hasHiddenText() ? (

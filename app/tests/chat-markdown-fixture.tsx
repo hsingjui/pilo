@@ -91,6 +91,7 @@ async function run() {
 								assistantBody: (message) => (
 									<ChatMarkdown
 										text={() => message().text}
+										streaming={() => message().streaming === true}
 										project={() => ({ id: "p1", path: "/work/demo" })}
 										readProjectImage={async (_projectId, path) => {
 											if (scenario === "readerror") {
