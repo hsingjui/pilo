@@ -265,3 +265,23 @@ test("the way back to the latest message returns to the end, and the list follow
 	if (await drawn(app)) expect(at.end).toBeLessThan(at.height);
 	expect(app.shows("id:chat-scroll-latest")).toBe(false);
 });
+
+test("opening a tool disclosure at the bottom pauses bottom-following and expands downward in place", async () => {
+	const app = await openChat(40, 0, true);
+	await app.waitFor("id:chat-messages >> text:Answer 20");
+
+	await app.press("id:tool");
+	await app.waitFor("id:chat-messages >> text:Run a long command");
+	await app.waitFor("id:chat-tool");
+	const before = await measure(app);
+
+	await app.press("id:chat-tool");
+	await app.waitUntil(() =>
+		app.texts().some((text) => text.includes("Command output line 1")),
+	);
+
+	const after = await measure(app);
+	expect(after.prompt).toBe(before.prompt);
+	expect(after.y).toBe(before.y);
+	expect(after.end).toBeGreaterThan(before.end);
+});

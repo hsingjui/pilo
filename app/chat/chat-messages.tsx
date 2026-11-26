@@ -19,9 +19,14 @@ import {
 import {
 	CHAT_FOLLOW_BOTTOM_THRESHOLD_PX,
 	type ChatScrollElementLike,
-	getChatScrollMaxOffset,
 	shouldShowChatScrollToLatest,
 } from "@shared/chat/chat-scroll-to-latest";
+import {
+	createWebChatScrollFollower,
+	type WebChatScrollCommand,
+	type WebChatScrollMetrics,
+	type WebChatWheelInput,
+} from "@shared/chat/web-chat-scroll";
 import {
 	createConversationOutline,
 	getOutlineIndexForVisibleRange,
@@ -51,11 +56,27 @@ const followEnd = { autoscrollToBottomThreshold: followThreshold };
 // How far the list is scrolled before its top edge fades, in points.
 const fadeAfter = 16;
 
-type WebChatWheelEvent = {
-	deltaX: number;
-	deltaY: number;
-	ctrlKey: boolean;
-	shiftKey: boolean;
+type WebChatDomNode = {
+	parentElement?: WebChatDomNode | null;
+	scrollHeight?: number;
+	clientHeight?: number;
+	scrollTop?: number;
+};
+
+type WebChatWheelEvent = WebChatWheelInput & {
+	target?: WebChatDomNode | null;
+};
+
+type WebChatTouchEvent = {
+	target?: WebChatDomNode | null;
+	touches?: {
+		length: number;
+		[index: number]: { clientX: number; clientY: number };
+	};
+};
+
+type WebChatFocusEvent = {
+	target?: { tagName?: string } | null;
 };
 
 interface WebChatViewport extends ChatScrollElementLike {
@@ -63,6 +84,7 @@ interface WebChatViewport extends ChatScrollElementLike {
 		setProperty(name: string, value: string): void;
 		removeProperty(name: string): void;
 	};
+	contains?: (node: unknown) => boolean;
 	querySelector(
 		selector: string,
 	): { getBoundingClientRect(): { height: number } } | null;
@@ -72,20 +94,46 @@ interface WebChatViewport extends ChatScrollElementLike {
 		listener: (event: WebChatWheelEvent) => void,
 		options: { passive: boolean },
 	): void;
+	addEventListener(
+		type: "touchstart" | "touchmove" | "touchend" | "touchcancel",
+		listener: (event: WebChatTouchEvent) => void,
+		options: { passive: boolean },
+	): void;
 	removeEventListener(type: "scroll", listener: () => void): void;
 	removeEventListener(
 		type: "wheel",
 		listener: (event: WebChatWheelEvent) => void,
 	): void;
+	removeEventListener(
+		type: "touchstart" | "touchmove" | "touchend" | "touchcancel",
+		listener: (event: WebChatTouchEvent) => void,
+	): void;
 }
 
-function observeWebChatEnd(
-	initiallyFollowing: boolean,
-	onResumeFollowing: () => void,
-) {
+function observeWebChatEnd(initiallyFollowing: boolean) {
+	type HostVisualViewport = {
+		height: number;
+		addEventListener(type: "resize", listener: () => void): void;
+		removeEventListener(type: "resize", listener: () => void): void;
+	};
 	type BrowserWindow = {
 		parent?: BrowserWindow;
-		document?: { querySelector(selector: string): WebChatViewport | null };
+		performance?: { now(): number };
+		visualViewport?: HostVisualViewport | null;
+		getComputedStyle?: (element: unknown) => { overflowY?: string };
+		document?: {
+			querySelector(selector: string): WebChatViewport | null;
+			addEventListener?: (
+				type: "focusin",
+				listener: (event: WebChatFocusEvent) => void,
+			) => void;
+			removeEventListener?: (
+				type: "focusin",
+				listener: (event: WebChatFocusEvent) => void,
+			) => void;
+		};
+		requestAnimationFrame(callback: () => void): number;
+		cancelAnimationFrame(frame: number): void;
 		ResizeObserver?: new (callback: () => void) => {
 			observe(element: object): void;
 			disconnect(): void;
@@ -111,98 +159,185 @@ function observeWebChatEnd(
 	// The virtual list already anchors rows above the viewport. The browser
 	// must not also anchor to content pushed down by an open disclosure.
 	viewport.style.setProperty("overflow-anchor", "none");
-	let following = initiallyFollowing;
-	let pausedForDisclosure = false;
-	let dragging = false;
-	let wheelingUp = false;
-	let end = getChatScrollMaxOffset(viewport);
-	let contentHeight = content.getBoundingClientRect().height;
-	let lastOffset = viewport.scrollTop;
-	const updateFollowing = (value: boolean) => {
-		pausedForDisclosure = false;
-		following = value;
-		if (value) onResumeFollowing();
-	};
-	const readWheel = ({
-		deltaX,
-		deltaY,
-		ctrlKey,
-		shiftKey,
-	}: WebChatWheelEvent) => {
-		if (ctrlKey || (shiftKey && !deltaX) || Math.abs(deltaX) > Math.abs(deltaY))
-			return;
-		if (deltaY < 0 && viewport.scrollTop > 0) {
-			// nsh doesn't report a scroll drag for wheel input; pause before layout can change.
-			wheelingUp = true;
-			updateFollowing(false);
-		} else if (deltaY > 0) {
-			wheelingUp = false;
-			if (
-				getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
-				followThreshold
-			)
-				updateFollowing(true);
+
+	const nowMs = () => host.performance?.now() ?? Date.now();
+	const readMetrics = (): WebChatScrollMetrics => ({
+		clientHeight: viewport.clientHeight,
+		scrollHeight: viewport.scrollHeight,
+		scrollTop: viewport.scrollTop,
+		contentHeight: content.getBoundingClientRect().height,
+	});
+	const applyCommand = (command: WebChatScrollCommand) => {
+		if (command.scrollTop !== null) {
+			viewport.scrollTop = command.scrollTop;
 		}
+	};
+
+	const follower = createWebChatScrollFollower(
+		readMetrics(),
+		initiallyFollowing,
+		followThreshold,
+	);
+
+	let restoreFrame: number | undefined;
+	const cancelRestoreSync = () => {
+		if (restoreFrame === undefined) return;
+		host.cancelAnimationFrame(restoreFrame);
+		restoreFrame = undefined;
+	};
+
+	const hasNestedVerticalScroll = (
+		target: WebChatDomNode | null | undefined,
+		direction: -1 | 1,
+	) => {
+		let node = target ?? null;
+		while (node && node !== (viewport as unknown as WebChatDomNode)) {
+			const scrollHeight = node.scrollHeight ?? 0;
+			const clientHeight = node.clientHeight ?? 0;
+			if (scrollHeight > clientHeight + 1) {
+				const overflowY = host.getComputedStyle?.(node).overflowY;
+				if (
+					overflowY === "auto" ||
+					overflowY === "scroll" ||
+					overflowY === "overlay"
+				) {
+					const scrollTop = node.scrollTop ?? 0;
+					if (direction < 0 && scrollTop > 0) return true;
+					if (direction > 0 && scrollTop + clientHeight < scrollHeight - 1) {
+						return true;
+					}
+				}
+			}
+			node = node.parentElement ?? null;
+		}
+		return false;
+	};
+
+	let touchTarget: WebChatDomNode | null = null;
+	let lastTouchClientY: number | null = null;
+
+	const readWheel = (event: WebChatWheelEvent) => {
+		const direction = event.deltaY < 0 ? -1 : event.deltaY > 0 ? 1 : 0;
+		if (
+			direction !== 0 &&
+			Math.abs(event.deltaX) <= Math.abs(event.deltaY) &&
+			hasNestedVerticalScroll(event.target, direction)
+		) {
+			return;
+		}
+		cancelRestoreSync();
+		follower.onWheel(event, readMetrics());
+	};
+	const readTouchStart = (event: WebChatTouchEvent) => {
+		const touch = event.touches?.[0];
+		if (!touch) return;
+		touchTarget = event.target ?? null;
+		lastTouchClientY = touch.clientY;
+		cancelRestoreSync();
+		follower.onTouchStart(touch.clientY, touch.clientX);
+	};
+	const readTouchMove = (event: WebChatTouchEvent) => {
+		const touch = event.touches?.[0];
+		if (!touch) return;
+		const dy = lastTouchClientY === null ? 0 : touch.clientY - lastTouchClientY;
+		lastTouchClientY = touch.clientY;
+		if (dy !== 0) {
+			// Finger moving down scrolls content up (-1); moving up scrolls down (+1).
+			const direction = dy > 0 ? -1 : 1;
+			if (hasNestedVerticalScroll(touchTarget ?? event.target, direction)) {
+				return;
+			}
+		}
+		follower.onTouchMove(touch.clientY, readMetrics(), touch.clientX);
+	};
+	const readTouchEnd = (event: WebChatTouchEvent) => {
+		if ((event.touches?.length ?? 0) > 0) return;
+		touchTarget = null;
+		lastTouchClientY = null;
+		follower.onTouchEnd(readMetrics());
 	};
 	const readScroll = () => {
-		const offset = viewport.scrollTop;
-		// Resize and duplicate scroll reports must not resume following.
-		if (getChatScrollMaxOffset(viewport) !== end || offset === lastOffset)
-			return;
-		lastOffset = offset;
-		updateFollowing(!wheelingUp && end - offset <= followThreshold);
+		applyCommand(follower.onScroll(readMetrics(), nowMs()));
 	};
 	const resize = new host.ResizeObserver(() => {
-		end = getChatScrollMaxOffset(viewport);
-		const height = content.getBoundingClientRect().height;
-		// The spacer may shrink even when the chat was too short to scroll.
-		if (
-			pausedForDisclosure &&
-			height < contentHeight &&
-			end - viewport.scrollTop <= followThreshold
-		) {
-			updateFollowing(true);
-		}
-		contentHeight = height;
 		// Correct the rendered offset before paint, after nsh has applied its layout.
-		if (following && !dragging && Math.abs(end - viewport.scrollTop) > 1) {
-			viewport.scrollTop = end;
-		}
-		lastOffset = viewport.scrollTop;
+		applyCommand(follower.onResize(readMetrics(), nowMs()));
 	});
+
+	const visualViewport = host.visualViewport ?? null;
+	let lastVisualViewportHeight = visualViewport?.height ?? 0;
+	const readVisualViewportResize = () => {
+		if (!visualViewport) return;
+		const nextHeight = visualViewport.height;
+		const shrank =
+			lastVisualViewportHeight > 0 && nextHeight < lastVisualViewportHeight - 1;
+		lastVisualViewportHeight = nextHeight;
+		if (shrank) {
+			applyCommand(follower.onViewportShrinkIntent(readMetrics(), nowMs()));
+		}
+	};
+	const readFocusIn = (event: WebChatFocusEvent) => {
+		const target = event.target;
+		const tag = target?.tagName?.toUpperCase();
+		if (
+			(tag === "TEXTAREA" || tag === "INPUT") &&
+			(!viewport.contains || !viewport.contains(target))
+		) {
+			applyCommand(follower.onViewportShrinkIntent(readMetrics(), nowMs()));
+		}
+	};
+
 	viewport.addEventListener("scroll", readScroll);
 	viewport.addEventListener("wheel", readWheel, { passive: true });
+	viewport.addEventListener("touchstart", readTouchStart, { passive: true });
+	viewport.addEventListener("touchmove", readTouchMove, { passive: true });
+	viewport.addEventListener("touchend", readTouchEnd, { passive: true });
+	viewport.addEventListener("touchcancel", readTouchEnd, { passive: true });
+	visualViewport?.addEventListener("resize", readVisualViewportResize);
+	host.document?.addEventListener?.("focusin", readFocusIn);
 	resize.observe(viewport);
 	resize.observe(content);
+
 	return {
+		syncAfterRestore() {
+			cancelRestoreSync();
+			// Read the committed position even when restoring it emits no scroll event.
+			restoreFrame = host.requestAnimationFrame(() => {
+				restoreFrame = undefined;
+				follower.syncRestoredPosition(readMetrics());
+			});
+		},
 		pauseForDisclosure() {
-			pausedForDisclosure ||= following;
-			following = false;
-			lastOffset = viewport.scrollTop;
+			cancelRestoreSync();
+			follower.pauseForDisclosure(readMetrics());
+		},
+		startScrollToEnd() {
+			cancelRestoreSync();
+			follower.startScrollToEnd(readMetrics());
 		},
 		setFollowing(value: boolean) {
-			pausedForDisclosure = false;
-			wheelingUp = false;
-			following = value;
-			lastOffset = viewport.scrollTop;
+			cancelRestoreSync();
+			follower.setFollowing(value, readMetrics());
 		},
-		endWheel() {
-			wheelingUp = false;
+		endScroll() {
+			applyCommand(follower.onScrollEnd(readMetrics()));
 		},
 		setDragging(value: boolean) {
-			wheelingUp = false;
-			dragging = value;
-			updateFollowing(
-				!value &&
-					getChatScrollMaxOffset(viewport) - viewport.scrollTop <=
-						followThreshold,
-			);
+			cancelRestoreSync();
+			follower.onDragChange(value, readMetrics());
 		},
 		disconnect() {
+			cancelRestoreSync();
 			resize.disconnect();
 			viewport.style.removeProperty("overflow-anchor");
 			viewport.removeEventListener("scroll", readScroll);
 			viewport.removeEventListener("wheel", readWheel);
+			viewport.removeEventListener("touchstart", readTouchStart);
+			viewport.removeEventListener("touchmove", readTouchMove);
+			viewport.removeEventListener("touchend", readTouchEnd);
+			viewport.removeEventListener("touchcancel", readTouchEnd);
+			visualViewport?.removeEventListener("resize", readVisualViewportResize);
+			host.document?.removeEventListener?.("focusin", readFocusIn);
 		},
 	};
 }
@@ -212,7 +347,7 @@ function observeWebChatEnd(
  * each time the chat is read again, so a message's id does not last; its
  * place does, and a row kept by it stays measured and in place across reads.
  */
-const rowKey = (_: ChatMessage, index: number) => String(index);
+const rowKey = (_: ChatMessage | number, index: number) => String(index);
 
 /** Where a chat was read to: the row at the viewport's start and how far
  * past its start, as the list's `measureScrollPosition` gives them. */
@@ -276,12 +411,20 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const atEnd = signal(restore === null);
 	const followPaused = signal(false);
 	const web = platform.os === "web";
+	// nsh Web diffs List items by identity, not by keyExtractor. Use positions
+	// so streaming updates keep the cell and its measured height.
+	const rowCount = computed(() => props.messages().length);
+	const webRows = computed(() =>
+		Array.from({ length: rowCount() }, (_, index) => index),
+	);
+	const webEndAttached = signal(false);
 	let webEnd: ReturnType<typeof observeWebChatEnd>;
+	let userScrolledBeforeAttach = false;
 	const disclose = (update: () => void) => {
 		// Let details grow below the trigger instead of following the new end.
-		webEnd?.pauseForDisclosure();
 		batch(() => {
-			followPaused.set(true);
+			if (webEnd) webEnd.pauseForDisclosure();
+			else followPaused.set(true);
 			update();
 		});
 	};
@@ -333,19 +476,24 @@ export function ChatMessages(props: ChatMessagesProps) {
 			});
 	};
 	const attachWebEnd = () => {
-		if (!stopped) {
-			webEnd ??= observeWebChatEnd(
-				untracked(atEnd) && !untracked(followPaused),
-				() => followPaused.set(false),
-			);
-		}
+		if (stopped || webEnd) return;
+		const paused = untracked(followPaused);
+		webEnd = observeWebChatEnd(
+			restore === null && !paused && !userScrolledBeforeAttach,
+		);
+		if (!webEnd) return;
+		if (restore !== null && !restoring && !paused) webEnd.syncAfterRestore();
+		// Don't apply the list's relative end correction on top of the DOM's.
+		webEndAttached.set(true);
 	};
 	cleanup(() => {
 		stopped = true;
 		webEnd?.disconnect();
 	});
 	let visible: { start: number; end: number } | undefined;
-	const reportVisible = (info: { viewableItems: ViewToken<ChatMessage>[] }) => {
+	const reportVisible = (info: {
+		viewableItems: ViewToken<ChatMessage | number>[];
+	}) => {
 		let start = Number.POSITIVE_INFINITY;
 		let end = 0;
 		for (const token of info.viewableItems) {
@@ -362,6 +510,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 				viewOffset: -restore.offset,
 				animated: false,
 			});
+			webEnd?.syncAfterRestore();
 		}
 		if (visible?.start === start && visible?.end === end) return;
 		visible = { start, end };
@@ -381,117 +530,138 @@ export function ChatMessages(props: ChatMessagesProps) {
 		});
 	};
 	return (
-		<View class="min-h-0 flex-1">
-			<List
-				testID="chat-messages"
-				ref={(node) => (list = node)}
-				class="min-h-0 flex-1"
-				contentClass="pt-6 pb-10"
-				each={props.messages()}
-				keyExtractor={rowKey}
-				estimatedItemSize={96}
-				initialScrollIndex={restore?.index}
-				initialScrollAtEnd={restore === null}
-				maintainVisibleContentPosition={followPaused() ? undefined : followEnd}
-				bounces={false}
-				scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
-				footer={props.footer}
-				onLayout={web ? attachWebEnd : undefined}
-				onScroll={follow}
-				onScrollDragStart={web ? () => webEnd?.setDragging(true) : undefined}
-				onScrollDragEnd={web ? () => webEnd?.setDragging(false) : undefined}
-				onScrollEnd={() => {
-					if (web) webEnd?.endWheel();
-					keepPosition();
-				}}
-				onViewableItemsChange={reportVisible}
-			>
-				{(message, index) => (
-					<ChatDisclosureAction.Provider value={disclose}>
-						<ChatMessageRow
-							message={message}
-							index={index}
-							isPlaceholderFailed={props.isPlaceholderFailed}
-							onRetryPlaceholder={props.onRetryPlaceholder}
-							userBody={props.userBody}
-							assistantBody={props.assistantBody}
-							assistantText={props.assistantText}
-							expansion={props.expansion}
-							preferences={props.preferences}
-							onForkAssistant={props.onForkAssistant}
-							canForkAssistant={props.canForkAssistant}
-							forkingMessageId={props.forkingMessageId}
-							forkDisabled={props.forkDisabled}
-						/>
-					</ChatDisclosureAction.Provider>
-				)}
-			</List>
-			<View
-				class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-background to-transparent"
-				style={[tactileTransition("opacity"), { opacity: scrolled() ? 1 : 0 }]}
-			/>
-			{() =>
-				showOutline() ? (
-					<ConversationOutlineRail
-						entries={outline}
-						activeIndex={activeOutline}
-						onJump={jumpToOutline}
-					/>
-				) : null
-			}
-			{() => {
-				if (!away()) return null;
-				const latestMotion = createMotion({
-					enter: reduceMotion()
-						? {
-								keyframes: { opacity: [0, 1] },
-								duration: 80,
-								easing: MOTION.easing.standardTuple,
-							}
-						: {
-								keyframes: {
-									opacity: [0, 1],
-									translateY: [8, 0],
-									scale: [0.94, 1],
-								},
-								duration: MOTION.duration.surfaceIn,
-								easing: MOTION.easing.standardTuple,
-							},
-				});
-				cleanup(() => latestMotion.stop());
-				return (
-					<View
-						class="pointer-events-none absolute inset-x-0 bottom-6"
-						style={latestMotion.style}
-					>
-						<ConversationColumn class="items-end">
-							<Button
-								testID="chat-scroll-latest"
-								variant="secondary"
-								size="icon"
-								class={`pointer-events-auto rounded-full border border-border/70 shadow-md ${
-									platform.desktop ? "size-8" : "size-11"
-								}`}
-								accessibilityLabel={t("chat.scrollLatest")}
-								tooltip={
-									<Tooltip>
-										<Text class="font-sans">
-											{() => t("chat.scrollLatest")}
-										</Text>
-									</Tooltip>
+		<ChatDisclosureAction.Provider value={disclose}>
+			<View class="min-h-0 flex-1">
+				<List
+					testID="chat-messages"
+					ref={(node) => (list = node)}
+					class="min-h-0 flex-1"
+					contentClass="pt-6 pb-10"
+					each={web ? webRows() : props.messages()}
+					keyExtractor={rowKey}
+					estimatedItemSize={96}
+					initialScrollIndex={restore?.index}
+					initialScrollAtEnd={restore === null}
+					maintainVisibleContentPosition={
+						webEndAttached() || followPaused() ? undefined : followEnd
+					}
+					bounces={false}
+					scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
+					footer={props.footer}
+					onLayout={web ? attachWebEnd : undefined}
+					onScroll={follow}
+					onScrollDragStart={
+						web
+							? () => {
+									if (webEnd) webEnd.setDragging(true);
+									else userScrolledBeforeAttach = true;
 								}
-								onPress={() => {
-									followPaused.set(false);
-									webEnd?.setFollowing(true);
-									list?.scrollToEnd({ animated: !reduceMotion() });
-								}}
-							>
-								<Icon name="ArrowDown" />
-							</Button>
-						</ConversationColumn>
-					</View>
-				);
-			}}
-		</View>
+							: undefined
+					}
+					onScrollDragEnd={web ? () => webEnd?.setDragging(false) : undefined}
+					onScrollEnd={() => {
+						if (web) webEnd?.endScroll();
+						keepPosition();
+					}}
+					onViewableItemsChange={reportVisible}
+				>
+					{(item, index) => {
+						const message = computed<ChatMessage>((previous) => {
+							const row = item();
+							// Keep showing the last message until a removed cell is recycled.
+							return typeof row === "number"
+								? (props.messages()[row] ?? previous!)
+								: row;
+						});
+						return (
+							<ChatMessageRow
+								message={message}
+								index={index}
+								isPlaceholderFailed={props.isPlaceholderFailed}
+								onRetryPlaceholder={props.onRetryPlaceholder}
+								userBody={props.userBody}
+								assistantBody={props.assistantBody}
+								assistantText={props.assistantText}
+								expansion={props.expansion}
+								preferences={props.preferences}
+								onForkAssistant={props.onForkAssistant}
+								canForkAssistant={props.canForkAssistant}
+								forkingMessageId={props.forkingMessageId}
+								forkDisabled={props.forkDisabled}
+							/>
+						);
+					}}
+				</List>
+				<View
+					class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-background to-transparent"
+					style={[
+						tactileTransition("opacity"),
+						{ opacity: scrolled() ? 1 : 0 },
+					]}
+				/>
+				{() =>
+					showOutline() ? (
+						<ConversationOutlineRail
+							entries={outline}
+							activeIndex={activeOutline}
+							onJump={jumpToOutline}
+						/>
+					) : null
+				}
+				{() => {
+					if (!away()) return null;
+					const latestMotion = createMotion({
+						enter: reduceMotion()
+							? {
+									keyframes: { opacity: [0, 1] },
+									duration: 80,
+									easing: MOTION.easing.standardTuple,
+								}
+							: {
+									keyframes: {
+										opacity: [0, 1],
+										translateY: [8, 0],
+										scale: [0.94, 1],
+									},
+									duration: MOTION.duration.surfaceIn,
+									easing: MOTION.easing.standardTuple,
+								},
+					});
+					cleanup(() => latestMotion.stop());
+					return (
+						<View
+							class="pointer-events-none absolute inset-x-0 bottom-6"
+							style={latestMotion.style}
+						>
+							<ConversationColumn class="items-end">
+								<Button
+									testID="chat-scroll-latest"
+									variant="secondary"
+									size="icon"
+									class={`pointer-events-auto rounded-full border border-border/70 shadow-md ${
+										platform.desktop ? "size-8" : "size-11"
+									}`}
+									accessibilityLabel={t("chat.scrollLatest")}
+									tooltip={
+										<Tooltip>
+											<Text class="font-sans">
+												{() => t("chat.scrollLatest")}
+											</Text>
+										</Tooltip>
+									}
+									onPress={() => {
+										followPaused.set(false);
+										webEnd?.startScrollToEnd();
+										list?.scrollToEnd({ animated: !reduceMotion() });
+									}}
+								>
+									<Icon name="ArrowDown" />
+								</Button>
+							</ConversationColumn>
+						</View>
+					);
+				}}
+			</View>
+		</ChatDisclosureAction.Provider>
 	);
 }

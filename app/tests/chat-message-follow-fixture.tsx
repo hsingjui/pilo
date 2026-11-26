@@ -157,6 +157,37 @@ async function run() {
 		},
 		end: () =>
 			apply({ type: "assistant_turn_end", stopReason: "stop", timestampMs }),
+		tool: () =>
+			apply(
+				{ type: "user_message_start", text: "Run a long command", timestampMs },
+				{ type: "assistant_message_start", timestampMs },
+				{
+					type: "tool_execution_start",
+					toolCallId: "bash-long-1",
+					toolName: "bash",
+					args: { command: "seq 1 40" },
+					timestampMs,
+				},
+				{
+					type: "tool_execution_end",
+					toolCallId: "bash-long-1",
+					toolName: "bash",
+					result: {
+						content: [
+							{
+								type: "text",
+								text: Array.from(
+									{ length: 40 },
+									(_, i) => `Command output line ${i + 1}`,
+								).join("\n"),
+							},
+						],
+					},
+					isError: false,
+					timestampMs,
+				},
+				{ type: "assistant_turn_end", stopReason: "stop", timestampMs },
+			),
 		// The chat is read again: the reducer names every reply anew, and
 		// the loaded window is the one it was: the store keeps the pages of
 		// the range the list reported, and a margin around them, loaded, so
