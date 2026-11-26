@@ -25,12 +25,14 @@ import {
 
 import { t } from "../shell/i18n";
 import { chatPx } from "../chat/layout";
+import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
 import { Foreground } from "../ui/foreground";
 import { HoverCard } from "../ui/hover-card";
 import { Icon } from "../ui/icon";
 import { MOTION, tactileTransition } from "../ui/motion";
 import { Popover } from "../ui/popover";
+import { Spinner } from "../ui/spinner";
 import { composerToolbarGap } from "./composer-layout";
 
 /** Mobile text sizes aligned with `web/mobile-typography.ts` (`MOBILE_TEXT`). */
@@ -124,6 +126,11 @@ export function ComposerContextUsage(props: {
 	touch?: boolean;
 	/** Visible height when the host already accounts for the keyboard. */
 	availableHeight?: () => number;
+	onCompact?: () => void;
+	compacting?: () => boolean;
+	pendingCompact?: () => boolean;
+	onCancelPendingCompact?: () => void;
+	compactDisabled?: () => boolean;
 }) {
 	const context = computed(() =>
 		getComposerContextUsage(props.usage(), props.contextWindow()),
@@ -131,6 +138,13 @@ export function ComposerContextUsage(props: {
 	const stale = () => props.usage()?.contextStale === true;
 	const percent = () => context().contextPercent;
 	const ringPercent = () => Math.min(100, Math.max(0, percent() ?? 0));
+	const usageTone = () => {
+		const value = percent();
+		if (value === undefined) return "normal" as const;
+		if (value >= 90) return "danger" as const;
+		if (value >= 75) return "warning" as const;
+		return "normal" as const;
+	};
 	const animatedRatio = createAnimatedValue(ringPercent() / 100);
 	effect(() => {
 		const target = ringPercent() / 100;
@@ -174,14 +188,34 @@ export function ComposerContextUsage(props: {
 				? t("chat.contextUsageKnownPending")
 				: t("chat.contextUsage", { percent: formatPercent(percent()) });
 	const touch = Boolean(props.touch);
-	const muted = () => token("muted-foreground");
+	const triggerColor = () => {
+		const tone = usageTone();
+		if (tone === "danger") return token("destructive");
+		if (tone === "warning") return token("status-warning");
+		return token("muted-foreground");
+	};
+	const triggerTextClass = () => {
+		const tone = usageTone();
+		if (tone === "danger")
+			return "font-sans font-semibold tabular-nums text-destructive";
+		if (tone === "warning")
+			return "font-sans font-semibold tabular-nums text-(--status-warning)";
+		return "font-sans font-medium tabular-nums text-muted-foreground";
+	};
+	const barFillClass = () => {
+		const tone = usageTone();
+		if (tone === "danger") return "h-full w-full rounded-full bg-destructive";
+		if (tone === "warning")
+			return "h-full w-full rounded-full bg-(--status-warning)";
+		return "h-full w-full rounded-full bg-foreground/70";
+	};
 	const triggerContent = () =>
 		percent() === undefined ? (
 			<Icon name="CircleDashed" size={touch ? 16 : chatPx(16)} />
 		) : (
 			<>
 				<Text
-					class="font-sans font-medium tabular-nums text-muted-foreground"
+					class={triggerTextClass()}
 					style={
 						touch
 							? TOUCH_TEXT.xs
@@ -198,7 +232,7 @@ export function ComposerContextUsage(props: {
 			</>
 		);
 	const trigger = touch ? (
-		<Foreground.Provider value={muted}>
+		<Foreground.Provider value={triggerColor}>
 			<BaseButton
 				testID="composer-context-usage"
 				accessibilityLabel={summary()}
@@ -216,7 +250,7 @@ export function ComposerContextUsage(props: {
 			</BaseButton>
 		</Foreground.Provider>
 	) : (
-		<Foreground.Provider value={muted}>
+		<Foreground.Provider value={triggerColor}>
 			<View
 				testID="composer-context-usage"
 				role="button"
@@ -273,7 +307,7 @@ export function ComposerContextUsage(props: {
 					)}
 				>
 					<View
-						class="h-full w-full rounded-full bg-foreground/70"
+						class={barFillClass()}
 						style={{
 							transformOrigin: "left center",
 							transform: [{ scaleX: animatedRatio }],
@@ -362,6 +396,86 @@ export function ComposerContextUsage(props: {
 						>
 							{() => formatCost(cost())}
 						</Text>
+					</View>
+				) : null
+			}
+			{() =>
+				props.onCompact ? (
+					<View
+						class={
+							touch
+								? "w-full border-t border-border/60 px-3 py-2"
+								: "w-full border-t border-border/60 px-2 py-1.5"
+						}
+					>
+						{() =>
+							props.pendingCompact?.() ? (
+								<Button
+									testID="composer-context-cancel-compact"
+									variant="ghost"
+									size="sm"
+									class={classNames(
+										"w-full justify-between",
+										touch && "min-h-10",
+									)}
+									onPress={props.onCancelPendingCompact}
+								>
+									<Text
+										class="font-sans text-xs text-muted-foreground"
+										style={touch ? TOUCH_TEXT.xs : undefined}
+									>
+										{() => t("chat.compactPending")}
+									</Text>
+									<Icon name="X" size={13} color={token("muted-foreground")} />
+								</Button>
+							) : (
+								<Button
+									testID="composer-context-compact"
+									variant={usageTone() === "normal" ? "ghost" : "outline"}
+									size="sm"
+									class={classNames(
+										"w-full justify-center gap-1.5",
+										touch && "min-h-10",
+									)}
+									disabled={
+										Boolean(props.compacting?.()) ||
+										Boolean(props.compactDisabled?.())
+									}
+									onPress={props.onCompact}
+								>
+									{() =>
+										props.compacting?.() ? (
+											<Spinner size={13} color={token("muted-foreground")} />
+										) : (
+											<Icon
+												name="Minimize2"
+												size={13}
+												color={token(
+													usageTone() === "danger"
+														? "destructive"
+														: "muted-foreground",
+												)}
+											/>
+										)
+									}
+									<Text
+										class={classNames(
+											"font-sans text-xs font-medium",
+											usageTone() === "danger"
+												? "text-destructive"
+												: "text-foreground",
+										)}
+										style={touch ? TOUCH_TEXT.xs : undefined}
+									>
+										{() =>
+											props.compacting?.()
+												? t("chat.compacting")
+												: t("chat.compactContext")
+										}
+									</Text>
+								</Button>
+							)
+						}
 					</View>
 				) : null
 			}
