@@ -227,9 +227,10 @@ export function SidebarPanel(props: SidebarPanelProps) {
 	const { layout } = props;
 	const projectView = signal<string | null>(null);
 	const card = computed(sidebarSurface);
-	// Center the visible glyphs against the macOS traffic lights without moving the row.
-	const titleTextStyle =
-		platform.os === "macos" ? { transform: [{ translateY: -1 }] } : undefined;
+	// Center the visible Latin glyphs vertically against the title-bar icons.
+	const titleTextStyle = {
+		transform: [{ translateY: platform.os === "macos" ? -1 : 1 }],
+	};
 	// A view of sessions of a project that is gone closes.
 	const viewedProject = computed(() => {
 		const id = projectView();
@@ -271,7 +272,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 				>
 					<View class="min-w-0 flex-1 flex-row items-center px-2">
 						<Text
-							class={`min-w-0 shrink truncate font-sans text-lg font-semibold tracking-tight ${
+							class={`min-w-0 shrink truncate font-sans text-xl text-(length:--pilo-ui-text-xl) font-semibold leading-none tracking-tight ${
 								appInfo().development
 									? "text-primary"
 									: "text-sidebar-foreground"
@@ -451,7 +452,7 @@ export function StartupSidebar(
 					}}
 				>
 					<View class="min-w-0 flex-1 flex-row items-center px-2">
-						<Skeleton strong class="h-4 w-10" />
+						<Skeleton strong class="h-5 w-11" />
 					</View>
 					<View class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2">
 						{titleAction()}

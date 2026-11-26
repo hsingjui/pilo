@@ -2,6 +2,7 @@ import {
 	cleanup,
 	computed,
 	type JSX,
+	platform,
 	signal,
 	Text,
 	token,
@@ -23,6 +24,7 @@ import type { TerminalTab } from "../state/terminal-store";
 
 import { AppToaster, showToast } from "./app-toasts";
 import { PiLogo } from "./pi-logo";
+import { sidebarText } from "./sidebar-parts";
 import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
 import { writeClipboardText } from "../ui/clipboard";
@@ -224,24 +226,34 @@ export function SessionHeader(props: SessionHeaderProps) {
 											opacity: props.logoHidden?.()
 												? 0
 												: chatSelected()
-													? 0.75
+													? 0.65
 													: 0.45,
+											transform:
+												platform.os === "macos"
+													? undefined
+													: [{ translateY: -1 }],
 										}}
 									>
-										<PiLogo size={15} />
+										<PiLogo size={13} trim />
 									</View>
 								)
 							}
 							<Text
 								testID="session-header-title"
 								class={classNames(
-									"min-w-0 shrink truncate font-sans text-sm text-(length:--pilo-ui-text-sm)",
+									"min-w-0 shrink truncate font-sans",
+									hasTabs() ? "text-sm text-(length:--pilo-ui-text-sm)" : "",
 									chatSelected()
 										? hasTabs()
-											? "font-medium text-foreground"
-											: "text-foreground"
+											? "font-medium text-foreground/85 dark:text-foreground/90"
+											: "text-foreground/85 dark:text-foreground/90"
 										: "text-muted-foreground",
 								)}
+								style={
+									hasTabs()
+										? undefined
+										: { fontSize: sidebarText("sm").fontSize }
+								}
 							>
 								{() => props.title()}
 							</Text>
@@ -406,9 +418,9 @@ function WorkspaceHeaderTab(props: {
 					class={classNames(
 						"min-w-0 shrink truncate font-sans text-sm text-(length:--pilo-ui-text-sm)",
 						active()
-							? "font-medium text-foreground"
+							? "font-medium text-foreground/80 dark:text-foreground/90"
 							: hover.hovered()
-								? "text-foreground"
+								? "text-foreground/80 dark:text-foreground/90"
 								: "text-muted-foreground",
 					)}
 				>

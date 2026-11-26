@@ -117,6 +117,7 @@
 			"pilo-ui-text-2xs": "11px",
 			"pilo-ui-text-lg": "18px",
 			"pilo-ui-text-sm": "14px",
+			"pilo-ui-text-xl": "20px",
 			"pilo-ui-text-xs": "12px",
 			"z-dialog": "80",
 			"z-dialog-overlay": "70",

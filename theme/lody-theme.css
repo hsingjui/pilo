@@ -13,6 +13,7 @@
 		--pilo-ui-text-xs: 12px;
 		--pilo-ui-text-sm: 14px;
 		--pilo-ui-text-lg: 18px;
+		--pilo-ui-text-xl: 20px;
 
 		/*
 		 * Lody Light，解析自内置主题 lody-light.json（经 Lody LODY_ALIAS_RULES

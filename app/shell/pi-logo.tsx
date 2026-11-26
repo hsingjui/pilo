@@ -6,13 +6,29 @@ const PI_LOGO_PATHS = [
 	"M517.36 400H634.72V634.72H517.36Z",
 ].map((d) => new Path2D(d));
 
-export function PiLogo(props: { size?: number; color?: string }) {
+const PI_LOGO_OPTICAL_OFFSET = 120;
+const PI_LOGO_OPTICAL_EXTENT = 560;
+
+export function PiLogo(props: {
+	size?: number;
+	color?: string;
+	/** Crop the outer padding of the 800×800 viewBox to match standard icon optical bounds. */
+	trim?: boolean;
+}) {
 	return (
 		<Canvas
 			style={{ width: props.size ?? 16, height: props.size ?? 16 }}
 			accessible={false}
 			draw={(cx, size) => {
-				cx.scale(size.width / 800, size.height / 800);
+				if (props.trim) {
+					cx.scale(
+						size.width / PI_LOGO_OPTICAL_EXTENT,
+						size.height / PI_LOGO_OPTICAL_EXTENT,
+					);
+					cx.translate(-PI_LOGO_OPTICAL_OFFSET, -PI_LOGO_OPTICAL_OFFSET);
+				} else {
+					cx.scale(size.width / 800, size.height / 800);
+				}
 				cx.fillStyle = props.color ?? token("muted-foreground");
 				for (const path of PI_LOGO_PATHS) cx.fill(path, "evenodd");
 			}}
