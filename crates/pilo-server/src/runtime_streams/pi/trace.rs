@@ -1,11 +1,52 @@
 #[cfg(debug_assertions)]
 use std::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::Write,
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde_json::{Value, json};
+
+#[cfg(debug_assertions)]
+static TRACE_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
+
+pub(super) fn fast_rpc_event_type(bytes: &[u8]) -> Option<&str> {
+    let rest = bytes
+        .trim_ascii_start()
+        .strip_prefix(b"{")?
+        .trim_ascii_start();
+    let rest = rest.strip_prefix(b"\"type\"")?.trim_ascii_start();
+    let rest = rest.strip_prefix(b":")?.trim_ascii_start();
+    let rest = rest.strip_prefix(b"\"")?;
+    let end = rest.iter().position(|&b| b == b'"' || b == b'\\')?;
+    if rest[end] == b'\\' {
+        return None;
+    }
+    std::str::from_utf8(&rest[..end]).ok()
+}
+
+#[cfg(debug_assertions)]
+fn is_traceable_event_type(event_type: &str) -> bool {
+    matches!(
+        event_type,
+        "response"
+            | "agent_start"
+            | "agent_end"
+            | "agent_settled"
+            | "turn_start"
+            | "turn_end"
+            | "message_start"
+            | "message_end"
+            | "tool_execution_start"
+            | "tool_execution_end"
+            | "queue_update"
+            | "compaction_start"
+            | "compaction_end"
+            | "auto_retry_start"
+            | "auto_retry_end"
+    )
+}
 
 pub(super) fn trace_pi(stage: &str, stream_id: &str, detail: Value) {
     if matches!(stage, "pi.start" | "pi.stop" | "pi.stdout_closed") {
@@ -31,45 +72,37 @@ pub(super) fn trace_pi(stage: &str, stream_id: &str, detail: Value) {
             "streamId": stream_id,
             "detail": detail,
         });
-        let path =
-            std::env::temp_dir().join(format!("pilo-runtime-trace-{}.jsonl", std::process::id()));
-        let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-            return;
-        };
         let mut line = record.to_string();
         line.push('\n');
-        let _ = file.write_all(line.as_bytes());
+        let cell = TRACE_FILE.get_or_init(|| {
+            let path = std::env::temp_dir()
+                .join(format!("pilo-runtime-trace-{}.jsonl", std::process::id()));
+            Mutex::new(OpenOptions::new().create(true).append(true).open(path).ok())
+        });
+        let mut guard = cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(file) = guard.as_mut() {
+            let _ = file.write_all(line.as_bytes());
+        }
     }
 }
 
 pub(super) fn trace_pi_rpc_line(stream_id: &str, bytes: &[u8]) {
     #[cfg(debug_assertions)]
     {
+        if let Some(event_type) = fast_rpc_event_type(bytes)
+            && !is_traceable_event_type(event_type)
+        {
+            return;
+        }
         let Ok(message) = serde_json::from_slice::<Value>(bytes) else {
             return;
         };
         let Some(event_type) = message.get("type").and_then(Value::as_str) else {
             return;
         };
-        let traceable = matches!(
-            event_type,
-            "response"
-                | "agent_start"
-                | "agent_end"
-                | "agent_settled"
-                | "turn_start"
-                | "turn_end"
-                | "message_start"
-                | "message_end"
-                | "tool_execution_start"
-                | "tool_execution_end"
-                | "queue_update"
-                | "compaction_start"
-                | "compaction_end"
-                | "auto_retry_start"
-                | "auto_retry_end"
-        );
-        if !traceable {
+        if !is_traceable_event_type(event_type) {
             return;
         }
         let role = message.pointer("/message/role").and_then(Value::as_str);

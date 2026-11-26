@@ -9,13 +9,34 @@ use tokio::{
     task::JoinHandle,
 };
 
-use super::trace::{trace_pi, trace_pi_rpc_line};
+use super::trace::{fast_rpc_event_type, trace_pi, trace_pi_rpc_line};
 use super::{PiStartParams, PiWork, stop_registered_pi};
 use crate::ServerState;
 use crate::output::ServerWriter;
 
 const STALL_CLEAR_QUEUE_ID: &str = "pilo-stall-clear-queue";
 const STALL_QUEUE_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+fn should_observe_rpc_event(bytes: &[u8], watch_stalls: bool) -> bool {
+    let Some(event_type) = fast_rpc_event_type(bytes) else {
+        return true;
+    };
+    matches!(
+        event_type,
+        "agent_start"
+            | "auto_retry_start"
+            | "agent_settled"
+            | "tool_execution_start"
+            | "tool_execution_end"
+            | "compaction_start"
+            | "summarization_retry_scheduled"
+            | "compaction_end"
+            | "summarization_retry_finished"
+            | "queue_update"
+            | "response"
+            | "extension_ui_request"
+    ) || (watch_stalls && event_type == "agent_end")
+}
 
 pub(super) fn spawn_output_tasks(
     state: &ServerState,
@@ -43,7 +64,10 @@ pub(super) fn spawn_output_tasks(
                 Ok(Some(bytes)) => {
                     trace_pi_rpc_line(&stream_id, &bytes);
                     let mut clear_queue = false;
-                    if track_work && let Ok(event) = serde_json::from_slice::<Value>(&bytes) {
+                    if track_work
+                        && should_observe_rpc_event(&bytes, watch_stalls)
+                        && let Ok(event) = serde_json::from_slice::<Value>(&bytes)
+                    {
                         let mut work = work
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -296,7 +320,7 @@ async fn read_rpc_line<R: AsyncBufRead + Unpin>(
         if buffer.is_empty() {
             return Ok((!line.is_empty()).then_some(line));
         }
-        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let newline = memchr::memchr(b'\n', buffer);
         let bytes = newline.unwrap_or(buffer.len());
         if line.len().saturating_add(bytes) > MAX_BINARY_PAYLOAD_BYTES {
             return Err(std::io::Error::new(

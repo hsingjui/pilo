@@ -29,6 +29,10 @@ export default function (pi) {
 	function touch() {
 		const current = watch;
 		if (!current || current.timedOut || current.signal?.aborted) return;
+		if (typeof current.timer?.refresh === "function") {
+			current.timer.refresh();
+			return;
+		}
 		clearTimer(current);
 		current.timer = setTimeout(() => {
 			if (watch !== current || current.signal?.aborted) return;

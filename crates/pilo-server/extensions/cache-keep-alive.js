@@ -11,15 +11,56 @@ function modelKey(model) {
 		: "";
 }
 
-function replayPayload(payload, api) {
-	const copy = structuredClone(payload);
+function exceedsCharacterLimit(value, limit) {
+	let count = 0;
+	const stack = [value];
+	while (stack.length > 0) {
+		const item = stack.pop();
+		if (item === null || item === undefined) {
+			count += 4;
+		} else if (typeof item === "string") {
+			count += item.length + 2;
+		} else if (typeof item === "number" || typeof item === "boolean") {
+			count += 8;
+		} else if (Array.isArray(item)) {
+			count += 2 + item.length;
+			for (let i = item.length - 1; i >= 0; i--) stack.push(item[i]);
+		} else if (typeof item === "object") {
+			count += 2;
+			for (const key of Object.keys(item)) {
+				count += key.length + 4;
+				if (count > limit) return true;
+				stack.push(item[key]);
+			}
+		}
+		if (count > limit) return true;
+	}
+	return false;
+}
+
+function isReplayablePayload(payload, api) {
 	if (
-		copy.previous_response_id ||
-		(copy.thinking &&
-			copy.thinking.type !== "disabled" &&
-			!(api === "anthropic-messages" && copy.thinking.type === "adaptive"))
+		!payload ||
+		typeof payload !== "object" ||
+		payload.previous_response_id ||
+		(payload.thinking &&
+			payload.thinking.type !== "disabled" &&
+			!(api === "anthropic-messages" && payload.thinking.type === "adaptive"))
 	)
-		return null;
+		return false;
+	if (
+		api === "anthropic-messages" ||
+		api === "openai-responses" ||
+		api === "openai-responses-ws"
+	)
+		return true;
+	if (api === "openai-completions")
+		return "max_completion_tokens" in payload || "max_tokens" in payload;
+	return false;
+}
+
+function replayPayload(copy, api) {
+	if (!isReplayablePayload(copy, api)) return null;
 	if (api === "anthropic-messages") copy.max_tokens = 1;
 	else if (api === "openai-responses" || api === "openai-responses-ws") {
 		// The custom WS adapter calls onPayload after normalization, preserving this cap.
@@ -320,7 +361,10 @@ export default function (pi) {
 			typeof event.payload !== "object"
 		)
 			return;
-		if (JSON.stringify(event.payload).length > MAX_SNAPSHOT_CHARACTERS) {
+		if (
+			!isReplayablePayload(event.payload, ctx.model?.api) ||
+			exceedsCharacterLimit(event.payload, MAX_SNAPSHOT_CHARACTERS)
+		) {
 			candidate = undefined;
 			return;
 		}
