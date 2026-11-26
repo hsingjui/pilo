@@ -12,6 +12,7 @@ import type { MobileRemoteWorkspaceProps } from "./mobile-remote-workspace";
 import { installMobileViewportSync, MobileViewport } from "./mobile-viewport";
 import { RemotePairingPage } from "./pairing-page";
 import {
+	clearRemoteDeviceToken,
 	loadRemoteDeviceToken,
 	reloadRemotePage,
 	resolveCurrentPageUrl,
@@ -62,6 +63,7 @@ function LazyMobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 			<MobileRemoteWorkspace
 				token={props.token}
 				onAuthExpired={props.onAuthExpired}
+				onSignOut={props.onSignOut}
 			/>
 		);
 	};
@@ -95,6 +97,13 @@ function WebAppRoot() {
 	const handleAuthExpired = () => {
 		token.set(null);
 		authError.set(t("settings.remoteAuthorizationExpired"));
+	};
+
+	const handleSignOut = () => {
+		void clearRemoteDeviceToken().finally(() => {
+			authError.set(null);
+			token.set(null);
+		});
 	};
 
 	const handleSubmitToken = (value: string) => {
@@ -155,6 +164,7 @@ function WebAppRoot() {
 								<LazyMobileRemoteWorkspace
 									token={value()}
 									onAuthExpired={handleAuthExpired}
+									onSignOut={handleSignOut}
 								/>
 							)}
 						</Each>

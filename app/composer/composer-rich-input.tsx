@@ -66,6 +66,8 @@ export interface ComposerRichInputHandle {
 	insertMentionAt: (range: RichRange, mention: ChatMention) => void;
 	insertTextAt: (range: RichRange, text: string) => void;
 	insertText: (text: string) => void;
+	/** 替换整篇草稿并保留原生 Cmd/Ctrl+Z 撤销栈（用于草稿优化、采纳输入建议）。 */
+	replaceValueWithHistory: (value: string) => void;
 	submissionText: () => string | undefined;
 }
 
@@ -91,6 +93,7 @@ export interface ComposerRichInputProps {
 	onHandle?: (handle: ComposerRichInputHandle) => () => void;
 	onValueChange: (value: string) => void;
 	onRemoveImage: (id: string) => void;
+	onRemoveMention?: (kind: "file" | "session", path: string) => void;
 	onSuggestionChange: (match: RichSuggestionMatch | null) => void;
 	onContentHeightChange: (height: number) => void;
 	onFocusChange: (focused: boolean) => void;
@@ -144,7 +147,7 @@ function SessionRichInput(session: {
 }) {
 	const props = session.input;
 	const media = ChatMediaActions();
-	const { sessionKey, projectId, imageLayouts } = session;
+	const { sessionKey, imageLayouts } = session;
 	const isCurrent = () => props.sessionKey() === sessionKey;
 	const focused = signal(false);
 	const composing = signal(false);
@@ -259,6 +262,16 @@ function SessionRichInput(session: {
 										? t("chat.openFile", { path })
 										: undefined
 							}
+							removeLabel={t("chat.removeAttachment", { name: label })}
+							disabled={props.disabled()}
+							onRemove={() => {
+								if (!isCurrent() || props.disabled()) return;
+								if (kind === "image") {
+									props.onRemoveImage(path);
+								} else {
+									props.onRemoveMention?.(kind, path);
+								}
+							}}
 							onPress={
 								kind === "session"
 									? undefined
@@ -302,7 +315,7 @@ function SessionRichInput(session: {
 		sessions: ReadonlyMap<string, SessionMention>,
 		images: readonly ChatImageAttachment[],
 	) => {
-		const layout = imageLayouts.get(projectId);
+		const layout = imageLayouts.get(sessionKey);
 		return valueToRichDoc(
 			value,
 			sessions,
@@ -340,11 +353,11 @@ function SessionRichInput(session: {
 	let syncedRevision = editor.revision;
 	const rememberLayout = (doc: RichNodeJSON, value: string) => {
 		if (knownDocImageIds.size) {
-			imageLayouts.set(projectId, {
+			imageLayouts.set(sessionKey, {
 				value,
 				offsets: richDocImageOffsets(doc),
 			});
-		} else imageLayouts.delete(projectId);
+		} else imageLayouts.delete(sessionKey);
 	};
 	let suggestionRevision = -1;
 	let suggestionDisabled = false;
@@ -555,6 +568,27 @@ function SessionRichInput(session: {
 		},
 		insertText: (text) => {
 			editor.insertContent(text, "text");
+			syncFromEditor();
+		},
+		replaceValueWithHistory: (value) => {
+			if (!isCurrent() || props.disabled()) return;
+			const doc = editor.doc;
+			const sessions = value.includes("@")
+				? props.sessionsByValue()
+				: emptySessions;
+			const nextDoc = makeDoc(value, sessions, props.images());
+			const nextEnd = richDocEndPos(nextDoc);
+			editor.dispatch({
+				steps: [
+					{
+						stepType: "replace",
+						from: 0,
+						to: richDocEndPos(doc) + 1,
+						slice: { content: nextDoc.content },
+					},
+				],
+				selection: { type: "text", anchor: nextEnd, head: nextEnd },
+			});
 			syncFromEditor();
 		},
 		submissionText: () => {

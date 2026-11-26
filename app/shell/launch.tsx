@@ -7,6 +7,7 @@ import {
 } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
@@ -186,12 +187,14 @@ export async function launch(
 	const composer: ComposerStore = new ComposerStore({
 		client,
 		app: store.state,
+		activeModel: () => runConfig.state()?.model ?? null,
 		catalog,
 		queue,
 		beforeSend: (sessionKey, ensureReady) =>
 			runConfig.prepareToSend(sessionKey, ensureReady),
 		transcript: chat,
 		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
+		onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),
 		onPromptStarted: createSessionAutoTitle(client, (target, error) =>
 			composer.setStatus(
 				`${t("settings.automaticNamingFailed")}: ${
@@ -229,8 +232,27 @@ export async function launch(
 		},
 	});
 	followOpenSession(store, chat);
-	endLeftTemporaryChats(store, (sessionKey, reason) =>
-		client.stopChat(sessionKey, reason),
+	endLeftTemporaryChats(
+		store,
+		(sessionKey, reason) => client.stopChat(sessionKey, reason),
+		{
+			graceMs: 8_000,
+			onLeaving: ({ graceMs, restore, onDismiss }) => {
+				const toastId = toasts.show({
+					variant: "info",
+					title: t("app.temporaryChatLeaving"),
+					timeout: graceMs,
+					onDismiss,
+					action: {
+						label: t("app.returnToTemporaryChat"),
+						onPress: restore,
+					},
+				});
+				return () => {
+					if (toastId) toasts.dismiss(toastId);
+				};
+			},
+		},
 	);
 	followOpenSessionRead(store);
 	followRunConfig(store, runConfig, catalog, chat);
@@ -266,7 +288,9 @@ export async function launch(
 			client.openFileLink(projectId, url, preview),
 		git: client,
 		onRenameSession: (projectId, sessionPath, title) =>
-			void store.renameSession(projectId, sessionPath, title),
+			store.renameSession(projectId, sessionPath, title),
+		onPauseCacheKeepAlive: (sessionKey) =>
+			client.pauseCacheKeepAlive(sessionKey),
 		readProjectImage: (projectId, path) =>
 			client.readProjectImage(projectId, path),
 		readHistoryImage: (projectId, sessionPath, imageId) =>
@@ -282,6 +306,7 @@ export async function launch(
 		);
 	});
 	mount(() => {
+		composer.followBackgroundSessions();
 		if (isAvailable) {
 			// nsh creates the implicit main window as part of mount.
 			const main = currentWindow();
@@ -300,6 +325,28 @@ export async function launch(
 					store,
 					desktop,
 					notifications,
+					{
+						isViewingSession: (projectId, sessionPath) => {
+							const open = store.state().navigation.session;
+							if (
+								!open ||
+								open.projectId !== projectId ||
+								!open.sessionPath ||
+								runtimeSessionPathKey(open.sessionPath) !==
+									runtimeSessionPathKey(sessionPath)
+							) {
+								return false;
+							}
+							if (terminals.activeTab(projectId) !== null) return false;
+							if (workspace.isGitActive(projectId)) return false;
+							if (workspace.activeFile(projectId) !== null) return false;
+							return true;
+						},
+						onSelectTarget: (projectId) => {
+							terminals.select(null);
+							workspace.selectChat(projectId);
+						},
+					},
 				);
 			}
 			let sizingStarted = false;

@@ -209,20 +209,7 @@ test("nsh web pairing shows expired state on 401", async () => {
 	});
 
 	await app.waitFor("id:remote-pairing-error");
-	await app.waitFor("id:remote-pairing-open");
-});
-
-test("mobile shell shows auth expiry reminder and clears it on renew", async () => {
-	const app = await open("./mobile-web-fixture.tsx", {
-		locale: "en-US",
-		width: 390,
-		height: 844,
-		storage: { "fixture.scenario": "expiring" },
-	});
-
-	await app.waitFor("id:mobile-auth-expiry-banner");
-	await app.press("id:mobile-auth-renew-button");
-	expect(app.shows("id:mobile-auth-expiry-banner")).toBe(false);
+	expect(app.shows("id:remote-pairing-open")).toBe(false);
 });
 
 test("mobile drawer notifies when deleting a session succeeds or fails", async () => {
@@ -299,12 +286,22 @@ test("mobile composer context usage opens anchored popover for both empty and po
 	});
 });
 
-test("mobile composer send mode uses anchored popover instead of phone bottom sheet and updates mode", async () => {
+test("mobile composer send mode hides while idle and uses anchored popover while running", async () => {
+	const idle = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+	});
+	await idle.waitFor("id:mobile-textarea-input");
+	expect(idle.shows("id:chat-composer-send-mode")).toBe(false);
+
 	const app = await open("./mobile-web-fixture.tsx", {
 		platform: "ios",
 		locale: "en-US",
 		width: 390,
 		height: 844,
+		storage: { "fixture.scenario": "queue" },
 	});
 
 	await app.waitFor("id:chat-composer-send-mode");
@@ -355,7 +352,7 @@ test("mobile pending queue reuses desktop card with touch targets, edit and send
 	await app.type("id:mobile-textarea-input", "then run tests");
 	await app.press("id:chat-composer-send");
 	await app.waitFor("id:chat-pending-queue >> text:2");
-	expect(app.shows("id:chat-pending-item-1 >> text:Later")).toBe(true);
+	expect(app.shows("id:chat-pending-item-1 >> text:Queue")).toBe(true);
 	expect(app.shows("id:chat-pending-item-1 >> text:then run tests")).toBe(true);
 
 	// Retrieve the first queued message back into the mobile textarea.

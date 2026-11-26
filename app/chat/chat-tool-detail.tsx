@@ -50,9 +50,8 @@ function ToolText(props: { text: () => string; maxHeight: string }) {
 	const chunks = computed(() => toolTextChunks(props.text()));
 	return (
 		<>
-			{/* Native Select All only sees the chunks the scroll view has mounted. */}
 			{() =>
-				platform.os !== "web" && chunks().length > 1 ? (
+				props.text().length > 0 ? (
 					<View class="items-end">
 						<ChatCopyButton text={props.text} testID="chat-copy-tool-text" />
 					</View>
@@ -86,50 +85,59 @@ function ToolDiff(props: { diff: () => string }) {
 			.map((line) => diffLineStyle(line)),
 	);
 	return (
-		<Scroll
-			testID="chat-tool-diff"
-			class="max-h-64 py-1"
-			bounces={false}
-			scrollbar={{ vertical: scrollbarLook() }}
-		>
-			<View selectable>
-				<Each of={lines()} key="index">
-					{(line) => (
-						<View
-							class={
-								line().marker === "+"
-									? "flex-row bg-code-added/[0.07]"
-									: line().marker === "−"
-										? "flex-row bg-destructive/[0.06]"
-										: "flex-row"
-							}
-						>
-							<Text
-								accessibilityElementsHidden
+		<>
+			{() =>
+				props.diff().length > 0 ? (
+					<View class="items-end">
+						<ChatCopyButton text={props.diff} testID="chat-copy-tool-diff" />
+					</View>
+				) : null
+			}
+			<Scroll
+				testID="chat-tool-diff"
+				class="max-h-64 py-1"
+				bounces={false}
+				scrollbar={{ vertical: scrollbarLook() }}
+			>
+				<View selectable>
+					<Each of={lines()} key="index">
+						{(line) => (
+							<View
 								class={
 									line().marker === "+"
-										? "w-3 text-center font-mono leading-[1.4] text-code-added"
-										: "w-3 text-center font-mono leading-[1.4] text-destructive"
+										? "flex-row bg-code-added/[0.07]"
+										: line().marker === "−"
+											? "flex-row bg-destructive/[0.06]"
+											: "flex-row"
 								}
-								style={codeSize()}
 							>
-								{() => line().marker}
-							</Text>
-							<Text
-								class={
-									line().marker
-										? "min-w-0 flex-1 font-mono leading-[1.4] text-foreground/80"
-										: "min-w-0 flex-1 font-mono leading-[1.4] text-muted-foreground"
-								}
-								style={codeSize()}
-							>
-								{() => line().content || " "}
-							</Text>
-						</View>
-					)}
-				</Each>
-			</View>
-		</Scroll>
+								<Text
+									accessibilityElementsHidden
+									class={
+										line().marker === "+"
+											? "w-3 text-center font-mono leading-[1.4] text-code-added"
+											: "w-3 text-center font-mono leading-[1.4] text-destructive"
+									}
+									style={codeSize()}
+								>
+									{() => line().marker}
+								</Text>
+								<Text
+									class={
+										line().marker
+											? "min-w-0 flex-1 font-mono leading-[1.4] text-foreground/80"
+											: "min-w-0 flex-1 font-mono leading-[1.4] text-muted-foreground"
+									}
+									style={codeSize()}
+								>
+									{() => line().content || " "}
+								</Text>
+							</View>
+						)}
+					</Each>
+				</View>
+			</Scroll>
+		</>
 	);
 }
 

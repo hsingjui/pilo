@@ -12,6 +12,14 @@ export function chatToolExpansionKey(messageId: string, toolCallId: string) {
 	return `tool:${messageId}:${toolCallId}`;
 }
 
+/** The key of a thinking block's details within an activity group. */
+export function chatThinkingExpansionKey(
+	groupExpansionKey: string,
+	thinkingId: string,
+) {
+	return `${groupExpansionKey}:thinking:${thinkingId}`;
+}
+
 /**
  * What the user opened and closed in one chat, as the WebUI's expansion
  * store keeps it. A list row is dropped when it scrolls away and reused for
@@ -50,6 +58,24 @@ export class ChatExpansion {
 			(item) =>
 				item.type === "tool" &&
 				this.choice(chatToolExpansionKey(messageId, item.id))() === true,
+		);
+	}
+
+	/** 检查用户是否手动展开了该组内的工具、思考块或分组本身，防止自动折叠抽走正在阅读的内容。 */
+	hasUserExpandedActivity(
+		messageId: string,
+		groupExpansionKey: string,
+		content: readonly AssistantContentItem[],
+	): boolean {
+		if (this.choice(`${groupExpansionKey}:group`)() === true) return true;
+		return content.some((item) =>
+			item.type === "tool"
+				? this.choice(chatToolExpansionKey(messageId, item.id))() === true
+				: item.type === "thinking"
+					? this.choice(
+							chatThinkingExpansionKey(groupExpansionKey, item.id),
+						)() === true
+					: false,
 		);
 	}
 }

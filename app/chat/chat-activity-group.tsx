@@ -22,7 +22,11 @@ import {
 	workDurationText,
 } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
-import { type ChatExpansion, chatToolExpansionKey } from "./chat-expansion";
+import {
+	type ChatExpansion,
+	chatThinkingExpansionKey,
+	chatToolExpansionKey,
+} from "./chat-expansion";
 import type { ChatWorkPreferences } from "./chat-message-types";
 import {
 	ChatReadingFont,
@@ -70,11 +74,15 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 			shouldInitiallyOpenAssistantActivity({
 				followedByText: props.followedByText(),
 				collapseCompletedActivity: collapse(),
-			}) || expansion.findExpandedToolIndex(props.messageId(), activity()) >= 0,
+			}) ||
+				expansion.hasUserExpandedActivity(
+					props.messageId(),
+					props.expansionKey(),
+					activity(),
+				),
 		),
 	);
-	// The text that ends a group's run folds it, even after the user opened
-	// it while it ran; a tool the user opened keeps it open.
+	// 正文到达时若用户手动展开过思考过程、工具或该活动组，不强行折叠抽走正在阅读的内容。
 	let previous: { key: string; eligible: boolean } | undefined;
 	effect(() => {
 		const key = groupKey();
@@ -84,7 +92,13 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 		if (before?.key !== key) return;
 		if (!shouldAutoCollapseAssistantActivity(before.eligible, eligible)) return;
 		untracked(() => {
-			if (expansion.findExpandedToolIndex(props.messageId(), activity()) < 0) {
+			if (
+				!expansion.hasUserExpandedActivity(
+					props.messageId(),
+					props.expansionKey(),
+					activity(),
+				)
+			) {
 				expansion.setOpen(key, false);
 			}
 		});
@@ -170,7 +184,7 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 										activity={item as () => ThinkingActivity}
 										expansion={expansion}
 										expansionKey={() =>
-											`${props.expansionKey()}:thinking:${item().id}`
+											chatThinkingExpansionKey(props.expansionKey(), item().id)
 										}
 										showDuration={() => props.preferences().showWorkDuration}
 									/>

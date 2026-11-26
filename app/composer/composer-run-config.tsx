@@ -120,11 +120,15 @@ export function ComposerRunConfig(
 	const selected = () => props.config()?.model ?? null;
 	const modelLabel = () => selected()?.name || selected()?.id || "—";
 	const thinking = () => props.config()?.thinkingLevel ?? null;
+	const thinkingLevels = () => props.config()?.thinkingLevels ?? [];
+	const hasReasoning = () => thinkingLevels().length > 0;
 	const thinkingLabel = () => piThinkingLevelLabel(thinking());
 	const modelPending = () =>
 		!selected() && (props.loading() || !props.config()?.ready);
 	const thinkingPending = () =>
 		modelPending() || (!thinking() && !props.config()?.ready);
+	const showThinkingInTrigger = () =>
+		thinkingPending() || (hasReasoning() && thinking() !== null);
 	const triggerStyle = () => {
 		const base = composerRunConfigStyle(props.toolbarWidth());
 		return props.touch ? { ...base, height: 40 } : base;
@@ -148,12 +152,20 @@ export function ComposerRunConfig(
 					style={triggerStyle()}
 					activeStyle={{ scale: 1 }}
 					disabled={!props.config()?.ready || !!props.readOnly?.()}
-					accessibilityLabel={t("chat.runConfigLabel", {
-						model: modelPending() ? t("chat.loadingModels") : modelLabel(),
-						thinking: thinkingPending()
-							? t("chat.readingReasoning")
-							: thinkingLabel(),
-					})}
+					accessibilityLabel={
+						showThinkingInTrigger()
+							? t("chat.runConfigLabel", {
+									model: modelPending()
+										? t("chat.loadingModels")
+										: modelLabel(),
+									thinking: thinkingPending()
+										? t("chat.readingReasoning")
+										: thinkingLabel(),
+								})
+							: modelPending()
+								? t("chat.loadingModels")
+								: modelLabel()
+					}
 				>
 					<PiLogo size={props.touch ? 16 : chatPx(16)} />
 					{() =>
@@ -170,27 +182,33 @@ export function ComposerRunConfig(
 								>
 									{modelLabel}
 								</Text>
-								<Text
-									accessible={false}
-									accessibilityElementsHidden
-									class="shrink-0 font-sans text-muted-foreground/60"
-									style={triggerTextStyle}
-								>
-									·
-								</Text>
-								{thinkingPending() ? (
-									<Skeleton
-										class="shrink-0 rounded-full"
-										style={{ width: chatPx(32), height: chatPx(10) }}
-									/>
-								) : (
-									<Text
-										class="shrink-0 font-sans text-muted-foreground"
-										style={triggerTextStyle}
-									>
-										{thinkingLabel}
-									</Text>
-								)}
+								{() =>
+									showThinkingInTrigger() ? (
+										<>
+											<Text
+												accessible={false}
+												accessibilityElementsHidden
+												class="shrink-0 font-sans text-muted-foreground/60"
+												style={triggerTextStyle}
+											>
+												·
+											</Text>
+											{thinkingPending() ? (
+												<Skeleton
+													class="shrink-0 rounded-full"
+													style={{ width: chatPx(32), height: chatPx(10) }}
+												/>
+											) : (
+												<Text
+													class="shrink-0 font-sans text-muted-foreground"
+													style={triggerTextStyle}
+												>
+													{thinkingLabel}
+												</Text>
+											)}
+										</>
+									) : null
+								}
 							</>
 						)
 					}
@@ -243,7 +261,7 @@ export function ComposerRunConfig(
 				>
 					<View style={{ gap: Math.max(3, token("pilo-menu-item-gap")) }}>
 						{() =>
-							(props.config()?.thinkingLevels ?? []).map((level) => (
+							thinkingLevels().map((level) => (
 								<MenuItem
 									testID={`run-config-thinking:${level}`}
 									role="menuitemradio"
@@ -261,7 +279,7 @@ export function ComposerRunConfig(
 							))
 						}
 						{() =>
-							(props.config()?.thinkingLevels.length ?? 0) === 0 ? (
+							thinkingLevels().length === 0 ? (
 								<MenuItem disabled>
 									<Text class="font-sans text-muted-foreground">
 										{() =>

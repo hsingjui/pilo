@@ -176,22 +176,28 @@ function ViewMenuItems(props: { settings: SidebarSettingsStore }) {
 					{() => t("sidebar.recentSessions")}
 				</Text>
 			</MenuItem>
-			<MenuItem
-				testID="view:show-projects"
-				class="gap-2 px-2"
-				icon={<Icon name="Folder" size={14} />}
-				onSelect={() =>
-					void settings.setShowProjectsInRecents(!saved().showProjectsInRecents)
-				}
-			>
-				<Text class="min-w-0 flex-1 font-sans">
-					{() => t("sidebar.showProjects")}
-				</Text>
-				<MiniSwitch
-					testID="view:show-projects:switch"
-					checked={saved().showProjectsInRecents}
-				/>
-			</MenuItem>
+			{() =>
+				saved().view === "recent" ? (
+					<MenuItem
+						testID="view:show-projects"
+						class="gap-2 px-2"
+						icon={<Icon name="Folder" size={14} />}
+						onSelect={() =>
+							void settings.setShowProjectsInRecents(
+								!saved().showProjectsInRecents,
+							)
+						}
+					>
+						<Text class="min-w-0 flex-1 font-sans">
+							{() => t("sidebar.showProjects")}
+						</Text>
+						<MiniSwitch
+							testID="view:show-projects:switch"
+							checked={saved().showProjectsInRecents}
+						/>
+					</MenuItem>
+				) : null
+			}
 		</>
 	);
 }
@@ -350,34 +356,32 @@ function RecentSection(
 					<ViewMenuItems settings={settings} />
 				</Menu>
 			</SectionHeader>
-			{() =>
-				!hasSessions() ? (
-					<NoSessions testID={RECENT_SECTION} />
-				) : (
-					<Collapsible
-						open={!collapsed()}
-						{...collapsibleRevealProps()}
-						content={
-							<SessionGlide>
-								<Each of={sessions()} key={sessionRowKey}>
-									{(session) => (
-										<SessionRow
-											store={store}
-											onSelectChat={props.onSelectChat}
-											session={session}
-											projectName={() =>
-												settings.settings().showProjectsInRecents
-													? projectNames().get(session().projectId)
-													: undefined
-											}
-										/>
-									)}
-								</Each>
-							</SessionGlide>
-						}
-					/>
-				)
-			}
+			<Collapsible
+				open={!collapsed()}
+				{...collapsibleRevealProps()}
+				content={() =>
+					!hasSessions() ? (
+						<NoSessions testID={RECENT_SECTION} />
+					) : (
+						<SessionGlide>
+							<Each of={sessions()} key={sessionRowKey}>
+								{(session) => (
+									<SessionRow
+										store={store}
+										onSelectChat={props.onSelectChat}
+										session={session}
+										projectName={() =>
+											settings.settings().showProjectsInRecents
+												? projectNames().get(session().projectId)
+												: undefined
+										}
+									/>
+								)}
+							</Each>
+						</SessionGlide>
+					)
+				}
+			/>
 		</View>
 	);
 }
@@ -490,11 +494,15 @@ function ConnectionSection(
 								}}
 							>
 								<Text class="min-w-0 flex-1 font-sans">
-									{() =>
-										confirmingRemove()
-											? t("sidebar.confirmRemove")
-											: t("sidebar.removeConnection")
-									}
+									{() => {
+										if (!confirmingRemove()) {
+											return t("sidebar.removeConnection");
+										}
+										const count = props.group().projects.length;
+										return count > 0
+											? t("sidebar.confirmRemoveWithProjects", { count })
+											: t("sidebar.confirmRemove");
+									}}
 								</Text>
 							</MenuItem>
 						) : null

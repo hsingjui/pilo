@@ -70,21 +70,23 @@ function storeFor(
 const targetA: ComposerTarget = { sessionKey: "sa", projectId: "p1" };
 const targetB: ComposerTarget = { sessionKey: "sb", projectId: "p1" };
 
-test("draft text is shared within a project and isolated between projects", () => {
+test("draft text is isolated per session key", () => {
 	const { client } = fakeClient();
 	const { store } = storeFor(client);
 	const otherProject = { sessionKey: "sc", projectId: "p2" };
 	store.setTarget(targetA);
 	store.setValue("first draft");
 	store.setTarget(targetB);
-	expect(store.state().value).toBe("first draft");
-	store.setValue("edited draft");
+	expect(store.state().value).toBe("");
+	store.setValue("second draft");
 	store.setTarget(otherProject);
 	expect(store.state().value).toBe("");
 	store.setValue("other project");
 	store.setTarget(null);
 	store.setTarget(targetA);
-	expect(store.state().value).toBe("edited draft");
+	expect(store.state().value).toBe("first draft");
+	store.setTarget(targetB);
+	expect(store.state().value).toBe("second draft");
 	store.setTarget(otherProject);
 	expect(store.state().value).toBe("other project");
 });
@@ -163,7 +165,7 @@ test("ArrowUp recalls the project's earlier prompts", async () => {
 	expect(store.state().value).toBe("second");
 });
 
-test("switching before dispatch restores the project draft without losing newer edits", async () => {
+test("switching before dispatch restores the original session draft without polluting another session", async () => {
 	const { client, sent } = fakeClient();
 	const { store } = storeFor(client);
 	store.setTarget(targetA);
@@ -178,7 +180,10 @@ test("switching before dispatch restores the project draft without losing newer 
 	await sending;
 
 	expect(sent).toHaveLength(0);
-	expect(store.state().value).toBe("unsent text\n\nnew text");
+	expect(store.state().value).toBe("new text");
+	expect(store.state().images).toHaveLength(0);
+	store.setTarget(targetA);
+	expect(store.state().value).toBe("unsent text");
 	expect(store.state().images.map(({ name }) => name)).toEqual(["shot.png"]);
 });
 
@@ -201,7 +206,7 @@ test("picked files upload as mentions; removing them unregisters", async () => {
 	expect(removed.length).toBe(1);
 });
 
-test("image attachments are shared within a project but not across projects", async () => {
+test("image attachments are isolated per session", async () => {
 	const { client } = fakeClient();
 	const { store } = storeFor(client);
 	store.setTarget(targetA);
@@ -214,9 +219,10 @@ test("image attachments are shared within a project but not across projects", as
 	store.setTarget({ sessionKey: "sc", projectId: "p2" });
 	expect(store.state().images).toHaveLength(0);
 	store.setTarget(targetB);
+	expect(store.state().images).toHaveLength(0);
+	store.setTarget(targetA);
 	expect(store.state().images.map(({ name }) => name)).toEqual(["shot.png"]);
 	store.removeImage(store.state().images[0]!.id);
-	store.setTarget(targetA);
 	expect(store.state().images).toHaveLength(0);
 });
 
@@ -395,7 +401,7 @@ test("loadCommands triggers catalog refresh when cached commands are missing", a
 	expect(refreshes()).toBe(1);
 });
 
-test("submitting /new consumes the command but keeps images for the new chat", async () => {
+test("submitting /new clears the command without bleeding images into another session", async () => {
 	const { client, sent, started } = fakeClient();
 	let created = 0;
 	const app = {
@@ -421,7 +427,7 @@ test("submitting /new consumes the command but keeps images for the new chat", a
 	expect(sent).toHaveLength(0);
 	store.setTarget(targetB);
 	expect(store.state().value).toBe("");
-	expect(store.state().images.map(({ name }) => name)).toEqual(["shot.png"]);
+	expect(store.state().images).toHaveLength(0);
 });
 
 test("submitting /compact compacts an idle session and blocks while running", async () => {
@@ -490,7 +496,7 @@ test("submitting /compact compacts an idle session and blocks while running", as
 	expect(notices.at(-1)?.variant).toBe("success");
 	expect(store.state().value).toBe("");
 
-	// While running, /compact is rejected without sending.
+	// While running, /compact schedules compaction for when the turn settles.
 	appSignal.set({
 		...appSignal(),
 		chatSessions: [chatState("sa", true)],
@@ -499,7 +505,8 @@ test("submitting /compact compacts an idle session and blocks while running", as
 	await store.submit();
 	expect(sent).toHaveLength(1);
 	expect(notices.at(-1)?.variant).toBe("info");
-	expect(store.state().value).toBe("/compact");
+	expect(store.state().value).toBe("");
+	expect(store.pendingCompact("sa")).toBe(true);
 });
 
 test("cold-start extension command is detected after startChat and skips local bubble", async () => {
@@ -618,4 +625,47 @@ test("sessionMentions and sessionsByValue stay referentially stable across navig
 
 	expect(store.sessionMentions()).toBe(mentionsBefore);
 	expect(store.sessionsByValue()).toBe(mapBefore);
+});
+
+test("compact schedules while running, cancels cleanly, and flushes once idle", async () => {
+	const { client, sent } = fakeClient();
+	const app = signal<AppState>({
+		...createAppState(),
+		projects: [{ id: "p1", name: "Project" }],
+		chatSessions: [chatState("sa", true)],
+	} as AppState);
+	const store = new ComposerStore({ client, app });
+	store.setTarget(targetA);
+
+	await store.compact("focus on api");
+	expect(store.pendingCompact()).toBe(true);
+	expect(sent.length).toBe(0);
+
+	store.cancelPendingCompact();
+	expect(store.pendingCompact()).toBe(false);
+
+	await store.compact("focus on tests");
+	expect(store.pendingCompact()).toBe(true);
+
+	app.set({
+		...app(),
+		chatSessions: [chatState("sa", false)],
+	});
+	await store.flushPendingCompact();
+	expect(store.pendingCompact()).toBe(false);
+	expect(sent.at(-1)?.command.type).toBe("compact");
+	expect(sent.at(-1)?.command.customInstructions).toBe("focus on tests");
+});
+
+test("stop resets transient send_now back to the persisted send mode", async () => {
+	const { client } = fakeClient();
+	const { store } = storeFor(client, chatState("sa", true));
+	store.setTarget(targetA);
+
+	store.setSendMode("follow_up");
+	store.setSendMode("send_now");
+	expect(store.state().sendMode).toBe("send_now");
+
+	await store.stop();
+	expect(store.state().sendMode).toBe("follow_up");
 });

@@ -9,17 +9,24 @@ test("the composer types, submits a prompt and clears", async () => {
 	expect(app.shows("id:chat-composer-input >> text:do the thing")).toBe(false);
 });
 
-test("switching chats keeps the project draft but starts a fresh undo history", async () => {
+test("switching chats isolates drafts per session and restores them when returning", async () => {
 	const app = await open("./composer-idle-fixture.tsx", { platform: "macos" });
-	await app.type("id:chat-composer-input", "project draft");
+	await app.type("id:chat-composer-input", "session a draft");
 	await app.press("id:fixture-switch-chat");
-	await app.waitFor("id:chat-composer-input >> text:project draft");
+	await app.waitFor("id:chat-composer-input >> text:session a draft", {
+		state: "gone",
+	});
+	await app.type("id:chat-composer-input", "session b draft");
+	await app.press("id:fixture-switch-chat");
+	await app.waitFor("id:chat-composer-input >> text:session a draft");
 	await app.type("id:chat-composer-input", " discard this");
 	await app.keyboard.press("mod+z");
 	await app.waitFor("id:chat-composer-input >> text:discard this", {
 		state: "gone",
 	});
-	expect(app.shows("id:chat-composer-input >> text:project draft")).toBe(true);
+	expect(app.shows("id:chat-composer-input >> text:session a draft")).toBe(
+		true,
+	);
 });
 
 test("the send button prompts and an unfinished composition does not", async () => {
@@ -64,10 +71,7 @@ test("@ starts on its file tab; Tab switches to sessions and renders inline + tr
 	await app.keyboard.press("down");
 	await app.keyboard.press("enter");
 	expect(app.shows("id:chat-composer-suggestions")).toBe(false);
-	// 上方附件区和输入框都展示会话标题，不暴露原始路径文本。
-	expect(
-		app.shows("id:chat-composer-attachment:session >> text:Earlier chat"),
-	).toBe(true);
+	// 输入框内联展示会话标题，不暴露原始路径文本且不重复堆砌顶部附件行。
 	expect(
 		app.shows("id:chat-composer-mention:session >> text:Earlier chat"),
 	).toBe(true);
@@ -100,11 +104,6 @@ test("the @ tabs and rows take the pointer, hover shows full path, and tray remo
 
 	expect(
 		app.shows(
-			"id:chat-composer-attachment:file >> text:chat-user-message-body.tsx",
-		),
-	).toBe(true);
-	expect(
-		app.shows(
 			"id:chat-composer-mention:file >> text:chat-user-message-body.tsx",
 		),
 	).toBe(true);
@@ -116,33 +115,29 @@ test("the @ tabs and rows take the pointer, hover shows full path, and tray remo
 	await app.hover("id:chat-composer-mention:file");
 	await app.waitFor("text:src/chat-user-message-body.tsx");
 
-	// 上传图片在上方附件区和输入框内部均内联展示，悬停展示详情，移除同步生效。
+	// 上传图片在输入框内部单一内联展示，悬停展示详情，移除同步生效。
 	await app.press("id:fixture-attach-image");
-	await app.waitFor("id:chat-composer-image >> text:shot.png");
-	expect(app.shows("id:chat-composer-mention:image >> text:shot.png")).toBe(
-		true,
-	);
+	await app.waitFor("id:chat-composer-mention:image >> text:shot.png");
 	await app.press("id:chat-composer-mention:image");
 	await app.hover("id:chat-composer-mention:image");
 	await app.waitFor("text:/shot\\.png · /");
 
-	// 移除上方文件芯片同步从输入框移除内联节点。
+	// 点内联文件芯片上的移除按钮直接移除文件节点，图片不受影响。
 	await app.press("label:Remove chat-user-message-body.tsx");
-	expect(app.shows("id:chat-composer-attachment:file")).toBe(false);
 	expect(app.shows("id:chat-composer-mention:file")).toBe(false);
-	// 图片芯片与输入框内联图片节点不受影响。
-	expect(app.shows("id:chat-composer-image >> text:shot.png")).toBe(true);
 	expect(app.shows("id:chat-composer-mention:image >> text:shot.png")).toBe(
 		true,
 	);
 
-	// 同项目切换会话后仍能看到图片；移除后，切回去也不会恢复它。
+	// 同项目切换会话按会话隔离图片；切回原会话仍保留，移除后不再恢复。
+	await app.press("id:fixture-switch-chat");
+	await app.waitFor("id:chat-composer-mention:image", { state: "gone" });
 	await app.press("id:fixture-switch-chat");
 	await app.waitFor("id:chat-composer-mention:image >> text:shot.png");
 	await app.press("label:Remove shot.png");
 	await app.waitFor("id:chat-composer-mention:image", { state: "gone" });
 	await app.press("id:fixture-switch-chat");
-	expect(app.shows("id:chat-composer-image")).toBe(false);
+	await app.press("id:fixture-switch-chat");
 	expect(app.shows("id:chat-composer-mention:image")).toBe(false);
 });
 

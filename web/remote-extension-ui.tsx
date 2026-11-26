@@ -1,4 +1,4 @@
-import { type Accessor, signal, Text, View } from "nsh";
+import { type Accessor, cleanup, signal, Text, View } from "nsh";
 
 import { userErrorMessage } from "@shared/app-error";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
@@ -14,6 +14,7 @@ import { DialogDescription } from "../app/ui/dialog-description";
 import { DialogTitle } from "../app/ui/dialog-title";
 import { Input } from "../app/ui/input";
 import { Textarea } from "../app/ui/textarea";
+import { MobileViewport } from "./mobile-viewport";
 import type { WebRemotePiloClient } from "./web-remote-client";
 
 type Request = Extract<PiloClientEvent, { type: "extension_ui_request" }>;
@@ -32,6 +33,7 @@ type PendingDialog = {
 	target: ComposerTarget;
 	request: Request;
 	approval?: Approval;
+	expiresAtMs?: number;
 	timer?: ReturnType<typeof setTimeout>;
 };
 
@@ -71,6 +73,14 @@ export class RemoteExtensionUi {
 					(responding === null || responding === dialog.id),
 			)
 			.slice(0, 1);
+	}
+
+	backgroundDialog(activeSessionKey: string | undefined): PendingDialog | null {
+		return (
+			this.pending().find(
+				(dialog) => dialog.target.sessionKey !== activeSessionKey,
+			) ?? null
+		);
 	}
 
 	busy(id: string) {
@@ -131,6 +141,10 @@ export class RemoteExtensionUi {
 			target: { sessionKey: event.sessionKey, projectId },
 			request: event,
 			approval,
+			expiresAtMs:
+				event.timeout !== null && event.timeout > 0
+					? Date.now() + event.timeout
+					: undefined,
 		};
 		if (approval) this.approvals.set(event.sessionKey, dialog);
 		if (event.timeout !== null && event.timeout > 0) {
@@ -220,9 +234,23 @@ function ExtensionDialog(props: {
 	dialog: PendingDialog;
 	ui: RemoteExtensionUi;
 }) {
-	const { request, id } = props.dialog;
-	const title = request.title || "Pi Extension";
+	const { request, id, expiresAtMs } = props.dialog;
+	const title = request.title || t("chat.extensionPromptTitle");
 	const value = signal(request.prefill ?? "");
+	const remainingSeconds = signal<number | null>(
+		expiresAtMs
+			? Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000))
+			: null,
+	);
+	const viewport = MobileViewport();
+	if (expiresAtMs) {
+		const interval = setInterval(() => {
+			const next = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+			remainingSeconds.set(next);
+			if (next === 0) clearInterval(interval);
+		}, 1000);
+		cleanup(() => clearInterval(interval));
+	}
 	const busy = () => props.ui.busy(id);
 	const respond = (response: Response) =>
 		void props.ui.respond(props.dialog, response);
@@ -232,44 +260,55 @@ function ExtensionDialog(props: {
 			open
 			accessibilityLabel={title}
 			closeOnEscape={!busy()}
+			style={{ maxHeight: Math.max(160, viewport.availableHeight() - 32) }}
 			onOpenChange={({ open }) => {
 				if (!open) cancel();
 			}}
 		>
 			<DialogTitle>{title}</DialogTitle>
-			{request.message ? (
-				<DialogDescription>{request.message}</DialogDescription>
-			) : null}
-			{request.method === "select"
-				? request.options.map((option) => (
-						<Button
-							variant="outline"
-							class="min-h-11"
-							disabled={busy()}
-							onPress={() => respond({ value: option })}
-						>
-							<Text>{option}</Text>
-						</Button>
-					))
-				: null}
-			{request.method === "input" ? (
-				<Input
-					accessibilityLabel={title}
-					value={value()}
-					placeholder={request.placeholder ?? undefined}
-					disabled={busy()}
-					onChange={({ value: next }) => value.set(next)}
-					onSubmit={() => respond({ value: value() })}
-				/>
-			) : request.method === "editor" ? (
-				<Textarea
-					rows={6}
-					accessibilityLabel={title}
-					value={value()}
-					disabled={busy()}
-					onChange={({ value: next }) => value.set(next)}
-				/>
-			) : null}
+			<View class="gap-3">
+				{request.message ? (
+					<DialogDescription>{request.message}</DialogDescription>
+				) : null}
+				{() => {
+					const seconds = remainingSeconds();
+					return seconds !== null && seconds > 0 ? (
+						<Text class="font-sans text-xs text-muted-foreground">
+							{t("chat.extensionTimeoutSeconds", { seconds })}
+						</Text>
+					) : null;
+				}}
+				{request.method === "select"
+					? request.options.map((option) => (
+							<Button
+								variant="outline"
+								class="min-h-11"
+								disabled={busy()}
+								onPress={() => respond({ value: option })}
+							>
+								<Text>{option}</Text>
+							</Button>
+						))
+					: null}
+				{request.method === "input" ? (
+					<Input
+						accessibilityLabel={title}
+						value={value()}
+						placeholder={request.placeholder ?? undefined}
+						disabled={busy()}
+						onChange={({ value: next }) => value.set(next)}
+						onSubmit={() => respond({ value: value() })}
+					/>
+				) : request.method === "editor" ? (
+					<Textarea
+						rows={6}
+						accessibilityLabel={title}
+						value={value()}
+						disabled={busy()}
+						onChange={({ value: next }) => value.set(next)}
+					/>
+				) : null}
+			</View>
 			<View class="flex-row justify-end gap-2">
 				<Button
 					variant="ghost"
@@ -281,9 +320,7 @@ function ExtensionDialog(props: {
 							: cancel
 					}
 				>
-					<Text>
-						{request.method === "confirm" ? t("chat.no") : t("common.cancel")}
-					</Text>
+					<Text>{() => t("common.cancel")}</Text>
 				</Button>
 				{request.method !== "select" ? (
 					<Button
@@ -297,7 +334,7 @@ function ExtensionDialog(props: {
 							)
 						}
 					>
-						<Text>{t("common.confirm")}</Text>
+						<Text>{() => t("common.confirm")}</Text>
 					</Button>
 				) : null}
 			</View>

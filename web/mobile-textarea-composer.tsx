@@ -157,13 +157,19 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const state = () => store.state();
 	const running = () => store.running();
 	const readOnly = () => store.readOnly();
-	const disabled = () => store.target() === null || readOnly();
+	const config = () => props.runConfig?.config() ?? null;
+	const headerMissing = () => Boolean(config()?.headerMissing);
+	const disabled = () =>
+		store.target() === null || readOnly() || headerMissing();
 	const blocked = () =>
 		disabled() || state().sending || (running() && store.compacting());
 	const modEnter = () => (props.sendShortcut?.() ?? "enter") === "mod-enter";
 	const hasContent = () =>
 		state().value.trim().length > 0 || state().images.length > 0;
-	const config = () => props.runConfig?.config() ?? null;
+
+	effect(() => {
+		if (!running()) untracked(() => store.resetTransientSendMode());
+	});
 
 	const images = computed(() => state().images);
 	const references = computed(() => store.mentionDraft().references);
@@ -185,7 +191,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 
 	// Track active `@` / `/` mention trigger from plain text + caret.
 	const query = computed(() => {
-		if (readOnly()) return null;
+		if (disabled()) return null;
 		const value = state().value;
 		const pos = Math.min(caret(), value.length);
 		return activeSuggestionQuery(value, pos);
@@ -266,11 +272,12 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	};
 
 	const submit = () => {
-		if (state().composing) return;
+		if (disabled() || state().composing) return;
 		if (menuOpen() && suggestionItems().length > 0) {
 			pickSuggestion(suggestionItems()[selectedIndex()]);
 			return;
 		}
+		if (blocked()) return;
 		void store.submit();
 	};
 
@@ -300,7 +307,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const leading = () => inputLineHeight(fontSize());
 	const height = () =>
 		clampInputHeight(
-			state().value && !readOnly() ? contentHeight() : 0,
+			state().value ? contentHeight() : 0,
 			leading(),
 			availableHeight(),
 		);
@@ -317,12 +324,12 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 			testID="mobile-textarea-composer"
 			class="relative w-full"
 			onFileDragEnter={() => {
-				if (!readOnly()) store.setDragging(true);
+				if (!disabled()) store.setDragging(true);
 			}}
 			onFileDragLeave={() => store.setDragging(false)}
 			onFileDrop={({ uris }) => {
 				store.setDragging(false);
-				if (!readOnly()) void store.addUris(uris);
+				if (!disabled()) void store.addUris(uris);
 			}}
 		>
 			{() =>
@@ -330,11 +337,21 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					<View
 						testID="chat-composer-status"
 						role="alert"
-						class="mb-1.5 min-w-0 rounded-xl border border-border/60 bg-muted px-3 py-2"
+						class="mb-1.5 min-w-0 flex-row items-start justify-between gap-2 rounded-xl border border-border/60 bg-muted py-1.5 pl-3 pr-1.5"
 					>
-						<Text class="font-sans text-xs leading-5 text-destructive">
+						<Text class="min-w-0 flex-1 py-0.5 font-sans text-xs leading-5 text-destructive">
 							{() => state().status ?? ""}
 						</Text>
+						<Button
+							testID="chat-composer-status-dismiss"
+							variant="ghost"
+							size="icon"
+							class="size-10 shrink-0"
+							accessibilityLabel={t("common.close")}
+							onPress={() => store.setStatus(null)}
+						>
+							<Icon name="X" size={14} color={token("muted-foreground")} />
+						</Button>
 					</View>
 				) : null
 			}
@@ -344,24 +361,53 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 				testID="chat-composer-surface"
 				onLayout={({ bounds }) => surfaceWidth.set(bounds.size.width)}
 				class={
-					readOnly()
+					readOnly() || headerMissing()
 						? "relative w-full border border-border/60 bg-muted"
 						: "relative w-full border border-(--pilo-composer-border) bg-(--pilo-composer-background)"
 				}
 				style={{
 					...tactileTransition("border-color, box-shadow, background-color"),
 					borderColor:
-						focused() && !readOnly()
+						focused() && !readOnly() && !headerMissing()
 							? token("pilo-composer-focus-border")
 							: undefined,
 					boxShadow:
-						focused() && !readOnly() ? focusShadow() : composerShadow(),
+						focused() && !readOnly() && !headerMissing()
+							? focusShadow()
+							: composerShadow(),
 					borderRadius: token("pilo-mobile-composer-radius"),
 					gap: 4,
 					paddingHorizontal: 8,
 					paddingVertical: 6,
 				}}
 			>
+				{() =>
+					headerMissing() ? (
+						<View
+							testID="chat-composer-header-missing"
+							class="flex-row items-center gap-1.5 rounded-lg bg-status-warning/10 px-2 py-1.5"
+						>
+							<Icon
+								name="TriangleAlert"
+								size={14}
+								color={token("status-warning")}
+							/>
+							<Text class="min-w-0 flex-1 font-sans text-xs leading-4 text-status-warning">
+								{() => t("chat.sessionHeaderMissing")}
+							</Text>
+						</View>
+					) : readOnly() ? (
+						<View
+							testID="chat-composer-readonly"
+							class="flex-row items-center gap-1.5 rounded-lg bg-background/60 px-2 py-1.5"
+						>
+							<Icon name="Lock" size={14} color={token("muted-foreground")} />
+							<Text class="min-w-0 flex-1 font-sans text-xs leading-4 text-muted-foreground">
+								{() => t("chat.externalReadOnly")}
+							</Text>
+						</View>
+					) : null
+				}
 				{/* Attachment chips */}
 				{() =>
 					hasAttachments() ? (
@@ -373,10 +419,10 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 								{(image) => (
 									<View
 										testID="chat-composer-image"
-										class="min-h-8 max-w-full flex-row items-center gap-1.5 rounded-md border border-border/70 bg-muted/70 pl-1.5 pr-1"
+										class="min-h-10 max-w-full flex-row items-center gap-1 rounded-md border border-border/70 bg-muted/70 pl-2 pr-0.5"
 									>
 										<BaseButton
-											class="min-w-0 flex-row items-center gap-1.5 py-1"
+											class="min-h-10 min-w-0 flex-row items-center gap-1.5 py-1"
 											accessibilityLabel={image().name}
 											onPress={() =>
 												media.openImage?.(chatAttachmentImage(image()))
@@ -394,7 +440,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 										<Button
 											variant="ghost"
 											size="icon"
-											class="size-7 shrink-0"
+											class="size-10 shrink-0"
 											disabled={disabled()}
 											accessibilityLabel={t("chat.removeAttachment", {
 												name: image().name,
@@ -405,7 +451,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 										>
 											<Icon
 												name="X"
-												size={13}
+												size={14}
 												color={token("muted-foreground")}
 											/>
 										</Button>
@@ -421,9 +467,9 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 											: fileMentionName(ref.path);
 									};
 									return (
-										<View class="min-h-8 max-w-full flex-row items-center gap-1.5 rounded-md border border-border/70 bg-muted/70 pl-2 pr-1">
+										<View class="min-h-10 max-w-full flex-row items-center gap-1 rounded-md border border-border/70 bg-muted/70 pl-2 pr-0.5">
 											<BaseButton
-												class="min-h-8 min-w-0 flex-row items-center gap-1.5"
+												class="min-h-10 min-w-0 flex-row items-center gap-1.5"
 												onPress={
 													reference().kind === "file" && media.openFile
 														? () => media.openFile?.(reference().path)
@@ -446,7 +492,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 											<Button
 												variant="ghost"
 												size="icon"
-												class="size-7 shrink-0"
+												class="size-10 shrink-0"
 												disabled={disabled()}
 												accessibilityLabel={t("chat.removeAttachment", {
 													name: label(),
@@ -457,7 +503,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 											>
 												<Icon
 													name="X"
-													size={13}
+													size={14}
 													color={token("muted-foreground")}
 												/>
 											</Button>
@@ -474,15 +520,13 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					ref={(node) => inputRef.set(node)}
 					testID="mobile-textarea-input"
 					multiline
-					value={readOnly() ? "" : state().value}
+					value={state().value}
 					disabled={disabled()}
 					readonly={disabled()}
 					placeholder={
-						readOnly()
-							? t("chat.externalReadOnly")
-							: !hasAttachments()
-								? t("chat.composerPlaceholder")
-								: undefined
+						!hasAttachments() && !readOnly() && !headerMissing()
+							? t("chat.composerPlaceholder")
+							: undefined
 					}
 					accessibilityLabel={t("chat.composerPlaceholder")}
 					submitBehavior={submitBehavior()}
@@ -495,7 +539,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						lineHeight: leading(),
 					}}
 					onChange={({ value }) => {
-						if (readOnly()) return;
+						if (disabled()) return;
 						const prev = state().value;
 						const delta = value.length - prev.length;
 						const nextCaret = Math.max(
@@ -553,7 +597,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						}
 					}}
 					onPaste={({ files, uris }) => {
-						if (readOnly()) return;
+						if (disabled()) return;
 						if (files.length > 0) void store.addFiles(files);
 						if (uris.length > 0) void store.addUris(uris);
 					}}
@@ -569,9 +613,11 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 						testID="chat-composer-attach"
 						variant="ghost"
 						size="icon"
-						class="h-10 w-8 shrink-0 rounded-md"
+						class="size-10 shrink-0 rounded-md"
 						disabled={blocked()}
-						accessibilityLabel={t("chat.addAttachment")}
+						accessibilityLabel={
+							platform.desktop ? t("chat.addAttachment") : t("chat.addImage")
+						}
 						onPress={pickAttachments}
 					>
 						<Icon name="Plus" size={16} color={token("muted-foreground")} />
@@ -580,7 +626,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					{props.runConfig ? (
 						<MobileRunConfig
 							{...props.runConfig}
-							readOnly={readOnly}
+							readOnly={() => readOnly() || headerMissing()}
 							toolbarWidth={toolbarWidth}
 						/>
 					) : null}
@@ -591,6 +637,11 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 							contextWindow={() => config()?.model?.contextWindow}
 							touch
 							availableHeight={availableHeight}
+							onCompact={() => void store.compact()}
+							compacting={() => store.compacting()}
+							pendingCompact={() => store.pendingCompact()}
+							onCancelPendingCompact={() => store.cancelPendingCompact()}
+							compactDisabled={() => disabled() || state().sending}
 						/>
 					) : null}
 

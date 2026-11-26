@@ -40,7 +40,6 @@ import type {
 import { describeDevice } from "@shared/device-name";
 import { randomId } from "@shared/random-id";
 import {
-	parseDeviceAuthResponse,
 	parseRemotePairResponse,
 	parseRemotePairingInfo,
 	type RemotePairingInfo,
@@ -92,7 +91,10 @@ type BrowserStorage = {
 
 type BrowserGlobal = {
 	localStorage?: BrowserStorage;
-	sessionStorage?: BrowserStorage;
+	sessionStorage?: BrowserStorage & {
+		readonly length: number;
+		key(index: number): string | null;
+	};
 	parent?: Pick<BrowserGlobal, "location">;
 	location?: {
 		href?: string;
@@ -263,7 +265,7 @@ export function reloadRemotePage(): void {
 	browserPageLocation()?.reload?.();
 }
 
-export function browserSessionStorage(): BrowserStorage | undefined {
+export function browserSessionStorage(): BrowserGlobal["sessionStorage"] {
 	try {
 		return browserGlobal().sessionStorage;
 	} catch {
@@ -376,8 +378,6 @@ export type WebRemoteClient = AppStoreClient &
 		dispose(): void;
 		savePreferences(patch: PreferencePatch): Promise<PreferencesSnapshot>;
 		saveThemeSettings(update: ThemeSettingsUpdate): Promise<ThemeSettings>;
-		loadDeviceAuth(): Promise<{ expiresAtMs: number }>;
-		renewDeviceAuth(): Promise<{ expiresAtMs: number }>;
 		readHistoryImage(
 			projectId: string,
 			sessionPath: string,
@@ -392,6 +392,7 @@ export type WebRemoteClient = AppStoreClient &
 			projectId: string,
 			message: string,
 		): Promise<string | null>;
+		pauseCacheKeepAlive(sessionKey: string): Promise<void>;
 	};
 
 /**
@@ -562,13 +563,21 @@ export class WebRemotePiloClient implements WebRemoteClient {
 	}
 
 	updateSessionUiState(
-		_sessionPath: string,
-		_update: SessionUiStateUpdate,
-		_projectId?: string,
+		sessionPath: string,
+		update: SessionUiStateUpdate,
+		projectId?: string,
 	): Promise<SessionIndexEntry> {
-		return Promise.reject(
-			new Error("Renaming sessions is not exposed by the remote API yet."),
-		);
+		return this.requestJson<SessionIndexEntry>("/api/v1/sessions/ui-state", {
+			method: "POST",
+			body: JSON.stringify({ projectId, sessionPath, update }),
+		});
+	}
+
+	pauseCacheKeepAlive(sessionKey: string): Promise<void> {
+		return this.requestJson<void>("/api/v1/cache-keep-alive/pause", {
+			method: "POST",
+			body: JSON.stringify({ sessionKey }),
+		});
 	}
 
 	loadSessionReadStates(): Promise<SessionReadState[]> {
@@ -606,23 +615,6 @@ export class WebRemotePiloClient implements WebRemoteClient {
 			method: "POST",
 			body: JSON.stringify(update),
 		});
-	}
-
-	async loadDeviceAuth(): Promise<{ expiresAtMs: number }> {
-		return parseDeviceAuthResponse(
-			await this.requestJson<unknown>("/api/v1/auth/device", {
-				cache: "no-store",
-			}),
-		);
-	}
-
-	async renewDeviceAuth(): Promise<{ expiresAtMs: number }> {
-		return parseDeviceAuthResponse(
-			await this.requestJson<unknown>("/api/v1/auth/device/renew", {
-				method: "POST",
-				cache: "no-store",
-			}),
-		);
 	}
 
 	loadHistory(

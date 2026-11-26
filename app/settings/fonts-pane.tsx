@@ -48,6 +48,11 @@ const FONT_SIZE_ITEMS = Array.from(
 	},
 );
 
+const MONO_FONT_SIZE_ITEMS = Array.from({ length: 24 - 11 + 1 }, (_, index) => {
+	const size = 11 + index;
+	return { value: String(size), title: `${size} px` };
+});
+
 /** One enumeration per app run; a failed one is retried when the pane opens again. */
 let systemFonts: Promise<SystemFontFamily[]> | undefined;
 
@@ -105,6 +110,7 @@ export function FontsPane(props: {
 		value: number | undefined,
 		fallback: number,
 		saveValue: (next: number) => void,
+		items: readonly { value: string; title: string }[] = FONT_SIZE_ITEMS,
 	) => {
 		const current = value ?? fallback;
 		return (
@@ -115,7 +121,7 @@ export function FontsPane(props: {
 				accessibilityLabel={t("settings.fontSizeInputLabel", {
 					font: label,
 				})}
-				items={FONT_SIZE_ITEMS}
+				items={[...items]}
 				value={String(current)}
 				placeholder={`${current} px`}
 				onChange={({ value }) => {
@@ -270,6 +276,7 @@ export function FontsPane(props: {
 							values()?.codeFontSize,
 							DEFAULT_CODE_FONT_SIZE,
 							(next) => save({ codeFontSize: next }),
+							MONO_FONT_SIZE_ITEMS,
 						)
 					}
 				</SettingsRow>
@@ -292,6 +299,7 @@ export function FontsPane(props: {
 							values()?.terminalFontSize,
 							DEFAULT_TERMINAL_FONT_SIZE,
 							(next) => save({ terminalFontSize: next }),
+							MONO_FONT_SIZE_ITEMS,
 						)
 					}
 				</SettingsRow>

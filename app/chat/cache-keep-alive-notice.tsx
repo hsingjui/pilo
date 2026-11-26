@@ -19,6 +19,7 @@ import { appLocale, t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { MOTION } from "../ui/motion";
+import { textTooltip } from "../ui/tooltip";
 import { chatPx } from "./layout";
 
 const noticeText =
@@ -26,6 +27,10 @@ const noticeText =
 
 export function CacheKeepAliveNotice(props: {
 	status: () => CacheKeepAliveStatus | null;
+	/** 显式停止/暂停本次保活（停止后台计费），与仅隐藏提示区分。 */
+	onPause?: () => void;
+	/** Touch/mobile layout with larger tap targets. */
+	touch?: boolean;
 }) {
 	const dismissed = signal(false);
 	const visible = signal(false);
@@ -45,6 +50,8 @@ export function CacheKeepAliveNotice(props: {
 	return () => {
 		const status = props.status();
 		if (!status || dismissed() || !visible()) return null;
+		const activeKeepAlive =
+			status.status === "scheduled" || status.status === "warming";
 		const enter = createMotion({
 			enter: reduceMotion()
 				? {
@@ -62,13 +69,12 @@ export function CacheKeepAliveNotice(props: {
 		return (
 			<View
 				testID="chat-cache-keep-alive-notice"
-				class="mb-1 min-w-0 shrink-0 flex-row items-start gap-2.5 rounded-xl border border-border/60 bg-muted px-3 py-2"
+				class="mb-1 min-w-0 shrink-0 flex-row items-center gap-2 rounded-xl border border-border/60 bg-muted px-3 py-1.5"
 				style={enter.style}
 				onLayout={({ bounds }) => width.set(bounds.size.width)}
 			>
 				<Icon
 					name="Timer"
-					class="mt-0.5"
 					size={14}
 					color={token(
 						status.status === "unavailable"
@@ -99,11 +105,38 @@ export function CacheKeepAliveNotice(props: {
 						</Text>
 					) : null}
 				</View>
+				{activeKeepAlive && props.onPause ? (
+					<Button
+						testID="chat-cache-keep-alive-pause"
+						variant="ghost"
+						size="sm"
+						class={
+							props.touch ? "min-h-10 shrink-0 px-2.5" : "h-6 shrink-0 px-2"
+						}
+						onPress={props.onPause}
+					>
+						<Text class="font-sans text-xs text-foreground/80">
+							{() => t("settings.cacheKeepAlivePauseAction")}
+						</Text>
+					</Button>
+				) : null}
 				<Button
+					testID="chat-cache-keep-alive-hide"
 					variant="ghost"
 					size="icon"
-					class="-my-1 size-7 shrink-0"
-					accessibilityLabel={t("common.close")}
+					class={
+						props.touch ? "-my-1 size-10 shrink-0" : "-my-1 size-7 shrink-0"
+					}
+					accessibilityLabel={
+						activeKeepAlive
+							? t("settings.cacheKeepAliveHideHint")
+							: t("common.close")
+					}
+					tooltip={
+						activeKeepAlive
+							? textTooltip(() => t("settings.cacheKeepAliveHideHint"))
+							: undefined
+					}
 					onPress={() => dismissed.set(true)}
 				>
 					<Icon name="X" size={14} color={token("muted-foreground")} />

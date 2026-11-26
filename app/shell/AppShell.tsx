@@ -14,6 +14,8 @@ import {
 import { currentWindow } from "nsh/desktop";
 
 import type { Project } from "@shared/api/projects-types";
+import { userErrorMessage } from "@shared/app-error";
+import { chatRuntimeShowsActivity } from "@shared/chat/chat-session-runtime-model";
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
@@ -67,6 +69,7 @@ import { ErrorState } from "../ui/state-view";
 import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
+import { deleteSessionWithToast } from "./delete-session";
 import type { DesktopNotificationsApi } from "./desktop-notifications";
 import type { DesktopShell } from "./desktop-shell";
 import { createDesktopUpdate, type DesktopUpdate } from "./desktop-update";
@@ -113,7 +116,10 @@ export interface AppShellProps {
 	chat: Pick<
 		ChatTranscriptStore,
 		"state" | "messages" | "refresh" | "loadRange"
-	>;
+	> &
+		Partial<
+			Pick<ChatTranscriptStore, "isPlaceholderFailed" | "retryPlaceholder">
+		>;
 	/** The open session's composer; whoever mounts the shell targets it. */
 	composer: ComposerStore;
 	/** Pending steer/follow-up messages queued during active turns. */
@@ -154,7 +160,9 @@ export interface AppShellProps {
 		projectId: string,
 		sessionPath: string,
 		title: string,
-	) => void;
+	) => Promise<void> | void;
+	/** Pauses prompt-cache keep-alive for one session without changing settings. */
+	onPauseCacheKeepAlive?: (sessionKey: string) => Promise<void> | void;
 	/** Forks the open session at an assistant message. */
 	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 	/** Searches saved message text for the command palette. */
@@ -293,16 +301,33 @@ export function AppShell(props: AppShellProps) {
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
 	const remoteOpen = signal(false);
+	const sessionHeaderModalOpen = signal(false);
 	const ownedUpdate =
 		props.update || !props.settings
 			? null
-			: createDesktopUpdate({ restart: props.desktop?.restart });
+			: createDesktopUpdate({
+					restart: props.desktop?.restart,
+					hasActiveWork: () => {
+						const state = store.state();
+						if (state.pendingDrafts.size > 0) return true;
+						if (
+							state.chatSessions.some((chat) => chatRuntimeShowsActivity(chat))
+						) {
+							return true;
+						}
+						if (props.terminals?.tabs().some((tab) => !tab.exited)) {
+							return true;
+						}
+						return false;
+					},
+				});
 	if (ownedUpdate) cleanup(() => ownedUpdate.dispose());
 	const update = props.update ?? ownedUpdate ?? undefined;
 	const modalOpen = () =>
 		settingsOpen() ||
 		addProjectOpen() ||
 		remoteOpen() ||
+		sessionHeaderModalOpen() ||
 		Boolean(update?.dialogOpen()) ||
 		previewImage() !== null;
 	const defaults = defaultKeyboardShortcuts(platform.os === "macos");
@@ -607,8 +632,11 @@ export function AppShell(props: AppShellProps) {
 			props.catalog &&
 			!paletteOpen() &&
 			sessionOpen() &&
-			// A shell takes Ctrl+P and the like while its terminal is in front.
-			!shownTerminal()
+			// A shell takes Ctrl+P and the like while its terminal is in front;
+			// Git diff and file previews should not silently change the chat model either.
+			!shownTerminal() &&
+			!shownGitProjectId() &&
+			!shownFile()
 		) {
 			bind("cycle-model", () => cycleModel(false));
 			bind("cycle-scoped-model", () => cycleModel(true));
@@ -686,6 +714,11 @@ export function AppShell(props: AppShellProps) {
 									.saveThemeSettings({ theme })
 									.catch((error: unknown) => {
 										console.error(t("settings.themeSaveFailed"), error);
+										toasts.show({
+											variant: "error",
+											title: t("settings.themeSaveFailed"),
+											description: userErrorMessage(error),
+										});
 									})
 						: undefined
 				}
@@ -699,6 +732,11 @@ export function AppShell(props: AppShellProps) {
 									})
 									.catch((error: unknown) => {
 										console.error("Saving the default workspace failed", error);
+										toasts.show({
+											variant: "error",
+											title: t("settings.preferencesSaveFailed"),
+											description: userErrorMessage(error),
+										});
 									})
 						: undefined
 				}
@@ -714,6 +752,11 @@ export function AppShell(props: AppShellProps) {
 											: null;
 								void removal?.catch((error: unknown) => {
 									console.error(t("project.removeConnectionFailed"), error);
+									toasts.show({
+										variant: "error",
+										title: t("project.removeConnectionFailed"),
+										description: userErrorMessage(error),
+									});
 								});
 							}
 						: undefined
@@ -759,15 +802,35 @@ export function AppShell(props: AppShellProps) {
 									props.onRenameSession
 										? (title) => {
 												const session = store.state().navigation.session;
-												if (session?.sessionPath)
+												if (!session?.sessionPath) return;
+												void Promise.resolve(
 													props.onRenameSession?.(
 														session.projectId,
 														session.sessionPath,
 														title,
-													);
+													),
+												).catch((error: unknown) => {
+													toasts.show({
+														variant: "error",
+														title: t("chat.renameSessionFailed"),
+														description: userErrorMessage(error),
+													});
+												});
 											}
 										: undefined
 								}
+								running={() => composer.running()}
+								onDelete={() => {
+									const session = store.state().navigation.session;
+									if (!session?.sessionPath) return;
+									void deleteSessionWithToast(
+										store,
+										toasts,
+										session.projectId,
+										session.sessionPath,
+									);
+								}}
+								onModalOpenChange={sessionHeaderModalOpen.set}
 								git={
 									workspace && props.git
 										? {
@@ -840,10 +903,27 @@ export function AppShell(props: AppShellProps) {
 														terminals
 															? () => {
 																	const current = project();
-																	if (current) openTerminal(current.id);
+																	if (!current) return;
+																	if (shownTerminal() !== null) {
+																		terminals.select(null);
+																		return;
+																	}
+																	const existing = terminals.projectTabs(
+																		current.id,
+																	);
+																	if (existing.length > 0) {
+																		const preferred =
+																			existing.find((tab) => !tab.exited) ??
+																			existing[0];
+																		workspace?.selectChat(current.id);
+																		terminals.select(preferred.id);
+																		return;
+																	}
+																	openTerminal(current.id);
 																}
 															: undefined
 													}
+													terminalActive={() => shownTerminal() !== null}
 													terminalRunning={() => {
 														const current = project();
 														return current
@@ -855,7 +935,13 @@ export function AppShell(props: AppShellProps) {
 													terminalOpening={() => terminals?.opening() ?? false}
 													onNewTemporaryChat={() => {
 														const current = project();
-														if (current) newTemporaryChat(current.id);
+														if (!current) return;
+														if (temporaryOpen()) {
+															showChat(current.id);
+															store.selectProject(current.id);
+														} else {
+															newTemporaryChat(current.id);
+														}
 													}}
 													temporary={temporaryOpen}
 													openInApp={props.openProjectInApp}
@@ -864,6 +950,10 @@ export function AppShell(props: AppShellProps) {
 															? () => {
 																	const current = project();
 																	if (!current) return;
+																	if (shownGitProjectId() !== null) {
+																		workspace.selectChat(current.id);
+																		return;
+																	}
 																	props.terminals?.select(null);
 																	workspace.openGit(current.id);
 																}
@@ -936,6 +1026,12 @@ export function AppShell(props: AppShellProps) {
 											onVisibleRangeChange={(start, end) =>
 												chat.loadRange(start, end)
 											}
+											isPlaceholderFailed={(index) =>
+												chat.isPlaceholderFailed?.(index) ?? false
+											}
+											onRetryPlaceholder={(index) =>
+												chat.retryPlaceholder?.(index)
+											}
 											// Compaction shows under the last message, as React's viewport.
 											footer={() => (
 												<View>
@@ -980,6 +1076,25 @@ export function AppShell(props: AppShellProps) {
 													{(sessionKey) => (
 														<CacheKeepAliveNotice
 															status={() => cacheStatus(sessionKey())}
+															onPause={
+																props.onPauseCacheKeepAlive
+																	? () => {
+																			void Promise.resolve(
+																				props.onPauseCacheKeepAlive?.(
+																					sessionKey(),
+																				),
+																			).catch((error: unknown) => {
+																				toasts.show({
+																					variant: "error",
+																					title: t(
+																						"settings.cacheKeepAlivePauseAction",
+																					),
+																					description: userErrorMessage(error),
+																				});
+																			});
+																		}
+																	: undefined
+															}
 														/>
 													)}
 												</Each>
@@ -1122,6 +1237,21 @@ export function AppShell(props: AppShellProps) {
 						onOpenSettings={
 							props.settings ? () => settingsOpen.set(true) : undefined
 						}
+						onNewTemporaryChat={(projectId) => newTemporaryChat(projectId)}
+						onOpenGit={
+							workspace && props.git
+								? (projectId) => {
+										props.terminals?.select(null);
+										workspace.openGit(projectId);
+									}
+								: undefined
+						}
+						onOpenTerminal={
+							props.terminals
+								? (projectId) => openTerminal(projectId)
+								: undefined
+						}
+						onShowChat={showChat}
 						onClose={() => paletteOpen.set(false)}
 					/>
 					{() =>
@@ -1146,6 +1276,7 @@ export function AppShell(props: AppShellProps) {
 								open={addProjectOpen}
 								api={props.projectClient}
 								connectionId={addProjectConnection}
+								projects={() => store.state().projects}
 								onAdd={(connectionId, path) =>
 									store.addProject(connectionId, path)
 								}

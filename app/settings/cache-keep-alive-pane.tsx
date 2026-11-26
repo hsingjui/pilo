@@ -4,6 +4,7 @@ import { userErrorMessage } from "@shared/app-error";
 import {
 	type CacheKeepAliveSettings,
 	defaultCacheKeepAliveSettings,
+	isCacheKeepAliveSupportedApi,
 } from "@shared/cache-keep-alive";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { AppState } from "../state/app-state";
@@ -25,10 +26,12 @@ import {
 } from "./connection-settings";
 import {
 	SettingsActionButton,
+	SettingsIconButton,
 	SettingsRow,
 	SettingsSection,
 	SettingsSectionMessage,
 } from "./layout";
+import { Tooltip } from "../ui/tooltip";
 import type { SettingsClient } from "./settings-dialog";
 
 /** Cache TTL and idle keep-alive bounds, the React inputs' minutes ranges. */
@@ -63,6 +66,8 @@ export function CacheKeepAlivePane(props: {
 	const toggling = signal<Record<string, boolean>>({});
 	const adding = signal<Record<string, boolean>>({});
 	const pickerOpen = signal<Record<string, boolean>>({});
+	/** 本次会话中刚通过 Switch 停用的行：临时保留以便反悔，关闭设置页后不再展示历史停用行。 */
+	const keptDisabled = signal<Record<string, boolean>>({});
 	/** Typed but uncommitted minutes per row. */
 	const drafts = signal<
 		Record<string, { ttl: number | null; duration: number | null } | undefined>
@@ -227,6 +232,9 @@ export function CacheKeepAlivePane(props: {
 	const toggle = (connection: Connection, row: CacheKeepAliveSettings) => {
 		const key = `${connection.id}\n${rowKey(row)}`;
 		if (toggling()[key]) return;
+		if (row.enabled) {
+			keptDisabled.set({ ...keptDisabled(), [key]: true });
+		}
 		toggling.set({ ...toggling(), [key]: true });
 		commit(connection, { ...row, enabled: !row.enabled });
 		// `commit` queues the save; clear the disabling flag once it settles.
@@ -243,13 +251,25 @@ export function CacheKeepAlivePane(props: {
 		);
 		if (!model) return;
 		adding.set({ ...adding(), [connection.id]: true });
+		const existing = rows(connection.id).find(
+			(row) => row.provider === model.provider && row.modelId === model.id,
+		);
+		const defaults = defaultCacheKeepAliveSettings(
+			connection.id,
+			model.provider,
+			model.id,
+			model.api,
+		);
 		const settings = {
-			...(rows(connection.id).find(
-				(row) => row.provider === model.provider && row.modelId === model.id,
-			) ??
-				defaultCacheKeepAliveSettings(connection.id, model.provider, model.id)),
+			...(existing ?? defaults),
 			enabled: true,
 		};
+		const keptKey = `${connection.id}\n${rowKey(settings)}`;
+		if (keptDisabled()[keptKey]) {
+			const nextKept = { ...keptDisabled() };
+			delete nextKept[keptKey];
+			keptDisabled.set(nextKept);
+		}
 		void save(settings).then((saved) => {
 			if (!alive) return;
 			adding.set({ ...adding(), [connection.id]: false });
@@ -275,12 +295,20 @@ export function CacheKeepAlivePane(props: {
 				return conns.map((connection) => {
 					const connectionId = connection.id;
 					const list = () => lists.state(connectionId)();
-					const enabledRows = () =>
-						rows(connectionId).filter((row) => row.enabled);
+					const visibleRows = () =>
+						rows(connectionId).filter(
+							(row) =>
+								row.enabled ||
+								Boolean(keptDisabled()[`${connectionId}\n${rowKey(row)}`]),
+						);
 					const configured = () =>
-						new Set(enabledRows().map((row) => rowKey(row)));
-					const available = () =>
+						new Set(visibleRows().map((row) => rowKey(row)));
+					const supportedModels = () =>
 						list().models.filter(
+							(model) => !model.api || isCacheKeepAliveSupportedApi(model.api),
+						);
+					const available = () =>
+						supportedModels().filter(
 							(model) => !configured().has(modelKey(model.provider, model.id)),
 						);
 					const modelName = (row: CacheKeepAliveSettings) =>
@@ -372,28 +400,46 @@ export function CacheKeepAlivePane(props: {
 												{t("settings.cacheKeepAliveModel")}
 											</Text>
 										</View>
-										<View class="w-28">
+										<View
+											class="w-28"
+											tooltip={
+												<Tooltip>
+													<Text class="font-sans">
+														{t("settings.cacheKeepAliveTtlHint")}
+													</Text>
+												</Tooltip>
+											}
+										>
 											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{`${t("settings.cacheKeepAliveTtlLabel")} (${t(
 													"settings.cacheKeepAliveMinutes",
 												)})`}
 											</Text>
 										</View>
-										<View class="w-32">
+										<View
+											class="w-32"
+											tooltip={
+												<Tooltip>
+													<Text class="font-sans">
+														{t("settings.cacheKeepAliveDurationHint")}
+													</Text>
+												</Tooltip>
+											}
+										>
 											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{`${t("settings.cacheKeepAliveDurationLabel")} (${t(
 													"settings.cacheKeepAliveMinutes",
 												)})`}
 											</Text>
 										</View>
-										<View class="w-20 items-center">
+										<View class="w-24 items-center">
 											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{t("settings.cacheKeepAliveEnabledLabel")}
 											</Text>
 										</View>
 									</View>
 								);
-								const body = enabledRows().map((row) => {
+								const body = visibleRows().map((row) => {
 									const key = `${connectionId}\n${rowKey(row)}`;
 									const draft = () => drafts()[key];
 									const disabling = () => toggling()[key] ?? false;
@@ -452,7 +498,7 @@ export function CacheKeepAlivePane(props: {
 													onSubmit={() => commit(connection, row)}
 													onBlur={() => commit(connection, row)}
 												/>
-												<View class="w-20 items-center">
+												<View class="w-24 flex-row items-center justify-center gap-1.5">
 													<Switch
 														testID={`settings-keep-alive-${connectionId}-${row.modelId}`}
 														checked={row.enabled}
@@ -462,13 +508,28 @@ export function CacheKeepAlivePane(props: {
 														)}
 														onChange={() => toggle(connection, row)}
 													/>
+													{!row.enabled ? (
+														<SettingsIconButton
+															testID={`settings-keep-alive-remove-${connectionId}-${row.modelId}`}
+															destructive
+															accessibilityLabel={t("common.remove")}
+															tooltip={t("common.remove")}
+															onPress={() => {
+																const nextKept = { ...keptDisabled() };
+																delete nextKept[key];
+																keptDisabled.set(nextKept);
+															}}
+														>
+															<Icon name="Trash2" size={14} />
+														</SettingsIconButton>
+													) : null}
 												</View>
 											</View>
 										</SettingsRow>
 									);
 								});
 								const empty =
-									enabledRows().length === 0 && !errors()[connectionId] ? (
+									visibleRows().length === 0 && !errors()[connectionId] ? (
 										<SettingsSectionMessage padded="default">
 											{t(
 												available().length

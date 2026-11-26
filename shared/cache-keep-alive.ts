@@ -1,3 +1,34 @@
+import { formatCost } from "./format-numbers";
+
+export const CACHE_KEEP_ALIVE_SUPPORTED_APIS = [
+	"anthropic-messages",
+	"openai-responses",
+	"openai-responses-ws",
+	"openai-completions",
+] as const;
+
+export type CacheKeepAliveSupportedApi =
+	(typeof CACHE_KEEP_ALIVE_SUPPORTED_APIS)[number];
+
+/** 仅扩展实际支持重放的 API 才允许启用缓存保活；未知（旧版目录未带 api 字段）时保守放行。 */
+export function isCacheKeepAliveSupportedApi(
+	api: string | null | undefined,
+): boolean {
+	if (!api) return true;
+	return (CACHE_KEEP_ALIVE_SUPPORTED_APIS as readonly string[]).includes(api);
+}
+
+/** 默认 Prompt Cache 有效时长（秒）。 */
+export const DEFAULT_CACHE_TTL_SECONDS = 300;
+
+/** 按服务商/API 预设常见缓存有效时长（秒），减少用户手动查文档填参的负担。 */
+export function recommendedCacheTtlSeconds(
+	_provider: string,
+	_api?: string | null,
+): number {
+	return DEFAULT_CACHE_TTL_SECONDS;
+}
+
 export type CacheKeepAliveSettings = {
 	connectionId: string;
 	provider: string;
@@ -40,13 +71,14 @@ export function defaultCacheKeepAliveSettings(
 	connectionId: string,
 	provider: string,
 	modelId: string,
+	api?: string | null,
 ): CacheKeepAliveSettings {
 	return {
 		connectionId,
 		provider,
 		modelId,
 		enabled: false,
-		cacheTtlSeconds: 300,
+		cacheTtlSeconds: recommendedCacheTtlSeconds(provider, api),
 		idleKeepAliveSeconds: 30 * 60,
 		updatedAtMs: 0,
 	};
@@ -59,9 +91,13 @@ export function cacheKeepAliveNoticeDelay(
 ): number | null {
 	if (
 		!status ||
-		["disabled", "waiting_request", "running", "context_changed"].includes(
-			status.reason,
-		)
+		[
+			"disabled",
+			"paused",
+			"waiting_request",
+			"running",
+			"context_changed",
+		].includes(status.reason)
 	)
 		return null;
 	if (status.status !== "scheduled") return 0;
@@ -94,6 +130,8 @@ export function cacheKeepAliveStatusMessage(status: CacheKeepAliveStatus) {
 			return "settings.cacheKeepAliveFailed";
 		case "running":
 			return "settings.cacheKeepAliveRunning";
+		case "paused":
+			return "settings.cacheKeepAlivePaused";
 		case "disabled":
 			return "settings.cacheKeepAliveDisabled";
 		default:
@@ -115,6 +153,6 @@ export function cacheKeepAliveUsage(
 						style: "percent",
 						maximumFractionDigits: 1,
 					}).format(hitRate),
-		cost: status.cost === null ? "—" : `$${status.cost.toFixed(6)}`,
+		cost: status.cost === null ? "—" : formatCost(status.cost),
 	};
 }

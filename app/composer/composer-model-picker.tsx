@@ -127,7 +127,27 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 		const scope = props.scope();
 		if (!scope) return;
 		const initial = getProjectScopeDraft(props.scopeModels(), scope);
-		draft.set({ initial, models: [...initial] });
+		draft.set({
+			initial,
+			models: [...initial],
+			inheritPi: scope.models === null,
+			initialInherited: scope.models === null,
+		});
+		saveError.set(null);
+	};
+	const stageRestorePiDefault = () => {
+		const current = draft();
+		if (!current) return;
+		const piDefaults = getProjectScopeDraft(props.models(), {
+			projectId: props.scope()?.projectId ?? "",
+			models: null,
+			updatedAtMs: 0,
+		});
+		draft.set({
+			...current,
+			inheritPi: true,
+			models: piDefaults,
+		});
 		saveError.set(null);
 	};
 	const toggle = (provider: string, modelId: string) => {
@@ -438,7 +458,8 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 					disabled={props.saving()}
 					onPress={() => {
 						const current = draft();
-						if (current) draft.set({ ...current, models: [] });
+						if (current)
+							draft.set({ ...current, inheritPi: false, models: [] });
 					}}
 				>
 					<Text class="font-sans text-xs">
@@ -479,7 +500,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 				<View class="flex-row flex-wrap items-center justify-between gap-2">
 					<Text class="font-sans text-xs text-muted-foreground">
 						{() =>
-							props.scope()?.models === null
+							draft()?.inheritPi
 								? t("chat.scopeInherited")
 								: t("chat.scopeCustom")
 						}
@@ -487,8 +508,8 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 					<Button
 						variant="ghost"
 						size="sm"
-						disabled={props.saving() || props.scope()?.models === null}
-						onPress={() => void save(null)}
+						disabled={props.saving() || Boolean(draft()?.inheritPi)}
+						onPress={stageRestorePiDefault}
 					>
 						<Text class="font-sans text-xs">
 							{() => t("chat.restorePiScope")}
@@ -513,7 +534,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 						disabled={props.saving() || !dirty()}
 						onPress={() => {
 							const current = draft();
-							if (current) void save(current.models);
+							if (current) void save(current.inheritPi ? null : current.models);
 						}}
 					>
 						{() =>

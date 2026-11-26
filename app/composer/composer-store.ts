@@ -1,6 +1,15 @@
-import { type Accessor, batch, computed, platform, signal } from "nsh";
+import {
+	type Accessor,
+	batch,
+	computed,
+	effect,
+	platform,
+	signal,
+	untracked,
+} from "nsh";
 import { Storage } from "nsh";
 
+import { chatSessionKey } from "@shared/api/chat-session-key";
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import { bytesToBase64 } from "@shared/base64";
 import type {
@@ -47,15 +56,21 @@ import {
 import {
 	COMPOSER_SEND_MODE_STORAGE_KEY,
 	DEFAULT_COMPOSER_SEND_MODE,
-	isComposerSendMode,
+	isPersistedComposerSendMode,
 	type ComposerSendMode,
+	type PersistedComposerSendMode,
 } from "@shared/chat/send-mode";
+import { piModelSupportsImages } from "@shared/pi-model-selection";
+import type { PiModel } from "@shared/api/pi-runtime-types";
 import {
 	sessionMentionValue,
 	type SessionMention,
 } from "@shared/chat/session-mentions";
 import type { ComposerSuggestion } from "@shared/chat/composer-suggestions";
-import { chatRuntimeHasOpenTurn } from "@shared/chat/chat-session-runtime-model";
+import {
+	chatRuntimeHasOpenTurn,
+	runtimeSessionPathKey,
+} from "@shared/chat/chat-session-runtime-model";
 import { appLocale, t } from "../shell/i18n";
 import { rememberLocalChatImages } from "../chat/chat-user-image-cache";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
@@ -143,8 +158,8 @@ type PrepareToSend = (
 type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
 
 type ComposerDraftTextStorage = {
-	read: (projectId: string) => string | null;
-	write: (projectId: string, value: string) => void;
+	read: (target: ComposerTarget) => string | null;
+	write: (target: ComposerTarget, value: string) => boolean;
 };
 
 const EMPTY_DRAFT: ComposerDraft = { value: "", images: [] };
@@ -187,12 +202,14 @@ function errorMessage(error: unknown): string {
 type HistoryStore = Record<string, string[]>;
 
 /**
- * Draft text and images are shared by all chats of a project. Send feedback
- * stays with its session. History and send mode persist in `Storage`.
+ * Draft text and images are isolated per session (`sessionKey`) to avoid
+ * cross-talk across parallel chats. History and non-destructive send mode
+ * (`steer` / `follow_up`) persist in `Storage`.
  */
 export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly app: Accessor<AppState>;
+	private readonly activeModel?: Accessor<PiModel | null>;
 	private readonly catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
 	private readonly beforeSend?: PrepareToSend;
 	private readonly waitForStartupApproval?: (
@@ -201,6 +218,10 @@ export class ComposerStore {
 	private readonly queue?: ComposerQueue;
 	private readonly transcript?: ComposerTranscript;
 	private readonly onPendingDraft?: (
+		target: ComposerTarget,
+		text: string | null,
+	) => void;
+	private readonly onUnsentDraft?: (
 		target: ComposerTarget,
 		text: string | null,
 	) => void;
@@ -214,6 +235,11 @@ export class ComposerStore {
 	private readonly draftTextStorage?: ComposerDraftTextStorage;
 	private readonly drafts = new Map<string, ComposerDraft>();
 	private readonly sessionStatuses = new Map<string, string>();
+	private persistedSendMode: PersistedComposerSendMode =
+		DEFAULT_COMPOSER_SEND_MODE;
+	private readonly pendingCompactMap = signal<ReadonlyMap<string, string>>(
+		new Map(),
+	);
 	private readonly stateSignal = signal<ComposerViewState>({
 		value: "",
 		caret: 0,
@@ -241,10 +267,9 @@ export class ComposerStore {
 	 * The blocking send in flight (`/compact`, `send_now`, extension commands,
 	 * or sends without a queue), so Stop can end it at any stage.
 	 */
-	private readonly activeSubmits = new Map<
-		string,
-		{ dispatched: boolean; stopped: boolean }
-	>();
+	private readonly activeSubmits = signal<
+		ReadonlyMap<string, { dispatched: boolean; stopped: boolean }>
+	>(new Map());
 	/**
 	 * A plain prompt that is starting Pi or awaiting Pi's prompt reply while
 	 * allowing immediate follow-up/steer messages to queue behind it.
@@ -277,6 +302,8 @@ export class ComposerStore {
 	constructor(deps: {
 		client: ComposerClient;
 		app: Accessor<AppState>;
+		/** The open chat's active model, used to check image input support early. */
+		activeModel?: Accessor<PiModel | null>;
 		draftTextStorage?: ComposerDraftTextStorage;
 		/** The active project's model and command catalog, for `/` suggestions. */
 		catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
@@ -287,6 +314,8 @@ export class ComposerStore {
 		transcript?: ComposerTranscript;
 		/** Keeps a background send's draft navigable until the prompt settles. */
 		onPendingDraft?: (target: ComposerTarget, text: string | null) => void;
+		/** Keeps unsent new-chat drafts reachable after navigation. */
+		onUnsentDraft?: (target: ComposerTarget, text: string | null) => void;
 		/** Called once Pi started a turn for a prompt (not a steer or follow-up). */
 		onPromptStarted?: (target: ComposerTarget, text: string) => void;
 		/** Starts a new chat when the user submits `/new`. */
@@ -298,6 +327,7 @@ export class ComposerStore {
 	}) {
 		this.client = deps.client;
 		this.app = deps.app;
+		this.activeModel = deps.activeModel;
 		this.draftTextStorage = deps.draftTextStorage;
 		this.catalog = deps.catalog;
 		this.beforeSend = deps.beforeSend;
@@ -305,6 +335,7 @@ export class ComposerStore {
 		this.queue = deps.queue;
 		this.transcript = deps.transcript;
 		this.onPendingDraft = deps.onPendingDraft;
+		this.onUnsentDraft = deps.onUnsentDraft;
 		this.onPromptStarted = deps.onPromptStarted;
 		this.onNewChat = deps.onNewChat;
 		this.onCompacted = deps.onCompacted;
@@ -356,8 +387,10 @@ export class ComposerStore {
 		});
 		void Storage.getItem(COMPOSER_SEND_MODE_STORAGE_KEY)
 			.then((stored) => {
-				if (isComposerSendMode(stored))
+				if (isPersistedComposerSendMode(stored)) {
+					this.persistedSendMode = stored;
 					this.stateSignal.update((s) => ({ ...s, sendMode: stored }));
+				}
 			})
 			.catch(() => {});
 	}
@@ -366,15 +399,18 @@ export class ComposerStore {
 	setTarget(target: ComposerTarget | null) {
 		const previous = this.targetSignal();
 		if (previous?.sessionKey === target?.sessionKey) {
-			if (previous?.sessionPath !== target?.sessionPath)
-				this.targetSignal.set(target);
+			if (previous && target && previous.sessionPath !== target.sessionPath) {
+				batch(() => {
+					this.targetSignal.set(target);
+					if (!previous.sessionPath && target.sessionPath) {
+						this.adoptDraftPath(previous, target);
+					}
+				});
+			}
 			return;
 		}
 		if (previous) {
-			const { status } = this.stateSignal();
-			if (status !== null)
-				this.sessionStatuses.set(previous.sessionKey, status);
-			else this.sessionStatuses.delete(previous.sessionKey);
+			this.sessionStatuses.delete(previous.sessionKey);
 		}
 		const draft = target ? this.draftFor(target) : EMPTY_DRAFT;
 		batch(() => {
@@ -391,12 +427,14 @@ export class ComposerStore {
 				...s,
 				...draft,
 				caret: draft.value.length,
+				// 切会话时复位临时的一次性打断模式，回到安全记忆模式。
+				sendMode: this.persistedSendMode,
 				status: target
 					? (this.sessionStatuses.get(target.sessionKey) ?? null)
 					: null,
 				composing: false,
 				dragging: false,
-				sending: target ? this.activeSubmits.has(target.sessionKey) : false,
+				sending: target ? this.activeSubmits().has(target.sessionKey) : false,
 			}));
 		});
 	}
@@ -412,7 +450,7 @@ export class ComposerStore {
 			if (next.value !== current.value || next.images !== current.images) {
 				this.draftVersion++;
 				const target = this.targetSignal();
-				if (target) this.cacheDraft(target.projectId, next);
+				if (target) this.cacheDraft(target, next);
 			}
 			return next;
 		});
@@ -441,6 +479,7 @@ export class ComposerStore {
 			...s,
 			value,
 			caret: Math.min(caret ?? value.length, value.length),
+			status: previous !== value ? null : s.status,
 		}));
 	}
 
@@ -479,18 +518,135 @@ export class ComposerStore {
 
 	setSendMode(sendMode: ComposerSendMode) {
 		this.stateSignal.update((s) => ({ ...s, sendMode }));
-		void Storage.setItem(COMPOSER_SEND_MODE_STORAGE_KEY, sendMode).catch(
-			() => {},
+		// 仅持久化无损发送方式；破坏性的“打断并发送”仅作为单次显式动作，不全局记忆。
+		if (isPersistedComposerSendMode(sendMode)) {
+			this.persistedSendMode = sendMode;
+			void Storage.setItem(COMPOSER_SEND_MODE_STORAGE_KEY, sendMode).catch(
+				() => {},
+			);
+		}
+	}
+
+	/** 发送或退出运行态后将一次性 `send_now` 复位回已记忆的无损发送方式。 */
+	resetTransientSendMode() {
+		if (this.stateSignal().sendMode === "send_now") {
+			this.stateSignal.update((s) => ({
+				...s,
+				sendMode: this.persistedSendMode,
+			}));
+		}
+	}
+
+	pendingCompact(
+		sessionKey = this.targetSignal()?.sessionKey ?? null,
+	): boolean {
+		return sessionKey !== null && this.pendingCompactMap().has(sessionKey);
+	}
+
+	cancelPendingCompact(sessionKey = this.targetSignal()?.sessionKey ?? null) {
+		if (!sessionKey || !this.pendingCompactMap().has(sessionKey)) return;
+		this.pendingCompactMap.update((map) => {
+			const next = new Map(map);
+			next.delete(sessionKey);
+			return next;
+		});
+	}
+
+	/** 立即压缩当前会话上下文；若正在回复，则自动安排在本轮结束后执行。 */
+	async compact(customInstructions = "") {
+		const target = this.targetSignal();
+		if (
+			!target ||
+			this.readOnly() ||
+			this.compacting() ||
+			this.activeSubmits().has(target.sessionKey) ||
+			this.queue?.busy(target.sessionKey)
+		) {
+			return;
+		}
+		if (this.running()) {
+			this.pendingCompactMap.update((map) =>
+				new Map(map).set(target.sessionKey, customInstructions),
+			);
+			this.notify({
+				variant: "info",
+				title: t("chat.compactScheduled"),
+			});
+			return;
+		}
+		await this.executeCompact(target, customInstructions);
+	}
+
+	/** Keeps draft promotion and scheduled work independent of the visible composer. */
+	followBackgroundSessions() {
+		effect(() => {
+			const { unsentDrafts, chatSessions, sessionIndexes } = this.app();
+			if (!unsentDrafts?.size) return;
+			for (const { sessionKey, projectId, sessionPath } of chatSessions) {
+				if (!sessionPath || !unsentDrafts.has(sessionKey)) continue;
+				if (this.isIndexedDraftPath(sessionIndexes, projectId, sessionPath)) {
+					untracked(() =>
+						this.adoptDraftPath(
+							{ sessionKey, projectId },
+							{ sessionKey, projectId, sessionPath },
+						),
+					);
+				}
+			}
+		});
+		effect(() => {
+			const pending = this.pendingCompactMap();
+			if (!pending.size || this.app().status.type !== "ready") return;
+			for (const sessionKey of pending.keys())
+				void this.flushPendingCompact(sessionKey);
+		});
+	}
+
+	async flushPendingCompact(sessionKey = this.targetSignal()?.sessionKey) {
+		if (!sessionKey) return;
+		const instructions = this.pendingCompactMap().get(sessionKey);
+		if (instructions === undefined) return;
+		if (
+			this.running(sessionKey) ||
+			this.activeSubmits().has(sessionKey) ||
+			this.queue?.busy(sessionKey)
+		)
+			return;
+		const chat = this.chatState(sessionKey);
+		if (
+			!chat?.initialized ||
+			(chat.snapshot && chat.snapshot.state !== "running")
+		) {
+			untracked(() => this.cancelPendingCompact(sessionKey));
+			return;
+		}
+		if (
+			isTemporarySessionKey(sessionKey) &&
+			this.targetSignal()?.sessionKey !== sessionKey
+		)
+			return;
+		const { projectId, sessionPath } = chat;
+		if (isExternalTurnOpen(this.app(), projectId, sessionPath)) return;
+		await untracked(() =>
+			batch(() => {
+				this.cancelPendingCompact(sessionKey);
+				return this.executeCompact(
+					{ sessionKey, projectId, sessionPath },
+					instructions,
+					{ scheduled: chat },
+				);
+			}),
 		);
 	}
 
 	/** The open chat's runtime state, as the app store last reported it. */
-	chatState(): ChatSessionRuntimeState | null {
-		const target = this.targetSignal();
-		if (!target) return null;
+	chatState(
+		sessionKey = this.targetSignal()?.sessionKey,
+	): ChatSessionRuntimeState | null {
+		if (!sessionKey) return null;
 		return (
 			this.app().chatSessions.find(
-				(session) => session.sessionKey === target.sessionKey,
+				(session) => session.sessionKey === sessionKey,
 			) ?? null
 		);
 	}
@@ -517,16 +673,36 @@ export class ComposerStore {
 		}
 	}
 
-	/** A turn or compaction is running (or starting) on the open chat. */
-	running(): boolean {
-		const target = this.targetSignal();
-		if (!target) return false;
-		const chat = this.chatState();
+	private setActiveSubmit(
+		sessionKey: string,
+		submit: { dispatched: boolean; stopped: boolean } | null,
+	) {
+		this.activeSubmits.update((submits) => {
+			const next = new Map(submits);
+			if (submit) next.set(sessionKey, submit);
+			else next.delete(sessionKey);
+			return next;
+		});
+	}
+
+	private finishActiveSubmit(sessionKey: string) {
+		batch(() => {
+			this.setActiveSubmit(sessionKey, null);
+			if (this.targetSignal()?.sessionKey === sessionKey) {
+				this.stateSignal.update((s) => ({ ...s, sending: false }));
+			}
+		});
+	}
+
+	/** A turn or compaction is running (or starting) on the target chat. */
+	running(sessionKey = this.targetSignal()?.sessionKey): boolean {
+		if (!sessionKey) return false;
+		const chat = this.chatState(sessionKey);
 		return Boolean(
 			chat?.activeTurn ||
 			chat?.compacting ||
-			this.startingPromptSessions().has(target.sessionKey) ||
-			this.transcript?.hasLiveTurn?.(target.sessionKey),
+			this.startingPromptSessions().has(sessionKey) ||
+			this.transcript?.hasLiveTurn?.(sessionKey),
 		);
 	}
 
@@ -773,31 +949,59 @@ export class ComposerStore {
 		}
 	}
 
-	private draftFor({ projectId }: ComposerTarget): ComposerDraft {
-		const cached = this.drafts.get(projectId);
+	private draftKey({ sessionKey, projectId, sessionPath }: ComposerTarget) {
+		return sessionPath
+			? `file:${chatSessionKey(projectId, runtimeSessionPathKey(sessionPath))}`
+			: sessionKey;
+	}
+
+	private adoptDraftPath(previous: ComposerTarget, saved: ComposerTarget) {
+		const key = this.draftKey(previous);
+		const draft = this.draftFor(previous);
+		if (draft !== EMPTY_DRAFT) {
+			this.drafts.set(this.draftKey(saved), draft);
+			this.drafts.delete(key);
+			if (draft.value && this.draftTextStorage?.write(saved, draft.value)) {
+				this.draftTextStorage.write(previous, "");
+			}
+		}
+		this.onUnsentDraft?.(saved, null);
+	}
+
+	private draftFor(target: ComposerTarget): ComposerDraft {
+		const key = this.draftKey(target);
+		const cached = this.drafts.get(key);
 		if (cached) return cached;
-		const value = this.draftTextStorage?.read(projectId);
+		const value = this.draftTextStorage?.read(target);
 		if (!value) return EMPTY_DRAFT;
 		const restored = { ...EMPTY_DRAFT, value };
-		this.drafts.set(projectId, restored);
+		this.drafts.set(key, restored);
 		return restored;
 	}
 
-	private cacheDraft(projectId: string, { value, images }: ComposerDraft) {
-		const previous = this.drafts.get(projectId)?.value ?? "";
+	private cacheDraft(target: ComposerTarget, { value, images }: ComposerDraft) {
+		const key = this.draftKey(target);
+		const previous = this.drafts.get(key)?.value ?? "";
 		// Keep empty drafts in memory when a failed storage write could leave stale text.
 		if (value || images.length || this.draftTextStorage)
-			this.drafts.set(projectId, { value, images });
-		else this.drafts.delete(projectId);
-		if (value !== previous) this.draftTextStorage?.write(projectId, value);
+			this.drafts.set(key, { value, images });
+		else this.drafts.delete(key);
+		if (value !== previous) this.draftTextStorage?.write(target, value);
+		if (!target.sessionPath)
+			this.onUnsentDraft?.(
+				target,
+				value.trim() || images.length ? value : null,
+			);
 	}
 
 	private writeDraft(target: ComposerTarget, draft: ComposerDraft) {
+		target = this.resolveDraftTarget(target);
 		const previous = this.draftFor(target).value;
 		if (previous !== draft.value)
 			discardRemovedChatFiles(previous, draft.value);
-		if (this.targetSignal()?.projectId !== target.projectId) {
-			this.cacheDraft(target.projectId, draft);
+		const current = this.targetSignal();
+		if (!current || this.draftKey(current) !== this.draftKey(target)) {
+			this.cacheDraft(target, draft);
 			return;
 		}
 		if (previous !== draft.value) this.historyCursor = null;
@@ -808,16 +1012,43 @@ export class ComposerStore {
 		}));
 	}
 
+	private resolveDraftTarget(target: ComposerTarget): ComposerTarget {
+		const current = this.targetSignal();
+		if (current?.sessionKey === target.sessionKey) return current;
+		if (target.sessionPath) return target;
+		const path = this.chatState(target.sessionKey)?.sessionPath;
+		if (
+			path &&
+			this.isIndexedDraftPath(this.app().sessionIndexes, target.projectId, path)
+		) {
+			return { ...target, sessionPath: path };
+		}
+		return target;
+	}
+
+	private isIndexedDraftPath(
+		indexes: AppState["sessionIndexes"],
+		projectId: string,
+		path: string,
+	) {
+		const key = runtimeSessionPathKey(path);
+		return indexes[projectId]?.sessions.some(
+			(entry) => runtimeSessionPathKey(entry.sessionPath) === key,
+		);
+	}
+
 	/** Inserts files into the requesting draft and returns whether any were attached. */
 	async addFiles(
 		files: readonly File[],
 		target = this.targetSignal(),
 		reportFailure = true,
+		collectedErrors?: string[],
 	): Promise<boolean> {
 		if (!target) return false;
 		const { sessionKey, projectId } = target;
+		const errors = collectedErrors ?? [];
 		const rejectFile = (message: string) => {
-			if (reportFailure) this.setStatus(message, sessionKey);
+			if (reportFailure && !errors.includes(message)) errors.push(message);
 		};
 		let attached = false;
 		if (files.length > MAX_CHAT_IMAGE_COUNT) {
@@ -826,6 +1057,10 @@ export class ComposerStore {
 		let batchBytes = 0;
 		for (const file of files.slice(0, MAX_CHAT_IMAGE_COUNT)) {
 			const mime = resolveChatImageMimeType(file);
+			if (mime && !piModelSupportsImages(this.activeModel?.())) {
+				rejectFile(t("chat.imageUnsupported"));
+				continue;
+			}
 			if (file.size > MAX_CHAT_IMAGE_BYTES) {
 				rejectFile(
 					mime
@@ -849,7 +1084,7 @@ export class ComposerStore {
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				if (mime) {
-					const draft = this.draftFor(target);
+					const draft = this.draftFor(this.resolveDraftTarget(target));
 					const { images } = draft;
 					const limit =
 						images.length >= MAX_CHAT_IMAGE_COUNT
@@ -884,7 +1119,7 @@ export class ComposerStore {
 						this.removedFilePaths.add(path);
 						return this.client.removeChatFile(projectId, path);
 					});
-					const draft = this.draftFor(target);
+					const draft = this.draftFor(this.resolveDraftTarget(target));
 					const { value } = draft;
 					const tokenText = fileMentionValue(path);
 					const separator = value.length === 0 || /\s$/.test(value) ? "" : " ";
@@ -898,6 +1133,13 @@ export class ComposerStore {
 				rejectFile(
 					`${t("chat.uploadFileFailed", { name: file.name || "file" })}: ${errorMessage(error)}`,
 				);
+			}
+		}
+		if (!collectedErrors) {
+			if (errors.length > 0) {
+				this.setStatus(errors.join(" · "), sessionKey);
+			} else if (attached) {
+				this.setStatus(null, sessionKey);
 			}
 		}
 		return attached;
@@ -933,11 +1175,12 @@ export class ComposerStore {
 			clipboardImage && resolveChatImageMimeType(clipboardImage)
 				? clipboardImage
 				: undefined;
+		const errors: string[] = [];
+		const recordError = (message: string) => {
+			if (!errors.includes(message)) errors.push(message);
+		};
 		if (uris.length > MAX_CHAT_IMAGE_COUNT) {
-			this.setStatus(
-				t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }),
-				target.sessionKey,
-			);
+			recordError(t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }));
 		}
 		let batchBytes = 0;
 		for (const uri of uris.slice(0, MAX_CHAT_IMAGE_COUNT)) {
@@ -947,11 +1190,10 @@ export class ComposerStore {
 				if (bytes.length <= MAX_CHAT_IMAGE_BYTES) {
 					batchBytes += bytes.length;
 					if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {
-						this.setStatus(
+						recordError(
 							t("chat.filesTooLarge", {
 								size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
 							}),
-							target.sessionKey,
 						);
 						break;
 					}
@@ -967,13 +1209,13 @@ export class ComposerStore {
 					target,
 					// With a fallback, report only failure of the final attempt.
 					!fallback,
+					errors,
 				);
 				if (attached) continue;
 			} catch (error) {
 				if (!fallback) {
-					this.setStatus(
+					recordError(
 						`${t("chat.uploadFileFailed", { name: attachmentName(uri) })}: ${errorMessage(error)}`,
-						target.sessionKey,
 					);
 				}
 			}
@@ -982,12 +1224,16 @@ export class ComposerStore {
 				return;
 			}
 		}
+		if (errors.length > 0) {
+			this.setStatus(errors.join(" · "), target.sessionKey);
+		}
 	}
 
 	removeImage(id: string) {
 		this.updateDraft((s) => ({
 			...s,
 			images: s.images.filter((image) => image.id !== id),
+			status: null,
 		}));
 	}
 
@@ -999,6 +1245,14 @@ export class ComposerStore {
 		if (!target) return;
 		this.setValue(
 			removeChatMention(this.stateSignal().value, target, sessions),
+		);
+	}
+
+	/** 按类型和路径精确移除指定内联引用。 */
+	removeMention(kind: "file" | "session", path: string) {
+		const sessions = this.sessionsByValue();
+		this.setValue(
+			removeChatMention(this.stateSignal().value, { kind, path }, sessions),
 		);
 	}
 
@@ -1103,25 +1357,32 @@ export class ComposerStore {
 	private async executeCompact(
 		target: ComposerTarget,
 		customInstructions: string,
-		rawValue: string,
-		rawImages: ChatImageAttachment[],
+		{
+			draft,
+			scheduled,
+		}: { draft?: ComposerDraft; scheduled?: ChatSessionRuntimeState } = {},
 	) {
 		const submit = { dispatched: false, stopped: false };
-		this.activeSubmits.set(target.sessionKey, submit);
-		this.historyCursor = null;
-		this.updateDraft((s) => ({
-			...s,
-			value: "",
-			caret: 0,
-			images: [],
-			sending: true,
-			status: null,
-		}));
+		this.setActiveSubmit(target.sessionKey, submit);
+		if (draft) {
+			this.historyCursor = null;
+			this.updateDraft((s) => ({
+				...s,
+				value: "",
+				caret: 0,
+				images: [],
+				sending: true,
+				status: null,
+			}));
+		} else if (this.targetSignal()?.sessionKey === target.sessionKey) {
+			this.stateSignal.update((s) => ({ ...s, sending: true, status: null }));
+		}
 		let sent = false;
 		let failure: string | undefined;
 		try {
-			if (!(await this.ensureStartedForSubmit(target, submit))) return;
-			submit.dispatched = true;
+			// Scheduled work belongs to a live Pi; never wake an old session or apply another chat's selection.
+			if (!scheduled && !(await this.ensureStartedForSubmit(target, submit)))
+				return;
 			const outcome = await requestPiRpcOutcome<PiCompactionResult>(
 				this.client,
 				target.sessionKey,
@@ -1130,7 +1391,25 @@ export class ComposerStore {
 					...(customInstructions ? { customInstructions } : {}),
 				},
 				PROMPT_REPLY_TIMEOUT_MS,
+				() => {
+					if (submit.stopped) return false;
+					if (scheduled) {
+						const chat = this.chatState(target.sessionKey);
+						if (
+							!chat?.initialized ||
+							this.running(target.sessionKey) ||
+							chat.snapshot?.generation !== scheduled.snapshot?.generation ||
+							(chat.snapshot && chat.snapshot.state !== "running") ||
+							(isTemporarySessionKey(target.sessionKey) &&
+								this.targetSignal()?.sessionKey !== target.sessionKey)
+						)
+							return false;
+					}
+					submit.dispatched = true;
+					return true;
+				},
 			);
+			if (submit.stopped && outcome.type === "not_sent") return;
 			if (outcome.type !== "reply" || !outcome.reply.data) {
 				failure =
 					outcome.type === "unconfirmed"
@@ -1146,8 +1425,9 @@ export class ComposerStore {
 				title: t("chat.compactSuccess"),
 				description: `${result.tokensBefore.toLocaleString(locale)} → ${result.estimatedTokensAfter.toLocaleString(locale)} tokens`,
 			});
-			this.onCompacted?.(result);
-			await this.appendHistory(target.projectId, rawValue);
+			if (this.targetSignal()?.sessionKey === target.sessionKey)
+				this.onCompacted?.(result);
+			if (draft?.value) await this.appendHistory(target.projectId, draft.value);
 		} catch (error) {
 			failure = errorMessage(error);
 		} finally {
@@ -1159,21 +1439,16 @@ export class ComposerStore {
 						description: failure,
 					});
 				}
-				this.restoreDraft(
-					target,
-					{ value: rawValue, images: rawImages },
-					this.onNotice ? undefined : failure,
-				);
+				if (draft) {
+					this.restoreDraft(target, draft, this.onNotice ? undefined : failure);
+				}
 			}
-			this.activeSubmits.delete(target.sessionKey);
-			if (this.targetSignal()?.sessionKey === target.sessionKey) {
-				this.stateSignal.update((s) => ({ ...s, sending: false }));
-			}
+			this.finishActiveSubmit(target.sessionKey);
 		}
 	}
 
-	/** Sends the draft, optionally forcing a follow-up for this send only. */
-	async submit(mode?: "follow_up", textWithImageReferences?: string) {
+	/** Sends the draft, optionally forcing a send mode for this send only. */
+	async submit(mode?: ComposerSendMode, textWithImageReferences?: string) {
 		const target = this.targetSignal();
 		const { value, images, sending, composing, sendMode } = this.stateSignal();
 		if (!target || sending || composing || this.queue?.busy(target.sessionKey))
@@ -1201,13 +1476,25 @@ export class ComposerStore {
 		const running = this.running();
 		if (slash?.name === "compact") {
 			if (running) {
+				this.historyCursor = null;
+				this.updateDraft((s) => ({
+					...s,
+					value: "",
+					caret: 0,
+					status: null,
+				}));
+				this.pendingCompactMap.update((map) =>
+					new Map(map).set(target.sessionKey, slash.args),
+				);
 				this.notify({
 					variant: "info",
-					title: t("chat.waitCompaction"),
+					title: t("chat.compactScheduled"),
 				});
 				return;
 			}
-			await this.executeCompact(target, slash.args, value, images);
+			await this.executeCompact(target, slash.args, {
+				draft: { value, images },
+			});
 			return;
 		}
 		if (mode === "follow_up" && !running) return;
@@ -1230,6 +1517,9 @@ export class ComposerStore {
 			);
 
 		const delivery = mode ?? sendMode;
+		if (delivery === "send_now") {
+			this.resetTransientSendMode();
+		}
 		if (running && this.queue && delivery !== "send_now") {
 			this.historyCursor = null;
 			this.updateDraft((s) => ({
@@ -1316,7 +1606,7 @@ export class ComposerStore {
 				settled,
 			});
 		} else {
-			this.activeSubmits.set(target.sessionKey, submit);
+			this.setActiveSubmit(target.sessionKey, submit);
 		}
 		// The draft leaves the composer at once, as in the WebUI; it comes
 		// back if it is not sent.
@@ -1533,10 +1823,7 @@ export class ComposerStore {
 				this.setStartingPrompt(target.sessionKey, null);
 				resolveSettled?.(sent && !submit.stopped);
 			} else {
-				this.activeSubmits.delete(target.sessionKey);
-				if (this.targetSignal()?.sessionKey === target.sessionKey) {
-					this.stateSignal.update((s) => ({ ...s, sending: false }));
-				}
+				this.finishActiveSubmit(target.sessionKey);
 			}
 		}
 	}
@@ -1562,6 +1849,7 @@ export class ComposerStore {
 		draft: ComposerDraft,
 		status?: string,
 	) {
+		target = this.resolveDraftTarget(target);
 		const later = this.draftFor(target);
 		this.writeDraft(target, {
 			value: [draft.value, later.value].filter(Boolean).join("\n\n"),
@@ -1575,10 +1863,11 @@ export class ComposerStore {
 
 	/** Stops the running turn, or the send that is about to start one. */
 	async stop() {
+		this.resetTransientSendMode();
 		const target = this.targetSignal();
 		if (!target) return;
 		const submit =
-			this.activeSubmits.get(target.sessionKey) ??
+			this.activeSubmits().get(target.sessionKey) ??
 			this.startingPrompts.get(target.sessionKey);
 		if (submit) {
 			submit.stopped = true;

@@ -331,6 +331,14 @@ export function ShortcutsPane(props: {
 				<GlobalShortcutSetting
 					desktop={props.desktop}
 					recording={() => recording() === "desktop"}
+					findAppConflict={(shortcut) => {
+						const native = nshAppShortcut(shortcut, IS_MAC);
+						const match = SHORTCUT_COMMANDS.find(
+							({ id }) =>
+								native && native === nshAppShortcut(shortcutFor(id), IS_MAC),
+						);
+						return match ? t(match.labelKey) : null;
+					}}
 					onRecordingChange={(next) => {
 						if (next) recording.set("desktop");
 						else stopRecording("desktop");
@@ -431,6 +439,7 @@ export function ShortcutsPane(props: {
 function GlobalShortcutSetting(props: {
 	desktop: DesktopShell;
 	recording: Accessor<boolean>;
+	findAppConflict?: (shortcut: string) => string | null;
 	onRecordingChange: (recording: boolean) => void;
 }) {
 	const toasts = AppToaster();
@@ -456,6 +465,11 @@ function GlobalShortcutSetting(props: {
 	const capture = (shortcut: string) => {
 		if (!isSafeGlobalShortcut(shortcut, IS_MAC)) {
 			notice.set({ kind: "modifier" });
+			return;
+		}
+		const conflictLabel = props.findAppConflict?.(shortcut);
+		if (conflictLabel) {
+			notice.set({ kind: "conflict", label: conflictLabel });
 			return;
 		}
 		void save(shortcut);
@@ -500,7 +514,16 @@ function GlobalShortcutSetting(props: {
 									saving() ||
 									saved() === DEFAULT_SHOW_SHORTCUT
 								}
-								onPress={() => void save(DEFAULT_SHOW_SHORTCUT)}
+								onPress={() => {
+									const conflictLabel = props.findAppConflict?.(
+										DEFAULT_SHOW_SHORTCUT,
+									);
+									if (conflictLabel) {
+										notice.set({ kind: "conflict", label: conflictLabel });
+										return;
+									}
+									void save(DEFAULT_SHOW_SHORTCUT);
+								}}
 							>
 								<Icon name="RotateCcw" size={14} />
 							</SettingsIconButton>

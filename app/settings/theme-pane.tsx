@@ -126,16 +126,41 @@ export function ThemePane(props: {
 			</SettingsSection>
 
 			<SettingsSection title={t("settings.themeFamily")}>
-				<View class="flex-row flex-wrap items-center gap-2 p-3">
-					{THEME_FAMILIES.map((family) => (
-						<ThemeOption
-							family={family.value}
-							testID={`settings-theme-family-${family.value}`}
-							label={String(t(family.labelKey))}
-							selected={settings()?.themeFamily === family.value}
-							onSelect={() => save({ themeFamily: family.value })}
-						/>
-					))}
+				<View class="gap-2 p-3">
+					<View class="flex-row flex-wrap items-center gap-2">
+						{THEME_FAMILIES.map((family) => (
+							<ThemeOption
+								family={family.value}
+								testID={`settings-theme-family-${family.value}`}
+								label={String(t(family.labelKey))}
+								selected={settings()?.themeFamily === family.value}
+								onSelect={() => save({ themeFamily: family.value })}
+							/>
+						))}
+					</View>
+					{() => {
+						const activeFamily = settings()?.themeFamily;
+						const isBuiltin =
+							!activeFamily ||
+							THEME_FAMILIES.some((family) => family.value === activeFamily);
+						if (isBuiltin) return null;
+						const customName = settings()?.themeCustomName?.trim();
+						return (
+							<View
+								testID="settings-theme-custom-active"
+								class="flex-row items-center gap-1.5 pt-1"
+							>
+								<Icon name="Check" size={13} color={token("primary")} />
+								<Text class="font-sans text-xs text-muted-foreground">
+									{() =>
+										customName
+											? `${t("settings.customThemeActive")} · ${customName}`
+											: t("settings.customThemeActive")
+									}
+								</Text>
+							</View>
+						);
+					}}
 				</View>
 			</SettingsSection>
 		</View>

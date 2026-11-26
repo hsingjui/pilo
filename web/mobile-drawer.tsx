@@ -56,6 +56,12 @@ export interface MobileDrawerProps {
 	dragVelocity?: Accessor<number>;
 	connectionState: Accessor<WebRemoteConnectionState>;
 	onReconnect?: () => void;
+	onSignOut?: () => void;
+	onRenameSession?: (target: {
+		projectId: string;
+		sessionPath: string;
+		title: string;
+	}) => void;
 	onOpenSearch?: () => void;
 	onNewChat: (projectId?: string) => void;
 	onDefaultWorkspaceShown?: (connectionId: string, shown: boolean) => void;
@@ -112,6 +118,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 	const sectionOverrides = signal<Record<string, boolean>>({});
 	const projectLimits = signal<Record<string, number>>({});
 	const confirmingDeleteKey = signal<string | null>(null);
+	const confirmingSignOut = signal(false);
 	const mounted = signal(false);
 	const segmentWidth = signal(0);
 	const segmentThumbWidth = computed(() => {
@@ -186,6 +193,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 				settleOpen(openVelocity);
 			} else {
 				confirmingDeleteKey.set(null);
+				confirmingSignOut.set(false);
 				if (!mounted()) return;
 				const velocity = closeVelocity !== 0 ? closeVelocity : openVelocity;
 				closeVelocity = 0;
@@ -366,7 +374,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
 							}}
 						>
 							<Text class="font-sans text-destructive" style={MOBILE_TEXT.sm}>
-								{() => t("common.delete")}
+								{() =>
+									session.active
+										? t("sidebar.deleteRunningConfirm")
+										: t("common.delete")
+								}
 							</Text>
 						</Button>
 					</View>
@@ -452,6 +464,24 @@ export function MobileDrawer(props: MobileDrawerProps) {
 						}
 					>
 						<View class="gap-1">
+							{props.onRenameSession ? (
+								<MobileDropdownItem
+									testID={`mobile-session-rename:${session.id}`}
+									icon={<Icon name="Pencil" size={14} />}
+									onSelect={() => {
+										close();
+										props.onRenameSession?.({
+											projectId: session.projectId,
+											sessionPath: session.sessionPath,
+											title: session.title,
+										});
+									}}
+								>
+									<Text class="font-sans" style={MOBILE_TEXT.sm}>
+										{() => t("sidebar.rename")}
+									</Text>
+								</MobileDropdownItem>
+							) : null}
 							<MobileDropdownItem
 								testID={`mobile-session-refresh:${session.id}`}
 								icon={<Icon name="RefreshCw" size={14} />}
@@ -899,14 +929,38 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																				</View>
 																				{projExpanded ? (
 																					sessions.length === 0 ? (
-																						<Text
-																							class="py-4 pl-8 pr-2 font-sans text-sidebar-foreground-muted"
-																							style={MOBILE_TEXT.sm}
-																						>
-																							{loading
-																								? t("common.loading")
-																								: t("sidebar.noSessions")}
-																						</Text>
+																						loading ? (
+																							<Text
+																								class="py-4 pl-8 pr-2 font-sans text-sidebar-foreground-muted"
+																								style={MOBILE_TEXT.sm}
+																							>
+																								{() => t("common.loading")}
+																							</Text>
+																						) : (
+																							<BaseButton
+																								testID={`mobile-project-empty-new:${project.id}`}
+																								class={`min-h-11 flex-row items-center gap-2 ${ROW_RADIUS_CLASS} pl-8 pr-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
+																								onPress={() =>
+																									startNewChat(project.id)
+																								}
+																							>
+																								<Icon
+																									name="SquarePen"
+																									size={14}
+																									color={token(
+																										"sidebar-foreground-muted",
+																									)}
+																								/>
+																								<Text
+																									class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted"
+																									style={MOBILE_TEXT.sm}
+																								>
+																									{() =>
+																										`${t("sidebar.noSessions")} · ${t("sidebar.newSession")}`
+																									}
+																								</Text>
+																							</BaseButton>
+																						)
 																					) : (
 																						<View class="mt-1 gap-1 pb-2">
 																							{sessions
@@ -974,34 +1028,96 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									}}
 								</Scroll>
 
-								{/* Footer: connection status */}
-								<View class="mx-3 min-h-14 shrink-0 flex-row items-center gap-2 border-t border-sidebar-border/60 px-2 pt-1">
-									<BaseButton
-										testID="mobile-drawer-connection"
-										class={`min-h-11 min-w-0 flex-1 flex-row items-center gap-2 ${ROW_RADIUS_CLASS}`}
-										onPress={() => {
-											if (props.connectionState() !== "connected") {
-												props.onReconnect?.();
-											}
-										}}
-									>
-										<Icon
-											name={
-												props.connectionState() === "connected"
-													? "Wifi"
-													: "WifiOff"
-											}
-											size={16}
-											strokeWidth={1.5}
-											color={token("sidebar-foreground-muted")}
-										/>
-										<Text
-											class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted"
-											style={MOBILE_TEXT.sm}
-										>
-											{() => connectionStatusLabel(props.connectionState())}
-										</Text>
-									</BaseButton>
+								{/* Footer: connection status & sign out */}
+								<View class="mx-3 min-h-14 shrink-0 flex-row items-center gap-1 border-t border-sidebar-border/60 px-2 pt-1">
+									{() => {
+										if (props.onSignOut && confirmingSignOut()) {
+											return (
+												<View class="min-w-0 flex-1 flex-row items-center justify-end gap-1">
+													<Button
+														testID="mobile-drawer-signout-cancel"
+														variant="ghost"
+														size="sm"
+														class="h-11 px-3 hover:bg-sidebar-hover active:bg-sidebar-hover"
+														onPress={() => confirmingSignOut.set(false)}
+													>
+														<Text
+															class="font-sans text-sidebar-foreground-muted"
+															style={MOBILE_TEXT.xs}
+														>
+															{() => t("common.cancel")}
+														</Text>
+													</Button>
+													<Button
+														testID="mobile-drawer-signout-confirm"
+														variant="ghost"
+														size="sm"
+														class="h-11 px-3 hover:bg-sidebar-hover active:bg-sidebar-hover"
+														onPress={() => {
+															confirmingSignOut.set(false);
+															close();
+															props.onSignOut?.();
+														}}
+													>
+														<Text
+															class="font-sans text-destructive"
+															style={MOBILE_TEXT.xs}
+														>
+															{() => t("settings.remoteSignOutConfirm")}
+														</Text>
+													</Button>
+												</View>
+											);
+										}
+										return (
+											<>
+												<BaseButton
+													testID="mobile-drawer-connection"
+													class={`min-h-11 min-w-0 flex-1 flex-row items-center gap-2 ${ROW_RADIUS_CLASS}`}
+													onPress={() => {
+														if (props.connectionState() !== "connected") {
+															props.onReconnect?.();
+														}
+													}}
+												>
+													<Icon
+														name={
+															props.connectionState() === "connected"
+																? "Wifi"
+																: "WifiOff"
+														}
+														size={16}
+														strokeWidth={1.5}
+														color={token("sidebar-foreground-muted")}
+													/>
+													<Text
+														class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted"
+														style={MOBILE_TEXT.sm}
+													>
+														{() =>
+															connectionStatusLabel(props.connectionState())
+														}
+													</Text>
+												</BaseButton>
+												{props.onSignOut ? (
+													<Button
+														testID="mobile-drawer-signout"
+														variant="ghost"
+														size="icon"
+														class={ROW_ACTION_CLASS}
+														accessibilityLabel={t("settings.remoteSignOut")}
+														onPress={() => confirmingSignOut.set(true)}
+													>
+														<Icon
+															name="LogOut"
+															size={16}
+															color={token("sidebar-foreground-muted")}
+														/>
+													</Button>
+												) : null}
+											</>
+										);
+									}}
 								</View>
 							</View>
 						</View>

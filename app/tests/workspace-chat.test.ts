@@ -39,7 +39,7 @@ test("the workspace shows the open session's messages, and the project's page wi
 	expect(app.shows("id:chat-messages")).toBe(false);
 });
 
-test("the New session button keeps the project's draft", async () => {
+test("each session keeps its own draft without leaking across sessions", async () => {
 	const app = await openApp();
 	await app.press("id:session:s4");
 	await app.waitFor("id:chat-messages >> text:The width is stored.");
@@ -47,15 +47,18 @@ test("the New session button keeps the project's draft", async () => {
 
 	await app.press("id:sidebar-new-chat");
 	await app.waitFor("id:workspace >> id:chat-empty >> id:workspace-title");
-	await app.waitFor("id:chat-composer-input >> text:keep this draft");
-	await app.type("id:chat-composer-input", " in the next session");
-	await app.waitFor("id:chat-composer-input >> text:in the next session");
+	expect(app.shows("id:chat-composer-input >> text:keep this draft")).toBe(
+		false,
+	);
+	await app.type("id:chat-composer-input", "draft for new session");
+	await app.waitFor("id:chat-composer-input >> text:draft for new session");
 
 	await app.press("id:session:s4");
 	await app.waitFor("id:chat-messages >> text:The width is stored.");
-	await app.waitFor(
-		"id:chat-composer-input >> text:keep this draft in the next session",
-	);
+	await app.waitFor("id:chat-composer-input >> text:keep this draft");
+	expect(
+		app.shows("id:chat-composer-input >> text:draft for new session"),
+	).toBe(false);
 });
 
 test("a session without messages shows the new session page", async () => {

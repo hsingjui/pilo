@@ -1,5 +1,4 @@
 import {
-	Image,
 	type JSX,
 	Overlay,
 	Picker,
@@ -16,17 +15,16 @@ import {
 	reduceMotion,
 	signal,
 	token,
+	untracked,
 	windowSize,
 } from "nsh";
-import { Button as BaseButton } from "nsh/base";
 
 import { userErrorMessage } from "@shared/app-error";
 import {
-	fileMentionName,
 	fileMentionPath,
-	writeChatMentionDraft,
+	prepareMentionDraftForEnhancement,
+	restoreMentionDraftFromEnhancement,
 } from "@shared/chat/chat-mentions";
-import { formatChatImageSize } from "@shared/chat/chat-submission";
 import {
 	FILE_SUGGESTION_LIMIT,
 	TRIGGER_META,
@@ -42,16 +40,11 @@ import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
-import {
-	ChatMediaActions,
-	chatAttachmentImage,
-} from "../chat/chat-media-actions";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
 import { bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
 import { FileTypeIcon } from "../ui/file-type-icon";
-import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { menuPopupClass, menuPopupStyle } from "../ui/menu";
@@ -217,7 +210,6 @@ export interface ChatComposerProps {
  */
 export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
-	const media = ChatMediaActions();
 	const readingFont = ChatReadingFont();
 	const surfaceWidth = signal(0);
 	const toolbarWidth = signal(0);
@@ -233,9 +225,15 @@ export function ChatComposer(props: ChatComposerProps) {
 	const state = () => store.state();
 	const composing = computed(() => state().composing);
 	const readOnly = () => store.readOnly();
-	const disabled = () => store.target() === null || readOnly();
+	const headerMissing = () => props.runConfig?.config()?.headerMissing === true;
+	const disabled = () =>
+		store.target() === null || readOnly() || headerMissing();
 	const editing = computed(() => focused() && !disabled());
 	const running = () => store.running();
+	// 会话空闲时复位一次性 `send_now`。
+	effect(() => {
+		if (!running()) store.resetTransientSendMode();
+	});
 	const onInputFocusChange = props.onInputFocusChange;
 	if (onInputFocusChange) {
 		effect(() => onInputFocusChange(editing()));
@@ -498,7 +496,7 @@ export function ChatComposer(props: ChatComposerProps) {
 		platform.desktop &&
 		!focused() &&
 		!ghostText() &&
-		!readOnly() &&
+		!disabled() &&
 		!state().value &&
 		!hasAttachments() &&
 		focusShortcutLabels().length > 0;
@@ -541,8 +539,12 @@ export function ChatComposer(props: ChatComposerProps) {
 		const text = ghostText();
 		if (!text || menuOpen()) return;
 		assistance?.dismiss();
-		store.setValue(text);
-		inputHandle?.focusEnd();
+		if (inputHandle) {
+			inputHandle.replaceValueWithHistory(text);
+			inputHandle.focusEnd();
+		} else {
+			store.setValue(text);
+		}
 	};
 	const handleGhostKey = (key: "Tab" | "Escape") => {
 		if (key === "Tab") adoptSuggestion();
@@ -560,83 +562,210 @@ export function ChatComposer(props: ChatComposerProps) {
 
 	const toasts = AppToaster();
 	const enhancing = signal(false);
+	const enhancedUndo = signal<{ sessionKey: string; previous: string } | null>(
+		null,
+	);
+	let enhanceSequence = 0;
 	const enhanceLabel = () =>
-		t(enhancing() ? "chat.enhancingPrompt" : "chat.enhancePrompt");
+		t(enhancing() ? "chat.cancelEnhancePrompt" : "chat.enhancePrompt");
 	const enhanceDisabled = () =>
-		blocked() ||
-		state().composing ||
-		enhancing() ||
-		!store.mentionDraft().text.trim();
+		!enhancing() &&
+		(blocked() || state().composing || !store.mentionDraft().text.trim());
 	let disposed = false;
 	cleanup(() => {
 		disposed = true;
 	});
+	// 切换会话时自动隐藏「撤销优化」条并复位进行中的草稿优化态。
+	let lastEnhanceTargetKey: string | null = store.target()?.sessionKey ?? null;
+	effect(() => {
+		const targetKey = store.target()?.sessionKey ?? null;
+		const undo = enhancedUndo();
+		if (undo && undo.sessionKey !== targetKey) enhancedUndo.set(null);
+		if (targetKey !== lastEnhanceTargetKey) {
+			lastEnhanceTargetKey = targetKey;
+			if (untracked(enhancing)) {
+				enhanceSequence += 1;
+				enhancing.set(false);
+			}
+		}
+	});
+	const undoEnhancedDraft = () => {
+		const undo = enhancedUndo();
+		if (!undo || undo.sessionKey !== store.target()?.sessionKey) return;
+		enhancedUndo.set(null);
+		if (inputHandle) {
+			inputHandle.replaceValueWithHistory(undo.previous);
+			inputHandle.focusEnd();
+		} else {
+			store.setValue(undo.previous);
+		}
+	};
 	const enhanceDraft = async () => {
+		if (enhancing()) {
+			enhanceSequence += 1;
+			enhancing.set(false);
+			return;
+		}
 		if (!assistance?.canEnhance() || enhanceDisabled()) return;
-		const draft = store.mentionDraft();
+		const targetKey = store.target()?.sessionKey ?? null;
+		if (!targetKey) return;
+		const rawValue = state().value;
+		const prepared = prepareMentionDraftForEnhancement(
+			rawValue,
+			sessionsByValue(),
+		);
 		const revision = store.draftRevision;
+		const requestId = ++enhanceSequence;
 		const stillCurrent = () =>
 			!disposed &&
+			requestId === enhanceSequence &&
 			store.draftRevision === revision &&
 			!state().composing &&
-			!readOnly() &&
+			!disabled() &&
 			props.shortcuts?.() !== null &&
 			assistance.canEnhance();
 		assistance.dismiss();
+		enhancedUndo.set(null);
 		enhancing.set(true);
 		try {
-			const text = (await assistance.enhance(draft.text.trim())).trim();
+			const text = (await assistance.enhance(prepared.text.trim())).trim();
 			if (!text || !stillCurrent()) return;
-			const value = writeChatMentionDraft(draft.references, text);
-			store.setValue(value);
-			inputHandle?.focusEnd();
+			const value = restoreMentionDraftFromEnhancement(
+				text,
+				prepared.placeholders,
+			);
+			if (inputHandle) {
+				inputHandle.replaceValueWithHistory(value);
+				inputHandle.focusEnd();
+			} else {
+				store.setValue(value);
+			}
+			enhancedUndo.set({ sessionKey: targetKey, previous: rawValue });
 		} catch (error: unknown) {
 			if (stillCurrent())
 				showToast(toasts, {
 					variant: "error",
 					title: t("chat.enhancePromptFailed"),
-					description:
-						(error instanceof Error
-							? error.message
-							: typeof error === "string"
-								? error
-								: "") || userErrorMessage(error),
+					description: userErrorMessage(error),
 				});
 		} finally {
-			if (!disposed) enhancing.set(false);
+			if (!disposed && requestId === enhanceSequence) enhancing.set(false);
 		}
 	};
 
 	const placeholder = () =>
-		readOnly()
-			? t("chat.externalReadOnly")
-			: (ghostText() ??
-				(!hasAttachments() ? t("chat.composerPlaceholder") : undefined));
+		headerMissing()
+			? t("chat.sessionHeaderMissing")
+			: readOnly()
+				? t("chat.externalReadOnly")
+				: (ghostText() ??
+					(!hasAttachments() ? t("chat.composerPlaceholder") : undefined));
 
 	return (
 		<View
 			testID="chat-composer"
 			class="relative w-full"
 			onFileDragEnter={() => {
-				if (!readOnly()) store.setDragging(true);
+				if (!disabled()) store.setDragging(true);
 			}}
 			onFileDragLeave={() => store.setDragging(false)}
 			onFileDrop={({ uris }) => {
 				store.setDragging(false);
-				if (!readOnly()) void store.addUris(uris);
+				if (!disabled()) void store.addUris(uris);
 			}}
 		>
+			{() =>
+				headerMissing() ? (
+					<View
+						testID="chat-composer-header-missing"
+						role="alert"
+						class="mb-2 min-w-0 flex-row items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+					>
+						<Icon
+							name="TriangleAlert"
+							class="mt-0.5 shrink-0"
+							size={14}
+							color={token("destructive")}
+						/>
+						<Text class="min-w-0 flex-1 font-sans text-xs leading-5 text-destructive">
+							{() => t("chat.sessionHeaderMissing")}
+						</Text>
+					</View>
+				) : readOnly() ? (
+					<View
+						testID="chat-composer-readonly-notice"
+						class="mb-2 min-w-0 flex-row items-center gap-2 rounded-xl border border-border/60 bg-muted px-3 py-1.5"
+					>
+						<Icon name="Lock" size={13} color={token("muted-foreground")} />
+						<Text class="min-w-0 flex-1 font-sans text-xs leading-5 text-muted-foreground">
+							{() => t("chat.externalReadOnly")}
+						</Text>
+					</View>
+				) : null
+			}
 			{() =>
 				state().status ? (
 					<View
 						testID="chat-composer-status"
 						role="alert"
-						class="mb-2 min-w-0 rounded-xl border border-border/60 bg-muted px-3 py-2"
+						class="mb-2 min-w-0 flex-row items-start gap-2 rounded-xl border border-border/60 bg-muted px-3 py-2"
 					>
-						<View selectable>
+						<View selectable class="min-w-0 flex-1">
 							<Text class="font-sans text-xs leading-5 text-destructive">
 								{() => state().status ?? ""}
 							</Text>
+						</View>
+						<Button
+							testID="chat-composer-status-dismiss"
+							variant="ghost"
+							size="icon"
+							class="-my-1 size-7 shrink-0"
+							accessibilityLabel={t("common.close")}
+							onPress={() => store.setStatus(null)}
+						>
+							<Icon name="X" size={14} color={token("muted-foreground")} />
+						</Button>
+					</View>
+				) : null
+			}
+			{() =>
+				enhancedUndo() &&
+				enhancedUndo()?.sessionKey === store.target()?.sessionKey ? (
+					<View
+						testID="chat-composer-enhance-undo"
+						class="mb-2 min-w-0 flex-row items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted px-3 py-1.5"
+					>
+						<View class="flex-row items-center gap-2">
+							<Icon
+								name="PencilSparkles"
+								size={13}
+								color={token("muted-foreground")}
+							/>
+							<Text class="font-sans text-xs text-muted-foreground">
+								{() => t("chat.enhancedDraftNotice")}
+							</Text>
+						</View>
+						<View class="flex-row items-center gap-1">
+							<Button
+								testID="chat-composer-enhance-undo-action"
+								variant="ghost"
+								size="sm"
+								class="h-6 px-2"
+								onPress={undoEnhancedDraft}
+							>
+								<Text class="font-sans text-xs font-medium text-foreground">
+									{() => t("chat.undoEnhancePrompt")}
+								</Text>
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="size-6"
+								accessibilityLabel={t("common.close")}
+								onPress={() => enhancedUndo.set(null)}
+							>
+								<Icon name="X" size={13} color={token("muted-foreground")} />
+							</Button>
 						</View>
 					</View>
 				) : null
@@ -673,109 +802,16 @@ export function ChatComposer(props: ChatComposerProps) {
 				ref={(ref) => surface.set(ref)}
 				testID="chat-composer-surface"
 				onLayout={({ bounds }) => surfaceWidth.set(bounds.size.width)}
-				class={readOnly() ? COMPOSER_SURFACE_MUTED : COMPOSER_SURFACE}
-				style={surfaceStyle(focused(), readOnly())}
+				class={disabled() ? COMPOSER_SURFACE_MUTED : COMPOSER_SURFACE}
+				style={surfaceStyle(focused(), disabled())}
 			>
-				{() =>
-					hasAttachments() ? (
-						<View
-							testID="chat-composer-attachments"
-							class="min-w-0 flex-row flex-wrap items-center"
-							style={{
-								marginBottom: chatPx(4),
-								gap: chatPx(6),
-								padding: chatPx(4),
-							}}
-						>
-							<Each of={images()} key={(image) => image.id}>
-								{(image) => (
-									<AttachmentChip
-										testID="chat-composer-image"
-										label={image().name}
-										tooltip={`${image().name} · ${formatChatImageSize(image().size)}`}
-										removeLabel={t("chat.removeAttachment", {
-											name: image().name,
-										})}
-										leading={
-											<Image
-												src={`data:${image().mimeType};base64,${image().data}`}
-												class="shrink-0 overflow-hidden rounded-[3px] border border-foreground/10"
-												style={{
-													width: chatPx(16),
-													height: chatPx(16),
-													objectFit: "cover",
-												}}
-											/>
-										}
-										disabled={disabled()}
-										onPress={
-											media.openImage
-												? () => media.openImage?.(chatAttachmentImage(image()))
-												: undefined
-										}
-										onRemove={() => {
-											if (!disabled()) store.removeImage(image().id);
-										}}
-									/>
-								)}
-							</Each>
-							<Each of={references()} key={(ref) => `${ref.kind}:${ref.path}`}>
-								{(reference, index) => {
-									const name = () => {
-										const ref = reference();
-										return ref.kind === "session"
-											? ref.session.title
-											: fileMentionName(ref.path);
-									};
-									const tooltip = () => {
-										const ref = reference();
-										return ref.kind === "session" && ref.session.projectName
-											? `${ref.session.projectName}\n${ref.path}`
-											: ref.path;
-									};
-									return (
-										<AttachmentChip
-											testID={`chat-composer-attachment:${reference().kind}`}
-											label={name()}
-											tooltip={tooltip()}
-											removeLabel={t("chat.removeAttachment", { name: name() })}
-											leading={
-												reference().kind === "session" ? (
-													<Icon
-														name="MessageSquare"
-														size={chatPx(13)}
-														color={token("muted-foreground")}
-													/>
-												) : (
-													<FileTypeIcon
-														path={reference().path}
-														size={chatPx(13)}
-													/>
-												)
-											}
-											disabled={disabled()}
-											onPress={
-												reference().kind === "file" && media.openFile
-													? () => media.openFile?.(reference().path)
-													: undefined
-											}
-											onRemove={() => {
-												if (!disabled()) store.removeReference(index());
-											}}
-										/>
-									);
-								}}
-							</Each>
-						</View>
-					) : null
-				}
 				<View class="relative min-w-0 flex-row items-start">
 					<ComposerRichInput
 						testID="chat-composer-input"
 						sessionKey={() => store.target()?.sessionKey ?? null}
 						projectId={() => store.target()?.projectId ?? null}
-						value={() => (readOnly() ? "" : state().value)}
-						images={() => (readOnly() ? [] : images())}
+						value={() => state().value}
+						images={() => images()}
 						sessionsByValue={sessionsByValue}
 						readingFont={readingFont}
 						disabled={disabled}
@@ -783,7 +819,7 @@ export function ChatComposer(props: ChatComposerProps) {
 						accessibilityLabel={() => t("chat.composerPlaceholder")}
 						height={() =>
 							inputHeight(
-								(state().value || state().images.length > 0) && !readOnly()
+								state().value || state().images.length > 0
 									? contentHeight()
 									: 0,
 								inputLeading(),
@@ -810,10 +846,16 @@ export function ChatComposer(props: ChatComposerProps) {
 							};
 						}}
 						onValueChange={(nextValue) => {
-							if (!readOnly()) store.setValue(nextValue);
+							if (!disabled()) {
+								enhancedUndo.set(null);
+								store.setValue(nextValue);
+							}
 						}}
 						onRemoveImage={(id) => {
-							if (!readOnly()) store.removeImage(id);
+							if (!disabled()) store.removeImage(id);
+						}}
+						onRemoveMention={(kind, path) => {
+							if (!disabled()) store.removeMention(kind, path);
 						}}
 						onSuggestionChange={(match) => activeSuggestion.set(match)}
 						onContentHeightChange={(height) => contentHeight.set(height)}
@@ -826,7 +868,7 @@ export function ChatComposer(props: ChatComposerProps) {
 						}}
 						onGhostKey={handleGhostKey}
 						onPasteFiles={(files, uris) => {
-							if (!readOnly()) store.addPastedFiles(files, uris);
+							if (!disabled()) store.addPastedFiles(files, uris);
 						}}
 					/>
 					{() => {
@@ -920,7 +962,7 @@ export function ChatComposer(props: ChatComposerProps) {
 					{props.runConfig ? (
 						<ComposerRunConfig
 							{...props.runConfig}
-							readOnly={readOnly}
+							readOnly={() => readOnly() || headerMissing()}
 							toolbarWidth={toolbarWidth}
 						/>
 					) : null}
@@ -928,6 +970,11 @@ export function ChatComposer(props: ChatComposerProps) {
 						<ComposerContextUsage
 							usage={() => config()?.session ?? null}
 							contextWindow={() => config()?.model?.contextWindow}
+							onCompact={() => void store.compact()}
+							compacting={() => store.compacting()}
+							pendingCompact={() => store.pendingCompact()}
+							onCancelPendingCompact={() => store.cancelPendingCompact()}
+							compactDisabled={() => disabled() || state().sending}
 						/>
 					) : null}
 					<ComposerActions
@@ -1281,82 +1328,6 @@ function MentionTabs(props: {
 					</View>
 				) : null
 			}
-		</View>
-	);
-}
-
-/** 统一单行附件芯片：上传图片、上传文件、`@文件` 与 `@会话` 共用同一套外观与交互。 */
-function AttachmentChip(props: {
-	testID?: string;
-	label: string;
-	tooltip?: string;
-	removeLabel: string;
-	leading: JSX.Element;
-	onPress?: () => void;
-	disabled?: boolean;
-	onRemove: () => void;
-}) {
-	const removeHover = createHover();
-	const readingFont = ChatReadingFont();
-	const openBlur = blurOnPointerPress();
-	const removeBlur = blurOnPointerPress();
-	return (
-		<View
-			testID={props.testID}
-			class="min-w-0 flex-row items-center rounded-md bg-muted/60"
-			style={{
-				height: Math.max(chatPx(28), inputLineHeight(readingFont().fontSize)),
-				maxWidth: chatPx(216),
-			}}
-		>
-			<BaseButton
-				ref={openBlur.ref}
-				onMouseUp={openBlur.onMouseUp}
-				class={`h-full min-w-0 flex-1 flex-row items-center rounded-l-md transition-colors focus-visible:outline-hidden ${props.onPress ? "hover:bg-hover" : ""}`}
-				style={{
-					gap: chatPx(6),
-					paddingLeft: chatPx(8),
-					paddingRight: chatPx(6),
-					cursor: props.onPress ? "pointer" : "default",
-				}}
-				focusVisibleStyle={focusRingStyle(token("ring"))}
-				accessibilityLabel={props.label}
-				tooltip={
-					props.tooltip ? (
-						<Tooltip class="max-w-96" delay={250} margin={12}>
-							<Text class="font-mono text-xs">{props.tooltip}</Text>
-						</Tooltip>
-					) : undefined
-				}
-				onPress={props.onPress}
-			>
-				{props.leading}
-				<Text
-					class="min-w-0 shrink truncate font-sans text-foreground"
-					style={{ fontSize: chatPx(12) }}
-				>
-					{() => props.label}
-				</Text>
-			</BaseButton>
-			<BaseButton
-				ref={removeBlur.ref}
-				onMouseUp={removeBlur.onMouseUp}
-				class="h-full shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover focus-visible:outline-hidden"
-				style={{ width: chatPx(24), cursor: "pointer" }}
-				focusVisibleStyle={focusRingStyle(token("ring"))}
-				accessibilityLabel={props.removeLabel}
-				disabled={props.disabled}
-				{...removeHover.props}
-				onPress={props.onRemove}
-			>
-				<Icon
-					name="X"
-					size={chatPx(12)}
-					color={token(
-						removeHover.hovered() ? "foreground" : "muted-foreground",
-					)}
-				/>
-			</BaseButton>
 		</View>
 	);
 }

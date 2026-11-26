@@ -16,6 +16,11 @@ import {
 	windowSize,
 } from "nsh";
 
+import {
+	chatSessionKey as formatChatSessionKey,
+	parseChatSessionKey,
+} from "@shared/api/chat-session-key";
+import { userErrorMessage } from "@shared/app-error";
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import { resolveMobileComposerBottomPadding } from "@shared/mobile-viewport";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
@@ -28,6 +33,7 @@ import {
 } from "../app/shell/app-toasts";
 import { followSavedAppearance } from "../app/shell/appearance";
 import { CommandPalette } from "../app/shell/command-palette";
+import { deleteSessionWithToast } from "../app/shell/delete-session";
 import { t } from "../app/shell/i18n";
 import { SessionLanding } from "../app/shell/landing";
 import { openChatTarget } from "../app/shell/open-chat";
@@ -36,6 +42,7 @@ import {
 	openToolFilePath,
 } from "../app/shell/open-file-link";
 import type { SessionForker } from "../app/shell/session-fork";
+import { CacheKeepAliveNotice } from "../app/chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../app/chat/chat-agent-activity";
 import { ChatImageLightbox } from "../app/chat/chat-image-lightbox";
 import {
@@ -71,7 +78,11 @@ import type { ChatTranscriptStore } from "../app/state/chat-transcript-store";
 import type { ModelCatalogStore } from "../app/state/model-catalog";
 import { Button } from "../app/ui/button";
 import { writeClipboardText } from "../app/ui/clipboard";
+import { Dialog } from "../app/ui/dialog";
+import { DialogDescription } from "../app/ui/dialog-description";
+import { DialogTitle } from "../app/ui/dialog-title";
 import { Icon } from "../app/ui/icon";
+import { Input } from "../app/ui/input";
 import { MOTION } from "../app/ui/motion";
 import { Spinner } from "../app/ui/spinner";
 import { ErrorState } from "../app/ui/state-view";
@@ -95,19 +106,15 @@ const SWIPE_OPEN_DISTANCE = 64;
 const SWIPE_OPEN_VELOCITY = 350;
 const SWIPE_OPEN_RATIO = 1.5;
 
-export interface AuthExpiryReminder {
-	description: string;
-	renewing?: boolean;
-	renew: () => void;
-	dismiss: () => void;
-}
-
 export interface MobileAppShellProps {
 	store: AppStore;
 	chat: Pick<
 		ChatTranscriptStore,
 		"state" | "messages" | "refresh" | "loadRange"
-	>;
+	> &
+		Partial<
+			Pick<ChatTranscriptStore, "isPlaceholderFailed" | "retryPlaceholder">
+		>;
 	composer: ComposerStore;
 	initialProjectId?: string | null;
 	queue?: RemoteChatQueue;
@@ -127,8 +134,9 @@ export interface MobileAppShellProps {
 	searchSessions?: Pick<NshPiloClient, "searchSessions">;
 	connectionState: Accessor<WebRemoteConnectionState>;
 	recoveryState: Accessor<WebRemoteRecoveryState>;
-	authExpiryReminder?: Accessor<AuthExpiryReminder | null>;
 	onReconnect?: () => void;
+	onSignOut?: () => void;
+	onPauseCacheKeepAlive?: (sessionKey: string) => void;
 	onDefaultWorkspaceShown?: (connectionId: string, shown: boolean) => void;
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	readHistoryImage?: (
@@ -155,6 +163,14 @@ export function MobileAppShell(props: MobileAppShellProps) {
 	const drawerDragProgress = signal<number | null>(null);
 	const searchOpen = signal(false);
 	const previewImage = signal<ChatImagePreview | null>(null);
+	const renamingSession = signal<{
+		projectId: string;
+		sessionPath: string;
+		title: string;
+	} | null>(null);
+	const renameValue = signal("");
+	const renaming = signal(false);
+	const confirmingHeaderDelete = signal(false);
 
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
@@ -196,16 +212,29 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		untracked(() => composer.setTarget(target));
 	});
 
-	// After a refresh, reopen the project (not the previous session) for its draft.
-	let initialProjectId = props.initialProjectId;
+	// After a refresh, reopen an unsent draft in the restored project, not a saved session.
+	let restoring = true;
 	effect(() => {
 		const state = store.state();
 		if (state.status.type !== "ready") return;
-		const restored = state.projects.find(({ id }) => id === initialProjectId);
-		initialProjectId = null;
+		const restored =
+			restoring &&
+			state.projects.find(({ id }) => id === props.initialProjectId);
+		const restoreDraft = restoring;
+		restoring = false;
 		if (state.navigation.session) return;
-		const current = restored ?? activeProject(state);
-		if (current) untracked(() => store.selectProject(current.id));
+		const current = restored || activeProject(state);
+		if (!current) return;
+		const draft =
+			restoreDraft &&
+			[...(state.unsentDrafts ?? [])].find(
+				([, draft]) => draft.projectId === current.id,
+			);
+		const sessionId = draft && parseChatSessionKey(draft[0])?.[1];
+		untracked(() => {
+			if (sessionId) store.selectDraft(current.id, sessionId);
+			else store.selectProject(current.id);
+		});
 	});
 
 	followSavedAppearance(store.state);
@@ -322,8 +351,74 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		}
 	};
 
-	// Swipe right from anywhere in the left 2/3 of the workspace to drag open
-	// the session drawer live, matching React's `useMobileNavigationSwipe`.
+	const openRenameDialog = (target: {
+		projectId: string;
+		sessionPath: string;
+		title: string;
+	}) => {
+		renameValue.set(target.title);
+		renamingSession.set(target);
+	};
+
+	const submitRename = () => {
+		const target = renamingSession();
+		if (!target || renaming()) return;
+		const nextTitle = renameValue().trim();
+		if (!nextTitle) return;
+		renaming.set(true);
+		void store
+			.renameSession(target.projectId, target.sessionPath, nextTitle)
+			.then(() => {
+				renamingSession.set(null);
+			})
+			.catch((error: unknown) => {
+				showToast(toasts, {
+					variant: "error",
+					title: t("chat.renameSessionFailed"),
+					description: userErrorMessage(error),
+				});
+			})
+			.finally(() => {
+				renaming.set(false);
+			});
+	};
+
+	const openExtensionSession = (projectId: string, sessionKey: string) => {
+		const state = store.state();
+		const active = state.chatSessions.find(
+			(item) => item.sessionKey === sessionKey,
+		);
+		if (active?.sessionPath) {
+			store.selectSession(projectId, active.sessionPath);
+			return;
+		}
+		const indexed = state.sessionIndexes[projectId]?.sessions.find(
+			(entry) =>
+				formatChatSessionKey(projectId, entry.piSessionId) === sessionKey,
+		);
+		if (indexed?.sessionPath) {
+			store.selectSession(projectId, indexed.sessionPath);
+			return;
+		}
+		const parsed = parseChatSessionKey(sessionKey);
+		if (parsed && parsed[0] === projectId && parsed[1]) {
+			store.selectDraft(projectId, parsed[1]);
+			return;
+		}
+		store.selectProject(projectId);
+	};
+
+	const cacheNoticeSessions = computed(() => {
+		const sessionKey = chatSessionKey();
+		return sessionKey ? [sessionKey] : [];
+	});
+	const cacheKeepAliveStatusFor = (sessionKey: string) =>
+		store.state().chatSessions.find((item) => item.sessionKey === sessionKey)
+			?.cacheKeepAlive ?? null;
+
+	// Restrict drawer swipe-open to the left edge (64px) so horizontal gestures
+	// inside wide code blocks and tables never accidentally open the drawer, while
+	// leaving room past iOS Safari's system back-swipe edge.
 	const drawerDragVelocity = signal(0);
 	const updateDragProgress = (dx: number) => {
 		const width = mobileDrawerWidth(windowSize().width);
@@ -334,8 +429,10 @@ export function MobileAppShell(props: MobileAppShellProps) {
 			!drawerOpen() &&
 			!searchOpen() &&
 			!previewImage() &&
+			!renamingSession() &&
+			!confirmingHeaderDelete() &&
 			gesture.numberActiveTouches === 1 &&
-			gesture.x0 <= (windowSize().width * 2) / 3 &&
+			gesture.x0 <= 64 &&
 			gesture.dx >= 10 &&
 			gesture.dx > Math.abs(gesture.dy) * SWIPE_OPEN_RATIO,
 		onPanResponderGrant: (_event, gesture) => {
@@ -450,7 +547,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 							? t("settings.remoteConnected")
 							: offline
 								? t("settings.remoteOffline")
-								: t("chat.reconnectingTitle")}
+								: t("settings.remoteConnectionLost")}
 					</Text>
 					{!recovered ? (
 						<Text
@@ -488,65 +585,39 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		);
 	};
 
-	const renderAuthExpiryNotice = () => {
-		const reminder = props.authExpiryReminder?.();
-		if (!reminder) return null;
-		const enter = createMotion({
-			enter: reduceMotion()
-				? {
-						keyframes: { opacity: [0, 1] },
-						duration: 80,
-						easing: MOTION.easing.standardTuple,
-					}
-				: {
-						keyframes: { opacity: [0, 1], translateY: [6, 0] },
-						duration: MOTION.duration.surfaceIn,
-						easing: MOTION.easing.standardTuple,
-					},
-		});
-		cleanup(() => enter.stop());
+	const renderBackgroundExtensionNotice = () => {
+		const pending = props.extensionUi?.backgroundDialog(
+			chatSessionKey() ?? undefined,
+		);
+		if (!pending) return null;
 		return (
 			<View
-				testID="mobile-auth-expiry-banner"
-				class="mb-1.5 min-w-0 flex-row items-center gap-1 rounded-xl border border-border/60 bg-muted py-1 pl-3 pr-1"
-				style={enter.style}
+				testID="mobile-background-extension-banner"
+				role="alert"
+				class="mb-1.5 min-w-0 flex-row items-center gap-2 rounded-xl border border-border/60 bg-muted py-1 pl-3 pr-1.5"
 			>
-				<View class="min-w-0 flex-1 py-1">
-					<Text
-						class="truncate font-sans font-medium text-foreground/85"
-						style={MOBILE_TEXT.xs}
-					>
-						{() => t("settings.remoteAuthorizationExpiring")}
-					</Text>
-					<Text
-						class="mt-0.5 font-sans text-muted-foreground"
-						style={MOBILE_TEXT.xs}
-					>
-						{reminder.description}
-					</Text>
-				</View>
+				<Icon name="Bell" size={14} color={token("status-warning")} />
+				<Text
+					class="min-w-0 flex-1 truncate font-sans font-medium text-foreground/85"
+					style={MOBILE_TEXT.xs}
+				>
+					{() => t("chat.extensionPendingInOtherSession")}
+				</Text>
 				<Button
-					testID="mobile-auth-renew-button"
+					testID="mobile-background-extension-open"
 					variant="secondary"
 					size="sm"
-					class="min-h-11 min-w-11 shrink-0 px-3"
-					disabled={reminder.renewing}
-					onPress={reminder.renew}
+					class="min-h-10 shrink-0 px-3"
+					onPress={() =>
+						openExtensionSession(
+							pending.target.projectId,
+							pending.target.sessionKey,
+						)
+					}
 				>
-					{reminder.renewing ? <Spinner size={14} /> : null}
 					<Text class="font-sans text-foreground" style={MOBILE_TEXT.xs}>
-						{() => t("settings.remoteAuthorizationRenew")}
+						{() => t("chat.extensionSwitchToSession")}
 					</Text>
-				</Button>
-				<Button
-					testID="mobile-auth-dismiss-button"
-					variant="ghost"
-					size="icon"
-					class="size-11 shrink-0"
-					accessibilityLabel={t("common.close")}
-					onPress={reminder.dismiss}
-				>
-					<Icon name="X" size={14} color={token("muted-foreground")} />
 				</Button>
 			</View>
 		);
@@ -605,6 +676,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 					variant="ghost"
 					size="icon"
 					class="size-11 shrink-0 rounded-(--pilo-mobile-radius-md)"
+					disabled={!project()}
 					accessibilityLabel={t("app.newChat")}
 					onPress={() => newChat()}
 				>
@@ -616,6 +688,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 					variant="ghost"
 					size="icon"
 					class="size-11 shrink-0 rounded-(--pilo-mobile-radius-md)"
+					disabled={!project()}
 					selected={temporaryOpen()}
 					accessibilityLabel={t("app.temporaryChat")}
 					onPress={toggleTemporaryChat}
@@ -650,6 +723,26 @@ export function MobileAppShell(props: MobileAppShellProps) {
 						>
 							<View testID="mobile-session-menu-popup" class="gap-1">
 								<MobileDropdownItem
+									testID="mobile-session-rename"
+									icon={<Icon name="Pencil" size={14} />}
+									disabled={!openSessionPath() || !project()}
+									onSelect={() => {
+										const currentProject = project();
+										const path = openSessionPath();
+										if (currentProject && path) {
+											openRenameDialog({
+												projectId: currentProject.id,
+												sessionPath: path,
+												title: headerTitle(),
+											});
+										}
+									}}
+								>
+									<Text class="font-sans text-foreground">
+										{() => t("chat.renameSession")}
+									</Text>
+								</MobileDropdownItem>
+								<MobileDropdownItem
 									testID="mobile-session-copy-id"
 									icon={<Icon name="Copy" size={14} />}
 									disabled={!openSessionId()}
@@ -682,6 +775,15 @@ export function MobileAppShell(props: MobileAppShellProps) {
 											openSessionPath() ?? t("chat.sessionPathUnavailable")
 										}
 									</Text>
+								</MobileDropdownItem>
+								<MobileDropdownItem
+									testID="mobile-session-delete"
+									variant="destructive"
+									icon={<Icon name="Trash2" size={14} />}
+									disabled={!openSessionPath() || !project()}
+									onSelect={() => confirmingHeaderDelete.set(true)}
+								>
+									<Text class="font-sans">{() => t("chat.deleteSession")}</Text>
 								</MobileDropdownItem>
 							</View>
 						</MobileDropdownMenu>
@@ -817,6 +919,12 @@ export function MobileAppShell(props: MobileAppShellProps) {
 														onVisibleRangeChange={(start, end) =>
 															chat.loadRange(start, end)
 														}
+														isPlaceholderFailed={(index) =>
+															chat.isPlaceholderFailed?.(index) ?? false
+														}
+														onRetryPlaceholder={(index) =>
+															chat.retryPlaceholder?.(index)
+														}
 														footer={() => (
 															<View>
 																{() =>
@@ -832,11 +940,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 															</View>
 														)}
 														empty={() => (
-															<SessionLanding
-																store={store}
-																project={project}
-																onAddProject={() => undefined}
-															/>
+															<SessionLanding store={store} project={project} />
 														)}
 													/>
 												</View>
@@ -848,8 +952,32 @@ export function MobileAppShell(props: MobileAppShellProps) {
 													style={{ paddingBottom: composerBottomPadding() }}
 												>
 													<ConversationColumn class="relative">
-														{renderAuthExpiryNotice}
 														{renderConnectionNotice}
+														{renderBackgroundExtensionNotice}
+														<Each
+															of={cacheNoticeSessions()}
+															key={(sessionKey) =>
+																`mobile-cache-keep-alive:${sessionKey}`
+															}
+														>
+															{(sessionKey) => (
+																<CacheKeepAliveNotice
+																	touch
+																	status={() =>
+																		cacheKeepAliveStatusFor(sessionKey())
+																	}
+																	onPause={
+																		props.onPauseCacheKeepAlive
+																			? () => {
+																					props.onPauseCacheKeepAlive?.(
+																						sessionKey(),
+																					);
+																				}
+																			: undefined
+																	}
+																/>
+															)}
+														</Each>
 														{() => {
 															const sessionKey = chatSessionKey();
 															return sessionKey === null ? null : (
@@ -899,6 +1027,8 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								dragVelocity={drawerDragVelocity}
 								connectionState={props.connectionState}
 								onReconnect={props.onReconnect}
+								onSignOut={props.onSignOut}
+								onRenameSession={openRenameDialog}
 								onOpenSearch={() => searchOpen.set(true)}
 								onNewChat={newChat}
 								onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
@@ -916,6 +1046,103 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								image={previewImage}
 								onClose={() => previewImage.set(null)}
 							/>
+							{() => {
+								const target = renamingSession();
+								if (!target) return null;
+								return (
+									<Dialog
+										open
+										accessibilityLabel={t("chat.renameDialogTitle")}
+										closeOnEscape={!renaming()}
+										onOpenChange={({ open }) => {
+											if (!open && !renaming()) renamingSession.set(null);
+										}}
+									>
+										<DialogTitle>
+											{() => t("chat.renameDialogTitle")}
+										</DialogTitle>
+										<DialogDescription>
+											{() => t("chat.renameDialogDescription")}
+										</DialogDescription>
+										<Input
+											testID="mobile-rename-input"
+											autoFocus
+											value={renameValue()}
+											placeholder={t("sidebar.renamePlaceholder")}
+											disabled={renaming()}
+											onChange={({ value }) => renameValue.set(value)}
+											onSubmit={submitRename}
+										/>
+										<View class="flex-row justify-end gap-2">
+											<Button
+												variant="ghost"
+												class="min-h-11"
+												disabled={renaming()}
+												onPress={() => renamingSession.set(null)}
+											>
+												<Text>{() => t("chat.renameDialogCancel")}</Text>
+											</Button>
+											<Button
+												testID="mobile-rename-confirm"
+												class="min-h-11"
+												disabled={renaming() || !renameValue().trim()}
+												onPress={submitRename}
+											>
+												<Text>{() => t("chat.renameDialogConfirm")}</Text>
+											</Button>
+										</View>
+									</Dialog>
+								);
+							}}
+							{() => {
+								if (!confirmingHeaderDelete()) return null;
+								const currentProject = project();
+								const path = openSessionPath();
+								if (!currentProject || !path) return null;
+								return (
+									<Dialog
+										open
+										accessibilityLabel={t("chat.deleteSession")}
+										onOpenChange={({ open }) => {
+											if (!open) confirmingHeaderDelete.set(false);
+										}}
+									>
+										<DialogTitle>{() => t("chat.deleteSession")}</DialogTitle>
+										<DialogDescription>{headerTitle}</DialogDescription>
+										<View class="flex-row justify-end gap-2">
+											<Button
+												variant="ghost"
+												class="min-h-11"
+												onPress={() => confirmingHeaderDelete.set(false)}
+											>
+												<Text>{() => t("common.cancel")}</Text>
+											</Button>
+											<Button
+												testID="mobile-header-delete-confirm"
+												variant="destructive"
+												class="min-h-11"
+												onPress={() => {
+													confirmingHeaderDelete.set(false);
+													void deleteSessionWithToast(
+														store,
+														toasts,
+														currentProject.id,
+														path,
+													);
+												}}
+											>
+												<Text>
+													{() =>
+														composer.running()
+															? t("sidebar.deleteRunningConfirm")
+															: t("common.delete")
+													}
+												</Text>
+											</Button>
+										</View>
+									</Dialog>
+								);
+							}}
 							{props.extensionUi ? (
 								<RemoteExtensionDialog
 									ui={props.extensionUi}

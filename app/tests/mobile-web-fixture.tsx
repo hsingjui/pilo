@@ -18,7 +18,6 @@ import { ComposerStore } from "../composer/composer-store";
 import {
 	MobileAppShell,
 	MobileAuthRequiredView,
-	type AuthExpiryReminder,
 } from "../../web/mobile-app-shell";
 import {
 	MobileDropdownItem,
@@ -400,26 +399,11 @@ async function run() {
 		scope: { projectId: "p1", models: null, updatedAtMs: 1_763_863_200_000 },
 	});
 
-	const authExpiryReminder = signal<AuthExpiryReminder | null>(
-		scenario === "expiring"
-			? {
-					description: "Expires soon",
-					renew: () => {
-						authExpiryReminder.set(null);
-					},
-					dismiss: () => {
-						authExpiryReminder.set(null);
-					},
-				}
-			: null,
-	);
-
 	mount(MobileAppShell, {
 		store,
 		chat,
 		composer,
 		queue,
-		authExpiryReminder,
 		runConfig: {
 			state: runConfigState,
 			scopeModels: models,

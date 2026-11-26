@@ -92,6 +92,7 @@ export type PiModel = {
 	id: string;
 	name: string;
 	provider: string;
+	api?: string;
 	reasoning: boolean;
 	input?: string[];
 	contextWindow?: number;
