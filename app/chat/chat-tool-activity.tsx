@@ -180,7 +180,7 @@ export function ChatToolActivity(props: {
 									disabled={!hasDetails()}
 									ref={labelBlur.ref}
 									onMouseUp={labelBlur.onMouseUp}
-									class="shrink-0 flex-row items-center gap-1.5 focus-visible:outline-hidden"
+									class="shrink-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-sm) focus-visible:outline-hidden"
 									focusVisibleStyle={focusRingStyle(token("ring"))}
 									accessibilityLabel={`${label()} ${value}`}
 									onPress={toggleDetails}

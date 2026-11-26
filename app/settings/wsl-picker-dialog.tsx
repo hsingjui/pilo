@@ -131,7 +131,7 @@ export function WslPickerDialog(props: { picker: WslPicker }) {
 							<DialogTitle>{t("connection.addWslTitle")}</DialogTitle>
 						</DialogHeader>
 						<Scroll
-							class="max-h-72 rounded-md border border-border/60"
+							class="max-h-72 overflow-hidden rounded-md border border-border/60"
 							bounces={false}
 						>
 							{() => {

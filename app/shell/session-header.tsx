@@ -387,7 +387,7 @@ function WorkspaceHeaderTab(props: {
 			<BaseButton
 				ref={pointerBlur.ref}
 				onMouseUp={pointerBlur.onMouseUp}
-				class="h-full min-w-0 flex-1 flex-row items-center gap-1.5 pl-2 pr-0.5 focus-visible:outline-hidden"
+				class="h-full min-w-0 flex-1 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) pl-2 pr-0.5 focus-visible:outline-hidden"
 				focusVisibleStyle={focusRingStyle(token("ring"))}
 				role="tab"
 				selected={active()}

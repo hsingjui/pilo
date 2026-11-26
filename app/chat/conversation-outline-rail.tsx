@@ -198,7 +198,7 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 										captureKeys={NAVIGATION_KEYS}
 										ref={(node) => (button = node)}
 										focusVisibleStyle={focusRingStyle(token("ring"))}
-										class="w-full shrink-0 flex-row items-center"
+										class="w-full shrink-0 flex-row items-center rounded-full"
 										style={{ height: TICK_PITCH }}
 										onFocus={() => {
 											focused.set(index());

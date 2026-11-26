@@ -232,12 +232,13 @@ function WorkedRegion(
 			</ChatDisclosureRow>
 			<Collapsible
 				open={open()}
+				class="-mx-1"
 				{...collapsibleRevealProps()}
 				content={
 					<>
 						{() =>
 							open() ? (
-								<View class="pt-0.5">
+								<View class="px-1 pt-0.5">
 									<WorkSegments
 										{...props}
 										content={props.content}
@@ -371,6 +372,7 @@ export function ChatAssistantWork(
 							</ChatDisclosureRow>
 							<Collapsible
 								open={completedOpen()}
+								class="-mx-1"
 								{...collapsibleRevealProps()}
 								content={
 									<>
@@ -378,7 +380,7 @@ export function ChatAssistantWork(
 											completedOpen() ? (
 												<Scroll
 													testID="chat-compact-activity-body"
-													class="-mx-1 mt-0.5 max-h-80"
+													class="mt-0.5 max-h-80"
 													bounces={false}
 													scrollbar={scrollbarTheme({
 														vertical: scrollbarLook(),

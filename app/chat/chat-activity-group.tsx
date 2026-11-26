@@ -168,12 +168,13 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 			</ChatDisclosureRow>
 			<Collapsible
 				open={open()}
+				class="-mx-1"
 				{...collapsibleRevealProps()}
 				content={
 					<>
 						{() =>
 							open() ? (
-								<View class="gap-0.5 pt-0.5">
+								<View class="gap-0.5 px-1 pt-0.5">
 									{/* Kept by place and kind, as the reply's segments are. */}
 									<Each
 										of={activity()}

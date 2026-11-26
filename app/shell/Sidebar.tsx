@@ -181,6 +181,7 @@ function ViewMenuItems(props: { settings: SidebarSettingsStore }) {
 					<MenuItem
 						testID="view:show-projects"
 						class="gap-2 px-2"
+						indicatorClass="hidden"
 						icon={<Icon name="Folder" size={14} />}
 						onSelect={() =>
 							void settings.setShowProjectsInRecents(

@@ -12,7 +12,7 @@ export function DialogClose(props: {
 		<View
 			testID={props.testID}
 			accessibilityLabel={props.accessibilityLabel}
-			class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100 active:scale-[0.94]"
+			class="absolute right-3 top-3 size-6 items-center justify-center rounded-(--pilo-radius-sm) opacity-70 hover:opacity-100 active:scale-[0.94]"
 			style={tactileTransition("opacity, scale")}
 			onPress={() => props.onPress()}
 		>

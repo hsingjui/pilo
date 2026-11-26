@@ -81,7 +81,7 @@ function ToolDiff(props: { diff: () => string }) {
 			bounces={false}
 			scrollbar={{ vertical: scrollbarLook() }}
 		>
-			<View selectable>
+			<View selectable class="overflow-hidden rounded-(--pilo-radius-sm)">
 				<Each of={lines()} key="index">
 					{(line) => (
 						<View
