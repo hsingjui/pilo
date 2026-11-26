@@ -189,18 +189,32 @@ export function windowTitleBarOptions(
 }
 
 /**
- * Height of the sidebar's own title row inside its card so floating cards keep
- * the row within the top border and aligned with the window title bar's midpoint.
+ * Height of the sidebar's own title row. macOS floating cards keep the row
+ * within the top border and aligned with the window title bar's midpoint;
+ * other platforms use the full window title bar height.
  */
 export function sidebarTitleBarHeight(
 	windowHeight: number,
 	card: SidebarSurfaceFrame,
+	os: string = platform.os,
 ) {
-	if (card.frameTop <= 0) return windowHeight;
+	if (card.frameTop <= 0 || os !== "macos") return windowHeight;
 	return Math.max(
 		FLOATING_SIDEBAR_TITLE_BAR_HEIGHT,
 		windowHeight - card.frameTop * 2,
 	);
+}
+
+/**
+ * The title row's negative top margin. macOS floating cards keep the row inside
+ * the card with their traffic lights; other platforms align it with the window's
+ * title bar so the sidebar and main-header actions share one center line.
+ */
+export function sidebarTitleBarMarginTop(
+	card: SidebarSurfaceFrame & { paddingTop: number; top: number },
+	os: string = platform.os,
+) {
+	return os === "macos" ? -card.paddingTop : -card.top;
 }
 
 /**
@@ -251,7 +265,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 					class="shrink-0 flex-row items-center px-1.5"
 					style={{
 						height: sidebarTitleBarHeight(props.titleBar().height, card()),
-						marginTop: -card().paddingTop,
+						marginTop: sidebarTitleBarMarginTop(card()),
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
@@ -432,7 +446,7 @@ export function StartupSidebar(
 					class="shrink-0 flex-row items-center px-1.5"
 					style={{
 						height: sidebarTitleBarHeight(props.titleBar().height, card()),
-						marginTop: -card().paddingTop,
+						marginTop: sidebarTitleBarMarginTop(card()),
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>

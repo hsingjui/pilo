@@ -21,6 +21,7 @@
 - nsh 0.7 在 `mount` 时才创建隐式主窗口，挂载前的 `Window.get("main")` 返回 `null`。`app/shell/launch.tsx` 在根组件中通过 `currentWindow()` 接上桌面设置、关闭处理和通知；窗口尺寸调整另等 `WindowRef.state()` 首次可用，不阻塞生命周期接线。
 - `desktop/nsh.json` 的 `window.restoreBounds` 由 nsh 保存和恢复窗口位置、大小与模式，并根据当前显示器调整恢复位置。没有保存状态时居中打开。窗口状态不进 Host SQLite，也不读取旧 Tauri 的窗口状态。
 - `AppShell` 保留系统窗口框架和按钮，只绘制内容顶栏和拖动区。用 `WindowRef.titleBar()` 的 `left` / `right` 避开系统按钮，不按平台写死按钮宽度。
+- 侧栏标题行对齐按平台分开：macOS 浮动卡片要为交通灯把行收进卡片上沿（`sidebarTitleBarHeight` 减去上下 frame、`sidebarTitleBarMarginTop` 只抵消 padding）；Windows/Linux 没有交通灯，始终用完整窗口标题栏高度并抵消 `card.top`，让侧栏动作、主标题栏动作和系统窗口按钮共享同一中心线。不要把 macOS 的卡片内缩逻辑套到 Windows/Linux。
 - `singleInstance: true` 由 nsh 宿主处理。再次启动、托盘显示、已注册的全局快捷键和通知点击复用主窗口的 `focus()`，由 nsh 显示窗口并恢复最小化。
 - `desktop-shell.ts` 接管主窗口 `closePress`。`exitOnClose` 为 `false` 时，普通关闭保留 Host：已注册唤出快捷键或已收到托盘操作则隐藏，否则最小化，保留系统窗口入口。nsh 的 `Tray.set()` 不返回安装结果，不能把调用过它视为托盘可用。开关开启、设置未加载或系统关闭时走退出。托盘的「隐藏」是显式操作，不受 `exitOnClose` 影响。
 - 托盘退出、`quitRequest` 和需要退出的关闭请求共用幂等流程：停止监听运行时事件，等 `client.shutdown()`，再 `Application.quit()`。监听 `quitRequest` 后调用 `Application.setQuitRequestOptions({ system: true })`，把 macOS 注销、重启和关机也接入该流程。不要把等待放进最终的 `quit` 事件：nsh 只为该事件提供 200 ms。
