@@ -248,6 +248,11 @@ export default function (pi) {
 			} catch {
 				return;
 			}
+			if (settings && !Array.isArray(settings) && settings.action === "pause") {
+				if (normalRun) return;
+				stop("paused");
+				return;
+			}
 			if (!Array.isArray(settings) || settings.length > 4096) return;
 			let changed = false;
 			for (const setting of settings) {

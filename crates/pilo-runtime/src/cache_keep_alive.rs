@@ -73,3 +73,11 @@ pub async fn cache_keep_alive_settings_set(
 ) -> Result<CacheKeepAliveSettings, String> {
     save(&runtime.paths, runtime, &runtime.events, settings).await
 }
+
+/// 仅暂停指定会话当前空闲窗口的缓存保活（停止后续后台刷新与计费），不修改用户的连接策略。
+pub async fn cache_keep_alive_pause(runtime: &Runtime, session_key: String) -> Result<(), String> {
+    runtime
+        .chat_sessions
+        .configure_cache_keep_alive(&session_key, json!({ "action": "pause" }))
+        .await
+}
