@@ -77,15 +77,16 @@ export function ProjectSection(props: {
 	const collapsed = () =>
 		settings.settings().collapsedSections[section()] ?? true;
 	const selected = computed(() => {
-		const state = store.state();
-		const open = state.navigation.session;
-		if (open === null) return activeProject(state)?.id === id();
+		const open = store.openSession();
+		if (open === null) return activeProject(store.state())?.id === id();
 		// Once the draft has its own sidebar row, only that row is selected.
 		return (
 			open.projectId === id() &&
 			open.sessionId !== undefined &&
 			store.startedDraft() === null &&
-			!state.pendingDrafts.has(chatSessionKey(open.projectId, open.sessionId))
+			!store
+				.state()
+				.pendingDrafts.has(chatSessionKey(open.projectId, open.sessionId))
 		);
 	});
 	// Reading the sessions again, as the WebUI row's `refreshing`.
@@ -411,13 +412,94 @@ function ProjectSessions(props: {
 	const externalActivity = computed(
 		() => store.state().externalActivity[props.projectId()],
 	);
-	const chatSessions = computed(() => store.state().chatSessions);
-	const pendingDrafts = computed(() => store.state().pendingDrafts);
-	const runningSince = computed(() => store.state().runningSince);
-	const readStates = computed(() => store.state().readStates);
+	const projectChats = computed(
+		() => {
+			const pid = props.projectId();
+			return store
+				.state()
+				.chatSessions.filter((chat) => chat.projectId === pid);
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((chat, at) => chat === next[at]),
+		},
+	);
+	const projectPendingDrafts = computed(
+		() => {
+			const pid = props.projectId();
+			const result: string[] = [];
+			for (const [key, draft] of store.state().pendingDrafts) {
+				if (draft.projectId === pid) {
+					result.push(`${key}:${draft.title}:${draft.startedAt}`);
+				}
+			}
+			return result;
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((item, at) => item === next[at]),
+		},
+	);
+	const projectUnsentDrafts = computed(
+		() => {
+			const pid = props.projectId();
+			const result: string[] = [];
+			for (const [key, draft] of store.state().unsentDrafts ?? []) {
+				if (draft.projectId === pid) {
+					result.push(`${key}:${draft.title}:${draft.startedAt}`);
+				}
+			}
+			return result;
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((item, at) => item === next[at]),
+		},
+	);
+	const projectRunningSince = computed(
+		() => {
+			const pid = props.projectId();
+			const prefix = `[${JSON.stringify(pid)},`;
+			const since = store.state().runningSince;
+			const result: string[] = [];
+			for (const key of Object.keys(since)) {
+				if (key.startsWith(prefix)) result.push(`${key}:${since[key]}`);
+			}
+			return result;
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((item, at) => item === next[at]),
+		},
+	);
+	const projectReadStates = computed(
+		() => {
+			const pid = props.projectId();
+			const states = store.state().readStates;
+			const result: string[] = [];
+			for (const key of Object.keys(states)) {
+				const entry = states[key];
+				if (entry.projectId === pid) {
+					result.push(
+						`${key}:${entry.completedRevision}:${entry.readRevision}`,
+					);
+				}
+			}
+			return result;
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((item, at) => item === next[at]),
+		},
+	);
 	// Switching between saved sessions never changes this project's unsaved draft row.
 	const openDraftId = computed(() => {
-		const open = store.state().navigation.session;
+		const open = store.openSession();
 		return open?.projectId === props.projectId() && open.sessionId !== undefined
 			? open.sessionId
 			: null;
@@ -425,10 +507,11 @@ function ProjectSessions(props: {
 	const listed = computed(() => {
 		index();
 		externalActivity();
-		chatSessions();
-		pendingDrafts();
-		runningSince();
-		readStates();
+		projectChats();
+		projectPendingDrafts();
+		projectUnsentDrafts();
+		projectRunningSince();
+		projectReadStates();
 		openDraftId();
 		return sidebarSessions(
 			untracked(store.state),
@@ -438,7 +521,7 @@ function ProjectSessions(props: {
 		);
 	});
 	const openedId = computed(() => {
-		const open = store.state().navigation.session;
+		const open = store.openSession();
 		if (open?.projectId !== props.projectId()) return null;
 		if (!open.sessionPath) return open.sessionId ?? null;
 		return (

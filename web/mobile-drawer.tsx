@@ -257,8 +257,38 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					.projects.map((project) => [project.id, projectDisplayName(project)]),
 			),
 	);
-	const recent = computed(() =>
-		recentSessions(store.state(), t("app.newChat"), store.startedDraft()),
+	const drawerProjects = computed(() => store.state().projects);
+	const drawerIndexes = computed(() => store.state().sessionIndexes);
+	const drawerChats = computed(() => store.state().chatSessions);
+	const drawerRunningSince = computed(() => store.state().runningSince);
+	const drawerExternal = computed(() => store.state().externalActivity);
+	const drawerReadStates = computed(() => store.state().readStates);
+	const drawerPendingDrafts = computed(() => store.state().pendingDrafts);
+	const drawerUnsentDrafts = computed(() => store.state().unsentDrafts);
+	const recent = computed(
+		() => {
+			// Keep the list current during drawer animations, but skip it when hidden.
+			if (!mounted() || mode() !== "recent") return [];
+			drawerProjects();
+			drawerIndexes();
+			drawerChats();
+			drawerRunningSince();
+			drawerExternal();
+			drawerReadStates();
+			openSession();
+			drawerPendingDrafts();
+			drawerUnsentDrafts();
+			return recentSessions(
+				untracked(store.state),
+				t("app.newChat"),
+				store.startedDraft(),
+			);
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((session, at) => session === next[at]),
+		},
 	);
 
 	// Load sessions for the active project when the drawer opens.
@@ -817,12 +847,17 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																		const index =
 																			store.state().sessionIndexes[project.id];
 																		const loading = index?.status === "loading";
-																		const sessions = sidebarSessions(
-																			store.state(),
-																			project.id,
-																			t("app.newChat"),
-																			store.startedDraft(),
-																		);
+																		const sessions = projExpanded
+																			? sidebarSessions(
+																					store.state(),
+																					project.id,
+																					t("app.newChat"),
+																					store.startedDraft(),
+																				)
+																			: [];
+																		const sessionCount = projExpanded
+																			? sessions.length
+																			: (index?.sessions.length ?? 0);
 																		const visibleLimit = Math.min(
 																			sessions.length,
 																			projectLimits()[project.id] ??
@@ -881,12 +916,12 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																									"sidebar-foreground-muted",
 																								)}
 																							/>
-																						) : sessions.length > 0 ? (
+																						) : sessionCount > 0 ? (
 																							<Text
 																								class="shrink-0 font-sans tabular-nums text-sidebar-foreground-muted"
 																								style={MOBILE_TEXT.xs}
 																							>
-																								{String(sessions.length)}
+																								{String(sessionCount)}
 																							</Text>
 																						) : null}
 																						<View

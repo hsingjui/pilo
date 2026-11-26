@@ -124,6 +124,51 @@ export function sidebarSessions(
 /** The rows last made for saved entries, reused while they still hold. */
 const savedRows = new WeakMap<SessionIndexEntry, SidebarSession>();
 
+/** The rows last made for unsaved draft sessions, keyed by sessionKey. */
+const unsavedRows = new Map<string, SidebarSession>();
+
+function reuseUnsavedRow(
+	cacheKey: string,
+	id: string,
+	title: string,
+	projectId: string,
+	latestMessageMs: number,
+	active: boolean,
+	runningSinceMs: number | undefined,
+): SidebarSession {
+	const cached = unsavedRows.get(cacheKey);
+	if (
+		cached &&
+		cached.id === id &&
+		cached.title === title &&
+		cached.projectId === projectId &&
+		cached.latestMessageAt.getTime() === latestMessageMs &&
+		cached.active === active &&
+		cached.runningSince?.getTime() === runningSinceMs
+	) {
+		return cached;
+	}
+	const latestMessageAt = new Date(latestMessageMs);
+	const row: SidebarSession = {
+		id,
+		title,
+		preview: null,
+		sessionPath: "",
+		projectId,
+		latestMessageAt,
+		active,
+		runningSince:
+			runningSinceMs !== undefined
+				? runningSinceMs === latestMessageMs
+					? latestMessageAt
+					: new Date(runningSinceMs)
+				: undefined,
+	};
+	if (unsavedRows.size > 128) unsavedRows.clear();
+	unsavedRows.set(cacheKey, row);
+	return row;
+}
+
 /**
  * One saved session's row. A rescan keeps unchanged entries, so their rows
  * are the same objects and the list updates them in place.
@@ -197,16 +242,17 @@ function unsavedSessions(
 		const since = state.runningSince[openKey] ?? openDraft.startedAt;
 		const active =
 			!!pending || !!draft?.active || chatRuntimeShowsActivity(chat);
-		rows.push({
-			id: open.sessionId,
-			title: openDraft.title || untitled,
-			preview: null,
-			sessionPath: "",
-			projectId,
-			latestMessageAt: new Date(openDraft.startedAt),
-			active,
-			runningSince: active ? new Date(since) : undefined,
-		});
+		rows.push(
+			reuseUnsavedRow(
+				openKey,
+				open.sessionId,
+				openDraft.title || untitled,
+				projectId,
+				openDraft.startedAt,
+				active,
+				active ? since : undefined,
+			),
+		);
 	}
 	const chats = new Map(
 		state.chatSessions
@@ -239,18 +285,19 @@ function unsavedSessions(
 			indexed.has(runtimeSessionPathKey(chat.sessionPath))
 		)
 			continue;
-		const since = new Date(state.runningSince[key] ?? draft?.startedAt ?? 0);
+		const sinceMs = state.runningSince[key] ?? draft?.startedAt ?? 0;
 		const active = !!pendingDraft || chatRuntimeShowsActivity(chat);
-		rows.push({
-			id: sessionId,
-			title: draft?.title || untitled,
-			preview: null,
-			sessionPath: "",
-			projectId,
-			latestMessageAt: since,
-			active,
-			runningSince: active ? since : undefined,
-		});
+		rows.push(
+			reuseUnsavedRow(
+				key,
+				sessionId,
+				draft?.title || untitled,
+				projectId,
+				sinceMs,
+				active,
+				active ? sinceMs : undefined,
+			),
+		);
 	}
 	return rows;
 }

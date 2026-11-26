@@ -84,6 +84,8 @@ function sameDraft(a: StartedDraft | null, b: StartedDraft | null) {
 export class AppStore {
 	private readonly current = signal(createAppState());
 	readonly state: Accessor<AppState> = this.current;
+	/** The active navigation session slice, isolated from unrelated AppState changes. */
+	readonly openSession = computed(() => this.current().navigation.session);
 
 	private readonly pendingNewChatFocus = signal<SessionSelection | null>(null);
 	/** A one-shot focus request for the draft the user just opened. */

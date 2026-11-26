@@ -185,7 +185,7 @@ export function SessionRow(props: {
 		});
 	});
 	const selected = computed(() => {
-		const open = store.state().navigation.session;
+		const open = store.openSession();
 		const current = session();
 		if (open?.projectId !== current.projectId) return false;
 		return saved()

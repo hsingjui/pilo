@@ -107,8 +107,32 @@ export function CommandPalette(props: CommandPaletteProps) {
 			}
 		});
 	});
+	const catalogProjects = computed(() => store.state().projects);
+	const catalogIndexes = computed(() => store.state().sessionIndexes);
+	const catalogChats = computed(() => store.state().chatSessions);
+	const catalogRunningSince = computed(() => store.state().runningSince);
+	const catalogExternal = computed(() => store.state().externalActivity);
+	const catalogReadStates = computed(() => store.state().readStates);
+	const indexedProjects = computed(() =>
+		projects().map((project) => {
+			const displayPath = displayProjectPath(project.path);
+			return {
+				project,
+				displayPath,
+				haystack:
+					`${project.name}\n${project.path}\n${displayPath}`.toLowerCase(),
+			};
+		}),
+	);
 	const catalog = computed(() => {
-		const state = store.state();
+		catalogProjects();
+		catalogIndexes();
+		catalogChats();
+		catalogRunningSince();
+		catalogExternal();
+		catalogReadStates();
+		const state = untracked(store.state);
+		const byId = untracked(projectById);
 		return state.projects
 			.flatMap((project) =>
 				// New chats Pi has not saved yet are not sessions to open by file.
@@ -116,35 +140,37 @@ export function CommandPalette(props: CommandPaletteProps) {
 					(session) => session.sessionPath !== "",
 				),
 			)
-			.sort(
-				(a, b) => b.latestMessageAt.getTime() - a.latestMessageAt.getTime(),
-			);
+			.sort((a, b) => b.latestMessageAt.getTime() - a.latestMessageAt.getTime())
+			.map((session) => ({
+				session,
+				haystack:
+					`${session.title}\n${session.preview ?? ""}\n${session.sessionPath}\n${byId.get(session.projectId)?.name ?? ""}`.toLowerCase(),
+			}));
 	});
-	const normalized = () => query().trim().toLocaleLowerCase();
+	const normalized = () => query().trim().toLowerCase();
 	const projectResults = computed(() => {
 		const q = normalized();
-		if (!q) return projects().slice(0, PROJECT_LIMIT);
-		return projects().filter((project) =>
-			[project.name, project.path, displayProjectPath(project.path)]
-				.join("\n")
-				.toLocaleLowerCase()
-				.includes(q),
-		);
+		const all = indexedProjects();
+		if (!q) return all.slice(0, PROJECT_LIMIT).map((entry) => entry.project);
+		const matched: (typeof all)[number]["project"][] = [];
+		for (const entry of all) {
+			if (entry.haystack.includes(q)) matched.push(entry.project);
+		}
+		return matched;
 	});
+	const MAX_FILTERED_SESSIONS = 80;
 	const sessionResults = computed(() => {
 		const q = normalized();
-		if (!q) return catalog().slice(0, SESSION_LIMIT);
-		return catalog().filter((session) =>
-			[
-				session.title,
-				session.preview ?? "",
-				session.sessionPath,
-				projectById().get(session.projectId)?.name ?? "",
-			]
-				.join("\n")
-				.toLocaleLowerCase()
-				.includes(q),
-		);
+		const all = catalog();
+		if (!q) return all.slice(0, SESSION_LIMIT).map((entry) => entry.session);
+		const matched = [];
+		for (const entry of all) {
+			if (entry.haystack.includes(q)) {
+				matched.push(entry.session);
+				if (matched.length >= MAX_FILTERED_SESSIONS) break;
+			}
+		}
+		return matched;
 	});
 	/** The project a "new session" starts in: the selected one, else the first. */
 	const newSessionProject = () => activeProject(store.state());
@@ -310,7 +336,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 			queue = queue.then(async () => {
 				if (ticket !== request || !searchSessions) return;
 				const titles = new Map(
-					catalog().map((session) => [
+					catalog().map(({ session }) => [
 						`${session.projectId}\0${session.sessionPath}`,
 						session.title,
 					]),
