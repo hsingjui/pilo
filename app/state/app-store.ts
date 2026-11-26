@@ -1,6 +1,7 @@
 import { type Accessor, computed, signal } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
+import { runtimeSessionIdFromKey } from "@shared/chat/chat-session-runtime-model";
 import type {
 	PiloClientEvent,
 	PiloClientEventMessage,
@@ -17,6 +18,7 @@ import {
 	createAppState,
 	createDraftSessionId,
 	createTemporarySessionId,
+	isDraftSessionId,
 	isSessionUnread,
 	isStaleEvent,
 	isTemporarySessionId,
@@ -368,6 +370,32 @@ export class AppStore {
 		});
 	}
 
+	/** Keeps unsent new chats reachable without marking them as running. */
+	setUnsentDraft(
+		{ sessionKey, projectId, sessionPath }: ChatTranscriptTarget,
+		text: string | null,
+	) {
+		const sessionId = runtimeSessionIdFromKey(sessionKey, projectId);
+		if (!sessionId || !isDraftSessionId(sessionId)) return;
+		const title = sessionPath
+			? null
+			: (text?.replace(/\s+/g, " ").trim() ?? null);
+		this.current.update((state) => {
+			const previous = state.unsentDrafts?.get(sessionKey);
+			if ((previous?.title ?? null) === title) return state;
+			const unsentDrafts = new Map(state.unsentDrafts);
+			if (title === null) unsentDrafts.delete(sessionKey);
+			else {
+				unsentDrafts.set(sessionKey, {
+					projectId,
+					title,
+					startedAt: previous?.startedAt ?? Date.now(),
+				});
+			}
+			return { ...state, unsentDrafts };
+		});
+	}
+
 	/** Opens again a new chat Pi has not saved yet, by its draft session id. */
 	selectDraft(projectId: string, sessionId: string) {
 		this.apply({ type: "project_selected", projectId, sessionId });
@@ -400,10 +428,7 @@ export class AppStore {
 				{ pinned: session.pinned, titleOverride: title },
 				projectId,
 			)
-			.then(() => undefined)
-			.catch((error: unknown) => {
-				console.error("Renaming the session failed", error);
-			});
+			.then(() => undefined);
 	}
 
 	/** Deletes a saved session; the one open in the chat pane closes. */

@@ -1,5 +1,8 @@
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
-import { chatSessionKey } from "@shared/api/chat-session-key";
+import {
+	chatSessionKey,
+	parseChatSessionKey,
+} from "@shared/api/chat-session-key";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { Project } from "@shared/api/projects-types";
 import type {
@@ -75,12 +78,8 @@ export function isTemporarySessionId(sessionId: string | undefined) {
 
 /** Whether the chat key (`chatSessionKey`) is a temporary chat's. */
 export function isTemporarySessionKey(sessionKey: string) {
-	try {
-		const [, sessionId] = JSON.parse(sessionKey) as unknown[];
-		return typeof sessionId === "string" && isTemporarySessionId(sessionId);
-	} catch {
-		return false;
-	}
+	const parsed = parseChatSessionKey(sessionKey);
+	return parsed !== null && isTemporarySessionId(parsed[1]);
 }
 
 /**
@@ -108,6 +107,8 @@ export type AppState = {
 	chatSessions: ChatSessionRuntimeState[];
 	/** Drafts whose first prompt is still being sent, keyed by session key. */
 	pendingDrafts: ReadonlyMap<string, PendingDraft>;
+	/** New chats with unsent text or attachments, keyed by session key. */
+	unsentDrafts?: ReadonlyMap<string, PendingDraft>;
 	/**
 	 * When each running chat (by session key) was first seen running, so the
 	 * sidebar keeps running sessions in a stable order as their files change.
