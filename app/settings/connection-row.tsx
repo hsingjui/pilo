@@ -58,7 +58,7 @@ export function ConnectionRow(props: {
 	busy: Accessor<boolean>;
 	onToggleShown: (shown: boolean) => void;
 	onTest: () => void;
-	onConfigure: () => void;
+	onConfigure?: () => void;
 	onEdit?: () => void;
 	onRemove?: () => void;
 }) {
@@ -110,13 +110,15 @@ export function ConnectionRow(props: {
 						disabled: rowBusy(),
 						onPress: props.onTest,
 					})}
-					{rowButton({
-						testID: `settings-conn-configure-${connection.id}`,
-						label: t("connection.configure"),
-						icon: <Icon name="Settings2" size={16} />,
-						disabled: rowBusy(),
-						onPress: props.onConfigure,
-					})}
+					{props.onConfigure
+						? rowButton({
+								testID: `settings-conn-configure-${connection.id}`,
+								label: t("connection.configure"),
+								icon: <Icon name="Settings2" size={16} />,
+								disabled: rowBusy(),
+								onPress: props.onConfigure,
+							})
+						: null}
 					{props.onEdit
 						? rowButton({
 								testID: `settings-conn-edit-${connection.id}`,

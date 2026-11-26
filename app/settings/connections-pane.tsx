@@ -64,7 +64,13 @@ export type ConnectionsClient = Pick<
 	| "saveWslConnection"
 	| "removeWslConnection"
 	| "testWslConnection"
->;
+> &
+	Partial<
+		Pick<
+			NshPiloClient,
+			"getConnectionHealth" | "listSshConfigHosts" | "listSshLocalKeys"
+		>
+	>;
 
 const IS_WINDOWS = platform.os === "windows";
 
@@ -144,6 +150,30 @@ export function ConnectionsPane(props: {
 		const label = connectionLabel(connection);
 		setTesting(id, true);
 		try {
+			if (client.getConnectionHealth) {
+				const health = await client.getConnectionHealth(id);
+				if (health.reachable) {
+					const description = health.pi
+						? t("connection.healthSummary", {
+								ms: Math.round(health.latencyMs),
+								version: health.pi.version || health.pi.executable,
+							})
+						: t("connection.healthPiMissing", {
+								ms: Math.round(health.latencyMs),
+							});
+					toasts.show({
+						variant: health.pi ? "success" : "warning",
+						title: t("connection.available", { name: label }),
+						description,
+					});
+					return;
+				}
+				showConnectionTestToast(toasts, label, {
+					ok: false,
+					error: health.error || t("errors.connectionUnavailable"),
+				});
+				return;
+			}
 			const result =
 				connection.kind.type === "local"
 					? await client.testLocalConnection()
@@ -282,32 +312,43 @@ export function ConnectionsPane(props: {
 				busy={() => busy() || configureDialog.probing()}
 				onToggleShown={(shown) => void toggleShown(connection, shown)}
 				onTest={() => void testConnection(connection)}
-				onConfigure={() => configureDialog.openSettings(connection)}
 				onEdit={() => void sshEditor.openEdit(info)}
 				onRemove={() => removing.set(connection)}
 			/>
 		);
 	};
 
-	const addConnectionMenu = () => (
-		<Menu
-			align="end"
-			popupStyle={{ minWidth: 0 }}
-			trigger={
-				<Button
-					testID="settings-conn-add"
-					variant="outline"
-					size="icon"
-					class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
-					accessibilityLabel={t("connection.addConnection")}
-					tooltip={textTooltip(t("connection.addConnection"))}
-				>
-					<Icon name="Plus" size={14} />
-				</Button>
-			}
-		>
-			<View class="gap-1">
-				{IS_WINDOWS ? (
+	const addConnectionMenu = () =>
+		!IS_WINDOWS ? (
+			<Button
+				testID="settings-conn-add"
+				variant="outline"
+				size="icon"
+				class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
+				accessibilityLabel={t("connection.addSsh")}
+				tooltip={textTooltip(t("connection.addSsh"))}
+				onPress={() => sshEditor.openNew()}
+			>
+				<Icon name="Plus" size={14} />
+			</Button>
+		) : (
+			<Menu
+				align="end"
+				popupStyle={{ minWidth: 0 }}
+				trigger={
+					<Button
+						testID="settings-conn-add"
+						variant="outline"
+						size="icon"
+						class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
+						accessibilityLabel={t("connection.addConnection")}
+						tooltip={textTooltip(t("connection.addConnection"))}
+					>
+						<Icon name="Plus" size={14} />
+					</Button>
+				}
+			>
+				<View class="gap-1">
 					<MenuItem
 						testID="settings-conn-add-wsl"
 						indicatorClass="hidden"
@@ -316,18 +357,17 @@ export function ConnectionsPane(props: {
 					>
 						<Text class="font-sans">{t("connection.addWsl")}</Text>
 					</MenuItem>
-				) : null}
-				<MenuItem
-					testID="settings-conn-add-ssh"
-					indicatorClass="hidden"
-					icon={<Icon name="Server" size={14} />}
-					onSelect={() => sshEditor.openNew()}
-				>
-					<Text class="font-sans">{t("connection.addSsh")}</Text>
-				</MenuItem>
-			</View>
-		</Menu>
-	);
+					<MenuItem
+						testID="settings-conn-add-ssh"
+						indicatorClass="hidden"
+						icon={<Icon name="Server" size={14} />}
+						onSelect={() => sshEditor.openNew()}
+					>
+						<Text class="font-sans">{t("connection.addSsh")}</Text>
+					</MenuItem>
+				</View>
+			</Menu>
+		);
 
 	const lastRemoving = signal<Connection | null>(null);
 	effect(() => {

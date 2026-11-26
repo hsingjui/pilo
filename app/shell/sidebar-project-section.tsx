@@ -17,12 +17,14 @@ import {
 } from "nsh";
 import { Button, Collapsible } from "nsh/base";
 
+import { userErrorMessage } from "@shared/app-error";
 import { summarizeProjectSessions } from "@shared/sidebar/session-list";
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import { displayProjectPath } from "@shared/project-path";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
+import { AppToaster, showToast } from "./app-toasts";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
@@ -64,6 +66,7 @@ export function ProjectSection(props: {
 	project: Accessor<Project>;
 }) {
 	const { store, settings } = props;
+	const toasts = AppToaster();
 	const id = () => props.project().id;
 	const name = () => sidebarProjectName(props.project());
 	const selectProject = () => {
@@ -237,6 +240,11 @@ export function ProjectSection(props: {
 								onRemove={() =>
 									void store.removeProject(id()).catch((error: unknown) => {
 										console.error("Removing the project failed", error);
+										showToast(toasts, {
+											variant: "error",
+											title: t("project.removeFailed"),
+											description: userErrorMessage(error),
+										});
 									})
 								}
 							/>
@@ -479,14 +487,32 @@ function ProjectSessions(props: {
 					return null;
 				}
 				return (
-					<Text
+					<View
 						testID={`${section()}:failed`}
 						role="alert"
-						class="px-3 py-2 text-center font-sans text-destructive"
-						style={sidebarText("xs")}
+						class="items-center gap-1.5 px-3 py-2"
 					>
-						{current.message ?? t("common.loadFailed")}
-					</Text>
+						<Text
+							class="text-center font-sans text-destructive"
+							style={sidebarText("xs")}
+						>
+							{current.message ?? t("common.loadFailed")}
+						</Text>
+						<Button
+							testID={`${section()}:retry`}
+							class="rounded-md px-2 py-0.5 hover:bg-sidebar-hover"
+							focusVisibleStyle={sidebarFocusRing()}
+							accessibilityLabel={t("common.retry")}
+							onPress={() => void store.loadSessions(props.projectId())}
+						>
+							<Text
+								class="font-sans text-sidebar-foreground"
+								style={sidebarText("xs")}
+							>
+								{() => t("common.retry")}
+							</Text>
+						</Button>
+					</View>
 				);
 			}}
 		</>

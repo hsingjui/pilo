@@ -28,23 +28,46 @@ export function createWslPicker(deps: {
 	const distros = signal<WslDistribution[] | null>(null);
 	const loadError = signal<string | null>(null);
 	const busy = signal(false);
+	const loading = signal(false);
 	let pickerRevision = 0;
+	let loadSeq = 0;
+
+	const loadDistros = () => {
+		if (!IS_WINDOWS) return;
+		const seq = ++loadSeq;
+		loading.set(true);
+		distros.set(null);
+		loadError.set(null);
+		client
+			.listWslDistributions()
+			.then((items) => {
+				if (seq === loadSeq) distros.set(items);
+			})
+			.catch((caught) => {
+				if (seq === loadSeq) {
+					distros.set([]);
+					loadError.set(userErrorMessage(caught));
+				}
+			})
+			.finally(() => {
+				if (seq === loadSeq) loading.set(false);
+			});
+	};
 
 	const openPicker = () => {
 		pickerRevision += 1;
 		open.set(true);
-		if (IS_WINDOWS && distros() === null) {
-			client
-				.listWslDistributions()
-				.then((items) => distros.set(items))
-				.catch((caught) => {
-					distros.set([]);
-					loadError.set(userErrorMessage(caught));
-				});
+		if (
+			IS_WINDOWS &&
+			!loading() &&
+			(distros() === null || loadError() !== null)
+		) {
+			loadDistros();
 		}
 	};
 
 	const add = async (distro: string, dialogToasts: AppToasts) => {
+		if (busy()) return;
 		const revision = pickerRevision;
 		const toasts = () =>
 			open() && revision === pickerRevision ? dialogToasts : deps.toasts;
@@ -77,6 +100,7 @@ export function createWslPicker(deps: {
 		loadError,
 		busy,
 		openPicker,
+		retry: loadDistros,
 		add,
 		addedDistros: deps.addedDistros,
 	};
@@ -114,9 +138,19 @@ export function WslPickerDialog(props: { picker: WslPicker }) {
 								const error = picker.loadError();
 								if (error !== null)
 									return (
-										<Text class="font-sans px-3 py-4 text-xs text-destructive">
-											{`${t("connection.loadWslFailed")} · ${error}`}
-										</Text>
+										<View class="items-start gap-2 px-3 py-4">
+											<Text class="font-sans text-xs text-destructive">
+												{`${t("connection.loadWslFailed")} · ${error}`}
+											</Text>
+											<Button
+												testID="settings-wsl-retry"
+												variant="outline"
+												size="sm"
+												onPress={() => picker.retry()}
+											>
+												<Text class="font-sans">{t("common.retry")}</Text>
+											</Button>
+										</View>
 									);
 								const items = picker.distros();
 								return items === null ? (

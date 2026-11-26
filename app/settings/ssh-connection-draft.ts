@@ -26,6 +26,7 @@ export function sshTargetLabel(target: SshTarget): string {
 
 export type SshDraft = {
 	id: string;
+	isNew: boolean;
 	name: string;
 	mode: "direct" | "config";
 	hostname: string;
@@ -52,6 +53,7 @@ function newConnectionId() {
 export function emptyDraft(): SshDraft {
 	return {
 		id: newConnectionId(),
+		isNew: true,
 		name: "",
 		mode: "direct",
 		hostname: "",
@@ -81,6 +83,7 @@ export function draftFromInfo(info: SshConnectionInfo): SshDraft {
 	const base: SshDraft = {
 		...emptyDraft(),
 		id: info.connection.id,
+		isNew: false,
 		name: info.connection.name,
 		authMethod,
 		agentPublicKey,
@@ -104,18 +107,32 @@ export function draftFromInfo(info: SshConnectionInfo): SshDraft {
 	};
 }
 
+export function parseSshPort(raw: string): number | null {
+	const trimmed = raw.trim();
+	if (!trimmed) return null;
+	if (!/^\d+$/.test(trimmed)) return Number.NaN;
+	const value = Number(trimmed);
+	return Number.isInteger(value) && value >= 1 && value <= 65535
+		? value
+		: Number.NaN;
+}
+
 export function connectionFromDraft(draft: SshDraft): Connection {
 	const authMethod =
 		draft.authMethod === "agent" && draft.agentPublicKey
 			? { agent_key: draft.agentPublicKey }
 			: draft.authMethod;
+	const parsedPort = parseSshPort(draft.port);
 	const target: SshTarget =
 		draft.mode === "config"
 			? { type: "config_host", host: draft.hostname.trim(), authMethod }
 			: {
 					type: "direct",
 					hostname: draft.hostname.trim(),
-					port: draft.port.trim() ? Number(draft.port) : null,
+					port:
+						parsedPort !== null && Number.isFinite(parsedPort)
+							? parsedPort
+							: null,
 					user: draft.user.trim() || null,
 					identityFile:
 						draft.authMethod === "key"
@@ -141,6 +158,6 @@ export type ConfigureDraft = {
 };
 
 export type SshFieldError = {
-	field: "identityFile" | "password";
+	field: "identityFile" | "password" | "port";
 	message: string;
 };
