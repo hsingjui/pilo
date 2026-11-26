@@ -24,6 +24,8 @@ export interface MobileViewportState {
 	managed: Accessor<boolean>;
 	/** Height available to content, without subtracting the keyboard twice. */
 	availableHeight: Accessor<number>;
+	/** Re-read the viewport on the next frame after returning from a native picker. */
+	requestSync: () => void;
 	/** True when the visual viewport shrank enough to indicate a software keyboard. */
 	keyboardOpen: Accessor<boolean>;
 	/** Current clamped visualViewport.offsetTop in CSS pixels. */
@@ -39,6 +41,7 @@ const defaultMobileViewport: MobileViewportState = {
 	managed: () => false,
 	availableHeight: () =>
 		Math.max(0, windowSize().height - keyboardFrame().height),
+	requestSync: () => {},
 	keyboardOpen: () => false,
 	offsetTop: () => 0,
 	safeAreaTop: () => safeArea().top,
@@ -163,6 +166,7 @@ export function installMobileViewportSync(): MobileViewportState {
 
 	let appliedKey = "default";
 	let pendingFrame: number | null = null;
+	let disposed = false;
 
 	const applyLayout = (layout: MobileViewportLayout) => {
 		const nextKey = layout.override
@@ -206,7 +210,7 @@ export function installMobileViewportSync(): MobileViewportState {
 	};
 
 	const scheduleSync = () => {
-		if (pendingFrame !== null) return;
+		if (disposed || pendingFrame !== null) return;
 		if (typeof host.requestAnimationFrame === "function") {
 			pendingFrame = host.requestAnimationFrame(() => {
 				pendingFrame = null;
@@ -227,6 +231,7 @@ export function installMobileViewportSync(): MobileViewportState {
 	host.document?.addEventListener("focusout", scheduleSync);
 
 	cleanup(() => {
+		disposed = true;
 		if (pendingFrame !== null) {
 			host.cancelAnimationFrame?.(pendingFrame);
 			pendingFrame = null;
@@ -244,6 +249,7 @@ export function installMobileViewportSync(): MobileViewportState {
 	return {
 		managed: () => true,
 		availableHeight: () => height() || windowSize().height,
+		requestSync: scheduleSync,
 		keyboardOpen,
 		offsetTop,
 		safeAreaTop,

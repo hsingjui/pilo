@@ -142,7 +142,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const store = props.store;
 	const readingFont = ChatReadingFont();
 	const media = ChatMediaActions();
-	const { availableHeight } = MobileViewport();
+	const { availableHeight, requestSync } = MobileViewport();
 	const surfaceWidth = signal(0);
 	const toolbarWidth = signal(0);
 	const surface = signal<ViewRef | undefined>(undefined);
@@ -284,13 +284,15 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const pickAttachments = () => {
 		const target = store.target();
 		if (!target) return;
-		const pick = platform.desktop
+		const desktop = platform.desktop;
+		if (!desktop) inputRef()?.blur();
+		const pick = desktop
 			? Picker.pickFiles({ multiple: true }).then((picked) =>
 					picked.flatMap((entry) => (entry.file ? [entry.file] : [])),
 				)
-			: Picker.pickImages({ multiple: true }).then((picked) =>
-					picked.map((entry) => entry.file),
-				);
+			: Picker.pickImages({ multiple: true })
+					.finally(requestSync)
+					.then((picked) => picked.map((entry) => entry.file));
 		void pick
 			.then((files) => {
 				if (files.length > 0) return store.addFiles(files, target);
