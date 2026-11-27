@@ -59,6 +59,8 @@ export function AddProjectDialog(props: {
 	open: Signal<boolean>;
 	api: AddProjectApi;
 	pickLocalProjectDirectory?: DesktopShell["pickLocalProjectDirectory"];
+	browseHostLocal?: boolean;
+	canReadDirectory?: () => boolean;
 	onAdd: (connectionId: string, path: string) => Promise<Project>;
 	/** The target set by the opener; null uses the local connection. */
 	connectionId: () => string | null;
@@ -78,6 +80,7 @@ export function AddProjectDialog(props: {
 	const error = signal<string | null>(null);
 
 	const isLocal = () => connection()?.kind.type === "local";
+	const useLocalPicker = () => isLocal() && !props.browseHostLocal;
 	// A late response must not update a reopened dialog for another connection.
 	let openVersion = 0;
 	let browseVersion = 0;
@@ -147,7 +150,8 @@ export function AddProjectDialog(props: {
 
 	const loadDirectory = async (nextPath: string): Promise<boolean> => {
 		const target = connection();
-		if (!target || target.kind.type === "local") return false;
+		if (!target || useLocalPicker() || props.canReadDirectory?.() === false)
+			return false;
 		const version = openVersion;
 		const req = ++browseVersion;
 		const normalized = absoluteRemotePath(nextPath);
@@ -194,7 +198,7 @@ export function AddProjectDialog(props: {
 	const browse = async () => {
 		const target = connection();
 		if (!target) return;
-		if (target.kind.type === "local") {
+		if (useLocalPicker()) {
 			if (!props.pickLocalProjectDirectory) return;
 			const version = openVersion;
 			picking.set(true);
@@ -304,13 +308,15 @@ export function AddProjectDialog(props: {
 						variant="outline"
 						size="icon"
 						accessibilityLabel={t(
-							isLocal() ? "project.browseLocal" : "project.browseRemote",
+							useLocalPicker() ? "project.browseLocal" : "project.browseRemote",
 						)}
 						disabled={
 							!connection() ||
 							busy() ||
 							picking() ||
-							(isLocal() && !props.pickLocalProjectDirectory)
+							(useLocalPicker()
+								? !props.pickLocalProjectDirectory
+								: props.canReadDirectory?.() === false)
 						}
 						onPress={() => void browse()}
 					>
@@ -319,7 +325,9 @@ export function AddProjectDialog(props: {
 				</View>
 			</View>
 			{() =>
-				browserOpen() && !isLocal() ? (
+				browserOpen() &&
+				!useLocalPicker() &&
+				props.canReadDirectory?.() !== false ? (
 					<View class="overflow-hidden rounded-(--pilo-radius-lg) border border-border">
 						<View class="flex-row items-center gap-2 border-b border-border p-2">
 							<Button

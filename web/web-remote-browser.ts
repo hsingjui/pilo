@@ -283,7 +283,7 @@ export async function verifyRemoteToken(
 	token: string,
 	origin = resolvePageOrigin(),
 ): Promise<void> {
-	const response = await fetch(new URL("/api/v1/bootstrap", origin).href, {
+	const response = await fetch(new URL("/api/v1/auth/device", origin).href, {
 		cache: "no-store",
 		headers: { authorization: `Bearer ${token}` },
 	});

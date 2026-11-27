@@ -20,6 +20,8 @@ import {
 	chatSessionKey as formatChatSessionKey,
 	parseChatSessionKey,
 } from "@shared/api/chat-session-key";
+import type { HostApiMethodName } from "@shared/api/host-methods";
+import { isDefaultWorkspace } from "@shared/api/projects-types";
 import { compactMiddlePath } from "@shared/project-path";
 import { userErrorMessage } from "@shared/app-error";
 import { resolveMobileComposerBottomPadding } from "@shared/mobile-viewport";
@@ -33,7 +35,10 @@ import {
 	showToast,
 } from "../app/shell/app-toasts";
 import { followSavedAppearance } from "../app/shell/appearance";
+import { AddProjectDialog } from "../app/shell/add-project-dialog";
 import { deleteSessionWithToast } from "../app/shell/delete-session";
+import { FilePreviewLayer } from "../app/shell/file-preview-view";
+import { GitWorkspaceLayer } from "../app/shell/git-workspace-view";
 import { t } from "../app/shell/i18n";
 import { SessionLanding } from "../app/shell/landing";
 import { openChatTarget } from "../app/shell/open-chat";
@@ -41,6 +46,7 @@ import {
 	openMarkdownFileLink,
 	openToolFilePath,
 } from "../app/shell/open-file-link";
+import { TerminalLayer } from "../app/shell/terminal-view";
 import type { SessionForker } from "../app/shell/session-fork";
 import { CacheKeepAliveNotice } from "../app/chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../app/chat/chat-agent-activity";
@@ -70,13 +76,15 @@ import type { DesktopShell } from "../app/shell/desktop-shell";
 import type {
 	WebRemoteConnectionState,
 	WebRemoteRecoveryState,
-} from "./web-remote-client";
+} from "./web-host-transport";
 import type { ComposerStore } from "../app/composer/composer-store";
 import { activeProject, isTemporarySessionId } from "../app/state/app-state";
 import type { AppStore } from "../app/state/app-store";
 import type { ChatRunConfigStore } from "../app/state/chat-run-config";
 import type { ChatTranscriptStore } from "../app/state/chat-transcript-store";
 import type { ModelCatalogStore } from "../app/state/model-catalog";
+import { TerminalStore } from "../app/state/terminal-store";
+import { WorkspaceStore } from "../app/state/workspace-store";
 import { Button } from "../app/ui/button";
 import { writeClipboardText } from "../app/ui/clipboard";
 import { Dialog } from "../app/ui/dialog";
@@ -139,7 +147,9 @@ export interface MobileAppShellProps {
 	>;
 	catalog?: Pick<ModelCatalogStore, "state" | "refresh" | "saveScope">;
 	searchSessions?: Pick<HostClient, "searchSessions">;
-	shell?: Pick<DesktopShell, "openExternal">;
+	shell?: Pick<DesktopShell, "openExternal" | "saveImage">;
+	workspaceClient?: HostClient;
+	canUseWorkspace?: (...methods: HostApiMethodName[]) => boolean;
 	connectionState: Accessor<WebRemoteConnectionState>;
 	recoveryState: Accessor<WebRemoteRecoveryState>;
 	onReconnect?: () => void;
@@ -210,6 +220,56 @@ export function MobileAppShell(props: MobileAppShellProps) {
 
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
+	const workspace = new WorkspaceStore();
+	const terminals =
+		props.workspaceClient && new TerminalStore(props.workspaceClient);
+	cleanup(() => terminals?.dispose());
+	const addProjectOpen = signal(false);
+	const removeProjectTarget = signal<NonNullable<
+		ReturnType<typeof project>
+	> | null>(null);
+	const removingProject = signal(false);
+	const workspaceClient = props.workspaceClient;
+	const canUse = (...methods: HostApiMethodName[]) =>
+		!!workspaceClient && props.canUseWorkspace?.(...methods) === true;
+	const canAddProject = () => canUse("project.add", "connection.list");
+	const canRemoveProject = () => canUse("project.remove");
+	const canUseGit = () => canUse("git.status", "git.diff");
+	const canPreview = () => canUse("project.file.preview");
+	const canUseTerminal = () =>
+		canUse(
+			"terminal.open",
+			"terminal.write",
+			"terminal.resize",
+			"terminal.close",
+		);
+	const activeFile = computed(() =>
+		canPreview() ? workspace.activeFile(project()?.id) : null,
+	);
+	const activeGit = computed(() => {
+		const id = project()?.id;
+		return id && canUseGit() && workspace.isGitActive(id) ? id : null;
+	});
+	const activeTerminal = computed(() =>
+		canUseTerminal() ? (terminals?.activeTab(project()?.id) ?? null) : null,
+	);
+	const workspaceShowing = () =>
+		!!(activeTerminal() || activeFile() || activeGit());
+	const showChat = () => {
+		workspace.selectChat(project()?.id);
+		terminals?.select(null);
+	};
+	effect(() => {
+		const projects = store.state().projects.map(({ id }) => id);
+		untracked(() => {
+			workspace.reconcileProjects(projects);
+			terminals?.reconcileProjects(new Set(projects));
+		});
+	});
+	effect(() => {
+		if (!canAddProject()) addProjectOpen.set(false);
+		if (!canRemoveProject()) removeProjectTarget.set(null);
+	});
 	const claudeTheme = computed(
 		() => store.state().themeSettings?.themeFamily === "claude",
 	);
@@ -345,6 +405,15 @@ export function MobileAppShell(props: MobileAppShellProps) {
 
 	const fileOpenContext = {
 		project,
+		get workspace() {
+			return canPreview() ? workspace : undefined;
+		},
+		get previewFileLink() {
+			return canPreview() && workspaceClient
+				? (id: string, url: string) => workspaceClient.previewFileLink(id, url)
+				: undefined;
+		},
+		onFileActivated: () => terminals?.select(null),
 		readProjectImage: props.readProjectImage,
 		openImage: (image: ChatImagePreview) => previewImage.set(image),
 		toasts,
@@ -379,11 +448,13 @@ export function MobileAppShell(props: MobileAppShellProps) {
 	};
 
 	const newChat = (projectId?: string) => {
+		showChat();
 		const targetId = projectId ?? activeProject(store.state())?.id;
 		if (targetId) store.selectProject(targetId);
 	};
 
 	const toggleTemporaryChat = () => {
+		showChat();
 		const targetId = activeProject(store.state())?.id;
 		if (!targetId) return;
 		if (temporaryOpen()) {
@@ -552,6 +623,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		const recovered =
 			conn === "connected" && props.recoveryState() === "recovered";
 		const offline = conn === "offline";
+		const incompatible = conn === "incompatible";
 		const enter = createMotion({
 			enter: reduceMotion()
 				? {
@@ -584,11 +656,13 @@ export function MobileAppShell(props: MobileAppShellProps) {
 					<Text class="truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug font-medium text-foreground/85">
 						{recovered
 							? t("settings.remoteConnected")
-							: offline
-								? t("settings.remoteOffline")
-								: t("settings.remoteConnectionLost")}
+							: incompatible
+								? t("settings.remoteProtocolIncompatible")
+								: offline
+									? t("settings.remoteOffline")
+									: t("settings.remoteConnectionLost")}
 					</Text>
-					{!recovered ? (
+					{!recovered && !incompatible ? (
 						<Text class="mt-0.5 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
 							{offline
 								? t("settings.remoteOfflineDescription")
@@ -596,7 +670,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 						</Text>
 					) : null}
 				</View>
-				{conn !== "connected" && props.onReconnect ? (
+				{conn !== "connected" && !incompatible && props.onReconnect ? (
 					<Button
 						testID="mobile-reconnect-button"
 						variant="ghost"
@@ -657,7 +731,9 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		<View
 			testID="mobile-header"
 			class={`mt-0.5 h-11 shrink-0 flex-row items-center bg-background px-1.5 ${
-				headerOverlay() ? "absolute inset-x-0 top-0 z-30" : "relative"
+				headerOverlay() && !workspaceShowing()
+					? "absolute inset-x-0 top-0 z-30"
+					: "relative"
 			}`}
 		>
 			<Button
@@ -700,6 +776,89 @@ export function MobileAppShell(props: MobileAppShellProps) {
 			</View>
 
 			<View class="shrink-0 flex-row items-center gap-0.5 pr-0.5">
+				{() =>
+					canAddProject() ||
+					(project() &&
+						(canRemoveProject() || canUseGit() || canUseTerminal())) ? (
+						<MobileDropdownMenu
+							align="end"
+							popupClass="w-60"
+							trigger={
+								<Button
+									testID="mobile-workspace-actions"
+									variant="ghost"
+									size="icon"
+									class="size-11 shrink-0 rounded-(--pilo-mobile-radius-md)"
+									accessibilityLabel={t("settings.remoteWorkspaceActions")}
+								>
+									<Icon name="FolderOpen" size={16} />
+								</Button>
+							}
+						>
+							{() =>
+								canAddProject() ? (
+									<MobileDropdownItem
+										testID="mobile-add-project"
+										onSelect={() => addProjectOpen.set(true)}
+									>
+										<Text>{() => t("project.addProject")}</Text>
+									</MobileDropdownItem>
+								) : null
+							}
+							{() =>
+								project() && canUseGit() ? (
+									<MobileDropdownItem
+										testID="mobile-open-git"
+										onSelect={() => {
+											const id = project()?.id;
+											if (!id) return;
+											terminals?.select(null);
+											workspace.openGit(id);
+										}}
+									>
+										<Text>{() => t("file.viewChanges")}</Text>
+									</MobileDropdownItem>
+								) : null
+							}
+							{() =>
+								project() && canUseTerminal() ? (
+									<MobileDropdownItem
+										testID="mobile-open-terminal"
+										onSelect={() => {
+											const id = project()?.id;
+											if (!id || !terminals) return;
+											workspace.selectChat(id);
+											const existing = terminals.projectTabs(id)[0];
+											if (existing) terminals.select(existing.id);
+											else
+												void terminals.open(id).catch((error: unknown) => {
+													showToast(toasts, {
+														variant: "error",
+														title: t("terminal.openFailed"),
+														description: userErrorMessage(error),
+													});
+												});
+										}}
+									>
+										<Text>{() => t("terminal.show")}</Text>
+									</MobileDropdownItem>
+								) : null
+							}
+							{() =>
+								project() &&
+								canRemoveProject() &&
+								!isDefaultWorkspace(project()!) ? (
+									<MobileDropdownItem
+										testID="mobile-remove-project"
+										onSelect={() => removeProjectTarget.set(project())}
+									>
+										<Text>{() => t("sidebar.removeProject")}</Text>
+									</MobileDropdownItem>
+								) : null
+							}
+						</MobileDropdownMenu>
+					) : null
+				}
 				<Button
 					testID="mobile-new-chat-button"
 					variant="ghost"
@@ -1128,6 +1287,88 @@ export function MobileAppShell(props: MobileAppShellProps) {
 											</View>
 										);
 									}}
+									{workspaceClient && terminals ? (
+										<View
+											class="absolute inset-0 z-30 min-h-0 bg-background"
+											style={{
+												visibility: workspaceShowing() ? "visible" : "hidden",
+												pointerEvents: workspaceShowing() ? "auto" : "none",
+												paddingBottom: composerBottomPadding(),
+											}}
+										>
+											<View class="shrink-0 flex-row items-center justify-between border-b border-border px-1.5">
+												<Button
+													testID="mobile-workspace-back"
+													variant="ghost"
+													size="icon"
+													class="size-11"
+													accessibilityLabel={t("app.newChat")}
+													onPress={showChat}
+												>
+													<Icon name="ArrowLeft" size={16} />
+												</Button>
+												<Text class="min-w-0 flex-1 truncate text-sm text-foreground">
+													{() =>
+														activeFile()?.file.path ??
+														(activeTerminal()
+															? t("terminal.show")
+															: t("file.viewChanges"))
+													}
+												</Text>
+												<Button
+													testID="mobile-workspace-close"
+													variant="ghost"
+													size="icon"
+													class="size-11"
+													accessibilityLabel={t("common.close")}
+													onPress={() => {
+														const tab = activeTerminal();
+														const file = activeFile();
+														const git = activeGit();
+														if (tab) terminals.close(tab.id);
+														else if (file)
+															workspace.closeFile(
+																file.projectId,
+																file.file.path,
+															);
+														else if (git) workspace.closeGit(git);
+														showChat();
+													}}
+												>
+													<Icon name="X" size={16} />
+												</Button>
+											</View>
+											<View class="relative min-h-0 flex-1">
+												<TerminalLayer
+													terminals={terminals}
+													shown={() => activeTerminal()?.id ?? null}
+													preferences={() => store.state().preferences?.values}
+												/>
+												<GitWorkspaceLayer
+													workspace={workspace}
+													activeProjectId={activeGit}
+													git={workspaceClient}
+													preferences={() => store.state().preferences?.values}
+													canOpenFile={() => canPreview()}
+													onOpenFile={(path) =>
+														openToolFilePath(fileOpenContext, path)
+													}
+												/>
+												<FilePreviewLayer
+													workspace={workspace}
+													active={activeFile}
+													projectFor={(id) =>
+														store
+															.state()
+															.projects.find((entry) => entry.id === id) ?? null
+													}
+													preferences={() => store.state().preferences?.values}
+													readProjectImage={props.readProjectImage}
+													onFileLink={handleFileLink}
+												/>
+											</View>
+										</View>
+									) : null}
 								</View>
 							</View>
 
@@ -1173,7 +1414,66 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								image={previewImage}
 								onClose={() => previewImage.set(null)}
 								openExternal={props.shell?.openExternal}
+								onSaveImage={props.shell?.saveImage}
 							/>
+							{workspaceClient ? (
+								<AddProjectDialog
+									open={addProjectOpen}
+									api={workspaceClient}
+									browseHostLocal
+									canReadDirectory={() => canUse("connection.readDir")}
+									onAdd={(id, path) => store.addProject(id, path)}
+									connectionId={() => project()?.connection.id ?? null}
+									projects={() => store.state().projects}
+								/>
+							) : null}
+							{() => {
+								const target = removeProjectTarget();
+								if (!target) return null;
+								return (
+									<Dialog
+										open
+										onOpenChange={({ open }) => {
+											if (!open && !removingProject())
+												removeProjectTarget.set(null);
+										}}
+									>
+										<DialogTitle>
+											{() => t("sidebar.removeProject")}
+										</DialogTitle>
+										<DialogDescription>
+											{() =>
+												t("settings.remoteRemoveProjectDescription", {
+													name: target.name,
+												})
+											}
+										</DialogDescription>
+										<Button
+											testID="mobile-confirm-remove-project"
+											class="min-h-11"
+											variant="destructive"
+											disabled={removingProject()}
+											onPress={() => {
+												if (!canRemoveProject()) return;
+												removingProject.set(true);
+												void store
+													.removeProject(target.id)
+													.then(() => removeProjectTarget.set(null))
+													.catch((error: unknown) => {
+														showToast(toasts, {
+															variant: "error",
+															title: t("sidebar.removeProject"),
+															description: userErrorMessage(error),
+														});
+													})
+													.finally(() => removingProject.set(false));
+											}}
+										>
+											<Text>{() => t("sidebar.confirmRemove")}</Text>
+										</Button>
+									</Dialog>
+								);
+							}}
 							{() => {
 								const target = renamingSession();
 								if (!target) return null;

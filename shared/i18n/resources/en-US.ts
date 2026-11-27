@@ -194,6 +194,11 @@ const enUS = {
 		remoteNotRunning: "Enabled · Not running",
 		remoteStopped: "Stopped",
 		remoteConnected: "Connected",
+		remoteProtocolIncompatible:
+			"Incompatible Host protocol. Upgrade Pilo on this device or on the Host.",
+		remoteWorkspaceActions: "Workspace actions",
+		remoteRemoveProjectDescription:
+			"{{name}} will be removed from Pilo. Its files will be kept.",
 		remoteConnectionLost: "Connection to Pilo lost",
 		remoteSignOut: "Sign out",
 		remoteSignOutConfirm: "Confirm sign out",

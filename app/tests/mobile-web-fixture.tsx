@@ -13,10 +13,13 @@ import { initializeI18n } from "../shell/i18n";
 import { LandingProjectPicker } from "../shell/landing";
 import { conversationContext, followOpenSession } from "../shell/open-chat";
 import { MobileViewport } from "../../web/mobile-viewport";
-import type {
-	WebRemoteConnectionState,
-	WebRemoteRecoveryState,
-} from "../../web/web-remote-client";
+import {
+	canUseWebWorkspace,
+	type WebRemoteConnectionState,
+	type WebRemoteRecoveryState,
+} from "../../web/web-host-transport";
+import { HostClient } from "@shared/api/host-client";
+import type { HostApiMethodName } from "@shared/api/host-methods";
 import { ComposerStore } from "../composer/composer-store";
 import {
 	MobileAppShell,
@@ -470,8 +473,16 @@ async function run() {
 	const safeAreaTopOverride = Number(
 		(await Storage.getItem("fixture.safeAreaTop")) ?? "0",
 	);
+	const workspaceClient = {
+		hasMethod: (method: HostApiMethodName) =>
+			method === "project.add" || method === "connection.list",
+	} as HostClient;
+	const workspaceScope = scenario === "workspace" ? "chat,workspace" : "chat";
 	const shellProps = {
 		store,
+		workspaceClient,
+		canUseWorkspace: (...methods: HostApiMethodName[]) =>
+			canUseWebWorkspace(workspaceScope, workspaceClient, ...methods),
 		chat,
 		composer,
 		queue,
