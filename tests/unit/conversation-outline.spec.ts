@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	buildConversationOutline,
+	createSegmentedConversationOutline,
 	getOutlineIndexForVisibleRange,
 	sampleOutlineEntries,
 } from "../../shared/chat/conversation-outline.ts";
@@ -76,4 +77,46 @@ test("sampling to one tick keeps the last entry", () => {
 		[2],
 	);
 	assert.deepEqual(sampleOutlineEntries(entries, 0), []);
+});
+
+test("segmented outline matches full outline and reuses unchanged prefix rounds during streaming", () => {
+	const historyPrefix = [
+		msg("u0", "user", "history question 0"),
+		msg("a0", "assistant", "history answer 0"),
+		msg("u1", "user", "history question 1"),
+		msg("a1", "assistant", "history answer 1"),
+	];
+	const live1 = [
+		msg("u2", "user", "live question"),
+		msg("a2", "assistant", "streaming"),
+	];
+	const update = createSegmentedConversationOutline();
+	const first = update(historyPrefix, live1, "Untitled");
+	assert.deepEqual(
+		first,
+		buildConversationOutline([...historyPrefix, ...live1]),
+	);
+
+	const live2 = [live1[0], msg("a2", "assistant", "streaming more words")];
+	const second = update(historyPrefix, live2, "Untitled");
+	assert.deepEqual(
+		second,
+		buildConversationOutline([...historyPrefix, ...live2]),
+	);
+	// Prefix round entries stay identical by reference across live deltas.
+	assert.equal(second[0], first[0]);
+	assert.equal(second[1], first[1]);
+
+	// Calling again with identical references returns the exact same array.
+	assert.equal(update(historyPrefix, live2, "Untitled"), second);
+
+	// Updating historyPrefix (e.g. hydrating a placeholder page) refreshes affected entries.
+	const hydratedPrefix = historyPrefix.slice();
+	hydratedPrefix[0] = msg("u0", "user", "hydrated question 0");
+	const third = update(hydratedPrefix, live2, "Untitled");
+	assert.deepEqual(
+		third,
+		buildConversationOutline([...hydratedPrefix, ...live2]),
+	);
+	assert.equal(third[0].title, "hydrated question 0");
 });

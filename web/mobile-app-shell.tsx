@@ -115,7 +115,10 @@ export interface MobileAppShellProps {
 		"state" | "messages" | "refresh" | "loadRange"
 	> &
 		Partial<
-			Pick<ChatTranscriptStore, "isPlaceholderFailed" | "retryPlaceholder">
+			Pick<
+				ChatTranscriptStore,
+				"messageCount" | "isPlaceholderFailed" | "retryPlaceholder"
+			>
 		>;
 	composer: ComposerStore;
 	initialProjectId?: string | null;
@@ -265,7 +268,10 @@ export function MobileAppShell(props: MobileAppShellProps) {
 				props.runConfig?.state()?.session?.sessionPath,
 			),
 	);
-	const hasMessages = computed(() => chat.messages().length > 0);
+	const hasMessages = computed(
+		() =>
+			(chat.messageCount ? chat.messageCount() : chat.messages().length) > 0,
+	);
 	const showHeaderTitle = computed(
 		() => temporaryOpen() || savedSessionOpen() || hasMessages(),
 	);
@@ -925,7 +931,6 @@ export function MobileAppShell(props: MobileAppShellProps) {
 															store.state().preferences?.values
 														}
 														transcript={chat.state}
-														messages={() => chat.messages()}
 														onForkAssistant={
 															props.forker
 																? (id) => void props.forker?.forkAssistant(id)

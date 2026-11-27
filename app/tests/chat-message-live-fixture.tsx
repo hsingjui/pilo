@@ -112,7 +112,6 @@ mount(() => (
 		</View>
 		<ChatMessageList
 			transcript={() => chat.state()}
-			messages={() => chat.messages()}
 			onRetry={() => chat.refresh()}
 		/>
 	</View>

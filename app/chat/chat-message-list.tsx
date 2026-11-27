@@ -20,10 +20,12 @@ export interface ChatMessageListProps {
 	/** The open chat's transcript, as `ChatTranscriptStore` holds it. */
 	transcript: () => ChatTranscriptState;
 	/**
-	 * Every message of the chat in order, as the store's `messages()` joins
-	 * them: a row is kept by its place, so index i must always be message i.
+	 * Optional explicit full message array override (used by fixtures that supply
+	 * a synthetic array separate from `transcript`). When omitted, rows and the
+	 * outline read directly from `transcript().historyPrefix` and
+	 * `transcript().conversation?.messages` with zero prefix copying.
 	 */
-	messages: () => readonly ChatMessage[];
+	messages?: () => readonly ChatMessage[];
 	/** Reads the chat again after a failed read (the store's `refresh`). */
 	onRetry?: () => Promise<void> | void;
 	/** What a chat without messages shows. */
@@ -55,6 +57,8 @@ export interface ChatMessageListProps {
 	onRetryPlaceholder?: (index: number) => void;
 }
 
+const noMessages: readonly ChatMessage[] = [];
+
 /**
  * The messages of the open chat. Each chat gets a list of its own, so one
  * chat's rows and scroll position never show under another.
@@ -65,6 +69,9 @@ export function ChatMessageList(props: ChatMessageListProps) {
 	// Where each chat was read to, so one opened again comes back there.
 	const positions = new Map<string, ChatScrollPosition>();
 	const historyPrefix = computed(() => transcript().historyPrefix);
+	const liveMessages = computed(
+		() => transcript().conversation?.messages ?? noMessages,
+	);
 	// What the user opened and closed in each chat, kept while the app runs.
 	const expansions = new Map<string, ChatExpansion>();
 	const expansionFor = () => {
@@ -116,6 +123,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
 							<ChatMessages
 								messages={props.messages}
 								historyPrefix={historyPrefix}
+								liveMessages={props.messages ? undefined : liveMessages}
 								userBody={props.userBody}
 								assistantBody={props.assistantBody}
 								assistantText={props.assistantText}

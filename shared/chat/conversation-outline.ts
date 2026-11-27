@@ -63,8 +63,9 @@ export function messageSearchText(
 	return plainText(source, maxChars);
 }
 
-function buildOutlineTail(
-	messages: readonly ConversationOutlineMessage[],
+function buildOutlineTailFromSource(
+	totalLength: number,
+	getMessage: (index: number) => ConversationOutlineMessage,
 	start: number,
 	untitled: string,
 ): ConversationOutlineEntry[] {
@@ -78,12 +79,8 @@ function buildOutlineTail(
 		currentLength = 0;
 	};
 
-	for (
-		let messageIndex = start;
-		messageIndex < messages.length;
-		messageIndex++
-	) {
-		const message = messages[messageIndex];
+	for (let messageIndex = start; messageIndex < totalLength; messageIndex++) {
+		const message = getMessage(messageIndex);
 		if (message.role === "compaction") continue;
 		if (message.role === "user" || !current) {
 			const limit = message.role === "assistant" ? 240 : 72;
@@ -107,6 +104,19 @@ function buildOutlineTail(
 	}
 	closeRound();
 	return entries;
+}
+
+function buildOutlineTail(
+	messages: readonly ConversationOutlineMessage[],
+	start: number,
+	untitled: string,
+): ConversationOutlineEntry[] {
+	return buildOutlineTailFromSource(
+		messages.length,
+		(index) => messages[index],
+		start,
+		untitled,
+	);
 }
 
 export function buildConversationOutline(
@@ -158,6 +168,86 @@ export function createConversationOutline() {
 					);
 		const start = Math.min(unchanged, entries[from]?.messageIndex ?? unchanged);
 		const tail = buildOutlineTail(messages, start, untitled);
+		if (
+			entries.length === from + tail.length &&
+			tail.every((entry, index) => {
+				const before = entries[from + index];
+				return (
+					entry.key === before.key &&
+					entry.messageIndex === before.messageIndex &&
+					entry.title === before.title &&
+					entry.preview === before.preview &&
+					entry.weight === before.weight
+				);
+			})
+		)
+			return entries;
+		entries = from === 0 ? tail : entries.slice(0, from).concat(tail);
+		return entries;
+	};
+}
+
+/**
+ * Reuse finished rounds directly over `(historyPrefix, liveMessages)` without
+ * requiring callers to copy both arrays into a single merged array on every
+ * streaming delta.
+ */
+export function createSegmentedConversationOutline() {
+	let previousHistory: readonly ConversationOutlineMessage[] | undefined;
+	let previousLive: readonly ConversationOutlineMessage[] = [];
+	let previousUntitled: string | undefined;
+	let entries: ConversationOutlineEntry[] = [];
+	return (
+		historyPrefix: readonly ConversationOutlineMessage[],
+		liveMessages: readonly ConversationOutlineMessage[],
+		untitled: string,
+	): readonly ConversationOutlineEntry[] => {
+		const prefixLength = historyPrefix.length;
+		const totalLength = prefixLength + liveMessages.length;
+		const previousTotalLength =
+			(previousHistory?.length ?? 0) + previousLive.length;
+		let unchanged = 0;
+		if (historyPrefix === previousHistory && untitled === previousUntitled) {
+			if (liveMessages === previousLive) return entries;
+			unchanged = prefixLength;
+			const commonLive = Math.min(liveMessages.length, previousLive.length);
+			for (let liveIndex = 0; liveIndex < commonLive; liveIndex++) {
+				const a = previousLive[liveIndex];
+				const b = liveMessages[liveIndex];
+				if (
+					a !== b &&
+					(a.id !== b.id || a.role !== b.role || a.text !== b.text)
+				) {
+					break;
+				}
+				unchanged = prefixLength + liveIndex + 1;
+			}
+		}
+		const sameMessages =
+			unchanged === totalLength && unchanged === previousTotalLength;
+		previousHistory = historyPrefix;
+		previousLive = liveMessages;
+		previousUntitled = untitled;
+		if (sameMessages) return entries;
+
+		// A changed row can start or remove a round, so resume at the preceding round.
+		const from =
+			unchanged === 0
+				? 0
+				: Math.max(
+						0,
+						getOutlineIndexForVisibleRange(entries, unchanged - 1, false),
+					);
+		const start = Math.min(unchanged, entries[from]?.messageIndex ?? unchanged);
+		const tail = buildOutlineTailFromSource(
+			totalLength,
+			(index) =>
+				index < prefixLength
+					? historyPrefix[index]
+					: liveMessages[index - prefixLength],
+			start,
+			untitled,
+		);
 		if (
 			entries.length === from + tail.length &&
 			tail.every((entry, index) => {

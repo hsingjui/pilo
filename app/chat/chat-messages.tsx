@@ -29,6 +29,7 @@ import {
 } from "@shared/chat/web-chat-scroll";
 import {
 	createConversationOutline,
+	createSegmentedConversationOutline,
 	getOutlineIndexForVisibleRange,
 } from "@shared/chat/conversation-outline";
 import type { ChatMessage } from "@shared/chat/conversation-types";
@@ -357,9 +358,16 @@ export interface ChatScrollPosition {
 }
 
 export interface ChatMessagesProps {
-	messages: () => readonly ChatMessage[];
-	/** The immutable history prefix at the start of `messages()`. */
+	/** Optional full message list when `liveMessages` is not provided. */
+	messages?: () => readonly ChatMessage[];
+	/** The immutable history prefix at the start of the conversation. */
 	historyPrefix: () => readonly ChatMessage[];
+	/**
+	 * The live messages after `historyPrefix()`. When provided, list rows and the
+	 * outline read directly from `(historyPrefix, liveMessages)` without joining
+	 * both arrays on every streaming delta.
+	 */
+	liveMessages?: () => readonly ChatMessage[];
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	assistantText?: ChatTextBody;
@@ -399,22 +407,36 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const restore = props.restorePosition ?? null;
 	let restoring = restore !== null;
 	const updateOutline = createConversationOutline();
+	const updateSegmentedOutline = createSegmentedConversationOutline();
+	const liveMessages = props.liveMessages;
+	const fallbackMessages = () => props.messages?.() ?? [];
 	const outline = computed(() =>
-		updateOutline(
-			props.messages(),
-			props.historyPrefix(),
-			t("chat.untitledMessage"),
-		),
+		liveMessages
+			? updateSegmentedOutline(
+					props.historyPrefix(),
+					liveMessages(),
+					t("chat.untitledMessage"),
+				)
+			: updateOutline(
+					fallbackMessages(),
+					props.historyPrefix(),
+					t("chat.untitledMessage"),
+				),
 	);
 	const showOutline = computed(() => outline().length >= 2);
 	const firstVisibleIndex = signal(restore?.index ?? 0);
 	const atEnd = signal(restore === null);
 	const followPaused = signal(false);
 	const web = platform.os === "web";
-	// nsh Web diffs List items by identity, not by keyExtractor. Use positions
-	// so streaming updates keep the cell and its measured height.
-	const rowCount = computed(() => props.messages().length);
-	const webRows = computed(() =>
+	// Stable positional indices keep `List.each` identical while a reply streams
+	// (avoiding both full-prefix array copies and per-delta list diffs on desktop
+	// and preserving measured cells on web).
+	const rowCount = computed(() =>
+		liveMessages
+			? props.historyPrefix().length + liveMessages().length
+			: fallbackMessages().length,
+	);
+	const rows = computed(() =>
 		Array.from({ length: rowCount() }, (_, index) => index),
 	);
 	const webEndAttached = signal(false);
@@ -537,7 +559,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 					ref={(node) => (list = node)}
 					class="min-h-0 flex-1"
 					contentClass="pt-6 pb-10"
-					each={web ? webRows() : props.messages()}
+					each={rows()}
 					keyExtractor={rowKey}
 					estimatedItemSize={96}
 					initialScrollIndex={restore?.index}
@@ -569,9 +591,13 @@ export function ChatMessages(props: ChatMessagesProps) {
 						const message = computed<ChatMessage>((previous) => {
 							const row = item();
 							// Keep showing the last message until a removed cell is recycled.
-							return typeof row === "number"
-								? (props.messages()[row] ?? previous!)
-								: row;
+							if (typeof row !== "number") return row;
+							if (liveMessages) {
+								const prefix = props.historyPrefix();
+								if (row < prefix.length) return prefix[row] ?? previous!;
+								return liveMessages()[row - prefix.length] ?? previous!;
+							}
+							return fallbackMessages()[row] ?? previous!;
 						});
 						return (
 							<ChatMessageRow

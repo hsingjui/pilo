@@ -1,4 +1,4 @@
-import { type Accessor, signal } from "nsh";
+import { type Accessor, computed, signal } from "nsh";
 
 import {
 	alignHistoryMessages,
@@ -253,6 +253,18 @@ export class ChatTranscriptStore {
 	/** Metadata from the latest settled history read or cache hit, shared with run config. */
 	readonly historyMetadata: Accessor<ChatTranscriptHistoryMetadata | null> =
 		this.historyMetaSignal;
+	/** Saved history prefix before the live window; reference only changes on page loads or rereads. */
+	readonly historyPrefix: Accessor<readonly ChatMessage[]> = computed(
+		() => this.current().historyPrefix,
+	);
+	/** Newest loaded/streaming messages after `historyPrefix`, without copying the prefix. */
+	readonly liveMessages: Accessor<readonly ChatMessage[]> = computed(
+		() => this.current().conversation?.messages ?? noMessages,
+	);
+	/** Total number of messages across `historyPrefix` and `liveMessages`, without joining arrays. */
+	readonly messageCount: Accessor<number> = computed(
+		() => this.historyPrefix().length + this.liveMessages().length,
+	);
 	/**
 	 * Every message of the chat in order: the history prefix, then the
 	 * conversation's. The array is built when this is read after either

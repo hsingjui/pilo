@@ -117,7 +117,10 @@ export interface AppShellProps {
 		"state" | "messages" | "refresh" | "loadRange"
 	> &
 		Partial<
-			Pick<ChatTranscriptStore, "isPlaceholderFailed" | "retryPlaceholder">
+			Pick<
+				ChatTranscriptStore,
+				"messageCount" | "isPlaceholderFailed" | "retryPlaceholder"
+			>
 		>;
 	/** The open session's composer; whoever mounts the shell targets it. */
 	composer: ComposerStore;
@@ -458,7 +461,7 @@ export function AppShell(props: AppShellProps) {
 		if (status().type !== "ready" || !sessionOpen()) return false;
 		return (
 			store.state().navigation.session?.sessionId === undefined ||
-			chat.messages().length > 0
+			(chat.messageCount ? chat.messageCount() : chat.messages().length) > 0
 		);
 	});
 	/** The title bar holds the chat's tab, or at least the project's actions. */
@@ -1021,7 +1024,6 @@ export function AppShell(props: AppShellProps) {
 													null
 											}
 											transcript={chat.state}
-											messages={() => chat.messages()}
 											onRetry={() => chat.refresh()}
 											onVisibleRangeChange={(start, end) =>
 												chat.loadRange(start, end)

@@ -2115,3 +2115,25 @@ test("hasLiveTurn tracks local submissions and live streamed turns without false
 	store.receive([settled(13)]);
 	expect(store.hasLiveTurn(target.sessionKey)).toBe(false);
 });
+
+test("segmented accessors expose historyPrefix, liveMessages, and messageCount without copying prefix", async () => {
+	const { store, answers, snapshots } = fakeClient();
+	answers.pages = 600;
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve({
+		...snapshot(10, turn("hello")),
+		history: windowed(600, 520),
+	});
+	await opened;
+
+	const initialPrefix = store.historyPrefix();
+	expect(initialPrefix.length).toBe(520);
+	expect(store.liveMessages().length).toBe(82);
+	expect(store.messageCount()).toBe(602);
+
+	store.receive([delta(11, " world")]);
+	expect(store.historyPrefix()).toBe(initialPrefix);
+	expect(store.messageCount()).toBe(602);
+	expect(store.liveMessages().at(-1)?.text).toBe("hello world");
+});

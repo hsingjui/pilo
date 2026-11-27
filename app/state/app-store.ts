@@ -345,7 +345,7 @@ export class AppStore {
 		const sessionKey = chatSessionKey(projectId, open.sessionId);
 		const hasMessages =
 			this.chat?.state().sessionKey === sessionKey &&
-			this.chat.messages().length > 0;
+			this.chat.messageCount() > 0;
 		const active = state.chatSessions.some(
 			(chat) => chat.sessionKey === sessionKey && chat.activeTurn,
 		);
