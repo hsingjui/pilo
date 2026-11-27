@@ -190,18 +190,23 @@ pub(super) async fn upload(
     host: HostRequest,
     Path(method): Path<String>,
     Query(query): Query<HashMap<String, String>>,
-    data: Bytes,
+    body: Body,
 ) -> Response {
-    if let Some(spec) = host_api::methods().iter().find(|spec| spec.name == method) {
-        if !host.principal.allows(spec.scope) {
-            return v2_error(HostApiError::new(
-                ErrorCode::Forbidden,
-                format!("Access to '{method}' is forbidden"),
-            ));
-        }
-        if let Some(limit) = spec.limits.max_binary_input_bytes
-            && data.len() > limit
-        {
+    let spec = host_api::methods().iter().find(|spec| spec.name == method);
+    if let Some(spec) = spec
+        && !host.principal.allows(spec.scope)
+    {
+        return v2_error(HostApiError::new(
+            ErrorCode::Forbidden,
+            format!("Access to '{method}' is forbidden"),
+        ));
+    }
+    let limit = spec
+        .and_then(|spec| spec.limits.max_binary_input_bytes)
+        .unwrap_or(host_api::MAX_BLOB_OUTPUT_BYTES);
+    let data = match axum::body::to_bytes(body, limit).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
             let message = if method == "chat.files.upload" {
                 "chat attachment exceeds the 10 MB limit".to_owned()
             } else {
@@ -213,7 +218,7 @@ pub(super) async fn upload(
             )
                 .into_response();
         }
-    }
+    };
     let params = match query_to_json(query) {
         Ok(params) => params,
         Err(error) => return v2_error(error),
@@ -269,6 +274,11 @@ pub(super) async fn blob(
         Ok(BinaryOutput::Json(_)) => {
             v2_error(HostApiError::internal("expected binary output from blob"))
         }
+        Err(error) if error.message.contains("exceeds the 10 MB limit") => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({ "ok": false, "error": HostApiError::invalid(error.message) })),
+        )
+            .into_response(),
         Err(error) => v2_error(error),
     }
 }
@@ -276,6 +286,7 @@ pub(super) async fn blob(
 struct DeviceWsGuard {
     terminals: TerminalManager,
     device_id: String,
+    subscribed: HashSet<String>,
 }
 
 impl DeviceWsGuard {
@@ -284,13 +295,47 @@ impl DeviceWsGuard {
         Self {
             terminals,
             device_id,
+            subscribed: HashSet::new(),
         }
+    }
+
+    fn subscribe(&mut self, terminal_id: &str) {
+        if self.subscribed.contains(terminal_id) {
+            return;
+        }
+        let owner = TerminalOwner::Device(self.device_id.clone());
+        if self.terminals.subscribe_ws(&owner, terminal_id).is_ok() {
+            self.subscribed.insert(terminal_id.to_owned());
+        }
+    }
+
+    fn unsubscribe(&mut self, terminal_id: &str) {
+        if self.subscribed.remove(terminal_id) {
+            let owner = TerminalOwner::Device(self.device_id.clone());
+            self.terminals.unsubscribe_ws(&owner, terminal_id);
+        }
+    }
+
+    fn clear_subscriptions(&mut self) {
+        let owner = TerminalOwner::Device(self.device_id.clone());
+        for terminal_id in self.subscribed.drain() {
+            self.terminals.unsubscribe_ws(&owner, &terminal_id);
+        }
+    }
+
+    fn contains(&self, terminal_id: &str) -> bool {
+        self.subscribed.contains(terminal_id)
+    }
+
+    fn finish_terminal(&mut self, terminal_id: &str) {
+        self.subscribed.remove(terminal_id);
     }
 }
 
 impl Drop for DeviceWsGuard {
     fn drop(&mut self) {
-        self.terminals.on_device_ws_disconnected(&self.device_id);
+        self.terminals
+            .on_device_ws_disconnected(&self.device_id, self.subscribed.iter().map(String::as_str));
     }
 }
 
@@ -321,7 +366,7 @@ async fn event_socket_v2(
     let mut auth_generation = state.auth_generation.clone();
     drop(state);
 
-    let _ws_guard = DeviceWsGuard::new(terminals.clone(), auth_session.device.id.clone());
+    let mut ws_guard = DeviceWsGuard::new(terminals.clone(), auth_session.device.id.clone());
     let host_id = {
         let paths = paths.clone();
         match tokio::task::spawn_blocking(move || {
@@ -403,7 +448,6 @@ async fn event_socket_v2(
         }
     }
 
-    let mut subscribed_terminals = HashSet::<String>::new();
     let mut auth_tick = tokio::time::interval(Duration::from_secs(15));
     auth_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     auth_tick.tick().await;
@@ -427,7 +471,7 @@ async fn event_socket_v2(
                     break "authentication expired";
                 }
                 if auth_session.device.scopes != RemoteScopes::ChatWorkspace {
-                    subscribed_terminals.clear();
+                    ws_guard.clear_subscriptions();
                 }
             }
             changed = auth_generation.changed() => {
@@ -439,7 +483,7 @@ async fn event_socket_v2(
                     break "authentication changed";
                 }
                 if auth_session.device.scopes != RemoteScopes::ChatWorkspace {
-                    subscribed_terminals.clear();
+                    ws_guard.clear_subscriptions();
                 }
             }
             incoming = socket.recv() => {
@@ -468,15 +512,12 @@ async fn event_socket_v2(
                                 if auth_session.device.scopes == RemoteScopes::ChatWorkspace
                                     && let Some(terminal_id) = message.get("terminalId").and_then(Value::as_str)
                                 {
-                                    let owner = TerminalOwner::Device(auth_session.device.id.clone());
-                                    if terminals.attach(&owner, terminal_id).is_ok() {
-                                        subscribed_terminals.insert(terminal_id.to_owned());
-                                    }
+                                    ws_guard.subscribe(terminal_id);
                                 }
                             }
                             Some("terminal.unsubscribe") => {
                                 if let Some(terminal_id) = message.get("terminalId").and_then(Value::as_str) {
-                                    subscribed_terminals.remove(terminal_id);
+                                    ws_guard.unsubscribe(terminal_id);
                                 }
                             }
                             _ => {}
@@ -526,11 +567,11 @@ async fn event_socket_v2(
                             true,
                         ),
                     };
-                    if !subscribed_terminals.contains(&terminal_id) {
+                    if !ws_guard.contains(&terminal_id) {
                         continue;
                     }
                     if finished {
-                        subscribed_terminals.remove(&terminal_id);
+                        ws_guard.finish_terminal(&terminal_id);
                     }
                     if send_ws_json(&mut socket, &payload).await.is_err() {
                         send_failed = true;
@@ -595,7 +636,7 @@ async fn event_socket_v2(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{path::PathBuf, sync::Arc};
 
     use tokio::{
         io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -735,10 +776,22 @@ mod tests {
         }
         req.push_str("\r\n");
         stream.write_all(req.as_bytes()).await.unwrap();
-        stream.write_all(body).await.unwrap();
+        if let Err(error) = stream.write_all(body).await
+            && !matches!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+            )
+        {
+            panic!("unexpected write error: {error}");
+        }
 
         let mut raw = Vec::new();
-        stream.read_to_end(&mut raw).await.unwrap();
+        if let Err(error) = stream.read_to_end(&mut raw).await
+            && !(raw.windows(4).any(|w| w == b"\r\n\r\n")
+                && error.kind() == std::io::ErrorKind::ConnectionReset)
+        {
+            panic!("unexpected read error: {error}");
+        }
         let split = raw
             .windows(4)
             .position(|w| w == b"\r\n\r\n")
@@ -1171,6 +1224,10 @@ mod tests {
 
         let mut ws1_reconnected = WsClient::connect(host.port, "/api/v2/events", &token_dev1).await;
         let _hello = ws1_reconnected.recv_json().await;
+        ws1_reconnected
+            .send_text(&json!({ "type": "terminal.subscribe", "terminalId": terminal_id }))
+            .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         let (status, attached) = http_json(
             host.port,
             "POST",
@@ -1318,11 +1375,11 @@ mod tests {
         assert_eq!(status, 200);
         let project_id = added["result"]["id"].as_str().unwrap().to_owned();
 
-        // 1. Opening a terminal via HTTP with no active v2 WS starts the retention timer and
-        //    closes the PTY if the device never attaches or subscribes.
+        // 1. Opening a terminal via HTTP with no active v2 WS starts the retention timer;
+        //    calling HTTP terminal.attach without a subscribed WS must NOT cancel the timer.
         host.runtime
             .terminals
-            .set_disconnect_retention(Duration::from_millis(120));
+            .set_disconnect_retention(Duration::from_millis(180));
         let (status, opened_headless) = http_json(
             host.port,
             "POST",
@@ -1334,6 +1391,16 @@ mod tests {
         .await;
         assert_eq!(status, 200);
         let headless_id = opened_headless["result"]["id"].as_str().unwrap().to_owned();
+        let (status, attached_no_ws) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/terminal.attach",
+            Some(&token_dev1),
+            None,
+            &json!({ "terminalId": headless_id }),
+        )
+        .await;
+        assert_eq!(status, 200, "initial attach failed: {attached_no_ws}");
         tokio::time::sleep(Duration::from_millis(350)).await;
         let (status, err) = http_json(
             host.port,
@@ -1461,6 +1528,144 @@ mod tests {
         .await
         .expect_err("disabled remote access must reject remote terminal open");
         assert_eq!(disabled_err.code, ErrorCode::Unavailable);
+
+        host.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn v2_terminal_open_barrier_concurrency_ws_drop_downgrade_and_cancellation() {
+        let host = TestHost::start_ephemeral("term-barrier").await;
+        let project_dir = host.root.join("barrier-proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let project_path = project_dir.to_string_lossy().to_string();
+
+        let (token_dev1, dev1_id) = host.pair(RemoteScopes::ChatWorkspace, "BarrierDev1").await;
+        let (status, added) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/project.add",
+            Some(&token_dev1),
+            None,
+            &json!({ "connectionId": "local", "path": project_path }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let project_id = added["result"]["id"].as_str().unwrap().to_owned();
+
+        // 1. Barrier between PTY start and commit_if while WS disconnects -> commit_if must see
+        //    0 WS connections under the unified lock and arm the retention timer so PTY expires.
+        host.runtime
+            .terminals
+            .set_disconnect_retention(Duration::from_millis(120));
+        let mut ws1 = WsClient::connect(host.port, "/api/v2/events", &token_dev1).await;
+        let _hello = ws1.recv_json().await;
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        host.runtime
+            .terminals
+            .set_open_barrier(Some(Arc::clone(&barrier)));
+
+        let runtime_clone = host.runtime.clone();
+        let project_clone = project_id.clone();
+        let owner1 = TerminalOwner::Device(dev1_id.clone());
+        let open_handle = tokio::spawn(async move {
+            crate::project_api::project_terminal_open_for_owner(
+                &runtime_clone,
+                project_clone,
+                80,
+                24,
+                owner1,
+            )
+            .await
+        });
+
+        drop(ws1);
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        barrier.wait().await;
+        host.runtime.terminals.set_open_barrier(None);
+
+        let info = open_handle.await.unwrap().expect("open should succeed");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !host
+                .runtime
+                .terminals
+                .owns(&TerminalOwner::Device(dev1_id.clone()), &info.id),
+            "terminal opened across WS disconnect barrier must expire"
+        );
+        assert_eq!(host.runtime.terminals.session_count(), 0);
+
+        // 2. Barrier between PTY start and commit_if while device scope is downgraded ->
+        //    commit_if must reject with Forbidden and close the PTY (0 sessions left).
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        host.runtime
+            .terminals
+            .set_open_barrier(Some(Arc::clone(&barrier)));
+
+        let runtime_clone = host.runtime.clone();
+        let project_clone = project_id.clone();
+        let owner1 = TerminalOwner::Device(dev1_id.clone());
+        let open_handle = tokio::spawn(async move {
+            crate::project_api::project_terminal_open_for_owner(
+                &runtime_clone,
+                project_clone,
+                80,
+                24,
+                owner1,
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        host.runtime
+            .remote
+            .set_device_scopes(&host.runtime, &dev1_id, RemoteScopes::Chat)
+            .await
+            .unwrap();
+        barrier.wait().await;
+        host.runtime.terminals.set_open_barrier(None);
+
+        let err = open_handle
+            .await
+            .unwrap()
+            .expect_err("downgraded device must be rejected at commit_if");
+        assert_eq!(err.code, ErrorCode::Forbidden);
+        assert_eq!(host.runtime.terminals.session_count(), 0);
+
+        // 3. Barrier between PTY start and commit_if while the caller future is cancelled/dropped
+        //    (e.g. remote switch disabled mid-flight) -> detached task must close the PTY and
+        //    leave 0 sessions in TerminalManager.
+        let (_token_dev2, dev2_id) = host.pair(RemoteScopes::ChatWorkspace, "BarrierDev2").await;
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        host.runtime
+            .terminals
+            .set_open_barrier(Some(Arc::clone(&barrier)));
+
+        let runtime_clone = host.runtime.clone();
+        let project_clone = project_id.clone();
+        let owner2 = TerminalOwner::Device(dev2_id);
+        let cancelled_open = tokio::spawn(async move {
+            crate::project_api::project_terminal_open_for_owner(
+                &runtime_clone,
+                project_clone,
+                80,
+                24,
+                owner2,
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        cancelled_open.abort();
+        let _ = cancelled_open.await;
+        barrier.wait().await;
+        host.runtime.terminals.set_open_barrier(None);
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(
+            host.runtime.terminals.session_count(),
+            0,
+            "cancelled terminal.open must close PTY and leave no registered session"
+        );
 
         host.cleanup().await;
     }

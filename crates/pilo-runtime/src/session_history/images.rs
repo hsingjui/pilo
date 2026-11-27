@@ -129,6 +129,16 @@ async fn read_session_range(
     Ok(out)
 }
 
+fn decoded_base64_len(encoded: &str) -> usize {
+    let trimmed = encoded.trim_end_matches('=');
+    (trimmed.len() / 4) * 3
+        + match trimmed.len() % 4 {
+            2 => 1,
+            3 => 2,
+            _ => 0,
+        }
+}
+
 fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, String> {
     let (base_id, content_index) = image_id
         .rsplit_once(':')
@@ -158,6 +168,11 @@ fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, S
         .get("data")
         .and_then(Value::as_str)
         .ok_or_else(|| format!("session history image '{image_id}' payload is missing"))?;
+    if decoded_base64_len(data) > crate::host_api::MAX_BLOB_OUTPUT_BYTES {
+        return Err(format!(
+            "session history image '{image_id}' exceeds the 10 MB limit"
+        ));
+    }
     STANDARD
         .decode(data)
         .or_else(|_| STANDARD_NO_PAD.decode(data))
@@ -181,5 +196,20 @@ mod tests {
         assert!(extract_history_image_bytes(line, "u2").is_err());
         assert!(extract_history_image_bytes(line, "u2:1").is_err());
         assert!(extract_history_image_bytes(line, "other:0").is_err());
+    }
+
+    #[test]
+    fn history_image_bytes_reject_oversized_base64_before_decoding() {
+        // Invalid base64 characters would fail decoding if decoded, so hitting the size error
+        // proves we reject from the encoded length before decoding.
+        let oversized_encoded = "!".repeat((crate::host_api::MAX_BLOB_OUTPUT_BYTES / 3 + 2) * 4);
+        let line = format!(
+            r#"{{"type":"message","id":"u3","message":{{"role":"user","content":[{{"type":"image","data":"{oversized_encoded}","mimeType":"image/png"}}]}}}}"#
+        );
+        let err = extract_history_image_bytes(line.as_bytes(), "u3:0").unwrap_err();
+        assert!(
+            err.contains("exceeds the 10 MB limit"),
+            "unexpected error: {err}"
+        );
     }
 }

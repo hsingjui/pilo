@@ -184,6 +184,25 @@ fn verify_remote_terminal_owner(
     }
 }
 
+struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl CancelOnDrop {
+    fn new() -> (Self, Arc<std::sync::atomic::AtomicBool>) {
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        (Self(Arc::clone(&flag)), flag)
+    }
+
+    fn disarm(self) {
+        std::mem::forget(self);
+    }
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
 pub(crate) async fn project_terminal_open_for_owner(
     runtime: &Runtime,
     id: String,
@@ -195,34 +214,53 @@ pub(crate) async fn project_terminal_open_for_owner(
     let project = project::ready(runtime, &runtime.servers, &id)
         .await
         .map_err(crate::host_api::HostApiError::invalid)?;
-    let (info, session) = runtime
-        .terminals
-        .start(
-            Arc::clone(&runtime.servers),
-            runtime.terminal_events.clone(),
-            &project,
-            cols,
-            rows,
-            owner.clone(),
-        )
-        .await
-        .map_err(crate::host_api::HostApiError::invalid)?;
-    if let Err((error, session)) = runtime
-        .terminals
-        .commit_if(session, || {
-            project::get(runtime, &id)
-                .map(|_| ())
-                .map_err(crate::host_api::HostApiError::invalid)?;
-            verify_remote_terminal_owner(runtime, &owner)
-        })
-        .await
-    {
-        if let Err(close_error) = session.close().await {
-            log::warn!(target: "terminal", "failed to close terminal {} after rejected commit: {close_error}", info.id);
+    let (cancel_guard, cancelled) = CancelOnDrop::new();
+    let runtime = runtime.clone();
+    // Run PTY creation + commit + rollback cleanup in a detached task so dropping the HTTP future
+    // (e.g. remote switch turned off mid-open) cannot leave an orphaned PTY on pilo-server.
+    let task = tokio::spawn(async move {
+        let (info, session) = runtime
+            .terminals
+            .start(
+                Arc::clone(&runtime.servers),
+                runtime.terminal_events.clone(),
+                &project,
+                cols,
+                rows,
+                owner.clone(),
+            )
+            .await
+            .map_err(crate::host_api::HostApiError::invalid)?;
+        #[cfg(test)]
+        runtime.terminals.wait_open_barrier().await;
+        if let Err((error, session)) = runtime
+            .terminals
+            .commit_if(session, || {
+                if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                    return Err(crate::host_api::HostApiError::new(
+                        crate::host_api::ErrorCode::Unavailable,
+                        "terminal open request was cancelled",
+                    ));
+                }
+                project::get(&runtime, &id)
+                    .map(|_| ())
+                    .map_err(crate::host_api::HostApiError::invalid)?;
+                verify_remote_terminal_owner(&runtime, &owner)
+            })
+            .await
+        {
+            if let Err(close_error) = session.close().await {
+                log::warn!(target: "terminal", "failed to close terminal {} after rejected commit: {close_error}", info.id);
+            }
+            return Err(error);
         }
-        return Err(error);
-    }
-    Ok(info)
+        Ok(info)
+    });
+    let result = task.await.map_err(|error| {
+        crate::host_api::HostApiError::internal(format!("terminal open task failed: {error}"))
+    })?;
+    cancel_guard.disarm();
+    result
 }
 
 pub async fn terminal_write(
