@@ -108,7 +108,7 @@ export function ChatTurnUsage(props: { usage: TokenUsage }) {
 			placement="top"
 			offset={chatPx(8)}
 			margin={8}
-			popupClass="w-auto transition-[opacity,transform] duration-150"
+			popupClass="w-auto duration-150"
 			popupStyle={{ padding: chatPx(8) }}
 			popupStartingClass={
 				reduceMotion() ? "opacity-0" : "opacity-0 scale-95 translate-y-2"
