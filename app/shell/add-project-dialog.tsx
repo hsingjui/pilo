@@ -11,6 +11,7 @@ import {
 } from "nsh";
 
 import type { FsEntry } from "@shared/api/files-types";
+import { userErrorMessage } from "@shared/app-error";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
@@ -46,10 +47,6 @@ function parentRemotePath(path: string) {
 	const parts = normalized.split("/").filter(Boolean);
 	parts.pop();
 	return parts.length === 0 ? "/" : `/${parts.join("/")}`;
-}
-
-function errorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -120,7 +117,7 @@ export function AddProjectDialog(props: {
 				else error.set(t("errors.connectionUnavailable"));
 			},
 			(caught: unknown) => {
-				if (version === openVersion) error.set(errorMessage(caught));
+				if (version === openVersion) error.set(userErrorMessage(caught));
 			},
 		);
 		return () => {
@@ -140,7 +137,7 @@ export function AddProjectDialog(props: {
 			await props.onAdd(target.id, trimmed);
 			if (version === openVersion) props.open.set(false);
 		} catch (caught) {
-			if (version === openVersion) error.set(errorMessage(caught));
+			if (version === openVersion) error.set(userErrorMessage(caught));
 		} finally {
 			if (version === openVersion) busy.set(false);
 		}
@@ -164,7 +161,7 @@ export function AddProjectDialog(props: {
 		} catch (caught) {
 			if (version === openVersion && req === browseVersion) {
 				error.set(
-					`${t("project.readDirectoryFailed")}: ${errorMessage(caught)}`,
+					`${t("project.readDirectoryFailed")}: ${userErrorMessage(caught)}`,
 				);
 			}
 			return false;
@@ -203,7 +200,7 @@ export function AddProjectDialog(props: {
 				const picked = await props.api.pickLocalProjectDirectory();
 				if (picked && version === openVersion) path.set(picked);
 			} catch (caught) {
-				if (version === openVersion) error.set(errorMessage(caught));
+				if (version === openVersion) error.set(userErrorMessage(caught));
 			} finally {
 				if (version === openVersion) picking.set(false);
 			}
@@ -273,6 +270,7 @@ export function AddProjectDialog(props: {
 								if (!next) return;
 								browseVersion += 1;
 								connection.set(next);
+								path.set("");
 								browserOpen.set(false);
 								loadingEntries.set(false);
 								browserPath.set("/");
@@ -322,6 +320,7 @@ export function AddProjectDialog(props: {
 								size="icon"
 								class="size-(--pilo-button-sm-height) shrink-0"
 								disabled={browserPath() === "/" || loadingEntries()}
+								accessibilityLabel={t("project.parentDirectory")}
 								onPress={() =>
 									void loadDirectory(parentRemotePath(browserPath()))
 								}

@@ -512,7 +512,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 										disabled={busy()}
 										onPress={() => generation.update((n) => n + 1)}
 									>
-										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-primary-foreground">
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium">
 											{() => t("common.retry")}
 										</Text>
 									</Button>
@@ -538,7 +538,7 @@ export function RemotePairingPage(props: RemotePairingPageProps) {
 										class="min-h-11 px-4"
 										onPress={() => openWorkspace()}
 									>
-										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-primary-foreground">
+										<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium">
 											{() => t("settings.remoteOpenPilo")}
 										</Text>
 									</Button>

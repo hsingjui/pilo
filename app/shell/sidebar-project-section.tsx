@@ -559,6 +559,21 @@ function ProjectSessions(props: {
 			}
 			{() => {
 				const current = index();
+				if (!hasSessions() && current?.status === "loaded") {
+					return (
+						<Text
+							testID={`${section()}:empty`}
+							class="px-8 py-1.5 font-sans text-sidebar-foreground-muted"
+							style={sidebarText("xs")}
+						>
+							{() => t("sidebar.noSessions")}
+						</Text>
+					);
+				}
+				return null;
+			}}
+			{() => {
+				const current = index();
 				if (current?.status !== "failed" || current.sessions.length > 0) {
 					return null;
 				}

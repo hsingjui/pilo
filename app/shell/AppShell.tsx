@@ -884,6 +884,18 @@ export function AppShell(props: AppShellProps) {
 													props.terminals?.select(id);
 												},
 												onClose: (id) => props.terminals?.close(id),
+												onNew: () => {
+													const current = project();
+													if (current) openTerminal(current.id);
+												},
+												onRestart: () => {
+													const current = project();
+													const terminal = shownTerminal();
+													if (!current || !terminal?.exited) return;
+													props.terminals?.close(terminal.id);
+													openTerminal(current.id);
+												},
+												disabled: () => props.terminals?.opening() ?? false,
 											}
 										: undefined
 								}
@@ -993,6 +1005,7 @@ export function AppShell(props: AppShellProps) {
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
 										<ChatMessageList
+											lastSubmission={composer.lastSubmission}
 											assistantText={(text, textKey, streaming) => (
 												<ChatMarkdown
 													text={text}
@@ -1279,9 +1292,11 @@ export function AppShell(props: AppShellProps) {
 								api={props.projectClient}
 								connectionId={addProjectConnection}
 								projects={() => store.state().projects}
-								onAdd={(connectionId, path) =>
-									store.addProject(connectionId, path)
-								}
+								onAdd={async (connectionId, path) => {
+									const project = await store.addProject(connectionId, path);
+									store.selectProject(project.id);
+									return project;
+								}}
 							/>
 						) : null
 					}

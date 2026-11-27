@@ -246,7 +246,20 @@ async fn handle(mut socket: TcpStream, state: ServerState) -> Result<(), String>
     write_json(socket, &reply).await
 }
 
-const HELP: &str = "Pilo built-in Agent control (JSON results)\nUsage: pilo-server ctl <command> [key] [JSON] [--connection ID] [--project ID] [--stdin] [--json]\nCommands: status; settings list|get|set|reset; connections list|save; projects list|add\nUse --stdin for complex values and credentials. Secrets must never be placed in arguments.\nExample: pilo-server ctl settings set preferences.uiFontSize 16\nExample: pilo-server ctl projects add /work/repo --connection local\nHost must be running. Never automatically retry a failed write.";
+const HELP: &str = r#"Pilo built-in Agent control (JSON results)
+Usage: pilo-server ctl <command> [key] [JSON] [--connection ID] [--project ID] [--stdin] [--json]
+Commands: status; settings list|get|set|reset; connections list|save; projects list|add
+Sessions (current project only; pass --project ID):
+  sessions list [--stdin]                        {"offset":0,"limit":50}
+  sessions create --stdin                       {"message":"…","title":"optional"}
+  sessions send ID --stdin                      {"message":"…"}
+  sessions update ID --stdin                    {"title":"optional","pinned":true}
+  sessions history ID [--stdin]                 {"startMessage":0,"messageLimit":24}
+  sessions get|abort|stop|resume|delete ID       ID: session key or saved Pi session ID
+Use --stdin for complex values and credentials. Secrets must never be placed in arguments.
+Example: pilo-server ctl settings set preferences.uiFontSize 16
+Example: pilo-server ctl projects add /work/repo --connection local
+Host must be running. Never automatically retry a failed write."#;
 
 pub async fn run_cli(args: Vec<String>) -> Result<(), String> {
     if args.is_empty() || args.iter().any(|arg| arg == "--help" || arg == "-h") {
@@ -308,6 +321,16 @@ pub async fn run_cli(args: Vec<String>) -> Result<(), String> {
             | "connections.save"
             | "projects.list"
             | "projects.add"
+            | "sessions.list"
+            | "sessions.create"
+            | "sessions.send"
+            | "sessions.update"
+            | "sessions.get"
+            | "sessions.history"
+            | "sessions.abort"
+            | "sessions.stop"
+            | "sessions.resume"
+            | "sessions.delete"
     ) {
         return Err("unknown ctl command; use ctl --help".to_owned());
     }
@@ -317,12 +340,25 @@ pub async fn run_cli(args: Vec<String>) -> Result<(), String> {
     let expected = match command.method.as_str() {
         "status" => 1,
         "settings.get" | "settings.set" | "settings.reset" | "projects.add" => 3,
+        "sessions.list" | "sessions.create" => 2,
+        method if method.starts_with("sessions.") => 3,
         _ => 2,
     };
     if positional.len() != expected && !(value_command && !stdin && positional.len() == 4) {
         return Err("invalid ctl arguments; use ctl --help".to_owned());
     }
-    if stdin && !value_command && command.method != "connections.save" {
+    let stdin_required = matches!(
+        command.method.as_str(),
+        "connections.save" | "sessions.create" | "sessions.send" | "sessions.update"
+    );
+    if stdin
+        && !value_command
+        && !stdin_required
+        && !matches!(
+            command.method.as_str(),
+            "sessions.history" | "sessions.list"
+        )
+    {
         return Err("this command does not accept stdin JSON".to_owned());
     }
     if command.method == "settings.set" && !stdin && positional.len() != 4 {
@@ -333,6 +369,12 @@ pub async fn run_cli(args: Vec<String>) -> Result<(), String> {
             "connections save requires --stdin (credentials must not appear in arguments)"
                 .to_owned(),
         );
+    }
+    if stdin_required && !stdin {
+        return Err(format!(
+            "{} requires --stdin JSON; do not put credentials or messages in arguments",
+            command.method.replace('.', " ")
+        ));
     }
     if stdin {
         if positional.len() > 3 {

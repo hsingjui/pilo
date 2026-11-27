@@ -121,6 +121,7 @@ function keyEventParts(event: {
 type ShortcutNotice = {
 	kind: "modifier" | "conflict" | "default" | "unavailable";
 	label?: string;
+	commandId?: ShortcutCommandId;
 };
 
 /** The validation feedback the WebUI raises as a toast; nsh surfaces it inline. */
@@ -157,7 +158,7 @@ function ShortcutRecorder(props: {
 			captureKeys={props.recording() ? "all" : "none"}
 			class={`${SHORTCUT_BOX_CLASS} ${
 				props.recording()
-					? `${SHORTCUT_BOX_RECORDING_CLASS} w-40`
+					? SHORTCUT_BOX_RECORDING_CLASS
 					: `${SHORTCUT_BOX_IDLE_CLASS} justify-center hover:bg-hover focus-visible:border-ring`
 			} disabled:opacity-50`}
 			style={tactileTransition("background-color, border-color, opacity")}
@@ -223,6 +224,7 @@ export function ShortcutsPane(props: {
 	const recording = signal<ShortcutCommandId | "desktop" | null>(null);
 	const stopRecording = (id: ShortcutCommandId | "desktop") => {
 		if (recording() === id) recording.set(null);
+		notice.set(null);
 	};
 	const notice = signal<ShortcutNotice | null>(null);
 
@@ -259,7 +261,10 @@ export function ShortcutsPane(props: {
 	};
 
 	/** The saved global shortcut must not collide with an in-app one. */
-	const freeOfDesktopConflict = (shortcuts: readonly string[]) => {
+	const freeOfDesktopConflict = (
+		shortcuts: readonly string[],
+		commandId?: ShortcutCommandId,
+	) => {
 		const show = props.desktop?.settings()?.showShortcut;
 		if (!show) return true;
 		const conflict = shortcuts.some(
@@ -267,13 +272,13 @@ export function ShortcutsPane(props: {
 				nshAppShortcut(shortcut, IS_MAC) === nshAppShortcut(show, IS_MAC),
 		);
 		if (!conflict) return true;
-		notice.set({ kind: "conflict", label: t("desktop.show") });
+		notice.set({ kind: "conflict", label: t("desktop.show"), commandId });
 		return false;
 	};
 
 	const assign = (commandId: ShortcutCommandId, next: string) => {
 		if (!isSafeGlobalShortcut(next, IS_MAC)) {
-			notice.set({ kind: "modifier" });
+			notice.set({ kind: "modifier", commandId });
 			return;
 		}
 		const conflictId = findConflict(commandId, next);
@@ -281,21 +286,26 @@ export function ShortcutsPane(props: {
 			notice.set({
 				kind: "conflict",
 				label: t(getShortcutCommand(conflictId).labelKey),
+				commandId,
 			});
 			return;
 		}
-		if (!freeOfDesktopConflict([next])) return;
+		if (!freeOfDesktopConflict([next], commandId)) return;
 		const nativeShortcut = nshAppShortcut(next, IS_MAC);
 		if (!nativeShortcut) return;
 		try {
 			if (isReservedSendShortcut(nativeShortcut)) {
-				notice.set({ kind: "conflict", label: t("settings.sendShortcut") });
+				notice.set({
+					kind: "conflict",
+					label: t("settings.sendShortcut"),
+					commandId,
+				});
 				return;
 			}
 			// Only bind validates both syntax and platform-reserved keys.
 			keymap.bind(nativeShortcut, () => {}, { passThrough: true })();
 		} catch {
-			notice.set({ kind: "unavailable" });
+			notice.set({ kind: "unavailable", commandId });
 			return;
 		}
 		save({ keyboardShortcuts: { [commandId]: next } });
@@ -309,10 +319,11 @@ export function ShortcutsPane(props: {
 			notice.set({
 				kind: "default",
 				label: t(getShortcutCommand(conflictId).labelKey),
+				commandId,
 			});
 			return;
 		}
-		if (!freeOfDesktopConflict([fallback])) return;
+		if (!freeOfDesktopConflict([fallback], commandId)) return;
 		save({ keyboardShortcuts: { [commandId]: fallback } });
 	};
 
@@ -365,7 +376,22 @@ export function ShortcutsPane(props: {
 					{SHORTCUT_COMMANDS.filter(
 						(command) => command.section === section.id,
 					).map((command) => (
-						<SettingsRow label={t(command.labelKey)}>
+						<SettingsRow
+							label={
+								<View class="min-w-0 gap-0.5">
+									<Text class="font-sans font-medium leading-tight text-foreground">
+										{t(command.labelKey)}
+									</Text>
+									{() =>
+										notice()?.commandId === command.id ? (
+											<Text class="font-sans text-xs leading-4 text-destructive">
+												{noticeText(notice()!)}
+											</Text>
+										) : null
+									}
+								</View>
+							}
+						>
 							<View class="flex-row items-center gap-1.5">
 								<ShortcutRecorder
 									testID={`shortcut-box-${command.id}`}
@@ -409,7 +435,7 @@ export function ShortcutsPane(props: {
 				</SettingsSection>
 			))}
 			{() =>
-				notice() ? (
+				notice() && notice()?.commandId === undefined ? (
 					<Text class="font-sans px-3 pb-1 text-xs text-destructive">
 						{noticeText(notice()!)}
 					</Text>

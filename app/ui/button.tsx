@@ -62,6 +62,26 @@ function shadow(variant: ButtonProps["variant"]): string | undefined {
 	);
 }
 
+/** Filled buttons swap to a muted surface; the rest dim with opacity. */
+function isFilled(variant: ButtonProps["variant"]) {
+	return (
+		variant === undefined ||
+		variant === "default" ||
+		variant === "destructive" ||
+		variant === "secondary"
+	);
+}
+
+function disabledStyle(variant: ButtonProps["variant"]) {
+	if (!isFilled(variant)) return undefined;
+	return {
+		backgroundColor: token("muted"),
+		color: token("muted-foreground"),
+		boxShadow: "none",
+		opacity: 1,
+	};
+}
+
 export function Button(props: ButtonProps) {
 	const [local, rest] = split(props, [
 		"variant",
@@ -69,15 +89,24 @@ export function Button(props: ButtonProps) {
 		"class",
 		"style",
 		"focusVisibleStyle",
+		"disabled",
+		"disabledStyle",
 		"ref",
 		"onMouseUp",
 	]);
 	const pointerBlur = blurOnPointerPress(local);
-	const foreground = () => token(foregrounds[local.variant ?? "default"]);
+	const foreground = () =>
+		token(
+			local.disabled && isFilled(local.variant)
+				? "muted-foreground"
+				: foregrounds[local.variant ?? "default"],
+		);
 	return (
 		<Foreground.Provider value={foreground}>
 			<BaseButton
 				{...rest}
+				disabled={local.disabled}
+				disabledStyle={[disabledStyle(local.variant), local.disabledStyle]}
 				ref={pointerBlur.ref}
 				onMouseUp={pointerBlur.onMouseUp}
 				class={buttonVariants(local)}

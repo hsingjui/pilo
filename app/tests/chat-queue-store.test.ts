@@ -16,6 +16,8 @@ type QueueRigOptions = {
 	emitQueueUpdateBeforeReply?: boolean;
 	promptDisposition?: "queued" | "started" | "handled";
 	failOn?: string;
+	beforeSend?: () => Promise<boolean>;
+	onFollowUp?: () => Record<string, unknown>;
 };
 
 function createQueueRig(options: QueueRigOptions = {}) {
@@ -41,6 +43,9 @@ function createQueueRig(options: QueueRigOptions = {}) {
 			const type = String(command.type ?? "");
 			if (options.failOn === type) {
 				return { success: false, error: `${type} rejected` };
+			}
+			if (type === "follow_up" && options.onFollowUp) {
+				return options.onFollowUp();
 			}
 			const q = stateFor(sessionKey);
 			if (type === "steer" || type === "follow_up") {
@@ -91,16 +96,22 @@ function createQueueRig(options: QueueRigOptions = {}) {
 		},
 	});
 
+	const chat: ChatSessionRuntimeState = {
+		sessionKey: "sa",
+		projectId: "p1",
+		prepared: true,
+		initialized: true,
+		activeTurn: true,
+		snapshot: {
+			state: "running",
+			generation: 1,
+			connection: null,
+			projectId: "p1",
+		},
+	};
 	const client: ComposerClient = {
 		startChat: runtime.startChat,
-		chatState: async (sessionKey) =>
-			({
-				sessionKey,
-				projectId: "p1",
-				prepared: true,
-				initialized: true,
-				activeTurn: { id: "t1" },
-			}) as unknown as ChatSessionRuntimeState,
+		chatState: async (sessionKey) => ({ ...chat, sessionKey }),
 		sendChatCommand: runtime.sendChatCommand,
 		connectEvents: runtime.connectEvents,
 		searchProjectFiles: async () => [],
@@ -112,20 +123,13 @@ function createQueueRig(options: QueueRigOptions = {}) {
 	const app = {
 		...createAppState(),
 		projects: [{ id: "p1", name: "Project" }],
-		chatSessions: [
-			{
-				sessionKey: "sa",
-				projectId: "p1",
-				prepared: true,
-				initialized: true,
-				activeTurn: { id: "t1" },
-			} as unknown as ChatSessionRuntimeState,
-		],
+		chatSessions: [chat],
 	} as AppState;
 	const composer = new ComposerStore({
 		client,
 		app: () => app,
 		queue,
+		beforeSend: options.beforeSend,
 		onNotice: (notice) => notices.push(notice),
 	});
 	const target: ComposerTarget = { sessionKey: "sa", projectId: "p1" };
@@ -158,17 +162,56 @@ function createQueueRig(options: QueueRigOptions = {}) {
 		emit,
 		pushQueueUpdate,
 		pushEvent,
+		settleTurn: () => {
+			chat.activeTurn = false;
+		},
 	};
 }
 
+for (const settleAt of ["before dispatch", "after dispatch"] as const) {
+	test(`starts a queued follow-up once when the previous turn settles ${settleAt}`, async () => {
+		const { composer, queue, sent, settleTurn } = createQueueRig({
+			beforeSend: async () => {
+				if (settleAt === "before dispatch") settleTurn();
+				return true;
+			},
+			onFollowUp: () => {
+				if (settleAt === "after dispatch") settleTurn();
+				return { success: true, data: { disposition: "started" } };
+			},
+		});
+
+		composer.setValue("send after settlement");
+		expect(composer.running()).toBe(true);
+		const submit = composer.submit("follow_up");
+		expect(queue.items("sa")).toHaveLength(1);
+		await submit;
+
+		expect(composer.running()).toBe(false);
+		expect(
+			sent.map(({ command }) => [
+				command.type,
+				command.message,
+				command.piloStartIfIdle,
+			]),
+		).toEqual([["follow_up", "send after settlement", true]]);
+		expect(queue.items("sa")).toEqual([]);
+		expect(composer.state().value).toBe("");
+	});
+}
+
 test("queues steer and follow_up messages and updates when Pi consumes them", async () => {
-	const { queue, composer, pushQueueUpdate } = createQueueRig();
+	const { queue, composer, pushQueueUpdate, sent } = createQueueRig();
 
 	composer.setValue("adjust direction");
 	await composer.submit();
 	composer.setValue("then summarize");
 	await composer.submit("follow_up");
 
+	expect(sent.map(({ command }) => command.piloStartIfIdle)).toEqual([
+		undefined,
+		true,
+	]);
 	const items = queue.items("sa");
 	expect(items.map((item) => [item.kind, item.submission.text])).toEqual([
 		["steer", "adjust direction"],

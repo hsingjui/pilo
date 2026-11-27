@@ -60,6 +60,28 @@ pub async fn session_delete(
     project_id: String,
     session_path: String,
 ) -> Result<SessionDeleteResult, String> {
+    remove_saved_session(runtime, project_id, session_path, false).await
+}
+
+pub(crate) async fn remove_saved_session(
+    runtime: &Runtime,
+    project_id: String,
+    session_path: String,
+    trash_only: bool,
+) -> Result<SessionDeleteResult, String> {
+    // Order CLI trash with this project's resume and explicit stop operations.
+    let _files = if trash_only {
+        Some(
+            runtime
+                .chat_sessions
+                .session_file_gate(&project_id)
+                .await
+                .write_owned()
+                .await,
+        )
+    } else {
+        None
+    };
     let project = session_runtime_project(runtime, &project_id)?;
     let db = storage::open(&runtime.paths)?;
     let indexed = storage::get_session(&db, &session_path, Some(&project.id))?
@@ -68,10 +90,17 @@ pub async fn session_delete(
         return Err("session belongs to a different project".to_owned());
     }
 
-    runtime
-        .chat_sessions
-        .stop_session_file(&project, &session_path)
-        .await?;
+    if trash_only {
+        runtime
+            .chat_sessions
+            .require_session_file_stopped(&project, &session_path)
+            .await?;
+    } else {
+        runtime
+            .chat_sessions
+            .stop_session_file(&project, &session_path)
+            .await?;
+    }
 
     let _scan = lock_session_index(runtime, &project_id).await;
     super::session_activity::reject_external_session_owner(runtime, &project, Some(&session_path))
@@ -80,7 +109,11 @@ pub async fn session_delete(
         .servers
         .request(
             &project.connection,
-            "session.delete",
+            if trash_only {
+                "session.trash"
+            } else {
+                "session.delete"
+            },
             serde_json::json!({ "path": session_path }),
         )
         .await?;
@@ -95,6 +128,9 @@ pub async fn session_delete(
         .lock()
         .await
         .invalidate(&project, &indexed.session_path);
+    if trash_only {
+        publish_sessions_indexed(runtime, project_id);
+    }
     Ok(SessionDeleteResult { method })
 }
 
@@ -110,12 +146,14 @@ pub fn session_update_ui_state(
         &update,
         project_id.as_deref(),
     )?;
-    runtime.events.send(RuntimeEventEnvelope::global(
-        RuntimeEvent::SessionsIndexed {
-            project_id: entry.project_id.clone(),
-        },
-    ));
+    publish_sessions_indexed(runtime, entry.project_id.clone());
     Ok(entry)
+}
+
+pub(crate) fn publish_sessions_indexed(runtime: &Runtime, project_id: String) {
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::SessionsIndexed { project_id },
+    ));
 }
 
 pub async fn session_external_activity(

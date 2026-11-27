@@ -546,12 +546,8 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 							if (current) void save(current.inheritPi ? null : current.models);
 						}}
 					>
-						{() =>
-							props.saving() ? (
-								<Spinner size={14} color={token("primary-foreground")} />
-							) : null
-						}
-						<Text class="font-sans text-xs text-primary-foreground">
+						{() => (props.saving() ? <Spinner size={14} /> : null)}
+						<Text class="font-sans text-xs">
 							{() => t("chat.applyProjectScope")}
 						</Text>
 					</Button>

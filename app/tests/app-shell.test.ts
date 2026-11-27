@@ -109,6 +109,7 @@ test("the sidebar collapses and expands from the title bar", async () => {
 	await app.press("id:sidebar-expand");
 	await app.waitFor("id:sidebar >> id:sidebar-projects");
 	await app.waitFor("id:sidebar-expand", { state: "gone" });
+	expect(app.shows("id:sidebar-new-chat >> text:New session")).toBe(true);
 });
 
 test("the smallest window shows the sidebar beside the workspace", async () => {

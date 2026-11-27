@@ -19,6 +19,8 @@ import type {
 export interface ChatMessageListProps {
 	/** The open chat's transcript, as `ChatTranscriptStore` holds it. */
 	transcript: () => ChatTranscriptState;
+	/** The latest message submission from the local composer. */
+	lastSubmission?: () => { sessionKey: string } | null;
 	/**
 	 * Optional explicit full message array override (used by fixtures that supply
 	 * a synthetic array separate from `transcript`). When omitted, rows and the
@@ -124,6 +126,12 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								messages={props.messages}
 								historyPrefix={historyPrefix}
 								liveMessages={props.messages ? undefined : liveMessages}
+								lastSubmission={() => {
+									const submission = props.lastSubmission?.();
+									return submission?.sessionKey === key
+										? submission
+										: undefined;
+								}}
 								userBody={props.userBody}
 								assistantBody={props.assistantBody}
 								assistantText={props.assistantText}

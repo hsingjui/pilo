@@ -1,6 +1,7 @@
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 const ERROR_PREFIX = "PILO_STREAM_STALLED:";
 const TURN_COMPLETED = "pilo.turn-completed.v1";
+const STALL_QUEUE_BARRIER = "pilo.stall-queue-barrier.v1";
 
 function clearTimer(current) {
 	clearTimeout(current.timer);
@@ -15,8 +16,10 @@ export default function (pi) {
 		configured <= 2_147_483_647
 			? configured
 			: DEFAULT_IDLE_TIMEOUT_MS;
+	const holdStalledTurn = process.env.PILO_STALL_QUEUE_BARRIER === "1";
 	let running = false;
 	let sawAssistant = false;
+	let stalled = false;
 	let watch;
 
 	function stopWatching() {
@@ -46,6 +49,7 @@ export default function (pi) {
 	// Retries and boundary continuations emit agent_start without before_agent_start.
 	pi.on("agent_start", () => {
 		stopWatching();
+		stalled = false;
 		running = true;
 	});
 	pi.on("before_provider_request", (_event, ctx) => {
@@ -71,6 +75,7 @@ export default function (pi) {
 		const timedOut = watch?.timedOut;
 		stopWatching();
 		if (!timedOut || event.message.stopReason !== "aborted") return;
+		stalled = true;
 		return {
 			message: {
 				...event.message,
@@ -88,14 +93,20 @@ export default function (pi) {
 			pi.appendEntry(TURN_COMPLETED, { completedAtMs: Date.now() });
 		}
 	});
-	pi.on("agent_end", () => {
+	pi.on("agent_end", (_event, ctx) => {
 		running = false;
 		stopWatching();
+		if (stalled && holdStalledTurn && ctx.mode === "rpc") {
+			// Server answers this private dialog only after draining in-flight input
+			// and clearing the queue. Pi is still streaming for prompt preflight.
+			return ctx.ui.confirm(STALL_QUEUE_BARRIER, "");
+		}
 	});
 	for (const event of ["session_start", "session_switch", "session_shutdown"]) {
 		pi.on(event, () => {
 			running = false;
 			sawAssistant = false;
+			stalled = false;
 			stopWatching();
 		});
 	}

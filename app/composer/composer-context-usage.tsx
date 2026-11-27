@@ -366,6 +366,14 @@ export function ComposerContextUsage(props: {
 						}}
 					/>
 				</View>
+				<Text
+					class={classNames(
+						"font-sans text-[11px] leading-4 text-muted-foreground",
+						touch && "text-(length:--pilo-ui-text-2xs) leading-snug",
+					)}
+				>
+					{() => t("chat.contextUsageDescription")}
+				</Text>
 				{() => {
 					const note = contextNote();
 					if (note === "unknown") {
@@ -520,7 +528,7 @@ export function ComposerContextUsage(props: {
 			placement="top"
 			align="end"
 			offset={8}
-			popupClass="w-[248px] overflow-hidden rounded-(--pilo-context-details-radius) p-0"
+			popupClass="w-[304px] overflow-hidden rounded-(--pilo-context-details-radius) p-0"
 			trigger={trigger}
 		>
 			{details}

@@ -20,6 +20,7 @@ import {
 	reloadRemotePage,
 	resolveCurrentPageUrl,
 	saveRemoteDeviceToken,
+	verifyRemoteToken,
 } from "./web-remote-browser";
 
 initializeI18n();
@@ -142,11 +143,26 @@ function WebAppRoot() {
 		});
 	};
 
+	let tokenSubmitVersion = 0;
 	const handleSubmitToken = (value: string) => {
+		const trimmed = value.trim();
+		if (!trimmed) return;
+		const version = ++tokenSubmitVersion;
 		authError.set(null);
-		void saveRemoteDeviceToken(value).then(() => {
-			token.set(value);
-		});
+		void (async () => {
+			try {
+				await verifyRemoteToken(trimmed);
+				await saveRemoteDeviceToken(trimmed);
+				if (version === tokenSubmitVersion) token.set(trimmed);
+			} catch (error) {
+				if (version !== tokenSubmitVersion) return;
+				authError.set(
+					error instanceof Error && error.message === "REMOTE_AUTH_EXPIRED"
+						? t("settings.remoteManualTokenInvalid")
+						: t("settings.remotePairingNetworkError"),
+				);
+			}
+		})();
 	};
 
 	const enterWorkspace = (pairedToken?: string) => {
@@ -158,7 +174,7 @@ function WebAppRoot() {
 				token.set(loaded);
 			});
 		}
-		currentUrl.set(resolveCurrentPageUrl());
+		currentUrl.set(new URL("/", resolveCurrentPageUrl()).href);
 	};
 
 	return (

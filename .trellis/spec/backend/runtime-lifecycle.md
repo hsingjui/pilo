@@ -146,8 +146,9 @@ Frontend controller eviction alone is not backend process cleanup.
 - `ChatSessions::send` defaults a missing `prompt.streamingBehavior` to `"followUp"`
   for both desktop and WebUI. Idle prompts still start normally; a prompt racing
   autonomous Pi continuation queues instead of failing with "Agent is already
-  processing". Preserve explicitly supplied behavior, and leave `steer`/`follow_up`
-  commands unchanged. This does not permit prompts during active compaction.
+  processing". Preserve explicitly supplied behavior. Raw `steer` and `follow_up`
+  commands are unchanged; composer follow-ups that opt into starting when idle
+  use the contract below. This does not permit prompts during active compaction.
 - Desktop `useChatRuntimeEvents` adopts an active turn when live
   `user_message_start`/`assistant_message_start` arrives without one, after its
   generation/discard checks. Merely projecting autonomous output into the
@@ -304,6 +305,34 @@ Frontend controller eviction alone is not backend process cleanup.
   The desktop bounds this final server cleanup to 8 seconds, independently of
   the preceding 5-second resource teardown, and proceeds to exit on timeout.
 
+### Composer Follow-up at Settlement
+
+- **Scope:** A desktop/WebUI composer follow-up submitted while Pi is working
+  may reach Pi after the turn settles.
+- **Signature:** `follow_up` with `piloStartIfIdle: true` is a composer
+  submission. For non-slash text (including image-only input), Host sends the
+  private `pilo_follow_up_prompt` command to Server, which forwards a Pi
+  `prompt` with `streamingBehavior: "followUp"`. Preserve the RPC id, queue
+  owner, text, and attachments.
+- **Contract:** Pi decides during prompt preflight whether to queue or start.
+  Keep the local queue entry only for the queued disposition. Raw `follow_up`
+  and slash input keep their existing behavior, so a queued slash command
+  cannot execute immediately as an extension command.
+- **Errors:** Server treats the private command as queued input for stall
+  rejection, not as a fresh prompt that reopens input after a stall. The
+  [stream guard](./next-prompt-and-extensions.md#model-stream-idle-guard)
+  holds the old Pi run until already delivered input finishes and its queue is
+  cleared. The composer still cancels undispatched input on explicit stop and
+  restores a rejected draft.
+- **Cases:** A busy Pi queues the input; a naturally settled Pi starts it
+  once; a stalled Pi does not start it.
+- **Verification when authorized:** Cross settlement while send preparation
+  is pending and while the RPC is in flight. Assert one user message, no stale
+  queue item, attachment preservation, and no auto-send after a stall.
+- **Wrong / correct:** Do not gate dispatch on a second UI activity check,
+  resend an acknowledged queue RPC, or wait until Pi is idle to drain input on
+  a stall. Submit once and let Pi decide while the old run is still active.
+
 ## 4. Validation & Error Matrix
 
 | Condition | Behavior |
@@ -455,7 +484,8 @@ The following targeted regressions remain to be added with explicit authorizatio
   a late open snapshot must not undo an already received close push.
   These assertion points are requirements, not a claim of checks already run.
 - Prompt forwarding: absent `streamingBehavior` becomes `followUp`, explicit
-  `steer`/`followUp` survives, and non-prompt commands are unchanged.
+  `steer`/`followUp` survives, and only opted-in, non-slash composer follow-ups
+  are translated to prompts.
 - Sidebar compaction regression (pending authorization): running + compacting +
   no turn is active; compacting false is idle; a remaining active turn stays active;
   stopped/failed runtimes are idle; older responses without compacting retain

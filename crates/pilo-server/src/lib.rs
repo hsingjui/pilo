@@ -587,9 +587,12 @@ async fn dispatch(
                     .map_err(|error| format!("pilo-server blocking task failed: {error}"))??;
             Ok(ServerReply::with_binary(metadata, vec![data]))
         }
-        "session.delete" => blocking(move || session_delete(from_params(params)?))
-            .await
-            .map(ServerReply::json),
+        "session.delete" | "session.trash" => {
+            let trash_only = method == "session.trash";
+            blocking(move || session_delete(from_params(params)?, trash_only))
+                .await
+                .map(ServerReply::json)
+        }
         "session.discover" => blocking(session_discover).await.map(ServerReply::json),
         "session.watch_start" => session_watch_start(state, from_params(params)?)
             .await
