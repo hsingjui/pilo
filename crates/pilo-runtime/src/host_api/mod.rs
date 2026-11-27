@@ -279,6 +279,7 @@ mod tests {
         let mut admin = HashSet::from([
             "connection.local.test",
             "connection.localPiResources.set",
+            "connection.namingModels.set",
             "connection.pi.probe",
             "connection.settings.update",
             "connection.shownInHome.set",

@@ -179,4 +179,6 @@ jobs:
         run: cargo clippy --manifest-path crates/pilo-desktop/Cargo.toml --all-targets -- -D warnings
 
       - name: Rust unit tests
-        run: cargo test --manifest-path crates/pilo-desktop/Cargo.toml
+        run: |
+          cargo build -p pilo-server
+          cargo test --manifest-path crates/pilo-desktop/Cargo.toml

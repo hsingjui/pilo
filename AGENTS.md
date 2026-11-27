@@ -164,6 +164,7 @@ cargo check --manifest-path crates/pilo-desktop/Cargo.toml --all-targets
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo clippy --manifest-path crates/pilo-desktop/Cargo.toml --all-targets -- -D warnings
 cargo test -p pilo-domain -p pilo-runtime
+cargo build -p pilo-server
 cargo test --manifest-path crates/pilo-desktop/Cargo.toml
 ```
 

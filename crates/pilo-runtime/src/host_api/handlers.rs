@@ -123,7 +123,7 @@ register! {
     "connection.namingModels.list": Chat Json |rt, _who| () {
         json(database(rt, connections::connection_naming_model_list).await?)
     }
-    "connection.namingModels.set": Chat Json |rt, _who| (connection_id: String, provider: Option<String>, model_id: Option<String>) {
+    "connection.namingModels.set": Admin Json |rt, _who| (connection_id: String, provider: Option<String>, model_id: Option<String>) {
         json(database(rt, move |rt| connections::connection_naming_model_set(rt, connection_id, provider, model_id)).await?)
     }
     "connection.readDir": Workspace Json |rt, _who| (connection_id: String, path: String) {
