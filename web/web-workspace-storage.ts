@@ -12,7 +12,6 @@ import {
 } from "@shared/host-id";
 import type { ComposerTarget } from "../app/composer/composer-store";
 import {
-	createDraftSessionId,
 	isDraftSessionId,
 	isTemporarySessionKey,
 } from "../app/state/app-state";
@@ -21,10 +20,13 @@ const ACTIVE_PROJECT_KEY = "pilo.web.activeProject.v1";
 const DRAFT_TEXT_KEY_PREFIX = "pilo.web.draftText.v3:";
 const SAVED_DRAFT_TEXT_KEY_PREFIX = "pilo.web.savedDraftText.v1:";
 const LEGACY_SESSION_TEXT_PREFIX = "pilo.web.draftText.v2:";
-const LEGACY_PROJECT_PREFIXES = [
-	"pilo.web.draftText.v1:",
-	`${LEGACY_SESSION_TEXT_PREFIX}draft:`,
-];
+const LEGACY_PROJECT_DRAFTS = [
+	{ prefix: "pilo.web.draftText.v1:", sessionId: "draft-session-legacy-v1" },
+	{
+		prefix: `${LEGACY_SESSION_TEXT_PREFIX}draft:`,
+		sessionId: "draft-session-legacy-v2",
+	},
+] as const;
 
 type TabStorage = KeyValueStorage & {
 	readonly length: number;
@@ -52,14 +54,35 @@ export function createWebWorkspaceStorage(
 	};
 	const write = (key: string, text: string, ...legacy: string[]) => {
 		try {
-			if (text) storage.setItem(key, text);
-			else storage.removeItem(key);
-			for (const previous of legacy) storage.removeItem(previous);
+			if (text) {
+				storage.setItem(key, text);
+				for (const previous of legacy) removeLegacy(previous);
+			} else {
+				for (const previous of legacy) storage.removeItem(previous);
+				storage.removeItem(key);
+			}
 			return true;
 		} catch {
 			// Browser storage may be disabled or full; keep the live draft usable.
 			return false;
 		}
+	};
+	const removeLegacy = (key: string) => {
+		try {
+			storage.removeItem(key);
+		} catch {
+			// A saved copy wins even when cleanup must wait until the next load.
+		}
+	};
+	const legacyProjectKey = (sessionKey: string) => {
+		if (!isLocal) return undefined;
+		const parsed = parseChatSessionKey(sessionKey);
+		if (!parsed) return undefined;
+		const [projectId, sessionId] = parsed;
+		const legacy = LEGACY_PROJECT_DRAFTS.find(
+			(draft) => draft.sessionId === sessionId,
+		);
+		return legacy && legacy.prefix + projectId;
 	};
 	const draftKeys = ({
 		sessionKey,
@@ -67,11 +90,14 @@ export function createWebWorkspaceStorage(
 		sessionPath,
 	}: ComposerTarget) => {
 		if (isTemporarySessionKey(sessionKey)) return null;
-		if (!sessionPath)
+		if (!sessionPath) {
+			const projectKey = legacyProjectKey(sessionKey);
 			return [
 				draftPrefix + sessionKey,
 				...legacyKeys(DRAFT_TEXT_KEY_PREFIX + sessionKey),
+				...(projectKey ? [projectKey] : []),
 			] as const;
+		}
 		const suffix = chatSessionKey(
 			projectId,
 			runtimeSessionPathKey(sessionPath),
@@ -85,16 +111,18 @@ export function createWebWorkspaceStorage(
 		] as const;
 	};
 
+	function readDraft(target: ComposerTarget) {
+		const keys = draftKeys(target);
+		return keys ? read(...keys) : null;
+	}
+
 	return {
 		readActiveProject: () =>
 			read(activeProjectKey, ...legacyKeys(ACTIVE_PROJECT_KEY)),
 		writeActiveProject: (projectId: string) =>
 			write(activeProjectKey, projectId),
 		draftText: {
-			read(target: ComposerTarget) {
-				const keys = draftKeys(target);
-				return keys ? read(...keys) : null;
-			},
+			read: readDraft,
 			write(target: ComposerTarget, text: string) {
 				const keys = draftKeys(target);
 				return keys ? write(keys[0], text, ...keys.slice(1)) : false;
@@ -110,35 +138,34 @@ export function createWebWorkspaceStorage(
 				return;
 			}
 			const seen = new Set<string>();
+			const restore = (sessionKey: string) => {
+				if (seen.has(sessionKey)) return;
+				seen.add(sessionKey);
+				const parsed = parseChatSessionKey(sessionKey);
+				if (!parsed || !isDraftSessionId(parsed[1])) return;
+				const target = { sessionKey, projectId: parsed[0] };
+				const projectKey = legacyProjectKey(sessionKey);
+				const current = projectKey ? read(draftPrefix + sessionKey) : null;
+				if (current !== null && projectKey) removeLegacy(projectKey);
+				const text = current ?? readDraft(target);
+				if (text?.trim()) onDraft(target, text);
+			};
 			for (const key of keys) {
 				if (!key) continue;
 				const prefix = [draftPrefix, ...legacyKeys(DRAFT_TEXT_KEY_PREFIX)].find(
 					(prefix) => key.startsWith(prefix),
 				);
 				if (prefix) {
-					const sessionKey = key.slice(prefix.length);
-					if (seen.has(sessionKey)) continue;
-					seen.add(sessionKey);
-					const text = read(
-						draftPrefix + sessionKey,
-						...legacyKeys(DRAFT_TEXT_KEY_PREFIX + sessionKey),
-					);
-					if (!text?.trim()) continue;
-					const parsed = parseChatSessionKey(sessionKey);
-					if (parsed && isDraftSessionId(parsed[1]))
-						onDraft({ sessionKey, projectId: parsed[0] }, text);
+					restore(key.slice(prefix.length));
 					continue;
 				}
-				const legacyPrefix = legacyKeys(...LEGACY_PROJECT_PREFIXES).find(
-					(prefix) => key.startsWith(prefix),
-				);
-				if (!legacyPrefix) continue;
-				const text = read(key);
-				if (!text?.trim()) continue;
-				const projectId = key.slice(legacyPrefix.length);
-				const sessionKey = chatSessionKey(projectId, createDraftSessionId());
-				if (write(draftPrefix + sessionKey, text, key))
-					onDraft({ sessionKey, projectId }, text);
+				const legacy =
+					isLocal &&
+					LEGACY_PROJECT_DRAFTS.find(({ prefix }) => key.startsWith(prefix));
+				if (legacy)
+					restore(
+						chatSessionKey(key.slice(legacy.prefix.length), legacy.sessionId),
+					);
 			}
 		},
 	};

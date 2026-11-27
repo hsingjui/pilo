@@ -129,3 +129,62 @@ test("Web drafts prefer the namespaced copy, do not cross Hosts and do not reviv
 		}),
 	).toBe(null);
 });
+
+test("Web legacy draft cleanup can fail and retry without duplicating or overwriting a restored draft", () => {
+	const legacyKey = "pilo.web.draftText.v1:project:with:colons";
+	const storage = tabStorage({ [legacyKey]: "old draft" });
+	const removeItem = storage.removeItem;
+	storage.removeItem = (key) => {
+		if (key === legacyKey) throw new Error("cleanup failed");
+		removeItem(key);
+	};
+	const restore = () => {
+		const drafts: { target: ComposerTarget; text: string }[] = [];
+		createWebWorkspaceStorage(storage).restoreDrafts((target, text) =>
+			drafts.push({ target, text }),
+		);
+		expect(drafts.length).toBe(1);
+		return drafts[0];
+	};
+	const { target, text } = restore();
+	expect(text).toBe("old draft");
+	expect(storage.getItem(legacyKey)).toBe("old draft");
+	const currentKey = `pilo.web.draftText.v3@local:${target.sessionKey}`;
+	expect(storage.getItem(currentKey)).toBe("old draft");
+	storage.setItem(currentKey, "new draft");
+	expect(restore()).toEqual({ target, text: "new draft" });
+	expect(storage.getItem(legacyKey)).toBe("old draft");
+	storage.removeItem = removeItem;
+	expect(restore()).toEqual({ target, text: "new draft" });
+	expect(storage.getItem(legacyKey)).toBe(null);
+	expect(storage.length).toBe(1);
+});
+
+test("Web legacy draft remains readable in the composer when storage is full", () => {
+	const legacyKey = "pilo.web.draftText.v2:draft:project";
+	const storage = tabStorage({ [legacyKey]: "unsaved" });
+	const setItem = storage.setItem;
+	storage.setItem = () => {
+		throw Object.assign(new Error("storage is full"), {
+			name: "QuotaExceededError",
+		});
+	};
+	const workspace = createWebWorkspaceStorage(storage);
+	const shown: string[] = [];
+	workspace.restoreDrafts((target, text) => {
+		shown.push(target.sessionKey);
+		expect(text).toBe("unsaved");
+		expect(workspace.draftText.read(target)).toBe("unsaved");
+	});
+	expect(shown.length).toBe(1);
+	expect(storage.getItem(legacyKey)).toBe("unsaved");
+	expect(storage.length).toBe(1);
+	storage.setItem = setItem;
+	const reopened: string[] = [];
+	createWebWorkspaceStorage(storage).restoreDrafts(({ sessionKey }) =>
+		reopened.push(sessionKey),
+	);
+	expect(reopened).toEqual(shown);
+	expect(storage.getItem(legacyKey)).toBe(null);
+	expect(storage.length).toBe(1);
+});
