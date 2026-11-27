@@ -58,6 +58,8 @@ export function connectSessionNotifications(
 		hostId?: string;
 		/** 当用户前台正停留在目标会话聊天视图时返回 true，以静默抑制打扰通知。 */
 		isViewingSession?: (projectId: string, sessionPath: string) => boolean;
+		/** Brings this Host to the front before the pressed notification opens its chat. */
+		onActivate?: () => void;
 		onSelectTarget?: (projectId: string) => void;
 	},
 ) {
@@ -67,6 +69,7 @@ export function connectSessionNotifications(
 	notifications.onPress(({ id }) => {
 		const target = decodeTarget(id);
 		if (!target || target.hostId !== hostId || desktop.isQuitting()) return;
+		options?.onActivate?.();
 		desktop.show();
 		requested.set(target);
 	});

@@ -1217,6 +1217,44 @@ const enUS = {
 		change: "Change {{label}} shortcut",
 		reset: "Reset {{label}} shortcut to default",
 	},
+	hosts: {
+		title: "Hosts",
+		thisMachine: "This Mac",
+		localOf: "{{name}}'s machine",
+		connected: "Connected",
+		connecting: "Connecting…",
+		offline: "Offline",
+		disconnected: "Disconnected",
+		unauthorized: "Pair again",
+		incompatible: "Update Pilo",
+		connect: "Connect",
+		disconnect: "Disconnect",
+		remove: "Remove",
+		hostMenu: "Host menu",
+		addRemote: "Add remote Pilo",
+		addRemoteDescription:
+			"Paste the pairing link from Settings › Remote access on the other machine.",
+		pairingLink: "Pairing link",
+		readLink: "Continue",
+		reading: "Reading…",
+		address: "Address",
+		pair: "Pair",
+		pairing: "Pairing…",
+		scopeChat: "Chat: sessions, messages, history and images.",
+		scopeWorkspace:
+			"Chat + workspace: this desktop can run terminal commands and read and write project files on that machine.",
+		plaintextWarning:
+			"This address uses plain http outside a private network: the token and everything you send travel unencrypted. Prefer an https address.",
+		invalidLink: "This is not a Pilo pairing link.",
+		pairFailed: "Pairing failed",
+		paired: "Paired with {{name}}",
+		removed: "Removed {{name}}",
+		removedOffline:
+			"Removed {{name}} here. It is offline: revoke this device in its Remote access settings.",
+		needsPairing: "{{name}} revoked this device. Pair again to reconnect.",
+		incompatibleHost:
+			"{{name}} runs another Pilo version. Update Pilo on both machines.",
+	},
 	about: {
 		description: "A lightweight Pi desktop client.",
 		updateConfigUnavailable:

@@ -15,4 +15,9 @@ void launch(
 		notifications: createDesktopNotifications(DesktopNotifications),
 		dock: DesktopDock,
 	}),
+	{
+		credentials: pilo,
+		machineName: () => pilo.machineName(),
+		badge: DesktopDock,
+	},
 );
