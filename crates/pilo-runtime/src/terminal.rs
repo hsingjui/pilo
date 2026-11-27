@@ -480,13 +480,13 @@ impl TerminalManager {
         &self,
         session: TerminalSession,
         check: F,
-    ) -> Result<(), (String, TerminalSession)>
+    ) -> Result<(), (String, Box<TerminalSession>)>
     where
         F: FnOnce() -> Result<(), String>,
     {
         let _gate = self.project_gate.lock().await;
         if let Err(error) = check() {
-            return Err((error, session));
+            return Err((error, Box::new(session)));
         }
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         if !session.ended.load(Ordering::Acquire) {
