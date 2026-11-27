@@ -74,7 +74,15 @@ async function run() {
 	);
 	mount(() => (
 		<View class="flex-1">
-			<AppShell store={store} chat={chat} composer={composer} />
+			<AppShell
+				store={store}
+				chat={chat}
+				composer={composer}
+				projectClient={{
+					listConnections: () => Promise.resolve([]),
+					readConnectionDir: () => Promise.reject(new Error("unused")),
+				}}
+			/>
 			<View class="flex-row flex-wrap gap-2">
 				{preferenceChange("Save English", { locale: "en-US" })}
 				{preferenceChange("Save Georgia and Menlo", {
