@@ -6,6 +6,7 @@ import {
 	type HostHelloMessage,
 	HttpTransport,
 	type HostTransportConnectionState,
+	type NetworkSignals,
 	type WebSocketLike,
 } from "@shared/api/host-transport";
 import type {
@@ -31,6 +32,11 @@ import {
 	LOCAL_HOST_ACCESS,
 } from "./host-session";
 import { SessionScopedTransport } from "./session-scoped-transport";
+
+/** A remote Host's client: its transport reconnects the event stream itself. */
+class RemoteHostClient extends HostClient {
+	readonly reconnectsEvents = true;
+}
 
 /** The native calls for remote Host credentials. */
 export type RemoteHostCredentials = {
@@ -66,6 +72,8 @@ const CURSOR_KEY = "pilo.eventCursor";
 const PROBE_TIMEOUT_MS = 3_000;
 const RETRY_PROBE_MS = 10_000;
 const HELLO_TIMEOUT_MS = 10_000;
+/** How often an idle event socket is pinged so a silently dropped link is noticed. */
+const HEARTBEAT_MS = 15_000;
 
 export type HostRegistryOptions = {
 	local: HostSession;
@@ -289,12 +297,27 @@ export class HostRegistry {
 					},
 				);
 				if (response.ok) return address;
-				if (response.status === 401) return "unauthorized";
+				// The Host only rate-limits rejected tokens, so 429 means the same.
+				if (response.status === 401 || response.status === 429) {
+					return "unauthorized";
+				}
 			} catch {
 				// Unreachable: try the next address.
 			}
 		}
 		return null;
+	}
+
+	private async checkRevoked(hostId: string) {
+		const record = this.record(hostId);
+		const token = await this.options.credentials
+			.remoteHostToken(hostId)
+			.catch(() => null);
+		if (!record || !token || !this.connections().has(hostId)) return;
+		if ((await this.probe(record, token)) !== "unauthorized") return;
+		if (!this.connections().has(hostId)) return;
+		this.close(hostId);
+		this.setPending(hostId, "unauthorized");
 	}
 
 	private scheduleRetry(hostId: string) {
@@ -357,9 +380,12 @@ export class HostRegistry {
 		token: string,
 	) {
 		const { hostId } = record;
+		const heartbeat = heartbeatSignals(HEARTBEAT_MS);
 		const http = new HttpTransport({
 			origin: address.baseUrl,
 			hostId,
+			network: heartbeat.signals,
+			foregroundProbeMinHiddenMs: 0,
 			tokens: { getToken: () => token },
 			cursors: this.cursors,
 			fetch: this.fetchFn as never,
@@ -369,7 +395,7 @@ export class HostRegistry {
 		const session = new HostSession({
 			hostId,
 			kind: "remote",
-			client: new HostClient(transport),
+			client: new RemoteHostClient(transport),
 			shell: this.options.shell,
 		});
 		const hello = signal<HostHelloMessage | null>(null);
@@ -410,6 +436,8 @@ export class HostRegistry {
 						() => this.tick.set(this.tick() + 1),
 						REMOTE_HOST_OFFLINE_AFTER_MS,
 					);
+					// A rejected event socket looks like a network drop; ask over HTTP.
+					if (next !== "unauthorized") void this.checkRevoked(hostId);
 				}
 				if (next === "unauthorized") {
 					queueMicrotask(() => {
@@ -420,6 +448,7 @@ export class HostRegistry {
 			}),
 		];
 		const stop = () => {
+			heartbeat.stop();
 			if (offlineTimer !== undefined) clearTimeout(offlineTimer);
 			for (const unsubscribe of stops) unsubscribe?.();
 			this.disconnectedSince.delete(hostId);
@@ -491,7 +520,8 @@ export class HostRegistry {
 						},
 					);
 					// A device revoked already counts: the Host no longer lists it.
-					revoked = response.ok || response.status === 401;
+					revoked =
+						response.ok || response.status === 401 || response.status === 429;
 					if (revoked) break;
 				} catch {
 					// Try the next address.
@@ -615,4 +645,33 @@ function parseDisconnected(raw: string | null): string[] {
 	} catch {
 		return [];
 	}
+}
+
+/**
+ * Desktop windows have no visibility changes to probe on, so the event socket
+ * is pinged on a timer and reconnected when the ping goes unanswered.
+ */
+function heartbeatSignals(intervalMs: number): {
+	signals: NetworkSignals;
+	stop(): void;
+} {
+	const background = new Set<() => void>();
+	const foreground = new Set<() => void>();
+	const subscribe = (set: Set<() => void>) => (listener: () => void) => {
+		set.add(listener);
+		return () => {
+			set.delete(listener);
+		};
+	};
+	const timer = setInterval(() => {
+		for (const listener of [...background]) listener();
+		for (const listener of [...foreground]) listener();
+	}, intervalMs);
+	return {
+		signals: {
+			onBackground: subscribe(background),
+			onForeground: subscribe(foreground),
+		},
+		stop: () => clearInterval(timer),
+	};
 }
