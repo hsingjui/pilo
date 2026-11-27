@@ -1,7 +1,7 @@
 import { type Accessor, computed, signal, Text, View } from "nsh";
 
-import type { RemoteDevice } from "@shared/api/remote-types";
-import { t } from "../shell/i18n";
+import type { RemoteDevice, RemoteScopes } from "@shared/api/remote-types";
+import { appLocale, t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
@@ -13,6 +13,7 @@ import {
 	SettingsRow,
 	SettingsSection,
 } from "./layout";
+import { RemoteScopeSelect } from "./remote-scope-select";
 
 /** A device name that turns into a rename field (double-click / pencil / Enter). */
 function DeviceNameCell(props: {
@@ -86,8 +87,12 @@ export function RemoteDevicesSection(props: {
 	devices: Accessor<RemoteDevice[]>;
 	showEmptyHint: Accessor<boolean>;
 	isRevoking: (deviceId: string) => boolean;
+	busy: Accessor<boolean>;
+	canRevokeAll: Accessor<boolean>;
 	onRename: (deviceId: string, name: string) => void;
 	onRevoke: (deviceId: string) => void;
+	onRevokeAll: () => void;
+	onSetScopes: (deviceId: string, scopes: RemoteScopes) => void;
 }) {
 	const hasDevices = computed(() => props.devices().length > 0);
 	const confirmingId = signal<string | null>(null);
@@ -112,6 +117,11 @@ export function RemoteDevicesSection(props: {
 							return (
 								<SettingsRow
 									ghostEdge="both"
+									helper={t("settings.remoteDeviceLastSeen", {
+										date: new Date(device().lastSeenAtMs).toLocaleString(
+											appLocale(),
+										),
+									})}
 									label={
 										<DeviceNameCell
 											device={device}
@@ -119,7 +129,16 @@ export function RemoteDevicesSection(props: {
 										/>
 									}
 								>
-									<View class="flex-row items-center gap-1.5">
+									<View class="flex-row flex-wrap items-center gap-1.5">
+										<RemoteScopeSelect
+											testID={`remote-device:${device().id}:scopes`}
+											label={t("settings.remoteDevicePermissions")}
+											value={device().scopes}
+											disabled={props.busy()}
+											onChange={(scopes) =>
+												props.onSetScopes(device().id, scopes)
+											}
+										/>
 										{() =>
 											isConfirming() ? (
 												<SettingsActionButton
@@ -140,7 +159,7 @@ export function RemoteDevicesSection(props: {
 													? "border-destructive/40 bg-destructive/10 text-destructive"
 													: undefined
 											}
-											disabled={props.isRevoking(device().id)}
+											disabled={props.busy()}
 											onPress={() => {
 												if (!isConfirming()) {
 													confirmingId.set(device().id);
@@ -180,6 +199,23 @@ export function RemoteDevicesSection(props: {
 						}
 					/>
 				)
+			}
+			{() =>
+				props.canRevokeAll() ? (
+					<SettingsRow label="">
+						<SettingsActionButton
+							testID="remote-devices-revoke-all"
+							class="border-destructive/40 text-destructive"
+							disabled={props.busy()}
+							onPress={props.onRevokeAll}
+						>
+							<Icon name="Trash2" size={14} />
+							<Text class="font-sans text-xs">
+								{t("settings.remoteRevokeAll")}
+							</Text>
+						</SettingsActionButton>
+					</SettingsRow>
+				) : null
 			}
 		</SettingsSection>
 	);

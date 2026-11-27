@@ -48,7 +48,8 @@ use pilo_runtime::{
         prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
     },
     remote::{
-        remote_device_rename, remote_device_revoke, remote_host_state, remote_lan_addresses,
+        remote_device_rename, remote_device_revoke, remote_device_set_scopes,
+        remote_devices_revoke_all, remote_host_state, remote_lan_addresses,
         remote_pairing_regenerate, remote_set_addresses, remote_set_enabled, remote_set_port,
     },
     runtime_api::{
@@ -1103,9 +1104,13 @@ impl Pilo {
     }
 
     /// Regenerates the Remote Host's pairing link.
-    pub async fn remote_pairing_regenerate(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let state = remote_pairing_regenerate(&runtime).await?;
+    pub async fn remote_pairing_regenerate(
+        this: Instance<Self>,
+        scopes: String,
+    ) -> Result<JsonValue, String> {
+        let scopes = scopes.parse().map_err(str::to_owned)?;
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_pairing_regenerate(&runtime, scopes).await?;
             serde_json::to_value(state).map_err(|error| error.to_string())
         })
         .await
@@ -1118,6 +1123,29 @@ impl Pilo {
     ) -> Result<JsonValue, String> {
         Self::with_runtime(this, move |runtime| async move {
             let state = remote_device_revoke(&runtime, device_id).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Revokes every Remote device and invalidates the active pairing link.
+    pub async fn remote_devices_revoke_all(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, |runtime| async move {
+            let state = remote_devices_revoke_all(&runtime).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Updates the permissions of a paired Remote device.
+    pub async fn remote_device_set_scopes(
+        this: Instance<Self>,
+        device_id: String,
+        scopes: String,
+    ) -> Result<JsonValue, String> {
+        let scopes = scopes.parse().map_err(str::to_owned)?;
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_device_set_scopes(&runtime, device_id, scopes).await?;
             serde_json::to_value(state).map_err(|error| error.to_string())
         })
         .await

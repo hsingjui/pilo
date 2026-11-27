@@ -24,6 +24,7 @@ import type { ConnectionNamingModel } from "@shared/api/sessions-types";
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
+	RemoteScopes,
 } from "@shared/api/remote-types";
 import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
 import type {
@@ -142,6 +143,8 @@ export type ScriptedSettingsClient = Pick<
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
+	| "remoteDevicesRevokeAll"
+	| "remoteDeviceSetScopes"
 	| "remoteDeviceRename"
 	| "openLogDirectory"
 	| "connectEvents"
@@ -275,6 +278,7 @@ const DEFAULT_REMOTE_HOST: RemoteHostState = {
 	addressConfigError: null,
 	pairingRemainingUses: 0,
 	pairingTotalUses: 0,
+	pairingScopes: null,
 	pairingUrl: null,
 	pairingExpiresAtMs: null,
 	lastError: null,
@@ -784,9 +788,10 @@ export function scriptedClient(script: AppScript = {}) {
 			emit({ type: "configuration_changed" });
 			return Promise.resolve(remoteHost);
 		},
-		remotePairingRegenerate() {
+		remotePairingRegenerate(scopes: RemoteScopes) {
 			remoteHost = {
 				...remoteHost,
+				pairingScopes: scopes,
 				pairingUrl: `${remoteHost.pairingUrl}-regen`,
 			};
 			emit({ type: "configuration_changed" });
@@ -797,6 +802,31 @@ export function scriptedClient(script: AppScript = {}) {
 				...remoteHost,
 				devices: remoteHost.devices.map((device) =>
 					device.id === deviceId ? { ...device, revokedAtMs: 1 } : device,
+				),
+			};
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteDevicesRevokeAll() {
+			remoteHost = {
+				...remoteHost,
+				pairingUrl: null,
+				pairingScopes: null,
+				pairingExpiresAtMs: null,
+				pairingRemainingUses: 0,
+				devices: remoteHost.devices.map((device) => ({
+					...device,
+					revokedAtMs: device.revokedAtMs ?? 1,
+				})),
+			};
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteDeviceSetScopes(deviceId: string, scopes: RemoteScopes) {
+			remoteHost = {
+				...remoteHost,
+				devices: remoteHost.devices.map((device) =>
+					device.id === deviceId ? { ...device, scopes } : device,
 				),
 			};
 			emit({ type: "configuration_changed" });
