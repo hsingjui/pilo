@@ -624,3 +624,46 @@ test("mobile toasts adapt to narrow viewports, safe area, visible close button, 
 	await narrow.press("label:Close");
 	await narrow.waitFor("id:app-toast-overlay", { state: "gone" });
 });
+
+test("mobile composer collapses empty textarea and edit buttons while external Pi is running", async () => {
+	const locked = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: {
+			"fixture.scenario": "external-readonly",
+		},
+	});
+
+	await locked.waitFor("id:chat-composer-readonly");
+	await locked.waitFor("text:External Pi is running; editing is paused");
+	await locked.waitFor("id:mobile-textarea-input", { state: "gone" });
+	await locked.waitFor("id:chat-composer-attach", { state: "gone" });
+	await locked.waitFor("id:chat-composer-send", { state: "gone" });
+	await locked.waitFor("id:run-config-trigger");
+	await locked.waitFor("id:composer-context-usage");
+
+	const surfaceLayout = locked.layout("id:chat-composer-surface");
+	expect(surfaceLayout?.height).toBeLessThanOrEqual(96);
+
+	const withDraft = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: {
+			"fixture.scenario": "external-readonly-draft",
+		},
+	});
+
+	await withDraft.waitFor("id:chat-composer-readonly");
+	await withDraft.waitFor(
+		"text:An external Pi is running; editing is paused while your draft is preserved",
+	);
+	await withDraft.waitFor("id:mobile-textarea-input");
+	await withDraft.waitFor("id:chat-composer-attach", { state: "gone" });
+	await withDraft.waitFor("id:chat-composer-send", { state: "gone" });
+	await withDraft.waitFor("id:run-config-trigger");
+	await withDraft.waitFor("id:composer-context-usage");
+});

@@ -256,6 +256,8 @@ async function run() {
 	}
 
 	const queueScenario = scenario === "queue" || scenario === "queue-offline";
+	const externalReadOnlyScenario =
+		scenario === "external-readonly" || scenario === "external-readonly-draft";
 	const s1Key = chatSessionKey("p1", "s1");
 	const queues = { steering: [] as string[], followUp: [] as string[] };
 	let queueSequence = 1;
@@ -363,7 +365,17 @@ async function run() {
 				: [],
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
-	const store = new AppStore(runtime.client, chat);
+	let externalTurnOpen = scenario === "external-readonly";
+	const appClient = externalReadOnlyScenario
+		? {
+				...runtime.client,
+				externalSessionActivity: async (projectId: string) =>
+					externalTurnOpen && projectId === "p1"
+						? [{ path: "/sessions/s1.jsonl", turnOpen: true }]
+						: [],
+			}
+		: runtime.client;
+	const store = new AppStore(appClient, chat);
 	const composerClient = composerStubClient(runtime.client);
 	if (queueScenario) {
 		queue = new ChatQueueStore(composerClient);
@@ -406,7 +418,7 @@ async function run() {
 		sessionKey: "p1:draft-1",
 		projectId: "p1",
 		session:
-			scenario === "context-usage"
+			scenario === "context-usage" || externalReadOnlyScenario
 				? {
 						sessionId: "s1",
 						sessionPath: "/sessions/s1.jsonl",
@@ -542,8 +554,16 @@ async function run() {
 		mount(MobileAppShell, shellProps);
 	}
 	await store.start();
-	if (queueScenario) {
+	if (queueScenario || externalReadOnlyScenario) {
 		store.selectSession("p1", "/sessions/s1.jsonl");
+	}
+	if (externalReadOnlyScenario) {
+		await store.loadSessions("p1");
+	}
+	if (scenario === "external-readonly-draft") {
+		composer.setValue("keep this draft while external Pi runs");
+		externalTurnOpen = true;
+		await store.loadSessions("p1");
 	}
 	if (scenario === "queue-offline" && queue) {
 		queues.steering.push("keep waiting while offline");

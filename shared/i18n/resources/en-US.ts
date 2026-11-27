@@ -683,6 +683,7 @@ const enUS = {
 			"Please wait for history to finish loading before sending images",
 		externalReadOnly:
 			"An external Pi is running; editing is paused while your draft is preserved",
+		externalReadOnlyIdle: "External Pi is running; editing is paused",
 		sessionHeaderMissing:
 			"The session file header is missing. History is available to view and reference, but the file must be repaired before continuing.",
 		waitCompaction: "Wait for the current response to finish before compacting",

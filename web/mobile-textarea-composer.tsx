@@ -87,6 +87,19 @@ function clampInputHeight(
 	return Math.max(minHeight, Math.min(Math.ceil(contentHeight + 8), maxHeight));
 }
 
+function clampLockedDraftHeight(
+	contentHeight: number,
+	leading: number,
+	viewportHeight: number,
+) {
+	const minHeight = leading + 12;
+	const maxByRows = leading * 4 + 12;
+	const maxByViewport = Math.max(minHeight, Math.round(viewportHeight * 0.22));
+	const maxHeight = Math.min(maxByRows, maxByViewport);
+	if (contentHeight <= 0) return minHeight;
+	return Math.max(minHeight, Math.min(Math.ceil(contentHeight + 8), maxHeight));
+}
+
 /** Startup loading skeleton aligned with `MobileTextareaComposer` geometry. */
 export function MobileComposerSkeleton(props: { showModel?: boolean }) {
 	return (
@@ -160,8 +173,8 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const readOnly = () => store.readOnly();
 	const config = () => props.runConfig?.config() ?? null;
 	const headerMissing = () => Boolean(config()?.headerMissing);
-	const disabled = () =>
-		store.target() === null || readOnly() || headerMissing();
+	const locked = computed(() => readOnly() || headerMissing());
+	const disabled = () => store.target() === null || locked();
 	const blocked = () =>
 		disabled() || state().sending || (running() && store.compacting());
 	const modEnter = () => (props.sendShortcut?.() ?? "enter") === "mod-enter";
@@ -172,11 +185,18 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 		if (!running()) untracked(() => store.resetTransientSendMode());
 	});
 
+	effect(() => {
+		if (locked()) focused.set(false);
+	});
+
 	const images = computed(() => state().images);
 	const references = computed(() => store.mentionDraft().references);
 	const hasAttachments = computed(
 		() => images().length > 0 || references().length > 0,
 	);
+	const hasDraftText = computed(() => state().value.trim().length > 0);
+	const hasDraft = computed(() => hasDraftText() || hasAttachments());
+	const showInput = computed(() => !locked() || hasDraftText());
 
 	// Reset local input measurements and menu dismissal when switching sessions.
 	const targetKey = computed(() => store.target()?.sessionKey ?? null);
@@ -309,11 +329,13 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 	const fontSize = () => webInputFontSize(readingFont().fontSize);
 	const leading = () => inputLineHeight(fontSize());
 	const height = () =>
-		clampInputHeight(
-			state().value ? contentHeight() : 0,
-			leading(),
-			availableHeight(),
-		);
+		locked()
+			? clampLockedDraftHeight(contentHeight(), leading(), availableHeight())
+			: clampInputHeight(
+					state().value ? contentHeight() : 0,
+					leading(),
+					availableHeight(),
+				);
 
 	// On phones/tablets, Return always inserts a newline to prevent accidental
 	// sends during IME confirmation or touch typing; the Send button submits.
@@ -321,6 +343,194 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 		platform.desktop && !modEnter()
 			? ("submit" as const)
 			: ("newline" as const);
+
+	const renderInput = () => (
+		<View
+			class={
+				locked() && !hasAttachments() ? "border-t border-border/50" : undefined
+			}
+		>
+			<BaseInput
+				ref={(node) => inputRef.set(node)}
+				testID="mobile-textarea-input"
+				multiline
+				value={state().value}
+				disabled={disabled()}
+				readonly={disabled()}
+				placeholder={
+					!hasAttachments() && !locked()
+						? t("chat.composerPlaceholder")
+						: undefined
+				}
+				accessibilityLabel={t("chat.composerPlaceholder")}
+				submitBehavior={submitBehavior()}
+				returnKeyType={platform.desktop && !modEnter() ? "send" : "default"}
+				class={
+					locked()
+						? "min-w-0 w-full border-0 bg-transparent px-3 py-2 font-sans text-muted-foreground"
+						: "min-w-0 w-full border-0 bg-transparent px-1 py-1 font-sans text-input-foreground placeholder:text-input-placeholder"
+				}
+				style={{
+					height: height(),
+					fontFamily: readingFont().fontFamily,
+					fontSize: fontSize(),
+					lineHeight: leading(),
+				}}
+				onChange={({ value }) => {
+					if (disabled()) return;
+					const prev = state().value;
+					const delta = value.length - prev.length;
+					const nextCaret = Math.max(
+						0,
+						Math.min(value.length, caret() + delta),
+					);
+					caret.set(nextCaret);
+					store.setValue(value, nextCaret);
+				}}
+				onSelectionChange={({ end }) => {
+					caret.set(end);
+				}}
+				onContentSizeChange={({ size }) => {
+					contentHeight.set(size.height);
+				}}
+				onFocus={() => focused.set(true)}
+				onBlur={() => focused.set(false)}
+				onCompositionChange={({ composing }) => {
+					store.setComposing(composing);
+				}}
+				onSubmit={() => {
+					if (!state().composing) submit();
+				}}
+				onKeyDown={(event) => {
+					if (state().composing) return;
+					if (menuOpen()) {
+						const entries = suggestionItems();
+						if (event.key === "Escape") {
+							dismissedQuery.set(queryKey());
+							return;
+						}
+						if (event.key === "ArrowDown" && entries.length > 0) {
+							selectedIndex.update((i) => (i + 1) % entries.length);
+							return;
+						}
+						if (event.key === "ArrowUp" && entries.length > 0) {
+							selectedIndex.update(
+								(i) => (i - 1 + entries.length) % entries.length,
+							);
+							return;
+						}
+						if (
+							(event.key === "Tab" || event.key === "Enter") &&
+							entries.length > 0
+						) {
+							pickSuggestion(entries[selectedIndex()]);
+							return;
+						}
+					}
+					if (
+						event.key === "Enter" &&
+						(event.modifiers.platform || event.modifiers.control)
+					) {
+						submit();
+					}
+				}}
+				onPaste={({ files, uris }) => {
+					if (disabled()) return;
+					if (files.length > 0) void store.addFiles(files);
+					if (uris.length > 0) void store.addUris(uris);
+				}}
+			/>
+		</View>
+	);
+
+	const renderEditableToolbar = () => (
+		<View
+			testID="chat-composer-toolbar"
+			class="-ml-1 min-w-0 flex-row items-center gap-1 pt-0.5"
+			onLayout={({ bounds }) => toolbarWidth.set(bounds.size.width)}
+		>
+			<Button
+				testID="chat-composer-attach"
+				variant="ghost"
+				size="icon"
+				class="size-10 shrink-0 rounded-md"
+				disabled={blocked()}
+				accessibilityLabel={
+					platform.desktop ? t("chat.addAttachment") : t("chat.addImage")
+				}
+				onPress={pickAttachments}
+			>
+				<Icon name="Plus" size={16} />
+			</Button>
+
+			{props.runConfig ? (
+				<MobileRunConfig
+					{...props.runConfig}
+					readOnly={() => locked()}
+					toolbarWidth={toolbarWidth}
+				/>
+			) : null}
+
+			{props.runConfig ? (
+				<ComposerContextUsage
+					usage={() => config()?.session ?? null}
+					contextWindow={() => config()?.model?.contextWindow}
+					touch
+					availableHeight={availableHeight}
+					onCompact={() => void store.compact()}
+					compacting={() => store.compacting()}
+					pendingCompact={() => store.pendingCompact()}
+					onCancelPendingCompact={() => store.cancelPendingCompact()}
+					compactDisabled={() => disabled() || state().sending}
+				/>
+			) : null}
+
+			<ComposerActions
+				toolbarWidth={toolbarWidth}
+				sendMode={() => state().sendMode}
+				onSendModeChange={(mode) => store.setSendMode(mode)}
+				running={running}
+				hasContent={hasContent}
+				blocked={blocked}
+				sending={() => state().sending}
+				sendShortcut={() => (modEnter() ? "mod-enter" : "enter")}
+				touch
+				availableHeight={availableHeight}
+				onSend={submit}
+				onStop={() => void store.stop()}
+			/>
+		</View>
+	);
+
+	const renderLockedToolbar = () =>
+		props.runConfig ? (
+			<View
+				testID="chat-composer-toolbar"
+				class="min-w-0 flex-row items-center justify-between gap-2 border-t border-border/50 px-3"
+				onLayout={({ bounds }) => toolbarWidth.set(bounds.size.width)}
+			>
+				<View class="min-w-0 flex-1 flex-row items-center pl-1">
+					<MobileRunConfig
+						{...props.runConfig}
+						readOnly={() => true}
+						toolbarWidth={toolbarWidth}
+					/>
+				</View>
+				<View class="-mr-1.5 shrink-0">
+					<ComposerContextUsage
+						usage={() => config()?.session ?? null}
+						contextWindow={() => config()?.model?.contextWindow}
+						touch
+						availableHeight={availableHeight}
+						onCompact={() => void store.compact()}
+						compacting={() => store.compacting()}
+						pendingCompact={() => store.pendingCompact()}
+						onCancelPendingCompact={() => store.cancelPendingCompact()}
+						compactDisabled={() => disabled() || state().sending}
+					/>
+				</View>
+			</View>
+		) : null;
 
 	return (
 		<View
@@ -364,35 +574,39 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 				testID="chat-composer-surface"
 				onLayout={({ bounds }) => surfaceWidth.set(bounds.size.width)}
 				class={
-					readOnly() || headerMissing()
-						? "relative w-full border border-border/60 bg-muted"
-						: "relative w-full border border-(--pilo-composer-border) bg-(--pilo-composer-background)"
+					headerMissing()
+						? "relative w-full overflow-hidden border border-status-warning/30 bg-muted"
+						: readOnly()
+							? "relative w-full overflow-hidden border border-border/60 bg-muted"
+							: "relative w-full border border-(--pilo-composer-border) bg-(--pilo-composer-background)"
 				}
 				style={{
 					...tactileTransition("border-color, box-shadow, background-color"),
 					borderColor:
-						focused() && !readOnly() && !headerMissing()
+						focused() && !locked()
 							? token("pilo-composer-focus-border")
 							: undefined,
-					boxShadow:
-						focused() && !readOnly() && !headerMissing()
+					boxShadow: locked()
+						? "none"
+						: focused()
 							? focusShadow()
 							: composerShadow(),
 					borderRadius: token("pilo-mobile-composer-radius"),
-					gap: 4,
-					paddingHorizontal: 8,
-					paddingVertical: 6,
+					gap: locked() ? 0 : 4,
+					paddingHorizontal: locked() ? 0 : 8,
+					paddingVertical: locked() ? 0 : 6,
 				}}
 			>
 				{() =>
 					headerMissing() ? (
 						<View
 							testID="chat-composer-header-missing"
-							class="flex-row items-center gap-1.5 rounded-lg bg-status-warning/10 px-2 py-1.5"
+							class="flex-row items-start gap-2 bg-status-warning/10 px-3 py-2.5"
 						>
 							<Icon
 								name="TriangleAlert"
 								size={14}
+								class="mt-0.5 shrink-0"
 								color={token("status-warning")}
 							/>
 							<Text class="min-w-0 flex-1 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-status-warning">
@@ -402,11 +616,21 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					) : readOnly() ? (
 						<View
 							testID="chat-composer-readonly"
-							class="flex-row items-center gap-1.5 rounded-lg bg-background/60 px-2 py-1.5"
+							class="flex-row items-start gap-2 px-3 py-2.5"
 						>
-							<Icon name="Lock" size={14} color={token("muted-foreground")} />
+							<Icon
+								name="Lock"
+								size={14}
+								class="mt-0.5 shrink-0"
+								color={token("muted-foreground")}
+								style={{ opacity: 0.8 }}
+							/>
 							<Text class="min-w-0 flex-1 font-sans text-xs text-(length:--pilo-ui-text-xs) leading-snug text-muted-foreground">
-								{() => t("chat.externalReadOnly")}
+								{() =>
+									hasDraft()
+										? t("chat.externalReadOnly")
+										: t("chat.externalReadOnlyIdle")
+								}
 							</Text>
 						</View>
 					) : null
@@ -416,7 +640,11 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					hasAttachments() ? (
 						<View
 							testID="chat-composer-attachments"
-							class="min-w-0 flex-row flex-wrap items-center gap-1.5 p-1"
+							class={
+								locked()
+									? "min-w-0 flex-row flex-wrap items-center gap-1.5 border-t border-border/50 px-2.5 py-2"
+									: "min-w-0 flex-row flex-wrap items-center gap-1.5 p-1"
+							}
 						>
 							<Each of={images()} key={(image) => image.id}>
 								{(image) => (
@@ -518,151 +746,15 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					) : null
 				}
 
-				{/* Native browser <textarea> via nsh/base Input multiline */}
-				<BaseInput
-					ref={(node) => inputRef.set(node)}
-					testID="mobile-textarea-input"
-					multiline
-					value={state().value}
-					disabled={disabled()}
-					readonly={disabled()}
-					placeholder={
-						!hasAttachments() && !readOnly() && !headerMissing()
-							? t("chat.composerPlaceholder")
-							: undefined
-					}
-					accessibilityLabel={t("chat.composerPlaceholder")}
-					submitBehavior={submitBehavior()}
-					returnKeyType={platform.desktop && !modEnter() ? "send" : "default"}
-					class="min-w-0 w-full border-0 bg-transparent px-1 py-1 font-sans text-input-foreground placeholder:text-input-placeholder"
-					style={{
-						height: height(),
-						fontFamily: readingFont().fontFamily,
-						fontSize: fontSize(),
-						lineHeight: leading(),
-					}}
-					onChange={({ value }) => {
-						if (disabled()) return;
-						const prev = state().value;
-						const delta = value.length - prev.length;
-						const nextCaret = Math.max(
-							0,
-							Math.min(value.length, caret() + delta),
-						);
-						caret.set(nextCaret);
-						store.setValue(value, nextCaret);
-					}}
-					onSelectionChange={({ end }) => {
-						caret.set(end);
-					}}
-					onContentSizeChange={({ size }) => {
-						contentHeight.set(size.height);
-					}}
-					onFocus={() => focused.set(true)}
-					onBlur={() => focused.set(false)}
-					onCompositionChange={({ composing }) => {
-						store.setComposing(composing);
-					}}
-					onSubmit={() => {
-						if (!state().composing) submit();
-					}}
-					onKeyDown={(event) => {
-						if (state().composing) return;
-						if (menuOpen()) {
-							const entries = suggestionItems();
-							if (event.key === "Escape") {
-								dismissedQuery.set(queryKey());
-								return;
-							}
-							if (event.key === "ArrowDown" && entries.length > 0) {
-								selectedIndex.update((i) => (i + 1) % entries.length);
-								return;
-							}
-							if (event.key === "ArrowUp" && entries.length > 0) {
-								selectedIndex.update(
-									(i) => (i - 1 + entries.length) % entries.length,
-								);
-								return;
-							}
-							if (
-								(event.key === "Tab" || event.key === "Enter") &&
-								entries.length > 0
-							) {
-								pickSuggestion(entries[selectedIndex()]);
-								return;
-							}
-						}
-						if (
-							event.key === "Enter" &&
-							(event.modifiers.platform || event.modifiers.control)
-						) {
-							submit();
-						}
-					}}
-					onPaste={({ files, uris }) => {
-						if (disabled()) return;
-						if (files.length > 0) void store.addFiles(files);
-						if (uris.length > 0) void store.addUris(uris);
-					}}
-				/>
+				{/* Native browser <textarea> via nsh/base Input multiline; collapsed when locked without a draft */}
+				{() => (showInput() ? untracked(renderInput) : null)}
 
-				{/* Bottom toolbar aligned with React WebUI mobile density */}
-				<View
-					testID="chat-composer-toolbar"
-					class="-ml-1 min-w-0 flex-row items-center gap-1 pt-0.5"
-					onLayout={({ bounds }) => toolbarWidth.set(bounds.size.width)}
-				>
-					<Button
-						testID="chat-composer-attach"
-						variant="ghost"
-						size="icon"
-						class="size-10 shrink-0 rounded-md"
-						disabled={blocked()}
-						accessibilityLabel={
-							platform.desktop ? t("chat.addAttachment") : t("chat.addImage")
-						}
-						onPress={pickAttachments}
-					>
-						<Icon name="Plus" size={16} />
-					</Button>
-
-					{props.runConfig ? (
-						<MobileRunConfig
-							{...props.runConfig}
-							readOnly={() => readOnly() || headerMissing()}
-							toolbarWidth={toolbarWidth}
-						/>
-					) : null}
-
-					{props.runConfig ? (
-						<ComposerContextUsage
-							usage={() => config()?.session ?? null}
-							contextWindow={() => config()?.model?.contextWindow}
-							touch
-							availableHeight={availableHeight}
-							onCompact={() => void store.compact()}
-							compacting={() => store.compacting()}
-							pendingCompact={() => store.pendingCompact()}
-							onCancelPendingCompact={() => store.cancelPendingCompact()}
-							compactDisabled={() => disabled() || state().sending}
-						/>
-					) : null}
-
-					<ComposerActions
-						toolbarWidth={toolbarWidth}
-						sendMode={() => state().sendMode}
-						onSendModeChange={(mode) => store.setSendMode(mode)}
-						running={running}
-						hasContent={hasContent}
-						blocked={blocked}
-						sending={() => state().sending}
-						sendShortcut={() => (modEnter() ? "mod-enter" : "enter")}
-						touch
-						availableHeight={availableHeight}
-						onSend={submit}
-						onStop={() => void store.stop()}
-					/>
-				</View>
+				{/* Bottom toolbar: full controls when editable; compact metadata row when locked */}
+				{() =>
+					locked()
+						? untracked(renderLockedToolbar)
+						: untracked(renderEditableToolbar)
+				}
 			</View>
 
 			{/* `@` / `/` suggestions popup */}
