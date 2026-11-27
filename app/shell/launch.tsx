@@ -9,7 +9,6 @@ import {
 } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
-import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
@@ -96,16 +95,26 @@ export async function launch(
 ) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
+	const workspace = new WorkspaceStore();
+	const terminals = new TerminalStore(client);
 	let notify: ((event: PiloClientEvent) => Promise<void>) | undefined;
 	let desktop: ReturnType<typeof connectDesktopShell> | undefined;
-	const store = new AppStore(client, chat, (event) => {
-		if (event.type === "configuration_changed") {
-			void desktop?.refreshExitOnClose();
-		}
-		void notify?.(event).catch((error: unknown) => {
-			console.warn("Failed to send Pilo session notification", error);
-		});
-	});
+	const store = new AppStore(
+		client,
+		chat,
+		(event) => {
+			if (event.type === "configuration_changed") {
+				void desktop?.refreshExitOnClose();
+			}
+			void notify?.(event).catch((error: unknown) => {
+				console.warn("Failed to send Pilo session notification", error);
+			});
+		},
+		(projectId) =>
+			terminals.activeTab(projectId) === null &&
+			!workspace.isGitActive(projectId) &&
+			workspace.activeFile(projectId) === null,
+	);
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
 	const toasts = new AppToasts();
@@ -118,8 +127,6 @@ export async function launch(
 		if (message.type !== "events") return;
 		for (const event of message.events) queue.receive(event);
 	});
-	const workspace = new WorkspaceStore();
-	const terminals = new TerminalStore(client);
 	const nameSession = createSessionAutoTitle(client, (target, error) => {
 		composer.setStatus(
 			`${t("settings.automaticNamingFailed")}: ${
@@ -266,22 +273,8 @@ export async function launch(
 					desktop,
 					notifications,
 					{
-						isViewingSession: (projectId, sessionPath) => {
-							const open = store.state().navigation.session;
-							if (
-								!open ||
-								open.projectId !== projectId ||
-								!open.sessionPath ||
-								runtimeSessionPathKey(open.sessionPath) !==
-									runtimeSessionPathKey(sessionPath)
-							) {
-								return false;
-							}
-							if (terminals.activeTab(projectId) !== null) return false;
-							if (workspace.isGitActive(projectId)) return false;
-							if (workspace.activeFile(projectId) !== null) return false;
-							return true;
-						},
+						isViewingSession: (projectId, sessionPath) =>
+							store.isViewingSession(projectId, sessionPath),
 						onSelectTarget: (projectId) => {
 							terminals.select(null);
 							workspace.selectChat(projectId);

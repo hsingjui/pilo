@@ -390,6 +390,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 	) => {
 		const key = sessionRowKey(session);
 		const selected = () => isSessionSelected(session);
+		const unread =
+			session.unread &&
+			!store.isViewingSession(session.projectId, session.sessionPath);
 		const confirming = () => confirmingDeleteKey() === key;
 		const saved = session.sessionPath !== "";
 		const projectName = showProjectName
@@ -408,7 +411,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					style={selected() ? selectedRingStyle() : undefined}
 				>
 					<View class="h-5 w-4 shrink-0 items-center justify-center">
-						{!session.active && session.unread ? (
+						{!session.active && unread ? (
 							<View class="size-1.5 rounded-full bg-sidebar-primary" />
 						) : null}
 					</View>
@@ -477,14 +480,14 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					onPress={() => selectSession(session)}
 				>
 					<View class="h-5 w-4 shrink-0 items-center justify-center">
-						{!session.active && session.unread ? (
+						{!session.active && unread ? (
 							<View class="size-1.5 rounded-full bg-sidebar-primary" />
 						) : null}
 					</View>
 					<View class="min-w-0 flex-1">
 						<Text
 							class={`min-w-0 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight ${
-								selected() || session.unread ? "font-medium" : ""
+								selected() || unread ? "font-medium" : ""
 							} ${
 								selected()
 									? "text-sidebar-selection-foreground"

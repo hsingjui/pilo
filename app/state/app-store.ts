@@ -1,4 +1,4 @@
-import { type Accessor, computed, signal } from "nsh";
+import { type Accessor, computed, lifecycle, signal } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import {
@@ -68,6 +68,19 @@ export class AppStore {
 	readonly state: Accessor<AppState> = this.current;
 	/** The active navigation session slice, isolated from unrelated AppState changes. */
 	readonly openSession = computed(() => this.current().navigation.session);
+	/** The saved session whose chat is visible in the foreground. */
+	readonly viewedSessionKey = computed(() => {
+		const open = this.openSession();
+		return open?.sessionPath &&
+			lifecycle() === "active" &&
+			this.showsChat(open.projectId)
+			? readStateKey(open.projectId, open.sessionPath)
+			: null;
+	});
+
+	isViewingSession(projectId: string, sessionPath: string) {
+		return this.viewedSessionKey() === readStateKey(projectId, sessionPath);
+	}
 
 	private readonly pendingNewChatFocus = signal<SessionSelection | null>(null);
 	/** A one-shot focus request for the draft the user just opened. */
@@ -120,6 +133,7 @@ export class AppStore {
 		client: AppStoreClient,
 		chat?: ChatTranscriptStore,
 		private readonly onLiveEvent?: (event: PiloClientEvent) => void,
+		private readonly showsChat: (projectId: string) => boolean = () => true,
 	) {
 		this.client = client;
 		this.chat = chat;

@@ -74,7 +74,9 @@
 
 ## 已读标记
 
-打开会话里有轮次结束时，只有应用处于 active（`lifecycle() === "active"`，对应 Tauri 的文档可见且有焦点）才立即标为已读；否则保持未读，回到 active 后再标。状态以运行时的 read-state 事件为准，不以调用返回为准。
+`AppStore.viewedSessionKey()` 只在应用处于 active 且当前会话的聊天视图可见时返回会话键。桌面切到终端、Git 或文件预览时，即使会话仍被选中，也不算正在查看；完成的轮次保留未读，回到聊天时再确认。确认跟踪会话键与完成版本，不能只比较版本号。
+
+桌面和 WebUI 的侧栏用 `AppStore.isViewingSession()` 直接隐藏当前可见会话的未读圆点，不等待确认往返。已读版本仍以运行时的 read-state 事件为准，不在客户端提前修改。
 
 ```ts
 // 错误：selectSession 还会写导航

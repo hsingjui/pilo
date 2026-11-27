@@ -392,7 +392,9 @@ export function SessionRow(props: {
 	const leading = () => (
 		<View class="relative h-6 w-4 shrink-0 items-center justify-center">
 			{() =>
-				!session().active && session().unread ? (
+				!session().active &&
+				session().unread &&
+				!store.isViewingSession(session().projectId, session().sessionPath) ? (
 					<View
 						testID={`session:${session().id}:unread`}
 						class={`size-1.5 -translate-y-px rounded-full bg-sidebar-primary transition-opacity duration-100 ${shownWhileMenu(
