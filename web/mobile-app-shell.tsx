@@ -33,7 +33,6 @@ import {
 	showToast,
 } from "../app/shell/app-toasts";
 import { followSavedAppearance } from "../app/shell/appearance";
-import { CommandPalette } from "../app/shell/command-palette";
 import { deleteSessionWithToast } from "../app/shell/delete-session";
 import { t } from "../app/shell/i18n";
 import { SessionLanding } from "../app/shell/landing";
@@ -168,6 +167,34 @@ export function MobileAppShell(props: MobileAppShellProps) {
 	const drawerOpen = signal(false);
 	const drawerDragProgress = signal<number | null>(null);
 	const searchOpen = signal(false);
+	const searchModule = signal<
+		typeof import("../app/shell/command-palette") | null
+	>(null);
+	let searchLoading = false;
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
+	const openSearch = () => {
+		if (searchModule()) {
+			searchOpen.set(true);
+			return;
+		}
+		if (searchLoading) return;
+		searchLoading = true;
+		void import("../app/shell/command-palette").then(
+			(module) => {
+				if (!alive) return;
+				searchOpen.set(true);
+				searchModule.set(module);
+			},
+			() => {
+				if (!alive) return;
+				searchLoading = false;
+				showToast(toasts, { variant: "error", title: t("common.loadFailed") });
+			},
+		);
+	};
 	const previewImage = signal<ChatImagePreview | null>(null);
 	const renamingSession = signal<{
 		projectId: string;
@@ -1071,18 +1098,25 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								onReconnect={props.onReconnect}
 								onSignOut={props.onSignOut}
 								onRenameSession={openRenameDialog}
-								onOpenSearch={() => searchOpen.set(true)}
+								onOpenSearch={openSearch}
 								onNewChat={newChat}
 								onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
 							/>
 
-							<CommandPalette
-								open={searchOpen}
-								store={store}
-								shortcuts={() => ({})}
-								searchSessions={props.searchSessions}
-								onClose={() => searchOpen.set(false)}
-							/>
+							{() => {
+								const loaded = searchModule();
+								if (!loaded) return null;
+								const { CommandPalette } = loaded;
+								return (
+									<CommandPalette
+										open={searchOpen}
+										store={store}
+										shortcuts={() => ({})}
+										searchSessions={props.searchSessions}
+										onClose={() => searchOpen.set(false)}
+									/>
+								);
+							}}
 
 							<ChatImageLightbox
 								image={previewImage}

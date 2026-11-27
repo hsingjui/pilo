@@ -45,7 +45,7 @@ import {
 	resolvePageOrigin,
 	saveRemoteDeviceToken,
 	verifyRemoteToken,
-} from "./web-remote-client";
+} from "./web-remote-browser";
 
 type Failure =
 	| "expired"

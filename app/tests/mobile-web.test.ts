@@ -74,6 +74,21 @@ test("mobile shell opens drawer via rightward swipe gesture", async () => {
 	await app.waitFor("id:mobile-drawer");
 });
 
+test("mobile session search loads its palette when opened", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+	});
+	const search = "label:Search projects, sessions, or messages…";
+
+	await app.waitFor("id:mobile-header");
+	expect(app.shows(search)).toBe(false);
+	await app.press("id:mobile-menu-button");
+	await app.press("id:mobile-drawer-search");
+	await app.waitFor(search);
+});
+
 test("mobile shell shows connection recovery notice above composer and reconnects on tap", async () => {
 	const app = await open("./mobile-web-fixture.tsx", {
 		locale: "en-US",

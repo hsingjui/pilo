@@ -20,7 +20,7 @@ import {
 	reloadRemotePage,
 	resolveCurrentPageUrl,
 	saveRemoteDeviceToken,
-} from "./web-remote-client";
+} from "./web-remote-browser";
 
 initializeI18n();
 
@@ -105,10 +105,6 @@ function WebAppRoot() {
 	});
 	cleanup(stopUrlWatch);
 
-	if (!isPairingRoute()) {
-		// Prefetch the workspace bundle in parallel with startup theme & token hydration.
-		void loadWorkspaceModule().catch(() => {});
-	}
 	void Promise.all([
 		Promise.all([webColorScheme.ready, webFontScale.ready]).then(
 			([schemeOverride, fontScale]) => {
@@ -120,7 +116,12 @@ function WebAppRoot() {
 				});
 			},
 		),
-		loadRemoteDeviceToken(),
+		loadRemoteDeviceToken().then((loadedToken) => {
+			if (loadedToken && !isPairingRoute()) {
+				void loadWorkspaceModule().catch(() => {});
+			}
+			return loadedToken;
+		}),
 	])
 		.then(([, loadedToken]) => {
 			token.set(loadedToken);

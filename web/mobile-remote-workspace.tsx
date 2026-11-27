@@ -34,10 +34,8 @@ import { ModelCatalogStore } from "../app/state/model-catalog";
 import { MobileAppShell } from "./mobile-app-shell";
 import { RemoteChatQueue } from "./remote-chat-queue";
 import { RemoteExtensionUi } from "./remote-extension-ui";
-import {
-	browserSessionStorage,
-	WebRemotePiloClient,
-} from "./web-remote-client";
+import { browserSessionStorage } from "./web-remote-browser";
+import { WebRemotePiloClient } from "./web-remote-client";
 
 const ACTIVE_PROJECT_KEY = "pilo.web.activeProject.v1";
 const DRAFT_TEXT_KEY_PREFIX = "pilo.web.draftText.v3:";

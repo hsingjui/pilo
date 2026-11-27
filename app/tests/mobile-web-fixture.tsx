@@ -27,7 +27,7 @@ import {
 	MobileDropdownMenu,
 } from "../../web/mobile-dropdown-menu";
 import { RemotePairingPage } from "../../web/pairing-page";
-import { RemotePairingError } from "../../web/web-remote-client";
+import { RemotePairingError } from "../../web/web-remote-browser";
 import { AppStore } from "../state/app-store";
 import { ChatQueueStore } from "../state/chat-queue-store";
 import type { ChatRunConfigState } from "../state/chat-run-config";
