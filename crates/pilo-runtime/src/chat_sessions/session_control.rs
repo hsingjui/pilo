@@ -150,11 +150,29 @@ impl ChatSessions {
     }
 
     pub async fn send(&self, session_key: &str, mut command: Value) -> Result<(), String> {
-        let command_type = command
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-            .to_owned();
+        let start_if_idle = command
+            .as_object_mut()
+            .and_then(|fields| fields.remove("piloStartIfIdle"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        // Keep slash input queue-only: `prompt` executes extension commands immediately.
+        let queued_follow_up = start_if_idle
+            && command["type"] == "follow_up"
+            && command["message"]
+                .as_str()
+                .is_some_and(|message| !message.starts_with('/'));
+        let command_type = if queued_follow_up {
+            // The Server must still apply the stalled-turn guard for queued input.
+            command["type"] = json!("pilo_follow_up_prompt");
+            command["streamingBehavior"] = json!("followUp");
+            "prompt"
+        } else {
+            command
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+        }
+        .to_owned();
         // Pi may resume autonomously before either UI observes its new turn.
         if command_type == "prompt"
             && let Some(command) = command.as_object_mut()

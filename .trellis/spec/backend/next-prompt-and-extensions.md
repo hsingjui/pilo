@@ -228,11 +228,18 @@ are not a source for Connection-owned choices.
   Shared UI localizes this prefix; ordinary errors and manual cancellation stay
   unchanged. Do not automatically replay a possibly side-effecting turn, and
   avoid retryable provider wording such as `timeout` in the replacement error.
-- Pi's abort leaves queued steering and follow-up input intact. On a guarded
-  `agent_end` with `PILO_STREAM_STALLED:`, pilo-server holds `agent_settled`
-  until in-flight input RPCs finish and Pi acknowledges `clear_queue`. It
-  rejects new input during cleanup. If cleanup fails or exceeds five seconds,
-  remove and stop that Pi process before releasing settlement. Only restore
+- Pi's abort leaves queued steering and follow-up input intact. Server enables
+  `PILO_STALL_QUEUE_BARRIER=1` for the bundled guard. On stall, its `agent_end`
+  hook holds Pi inside the old run with a private `extension_ui_request`
+  (`confirm`, title `pilo.stall-queue-barrier.v1`). Server intercepts it, closes
+  input admission, waits for pending input RPCs, and releases the hook with
+  `extension_ui_response` only after Pi acknowledges `clear_queue`. Never
+  forward the private dialog to clients. A legacy stall without this hook still
+  clears any residual queue before forwarding `agent_settled`.
+- Waiting until `agent_settled` alone is too late: a follow-up already inside
+  an async input handler can see Pi idle and start a new turn. Holding the old
+  run keeps that input queue-only. If cleanup fails or exceeds five seconds,
+  stop Pi without releasing the hook, then report settlement. Only restore
   local queued submissions with no `user_message_start` acknowledgement, with
   their attachments; never keep the Pi copy and restore the draft together.
   After the stall, `steer`/`follow_up` stay rejected with
@@ -241,10 +248,16 @@ are not a source for Connection-owned choices.
   WebUI parks a left session's unacknowledged input in send order; background
   echoes consume it and a stalled settlement restores the rest to that
   session's draft.
+- Regression checks: hold a follow-up inside an async `input` handler until the
+  watchdog aborts the old run. Releasing the handler must not emit a new
+  `agent_start`; `clear_queue` must finish before settlement and the private
+  dialog must not reach clients. With a natural finish, the same follow-up may
+  start a turn. A cleanup timeout must stop Pi before releasing settlement.
 - Manual abort removes the timer; late events cannot rearm an aborted/expired
-  request. `agent_end`, session start/switch/shutdown clear all watchdog state.
-  A subsequent turn gets a fresh signal/timer. Idle background model calls are
-  not guarded. Provider cancellation must honor Pi's abort signal to settle.
+  request. `agent_end` disarms the watchdog; session start/switch/shutdown clear
+  its state. A subsequent turn gets a fresh signal/timer. Idle background model
+  calls are not guarded. Provider cancellation must honor Pi's abort signal to
+  settle.
 - Do not assume SDK request timeouts cover SSE reads after headers. HTTP 200
   and a missing upstream error do not prove a terminal model event arrived;
   an incomplete-stream error after manual abort does not prove an earlier EOF.

@@ -1542,24 +1542,21 @@ export class ComposerStore {
 					submission,
 					undefined,
 					async () => {
-						let startedFromPending = false;
-						if (pendingStart) {
-							startedFromPending = await pendingStart.settled;
-							if (!startedFromPending) return false;
-						}
+						if (pendingStart && !(await pendingStart.settled)) return false;
 						if (
 							this.beforeSend &&
 							!(await this.beforeSend(target.sessionKey))
 						) {
 							return false;
 						}
-						if (
-							mode === "follow_up" &&
-							((!startedFromPending && !this.running()) || this.compacting())
-						) {
-							return false;
-						}
-						return true;
+						if (mode !== "follow_up") return true;
+						if (this.chatState(target.sessionKey)?.compacting) return false;
+						// Only slash input requires the previous turn to still be running.
+						return (
+							!chatSubmissionMessage(submission).startsWith("/") ||
+							pendingStart !== undefined ||
+							this.running(target.sessionKey)
+						);
 					},
 				);
 				if (outcome === "cancelled") {
