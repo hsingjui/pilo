@@ -12,7 +12,11 @@ import type { PreferencesSnapshot } from "@shared/host-preferences-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
-import { AppStore, type AppStoreClient } from "../state/app-store";
+import {
+	AppStore,
+	type AppStoreBootstrap,
+	type AppStoreClient,
+} from "../state/app-store";
 
 const project = (id: string) => ({ id, name: id }) as Project;
 const preferences = (revision: number) =>
@@ -54,7 +58,7 @@ type Reply<T> = { resolve: (value: T) => void; reject: (error: Error) => void };
 /** A client whose calls the test answers, and whose event stream it drives. */
 function fakeClient() {
 	const listeners = new Set<PiloClientEventOptions>();
-	const bootstraps: Reply<NshPiloClientBootstrap>[] = [];
+	const bootstraps: Reply<AppStoreBootstrap>[] = [];
 	const projectLists: Reply<Project[]>[] = [];
 	const sessionLists: (Reply<SessionIndexEntry[]> & { projectId: string })[] =
 		[];
@@ -174,6 +178,32 @@ test("start shows the first snapshot once every load has answered", async () => 
 	expect(state.preferences).toEqual(preferences(3));
 	expect(state.themeSettings).toEqual(theme(1));
 	expect(Object.values(state.readStates)).toEqual([read("a", 2, 1)]);
+});
+
+test("a bootstrap with UI state does not fetch theme or read states again", async () => {
+	const fake = fakeClient();
+	const separateReads: string[] = [];
+	fake.client.loadThemeSettings = async () => {
+		separateReads.push("theme");
+		return theme(1);
+	};
+	fake.client.loadSessionReadStates = async () => {
+		separateReads.push("read states");
+		return [];
+	};
+	const store = new AppStore(fake.client);
+	const started = store.start();
+	await settle();
+	const readState = read("a", 2, 1);
+	fake.bootstraps[0]?.resolve({
+		...snapshot(10, 3, "p1"),
+		uiState: { themeSettings: theme(2), sessionReadStates: [readState] },
+	});
+	await started;
+	expect(store.state().status).toEqual({ type: "ready" });
+	expect(store.state().themeSettings).toEqual(theme(2));
+	expect(Object.values(store.state().readStates)).toEqual([readState]);
+	expect(separateReads).toEqual([]);
 });
 
 test("a data directory with no projects is ready and empty", async () => {

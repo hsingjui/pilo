@@ -53,9 +53,8 @@ import type {
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-	NshPiloClientBootstrap,
 } from "../app/client/nsh-pilo-client";
-import type { AppStoreClient } from "../app/state/app-store";
+import type { AppStoreBootstrap, AppStoreClient } from "../app/state/app-store";
 import type { ChatRunConfigClient } from "../app/state/chat-run-config";
 import type { ChatTranscriptClient } from "../app/state/chat-transcript-store";
 import type { ModelCatalogClient } from "../app/state/model-catalog";
@@ -491,21 +490,23 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		return new Uint8Array(await response.arrayBuffer());
 	}
 
-	async bootstrap(): Promise<NshPiloClientBootstrap> {
-		const remote = await this.requestJson<PiloClientBootstrap>(
-			"/api/v1/bootstrap",
-			{ cache: "no-store" },
-		);
-		// Preferences must include every change at or below the snapshot cut.
-		const preferences = await this.requestJson<PreferencesSnapshot>(
-			"/api/v1/preferences",
-			{ cache: "no-store" },
-		);
+	async bootstrap(): Promise<AppStoreBootstrap> {
+		const remote = await this.requestJson<
+			PiloClientBootstrap &
+				Partial<Pick<AppStoreBootstrap, "preferences" | "uiState">>
+		>("/api/v1/bootstrap?includePreferences=true&includeUiState=true", {
+			cache: "no-store",
+		});
 		return {
 			projects: remote.projects.map(normalizeProject),
 			chatSessions: remote.chatSessions,
 			latestSequence: remote.latestSequence,
-			preferences,
+			uiState: remote.uiState,
+			preferences:
+				remote.preferences ??
+				(await this.requestJson<PreferencesSnapshot>("/api/v1/preferences", {
+					cache: "no-store",
+				})),
 		};
 	}
 

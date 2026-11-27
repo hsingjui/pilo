@@ -1,5 +1,6 @@
 use axum::{
     Json,
+    extract::Query,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -17,18 +18,53 @@ pub(super) struct BootstrapResponse {
     chat_sessions: Vec<crate::chat_sessions::ChatSessionState>,
     latest_sequence: u64,
     local_pi_resources: std::collections::HashMap<String, bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferences: Option<crate::preferences::PreferencesSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ui_state: Option<BootstrapUiState>,
 }
 
-pub(super) async fn bootstrap(state: RemoteHttpState) -> Response {
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BootstrapUiState {
+    theme_settings: pilo_domain::ThemeSettings,
+    session_read_states: Vec<pilo_domain::SessionReadState>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub(super) struct BootstrapQuery {
+    include_preferences: bool,
+    include_ui_state: bool,
+}
+
+pub(super) async fn bootstrap(
+    state: RemoteHttpState,
+    Query(query): Query<BootstrapQuery>,
+) -> Response {
     let latest_sequence = state.runtime.events.snapshot_sequence();
     let runtime_for_blocking = state.runtime.clone();
-    let (projects, local_pi_resources) = match tokio::task::spawn_blocking(move || {
+    let snapshot = tokio::task::spawn_blocking(move || {
         let projects = crate::project::list(&runtime_for_blocking)?;
-        let local_pi_resources = local_pi_resources_snapshot(&runtime_for_blocking.paths)?;
-        Ok::<_, String>((projects, local_pi_resources))
+        let db = storage::open_with_paths(&runtime_for_blocking.paths)?;
+        let local_pi_resources = local_pi_resources_snapshot(&db)?;
+        let preferences = query
+            .include_preferences
+            .then(|| storage::get_preferences(&db))
+            .transpose()?;
+        let ui_state = query
+            .include_ui_state
+            .then(|| {
+                Ok::<_, String>(BootstrapUiState {
+                    theme_settings: storage::get_theme_settings(&db)?,
+                    session_read_states: storage::list_session_read_states(&db)?,
+                })
+            })
+            .transpose()?;
+        Ok::<_, String>((projects, local_pi_resources, preferences, ui_state))
     })
-    .await
-    {
+    .await;
+    let (projects, local_pi_resources, preferences, ui_state) = match snapshot {
         Ok(Ok(data)) => data,
         Ok(Err(error)) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         Err(error) => {
@@ -44,14 +80,15 @@ pub(super) async fn bootstrap(state: RemoteHttpState) -> Response {
         chat_sessions: runtime.chat_sessions.states().await,
         latest_sequence,
         local_pi_resources,
+        preferences,
+        ui_state,
     })
     .into_response()
 }
 
 fn local_pi_resources_snapshot(
-    paths: &crate::host_paths::HostPaths,
+    db: &rusqlite::Connection,
 ) -> Result<std::collections::HashMap<String, bool>, String> {
-    let db = storage::open_with_paths(paths)?;
     let mut statement = db
         .prepare(
             "SELECT id, kind_json, local_pi_resources FROM connections WHERE pi_runtime='local'",
@@ -184,7 +221,7 @@ mod tests {
             max_events: 10,
             max_bytes: 4096,
         });
-        let response = bootstrap(state(runtime.clone())).await;
+        let response = bootstrap(state(runtime.clone()), Query(BootstrapQuery::default())).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -220,13 +257,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remote_bootstrap_can_include_preferences_and_ui_state_after_the_event_cut() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-preferences-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::for_test(root.clone()));
+        let preferences = crate::preferences::preferences_patch(
+            &runtime,
+            serde_json::Map::from_iter([("locale".into(), Value::from("zh-CN"))]),
+            None,
+        )
+        .unwrap();
+        let projects = crate::project::list(&runtime).unwrap();
+        let db = storage::open_with_paths(&runtime.paths).unwrap();
+        let theme = storage::get_theme_settings(&db).unwrap();
+        let read_state =
+            storage::complete_session_turn(&db, &projects[0].id, "session.jsonl").unwrap();
+        drop(db);
+        let expected_cut = runtime.events.snapshot_sequence();
+        let response = bootstrap(
+            state(runtime.clone()),
+            Query(BootstrapQuery {
+                include_preferences: true,
+                include_ui_state: true,
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let snapshot: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(snapshot["latestSequence"], expected_cut);
+        assert_eq!(
+            snapshot["preferences"],
+            serde_json::to_value(preferences).unwrap()
+        );
+        assert_eq!(
+            snapshot["uiState"]["themeSettings"],
+            serde_json::to_value(theme).unwrap()
+        );
+        assert_eq!(
+            snapshot["uiState"]["sessionReadStates"],
+            serde_json::json!([read_state])
+        );
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn remote_bootstrap_keeps_storage_error_response() {
         let paths = HostPaths::with_data_dir_resolver(std::path::PathBuf::new(), || {
             Err("data unavailable".into())
         });
         let runtime = Runtime::new(paths);
         assert_eq!(
-            bootstrap(state(runtime)).await.status(),
+            bootstrap(state(runtime), Query(BootstrapQuery::default()))
+                .await
+                .status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
     }

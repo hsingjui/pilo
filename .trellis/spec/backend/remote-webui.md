@@ -345,6 +345,8 @@ Authenticated (`require_auth` middleware):
 
 ```text
 GET  /api/v1/bootstrap       -> { projects, chatSessions, latestSequence }
+GET  /api/v1/bootstrap?includePreferences=true -> also includes preferences read after the event cut
+GET  /api/v1/bootstrap?includeUiState=true -> also includes uiState: { themeSettings, sessionReadStates } read after the same cut
 GET  /api/v1/auth/device     -> { expiresAtMs }          (current device only)
 POST /api/v1/auth/device/renew -> { expiresAtMs }        (resets current device to full TTL)
 GET  /api/v1/theme           -> ThemeSettings (Host SQLite)

@@ -11,7 +11,12 @@ import type {
 } from "@shared/api/pilo-client";
 import type { Project } from "@shared/api/projects-types";
 import type { SessionDeleteResult } from "@shared/api/sessions-types";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { SessionReadState } from "@shared/session-read-state";
+import type { ThemeSettings } from "@shared/theme-settings-types";
+import type {
+	NshPiloClient,
+	NshPiloClientBootstrap,
+} from "../client/nsh-pilo-client";
 import {
 	type AppAction,
 	type AppState,
@@ -33,13 +38,19 @@ import type {
 	ChatTranscriptTarget,
 } from "./chat-transcript-store";
 
+export type AppStoreBootstrap = NshPiloClientBootstrap & {
+	uiState?: {
+		themeSettings: ThemeSettings;
+		sessionReadStates: SessionReadState[];
+	};
+};
+
 export type AppStoreClient = Partial<
 	// Optional: a client without the probe shows no external Pi turns.
 	Pick<NshPiloClient, "externalSessionActivity">
 > &
 	Pick<
 		NshPiloClient,
-		| "bootstrap"
 		| "chatState"
 		| "listProjects"
 		| "addProject"
@@ -53,6 +64,7 @@ export type AppStoreClient = Partial<
 		| "connectEvents"
 		| "closed"
 	> & {
+		bootstrap(): Promise<AppStoreBootstrap>;
 		/** A transient disconnect leaves subscriptions registered. */
 		readonly reconnectsEvents?: boolean;
 	};
@@ -748,8 +760,9 @@ export class AppStore {
 				// so they hold every event at or below it.
 				const snapshot = await this.client.bootstrap();
 				const [settings, states] = await Promise.all([
-					this.client.loadThemeSettings(),
-					this.client.loadSessionReadStates(),
+					snapshot.uiState?.themeSettings ?? this.client.loadThemeSettings(),
+					snapshot.uiState?.sessionReadStates ??
+						this.client.loadSessionReadStates(),
 				]);
 				if (!current()) continue;
 				this.bootstraps += 1;
