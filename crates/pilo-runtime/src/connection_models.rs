@@ -32,21 +32,27 @@ struct ModelCatalogCache {
     inflight: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
+impl ModelCatalogCache {
+    fn invalidate(&mut self, connection_id: &str) {
+        self.generation = self.generation.wrapping_add(1);
+        // Updating the local connection can affect SSH connections that run Pi locally.
+        if connection_id == "local" {
+            self.entries.clear();
+        } else {
+            let suffix = format!("::{connection_id}");
+            self.entries.retain(|key, _| !key.ends_with(&suffix));
+        }
+    }
+}
+
 fn cache() -> &'static Mutex<ModelCatalogCache> {
     static CACHE: OnceLock<Mutex<ModelCatalogCache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(ModelCatalogCache::default()))
 }
 
 pub(crate) fn invalidate(connection_id: &str) {
-    let suffix = format!("::{connection_id}");
     if let Ok(mut guard) = cache().lock() {
-        guard.generation = guard.generation.wrapping_add(1);
-        // Updating the local connection can affect SSH connections that run Pi locally.
-        if connection_id == "local" {
-            guard.entries.clear();
-        } else {
-            guard.entries.retain(|key, _| !key.ends_with(&suffix));
-        }
+        guard.invalidate(connection_id);
     }
 }
 
@@ -192,55 +198,50 @@ mod tests {
 
     #[test]
     fn invalidate_local_clears_all_entries_and_bumps_generation() {
-        let mut guard = cache().lock().unwrap();
-        let initial_gen = guard.generation;
-        guard.entries.insert(
+        let mut cache = ModelCatalogCache::default();
+        let initial_gen = cache.generation;
+        cache.entries.insert(
             "db::local".to_owned(),
             CachedConnectionModels {
                 models: vec![json!({ "id": "m1" })],
                 cached_at: Instant::now(),
             },
         );
-        guard.entries.insert(
+        cache.entries.insert(
             "db::ssh-local-pi".to_owned(),
             CachedConnectionModels {
                 models: vec![json!({ "id": "m2" })],
                 cached_at: Instant::now(),
             },
         );
-        drop(guard);
 
-        invalidate("local");
+        cache.invalidate("local");
 
-        let guard = cache().lock().unwrap();
-        assert_ne!(guard.generation, initial_gen);
-        assert!(guard.entries.is_empty());
+        assert_ne!(cache.generation, initial_gen);
+        assert!(cache.entries.is_empty());
     }
 
     #[test]
     fn invalidate_specific_connection_preserves_other_entries() {
-        let mut guard = cache().lock().unwrap();
-        guard.entries.insert(
+        let mut cache = ModelCatalogCache::default();
+        cache.entries.insert(
             "db::ssh-a".to_owned(),
             CachedConnectionModels {
                 models: vec![json!({ "id": "a" })],
                 cached_at: Instant::now(),
             },
         );
-        guard.entries.insert(
+        cache.entries.insert(
             "db::ssh-b".to_owned(),
             CachedConnectionModels {
                 models: vec![json!({ "id": "b" })],
                 cached_at: Instant::now(),
             },
         );
-        drop(guard);
 
-        invalidate("ssh-a");
+        cache.invalidate("ssh-a");
 
-        let mut guard = cache().lock().unwrap();
-        assert!(!guard.entries.contains_key("db::ssh-a"));
-        assert!(guard.entries.contains_key("db::ssh-b"));
-        guard.entries.remove("db::ssh-b");
+        assert!(!cache.entries.contains_key("db::ssh-a"));
+        assert!(cache.entries.contains_key("db::ssh-b"));
     }
 }
