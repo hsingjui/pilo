@@ -1070,6 +1070,8 @@ const enUS = {
 		reading: "Reading files…",
 		noDiff: "No diff to display",
 		noDiffDescription: "This file has no text changes in the current view.",
+		noFilesToDiff: "There are no changed files to diff.",
+		selectFileToDiff: "Select a changed file to view its diff.",
 		gitRefresh: "Refresh Git status",
 		gitReadFailed: "Unable to read Git status",
 		gitRepoHint: "Check that the current project is a Git repository.",

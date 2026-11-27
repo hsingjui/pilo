@@ -1025,6 +1025,8 @@ const zhCN = {
 		reading: "正在读取文件…",
 		noDiff: "没有可显示的 diff",
 		noDiffDescription: "该文件在当前视图下没有文本差异。",
+		noFilesToDiff: "没有可对比的变更文件。",
+		selectFileToDiff: "选择一个变更文件以查看 diff。",
 		gitRefresh: "刷新 Git 状态",
 		gitReadFailed: "无法读取 Git 状态",
 		gitRepoHint: "请检查当前项目是否为 Git 仓库。",

@@ -53,7 +53,9 @@ function gitErrorDetail(cause: unknown, fallback: string) {
 			: cause instanceof Error
 				? cause.message
 				: "";
-	return detail.trim() || fallback;
+	const text = detail.trim();
+	if (/not a git repository/i.test(text)) return t("file.gitRepoHint");
+	return text || fallback;
 }
 
 type DiffMode = GitWorkspaceView["mode"];
@@ -1016,11 +1018,11 @@ function GitWorkspacePanel(props: {
 														color={token("status-success")}
 													/>
 												}
-												title={() => t("file.noChanges")}
+												title={() => t("file.noDiff")}
 												description={() =>
-													mode() === "working"
-														? t("file.workingClean")
-														: t("file.stagedClean")
+													visibleFiles().length === 0
+														? t("file.noFilesToDiff")
+														: t("file.selectFileToDiff")
 												}
 											/>
 										);
