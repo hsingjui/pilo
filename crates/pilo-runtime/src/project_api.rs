@@ -307,9 +307,6 @@ pub async fn connection_fs_read_dir(
     path: String,
 ) -> Result<Vec<FsEntry>, String> {
     let connection = project::resolve_connection(runtime, &connection_id)?;
-    if matches!(connection.kind, pilo_domain::ConnectionKind::Local) {
-        return Err("local connection should use the native directory picker".to_owned());
-    }
     remote_fs::read_connection_dir(&runtime.servers, &connection, &path).await
 }
 
