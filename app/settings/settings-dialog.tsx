@@ -17,7 +17,7 @@ import { Button as BaseButton, Dialog } from "nsh/base";
 import { Select } from "../ui/select";
 
 import type { AppState } from "../state/app-state";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { classNames } from "../ui/class-names";
 import { DialogClose } from "../ui/dialog-close";
@@ -45,7 +45,7 @@ import { ThemePane } from "./theme-pane";
 
 /** The native calls the settings panes make; grows as panes land. */
 export type SettingsClient = Pick<
-	DesktopHostClient,
+	HostClient,
 	| "savePreferences"
 	| "saveThemeSettings"
 	| "loadConnectionModels"
@@ -88,7 +88,7 @@ export type SettingsClient = Pick<
 	| "remoteDeviceRename"
 > &
 	/** Optional host-only discovery helpers. */
-	Partial<Pick<DesktopHostClient, "listSshConfigHosts" | "listSshLocalKeys">>;
+	Partial<Pick<HostClient, "listSshConfigHosts" | "listSshLocalKeys">>;
 
 export interface SettingsDialogProps {
 	open: () => boolean;

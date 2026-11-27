@@ -14,7 +14,7 @@ import type { FsEntry } from "@shared/api/files-types";
 import { userErrorMessage } from "@shared/app-error";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import type { DesktopShell } from "./desktop-shell";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -32,7 +32,7 @@ import { t } from "./i18n";
 
 /** The client calls the dialog needs beyond adding the project. */
 export type AddProjectApi = Pick<
-	DesktopHostClient,
+	HostClient,
 	"listConnections" | "readConnectionDir"
 >;
 

@@ -3,7 +3,7 @@ import { ChatFixture, Pilo } from "app/native";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { ChatTranscriptSnapshot } from "../client/host-api";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const projectId = "chat-fixture";
 const sessionKey = "nsh-client-transcript-fixture";
@@ -31,7 +31,7 @@ const said = (snapshot: ChatTranscriptSnapshot, text: string) =>
 
 async function run() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const received: PiloClientEvent[] = [];
 	let wake = () => {};
 	/** The session's first streamed reply text, once the listener has it. */

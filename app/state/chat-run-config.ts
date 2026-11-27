@@ -22,7 +22,7 @@ import {
 } from "@shared/pi-model-selection";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { requestPiRpcReply, type PiCommandClient } from "../client/chat-rpc";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import { t } from "../shell/i18n";
 import { isTemporarySessionKey } from "./app-state";
 import type { ChatTranscriptTarget } from "./chat-transcript-store";
@@ -34,7 +34,7 @@ export type SessionHistoryMetadata = Pick<
 >;
 
 export type ChatRunConfigClient = PiCommandClient &
-	Pick<DesktopHostClient, "startChat" | "chatState" | "loadHistory">;
+	Pick<HostClient, "startChat" | "chatState" | "loadHistory">;
 
 type InitialSelectionSource = "pending" | "pi" | "scope";
 

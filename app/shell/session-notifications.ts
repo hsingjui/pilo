@@ -4,7 +4,7 @@ import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import { LOCAL_HOST_ID } from "@shared/host-id";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import type { AppStore } from "../state/app-store";
 import {
 	defaultDesktopNotifications,
@@ -49,8 +49,8 @@ function decodeTarget(id: string) {
 }
 
 export function connectSessionNotifications(
-	client: Pick<DesktopHostClient, "chatState"> &
-		Partial<Pick<DesktopHostClient, "listCachedSessions" | "listSessions">>,
+	client: Pick<HostClient, "chatState"> &
+		Partial<Pick<HostClient, "listCachedSessions" | "listSessions">>,
 	store: AppStore,
 	desktop: Pick<DesktopWindowShell, "show" | "isQuitting">,
 	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),

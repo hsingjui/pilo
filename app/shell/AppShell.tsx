@@ -48,7 +48,7 @@ import type { ChatQueueStore } from "../state/chat-queue-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import { defaultKeyboardShortcuts } from "@shared/keyboard-shortcuts-core";
 import type {
 	KeyboardShortcutMap,
@@ -167,7 +167,7 @@ export interface AppShellProps {
 	/** Forks the open session at an assistant message. */
 	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 	/** Searches saved message text for the command palette. */
-	searchSessions?: Pick<DesktopHostClient, "searchSessions">;
+	searchSessions?: Pick<HostClient, "searchSessions">;
 	/** The settings panes' saves and reads; no settings entry without it. */
 	settings?: SettingsClient;
 	/** The client calls the add-project dialog needs; `undefined` hides it. */

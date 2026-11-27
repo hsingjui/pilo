@@ -79,7 +79,7 @@ import {
 import { appLocale, t } from "../shell/i18n";
 import { rememberLocalChatImages } from "../chat/chat-user-image-cache";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import type { DesktopShell } from "../shell/desktop-shell";
 import {
 	type AppState,
@@ -97,7 +97,7 @@ export type ComposerTarget = {
 };
 
 export type ComposerClient = Pick<
-	DesktopHostClient,
+	HostClient,
 	| "startChat"
 	| "chatState"
 	| "sendChatCommand"

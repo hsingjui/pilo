@@ -3,7 +3,7 @@ import { ChatFixture, Pilo } from "app/native";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 
@@ -28,7 +28,7 @@ function context(): ConversationReducerContext {
 
 async function run() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	let snapshots = 0;
 	let histories = 0;
 	const chat = new ChatTranscriptStore(

@@ -35,10 +35,10 @@ import type {
 	ConversationReducerContext,
 	ConversationState,
 } from "@shared/chat/conversation-types";
+import type { HostClient } from "@shared/api/host-client";
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-	DesktopHostClient,
 } from "../client/host-api";
 import { isTemporarySessionKey } from "./app-state";
 import {
@@ -51,7 +51,7 @@ import {
 import type { SessionHistoryMetadata } from "./chat-run-config";
 
 export type ChatTranscriptClient = Pick<
-	DesktopHostClient,
+	HostClient,
 	"chatState" | "chatTranscriptSnapshot" | "loadHistory"
 >;
 

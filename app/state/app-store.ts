@@ -13,10 +13,8 @@ import type { Project } from "@shared/api/projects-types";
 import type { SessionDeleteResult } from "@shared/api/sessions-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import type {
-	DesktopHostClient,
-	DesktopHostBootstrap,
-} from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
+import type { DesktopHostBootstrap } from "../client/host-api";
 import { t } from "../shell/i18n";
 import {
 	type AppAction,
@@ -48,10 +46,10 @@ export type AppStoreBootstrap = DesktopHostBootstrap & {
 
 export type AppStoreClient = Partial<
 	// Optional: a client without the probe shows no external Pi turns.
-	Pick<DesktopHostClient, "externalSessionActivity">
+	Pick<HostClient, "externalSessionActivity">
 > &
 	Pick<
-		DesktopHostClient,
+		HostClient,
 		| "chatState"
 		| "listProjects"
 		| "addProject"

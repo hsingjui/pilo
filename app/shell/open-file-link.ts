@@ -15,7 +15,7 @@ import {
 
 import type { ChatMarkdownFileLink } from "../chat/chat-markdown";
 import type { ChatImagePreview } from "../chat/chat-media-actions";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import type { WorkspaceStore } from "../state/workspace-store";
 import type { AppToasts } from "./app-toasts";
 import type { DesktopShell } from "./desktop-shell";
@@ -31,7 +31,7 @@ function decodeFileUrlPath(url: string): string {
 export interface FileLinkOpenContext {
 	project: () => Pick<Project, "id" | "path"> | null;
 	workspace?: WorkspaceStore;
-	previewFileLink?: DesktopHostClient["previewFileLink"];
+	previewFileLink?: HostClient["previewFileLink"];
 	openFileLink?: DesktopShell["openFileLink"];
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	openImage?: (image: ChatImagePreview) => void;

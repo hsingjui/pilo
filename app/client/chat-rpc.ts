@@ -1,7 +1,7 @@
-import type { DesktopHostClient } from "./host-api";
+import type { HostClient } from "@shared/api/host-client";
 
 export type PiCommandClient = Pick<
-	DesktopHostClient,
+	HostClient,
 	"sendChatCommand" | "connectEvents"
 > & {
 	/** Namespaces RPCs on transports that broadcast replies to other clients. */

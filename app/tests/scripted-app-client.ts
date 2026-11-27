@@ -63,10 +63,8 @@ import type {
 	ThemeSettingsUpdate,
 } from "@shared/theme-settings-types";
 import type { PiCommandClient } from "../client/chat-rpc";
-import type {
-	DesktopHostClient,
-	DesktopHostBootstrap,
-} from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
+import type { DesktopHostBootstrap } from "../client/host-api";
 import type { DesktopShell } from "../shell/desktop-shell";
 import type { AppStoreClient } from "../state/app-store";
 import type { ChatTranscriptClient } from "../state/chat-transcript-store";
@@ -106,7 +104,7 @@ export type ScriptedChatClient = PiCommandClient & {
 
 /** The native calls the settings panes make; the script answers them. */
 export type ScriptedSettingsClient = Pick<
-	DesktopHostClient,
+	HostClient,
 	| "loadPreferences"
 	| "savePreferences"
 	| "saveThemeSettings"

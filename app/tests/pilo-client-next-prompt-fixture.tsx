@@ -3,7 +3,7 @@ import { BootstrapFixture, Pilo } from "app/native";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { NextPromptSettings } from "@shared/next-prompt-types";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("loading next-prompt settings through the client");
 
@@ -33,7 +33,7 @@ function sameSettings(a: NextPromptSettings, b: NextPromptSettings) {
 
 async function run() {
 	const fixture = new BootstrapFixture();
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const received: PiloClientEvent[] = [];
 	let wake = () => {};
 	try {

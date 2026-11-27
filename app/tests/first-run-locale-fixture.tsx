@@ -4,7 +4,10 @@ import { BootstrapFixture, Pilo } from "app/native";
 import { initializeI18n } from "../shell/i18n";
 import { launch } from "../shell/launch";
 import { createNativeDesktopShell } from "../shell/native-desktop-shell";
-import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
+import {
+	createNativeHostClient,
+	type NativeHostBackend,
+} from "../client/native-transport";
 
 async function run() {
 	const fixture = new BootstrapFixture();
@@ -25,7 +28,7 @@ async function run() {
 		try {
 			const system = initializeI18n();
 			await launch(pilo, createNativeDesktopShell(pilo));
-			const preferences = await new NshPiloClient(pilo).loadPreferences();
+			const preferences = await createNativeHostClient(pilo).loadPreferences();
 			return `startup locale: ${system}; Host: ${preferences.values.locale}`;
 		} finally {
 			await pilo.shutdown();
@@ -38,15 +41,15 @@ async function run() {
 const show = (message: string) => mount(() => <Text>{message}</Text>);
 if (host.params.mode === "pending") {
 	initializeI18n();
-	const pendingSeed: Pick<PiloNative, "savePreferences" | "nextEvents"> = {
-		savePreferences: () => new Promise<never>(() => {}),
+	const pendingSeed: Pick<NativeHostBackend, "call" | "nextEvents"> = {
+		call: () => new Promise<never>(() => {}),
 		nextEvents: () => {
 			throw new Error("the store started before the locale seed settled");
 		},
 	};
-	void launch(pendingSeed as PiloNative, { openExternal: openUrl }).catch(
-		(error: unknown) => show(String(error)),
-	);
+	void launch(pendingSeed as NativeHostBackend, {
+		openExternal: openUrl,
+	}).catch((error: unknown) => show(String(error)));
 } else {
 	void run().then(show, (error: unknown) => show(String(error)));
 }

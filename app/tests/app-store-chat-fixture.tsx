@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 import { AppStore } from "../state/app-store";
 
 const projectId = "chat-fixture";
@@ -14,7 +14,7 @@ function assert(condition: boolean, message: string) {
 
 async function run() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const store = new AppStore(client);
 	const held = () =>
 		store.state().chatSessions.find((chat) => chat.sessionKey === sessionKey);

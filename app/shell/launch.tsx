@@ -10,7 +10,10 @@ import {
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { LOCAL_HOST_ID } from "@shared/host-id";
-import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
+import {
+	createNativeHostClient,
+	type NativeHostBackend,
+} from "../client/native-transport";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
 import { ChatQueueStore } from "../state/chat-queue-store";
@@ -80,9 +83,9 @@ function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
  * open session's transcript read and marks its finished turns as seen.
  */
-export async function launch(pilo: PiloNative, shell: DesktopShell) {
+export async function launch(pilo: NativeHostBackend, shell: DesktopShell) {
 	const hostId = LOCAL_HOST_ID;
-	const client = new NshPiloClient(pilo);
+	const client = createNativeHostClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const workspace = new WorkspaceStore();
 	const terminals = new TerminalStore(client);

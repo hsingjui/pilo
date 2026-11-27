@@ -2,7 +2,7 @@ import { mount, signal, Text, View } from "nsh";
 import { Pilo, SessionFilesFixture } from "app/native";
 
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 import { AppStore } from "../state/app-store";
 import { conversationFromHistory } from "../state/chat-transcript";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
@@ -50,7 +50,7 @@ async function run() {
 		)
 		.join("\n");
 	const fixture = new SessionFilesFixture(`${jsonl}\n`);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	let snapshots = 0;
 	const chat = new ChatTranscriptStore(
 		{
@@ -131,7 +131,7 @@ async function realSession() {
 		.map((entry) => JSON.stringify(entry))
 		.join("\n");
 	const fixture = new SessionFilesFixture(`${jsonl}\n`);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const chat = new ChatTranscriptStore(client, context());
 	const app = new AppStore(client, chat);
 	const sessionPath = fixture.sessionPath();

@@ -4,7 +4,7 @@ import { ChatFixture, Pilo } from "app/native";
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import { initializeI18n } from "../shell/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { Button } from "../ui/button";
@@ -63,7 +63,7 @@ function saved() {
 }
 
 const fixture = new ChatFixture(realPi);
-const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 const chat = new ChatTranscriptStore(client, context());
 const app = new AppStore(client, chat);
 const sessionPath = fixture.seedTranscript(saved());

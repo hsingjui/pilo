@@ -11,12 +11,12 @@ import type {
 import type { ChatMessage } from "@shared/chat/conversation-types";
 import { resolveAssistantForkTarget } from "@shared/chat/pi-session-fork";
 import { requestPiRpcReply, type PiCommandClient } from "../client/chat-rpc";
-import type { DesktopHostClient } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import type { ChatTranscriptTarget } from "../state/chat-transcript-store";
 import { t } from "./i18n";
 
 export type SessionForkClient = PiCommandClient &
-	Pick<DesktopHostClient, "startChat" | "stopChat">;
+	Pick<HostClient, "startChat" | "stopChat">;
 
 /** A fork outcome worth surfacing; the shell shows it as a toast. */
 export type SessionForkNotice = {

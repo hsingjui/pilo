@@ -65,7 +65,7 @@ import {
 	ConversationColumn,
 	ConversationColumnLayout,
 } from "../app/chat/conversation-column";
-import type { DesktopHostClient } from "../app/client/host-api";
+import type { HostClient } from "@shared/api/host-client";
 import type { DesktopShell } from "../app/shell/desktop-shell";
 import type {
 	WebRemoteConnectionState,
@@ -138,7 +138,7 @@ export interface MobileAppShellProps {
 		| "catalogReady"
 	>;
 	catalog?: Pick<ModelCatalogStore, "state" | "refresh" | "saveScope">;
-	searchSessions?: Pick<DesktopHostClient, "searchSessions">;
+	searchSessions?: Pick<HostClient, "searchSessions">;
 	shell?: Pick<DesktopShell, "openExternal">;
 	connectionState: Accessor<WebRemoteConnectionState>;
 	recoveryState: Accessor<WebRemoteRecoveryState>;

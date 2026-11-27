@@ -1,9 +1,10 @@
 import { type Accessor, signal } from "nsh";
 
-import type { DesktopHostClient, TerminalEvent } from "../client/host-api";
+import type { HostClient } from "@shared/api/host-client";
+import type { TerminalEvent } from "../client/host-api";
 
 export type TerminalClient = Pick<
-	DesktopHostClient,
+	HostClient,
 	| "openTerminal"
 	| "writeTerminal"
 	| "resizeTerminal"

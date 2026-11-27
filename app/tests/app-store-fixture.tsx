@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 import { isSessionUnread } from "../state/app-state";
 import { AppStore } from "../state/app-store";
 
@@ -25,7 +25,7 @@ async function eventually(done: () => boolean, message: string) {
 }
 
 async function run() {
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	let bootstraps = 0;
 	const bootstrap = client.bootstrap.bind(client);
 	client.bootstrap = () => {
