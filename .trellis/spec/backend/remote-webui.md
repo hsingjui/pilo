@@ -553,10 +553,13 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   so the same 80-char bound applies. Renaming requires the device to exist and
   not be revoked.
 - **Auth scope**: authenticated == full MVP capability. No roles/capabilities yet.
-- **Auth rate limiting**: only the pairing secret is IP-rate-limited (5 failures /
-  60 s). Device tokens are 32 random bytes looked up by SHA-256 hash, so they are
-  **not** rate-limited — blocking them turned the `401` a client needs to drop a
-  stale token into an unrecoverable `429` lockout (and also gated `/auth/pair`).
+- **Auth rate limiting**: pairing and device-token failures have separate
+  per-IP budgets (5 failures / 60 s). Authenticate a presented device token
+  before consulting the budget: valid credentials pass regardless of the IP's
+  budget, missing credentials return `401` without spending it, and invalid
+  credentials return `429` only after the budget is exhausted. Check and record
+  each failure atomically. The table holds up to 4096 IPs, prunes expired
+  failures when accessing an IP, and evicts the oldest tracked IP on overflow.
 - **Stale auth responses**: HTTP JSON/image helpers clear localStorage on 401
   only if its token still equals the token sent by that request. Pairing pages
   do not clear it again; the workspace error handler adopts the current stored

@@ -41,6 +41,7 @@ mod ws;
 const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const AUTH_FAILURE_WINDOW: Duration = Duration::from_secs(60);
 const AUTH_FAILURE_LIMIT: usize = 5;
+const AUTH_FAILURE_MAX_IPS: usize = 4096;
 
 #[derive(Clone)]
 pub(crate) struct HttpState<R> {
@@ -77,10 +78,16 @@ impl FromRequestParts<RemoteRouterState> for RemoteHttpState {
 
 #[derive(Default)]
 struct AuthRateLimiter {
-    failures: StdMutex<HashMap<(AuthKind, IpAddr), VecDeque<Instant>>>,
+    failures: StdMutex<AuthFailures>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
+struct AuthFailures {
+    by_ip: HashMap<IpAddr, [VecDeque<Instant>; 2]>,
+    insertion_order: VecDeque<IpAddr>,
+}
+
+#[derive(Clone, Copy)]
 enum AuthKind {
     Pairing,
     Device,
@@ -88,49 +95,59 @@ enum AuthKind {
 
 impl AuthRateLimiter {
     fn is_blocked(&self, kind: AuthKind, ip: IpAddr) -> bool {
-        let now = Instant::now();
         let mut failures = self
             .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(attempts) = failures.get_mut(&(kind, ip)) else {
+        let Some(attempts) = failures.by_ip.get_mut(&ip) else {
             return false;
         };
+        Self::prune_expired(&mut attempts[kind as usize], Instant::now());
+        attempts[kind as usize].len() >= AUTH_FAILURE_LIMIT
+    }
+
+    fn prune_expired(attempts: &mut VecDeque<Instant>, now: Instant) {
         while attempts
             .front()
-            .is_some_and(|attempt| now.duration_since(*attempt) > AUTH_FAILURE_WINDOW)
+            .is_some_and(|attempt| now.duration_since(*attempt) >= AUTH_FAILURE_WINDOW)
         {
             attempts.pop_front();
         }
-        attempts.len() >= AUTH_FAILURE_LIMIT
     }
 
-    fn record_failure(&self, kind: AuthKind, ip: IpAddr) {
-        let now = Instant::now();
+    fn try_record_failure(&self, kind: AuthKind, ip: IpAddr) -> bool {
         let mut failures = self
             .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        failures.retain(|_, attempts| {
-            while attempts
-                .front()
-                .is_some_and(|attempt| now.duration_since(*attempt) > AUTH_FAILURE_WINDOW)
+        if !failures.by_ip.contains_key(&ip) {
+            if failures.by_ip.len() == AUTH_FAILURE_MAX_IPS
+                && let Some(oldest) = failures.insertion_order.pop_front()
             {
-                attempts.pop_front();
+                failures.by_ip.remove(&oldest);
             }
-            !attempts.is_empty()
-        });
-        let attempts = failures.entry((kind, ip)).or_default();
-        if attempts.len() < AUTH_FAILURE_LIMIT {
-            attempts.push_back(now);
+            failures.insertion_order.push_back(ip);
         }
+        let attempts = &mut failures.by_ip.entry(ip).or_default()[kind as usize];
+        let now = Instant::now();
+        Self::prune_expired(attempts, now);
+        if attempts.len() >= AUTH_FAILURE_LIMIT {
+            return false;
+        }
+        attempts.push_back(now);
+        true
     }
 
     fn clear(&self, kind: AuthKind, ip: IpAddr) {
-        self.failures
+        if let Some(attempts) = self
+            .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&(kind, ip));
+            .by_ip
+            .get_mut(&ip)
+        {
+            attempts[kind as usize].clear();
+        }
     }
 }
 
@@ -486,13 +503,50 @@ mod tests {
         let first = "192.168.1.1".parse().unwrap();
         let second = "192.168.1.2".parse().unwrap();
         for _ in 0..AUTH_FAILURE_LIMIT {
-            limiter.record_failure(AuthKind::Device, first);
+            assert!(limiter.try_record_failure(AuthKind::Device, first));
         }
         assert!(limiter.is_blocked(AuthKind::Device, first));
         assert!(!limiter.is_blocked(AuthKind::Device, second));
         assert!(!limiter.is_blocked(AuthKind::Pairing, first));
         limiter.clear(AuthKind::Device, first);
         assert!(!limiter.is_blocked(AuthKind::Device, first));
+    }
+
+    #[test]
+    fn concurrent_auth_failures_cannot_exceed_the_budget() {
+        let limiter = AuthRateLimiter::default();
+        let barrier = std::sync::Barrier::new(16);
+        let ip = "192.168.1.1".parse().unwrap();
+        let admitted = std::thread::scope(|scope| {
+            (0..16)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        limiter.try_record_failure(AuthKind::Device, ip)
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|thread| thread.join().unwrap())
+                .filter(|admitted| *admitted)
+                .count()
+        });
+        assert_eq!(admitted, AUTH_FAILURE_LIMIT);
+    }
+
+    #[test]
+    fn auth_failure_table_caps_distinct_ips_and_evicts_oldest() {
+        let limiter = AuthRateLimiter::default();
+        for index in 0..=AUTH_FAILURE_MAX_IPS {
+            let ip = IpAddr::V4(std::net::Ipv4Addr::from(index as u32));
+            assert!(limiter.try_record_failure(AuthKind::Device, ip));
+            assert!(limiter.try_record_failure(AuthKind::Pairing, ip));
+        }
+        let failures = limiter.failures.lock().unwrap();
+        assert_eq!(failures.by_ip.len(), AUTH_FAILURE_MAX_IPS);
+        assert_eq!(failures.insertion_order.len(), AUTH_FAILURE_MAX_IPS);
+        assert!(!failures.by_ip.contains_key(&"0.0.0.0".parse().unwrap()));
+        assert!(failures.by_ip.contains_key(&"0.0.0.1".parse().unwrap()));
     }
 
     #[tokio::test]

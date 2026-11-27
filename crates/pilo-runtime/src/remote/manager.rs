@@ -685,22 +685,27 @@ mod tests {
         let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
         runtime.remote.start(&runtime, 0).await.unwrap();
         let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
-        let request = |path, headers: &'static str| async move {
-            let socket = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
-                .await
-                .unwrap();
-            let mut socket = BufReader::new(socket);
-            socket.write_all(format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{headers}\r\n").as_bytes()).await.unwrap();
-            let mut line = String::new();
-            tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
-                .await
-                .unwrap()
-                .unwrap();
-            line.split_whitespace()
-                .nth(1)
-                .unwrap()
-                .parse::<u16>()
-                .unwrap()
+        let request = |path, headers: &str| {
+            let request = format!(
+                "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{headers}\r\n"
+            );
+            async move {
+                let socket = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                    .await
+                    .unwrap();
+                let mut socket = BufReader::new(socket);
+                socket.write_all(request.as_bytes()).await.unwrap();
+                let mut line = String::new();
+                tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                line.split_whitespace()
+                    .nth(1)
+                    .unwrap()
+                    .parse::<u16>()
+                    .unwrap()
+            }
         };
         let addresses = vec![RemoteAccessAddress {
             id: "proxy".into(),
@@ -731,6 +736,9 @@ mod tests {
         ] {
             assert_eq!(request("/api/v1/health", headers).await, 403);
         }
+        for _ in 0..8 {
+            assert_eq!(request("/api/v1/auth/device", "").await, 401);
+        }
         for _ in 0..5 {
             assert_eq!(
                 request("/api/v1/auth/device", "Authorization: Bearer invalid\r\n").await,
@@ -743,6 +751,29 @@ mod tests {
                 "Sec-WebSocket-Protocol: pilo, pilo-token.invalid\r\n"
             )
             .await,
+            429
+        );
+        let paired =
+            super::super::auth::create_device(None, "127.0.0.1", RemoteScopes::Chat).unwrap();
+        let db = storage::open_with_paths(&runtime.paths).unwrap();
+        storage::insert_remote_device(
+            &db,
+            &paired.device,
+            &super::super::auth::hash_credential(&paired.token),
+        )
+        .unwrap();
+        drop(db);
+        assert_eq!(
+            request(
+                "/api/v1/auth/device",
+                &format!("Authorization: Bearer {}\r\n", paired.token),
+            )
+            .await,
+            200
+        );
+        assert_eq!(request("/api/v1/auth/device", "").await, 401);
+        assert_eq!(
+            request("/api/v1/auth/device", "Authorization: Bearer invalid\r\n").await,
             429
         );
         runtime.remote.stop().await;

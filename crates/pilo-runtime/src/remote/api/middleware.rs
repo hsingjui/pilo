@@ -138,10 +138,7 @@ pub(super) async fn pairing_info(
         .rate_limiter
         .is_blocked(AuthKind::Pairing, address.ip())
     {
-        return api_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many authentication attempts",
-        );
+        return auth_rate_limited();
     }
     let pairing = state.pairing.clone();
     let result = tokio::task::spawn_blocking(move || pairing.describe(&request.secret))
@@ -159,10 +156,7 @@ pub(super) async fn pair(
         .rate_limiter
         .is_blocked(AuthKind::Pairing, address.ip())
     {
-        return api_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many authentication attempts",
-        );
+        return auth_rate_limited();
     }
     let paths = state.runtime.paths.clone();
     let pairing = state.pairing.clone();
@@ -196,6 +190,13 @@ pub(super) async fn pairing_no_store(request: Request, next: Next) -> Response {
     response
 }
 
+fn auth_rate_limited() -> Response {
+    api_error(
+        StatusCode::TOO_MANY_REQUESTS,
+        "too many authentication attempts",
+    )
+}
+
 fn pairing_response<T: Serialize>(
     state: &RemoteHttpState,
     ip: IpAddr,
@@ -207,8 +208,11 @@ fn pairing_response<T: Serialize>(
             Json(value).into_response()
         }
         Err(PairingError::Unauthorized) => {
-            state.rate_limiter.record_failure(AuthKind::Pairing, ip);
-            api_error(StatusCode::UNAUTHORIZED, "invalid or expired pairing link")
+            if state.rate_limiter.try_record_failure(AuthKind::Pairing, ip) {
+                api_error(StatusCode::UNAUTHORIZED, "invalid or expired pairing link")
+            } else {
+                auth_rate_limited()
+            }
         }
         Err(PairingError::InvalidRequest(message)) => api_error(StatusCode::BAD_REQUEST, message),
         Err(PairingError::AlreadyUsed) => {
@@ -259,14 +263,7 @@ pub(super) async fn require_auth(
     next: Next,
 ) -> Response {
     let ip = address.ip();
-    if state.rate_limiter.is_blocked(AuthKind::Device, ip) {
-        return api_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many authentication attempts",
-        );
-    }
     let Some(token) = token_from_headers(request.headers()) else {
-        state.rate_limiter.record_failure(AuthKind::Device, ip);
         return api_error(StatusCode::UNAUTHORIZED, "authentication required");
     };
     let paths = state.runtime.paths.clone();
@@ -278,7 +275,6 @@ pub(super) async fn require_auth(
     .await;
     match result {
         Ok(Ok(Some(device))) => {
-            state.rate_limiter.clear(AuthKind::Device, ip);
             request.extensions_mut().insert(Principal::Device {
                 id: device.id.clone(),
                 scopes: device.scopes,
@@ -289,8 +285,11 @@ pub(super) async fn require_auth(
             next.run(request).await
         }
         Ok(Ok(None)) => {
-            state.rate_limiter.record_failure(AuthKind::Device, ip);
-            api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token")
+            if state.rate_limiter.try_record_failure(AuthKind::Device, ip) {
+                api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token")
+            } else {
+                auth_rate_limited()
+            }
         }
         Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         Err(error) => api_error(
