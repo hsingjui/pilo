@@ -247,6 +247,10 @@ export function CommandPalette(props: CommandPaletteProps) {
 		const q = normalized();
 		const items: CommandItem[] = [];
 		const rows = new Map<string, Row>();
+		const sessionTargets = new Map<
+			string,
+			{ projectId: string; sessionPath: string }
+		>();
 		const add = (item: CommandItem, row: Row) => {
 			items.push(item);
 			rows.set(item.id, row);
@@ -285,12 +289,14 @@ export function CommandPalette(props: CommandPaletteProps) {
 			? t("commandPalette.sessionGroup")
 			: t("commandPalette.recentSessions");
 		for (const session of sessionResults()) {
+			const id = `session:${JSON.stringify([session.projectId, session.sessionPath])}`;
+			sessionTargets.set(id, session);
 			const projectName =
 				projectById().get(session.projectId)?.name ??
 				t("commandPalette.projectFallback");
 			add(
 				{
-					id: `session:${session.projectId}:${session.sessionPath}`,
+					id,
 					label: session.title,
 					group: sessionGroup,
 				},
@@ -327,7 +333,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 				},
 			);
 		});
-		return { items, rows };
+		return { items, rows, sessionTargets };
 	});
 
 	// The message search: 220 ms after the query settles, each project's saved
@@ -406,11 +412,11 @@ export function CommandPalette(props: CommandPaletteProps) {
 			props.onShowChat?.(projectId);
 			store.selectProject(projectId);
 		} else if (id.startsWith("session:")) {
-			const rest = id.slice("session:".length);
-			const separator = rest.indexOf(":");
-			const projectId = rest.slice(0, separator);
-			props.onShowChat?.(projectId);
-			store.selectSession(projectId, rest.slice(separator + 1));
+			const session = results().sessionTargets.get(id);
+			if (session) {
+				props.onShowChat?.(session.projectId);
+				store.selectSession(session.projectId, session.sessionPath);
+			}
 		} else if (id.startsWith("content:")) {
 			const match = content()[Number(id.slice("content:".length))];
 			if (match) {
