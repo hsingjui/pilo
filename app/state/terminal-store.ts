@@ -72,6 +72,7 @@ export class TerminalStore {
 	} | null>(null);
 	private readonly sinks = new Map<string, TerminalSink>();
 	private readonly pending = new Map<string, PendingTerminal>();
+	private readonly writes = new Map<string, Promise<void>>();
 	private polling = false;
 	private readonly streams = new Map<string, () => void>();
 	/** Terminals waiting for their first snapshot; their events until then are in it. */
@@ -209,8 +210,16 @@ export class TerminalStore {
 	write(terminalId: string, data: Uint8Array) {
 		const tab = this.tabsSignal().find(({ id }) => id === terminalId);
 		if (!tab || tab.exited) return;
-		void this.client.writeTerminal(terminalId, data).catch((error: unknown) => {
-			console.warn("Failed to write to the terminal", error);
+		// Keystrokes may travel as separate HTTP calls; keep them in order.
+		const queued = (this.writes.get(terminalId) ?? Promise.resolve())
+			.then(() => this.client.writeTerminal(terminalId, data))
+			.catch((error: unknown) => {
+				console.warn("Failed to write to the terminal", error);
+			});
+		this.writes.set(terminalId, queued);
+		void queued.then(() => {
+			if (this.writes.get(terminalId) === queued)
+				this.writes.delete(terminalId);
 		});
 	}
 
