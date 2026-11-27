@@ -48,4 +48,37 @@ for (const mode of ["sync", "async"] as const) {
 		expect(await read()).toBe("");
 		expect(entries.get("prefs")).toBe("must not win");
 	});
+
+	test(`${mode} Host migration preserves a concurrent namespaced write`, async () => {
+		const key = "prefs@local";
+		const entries = new Map([["prefs", "old"]]);
+		let writes = 0;
+		const storage = {
+			getItem(name: string) {
+				const value = entries.get(name) ?? null;
+				if (name === "prefs") entries.set(key, "");
+				return value;
+			},
+			setItem(name: string, value: string) {
+				writes += 1;
+				entries.set(name, value);
+			},
+			removeItem: (name: string) => void entries.delete(name),
+		};
+		const value =
+			mode === "sync"
+				? readMigratedStorageSync(storage, key, "prefs")
+				: await readMigratedStorage(
+						{
+							getItem: async (name) => storage.getItem(name),
+							setItem: async (name, value) => storage.setItem(name, value),
+							removeItem: async (name) => storage.removeItem(name),
+						},
+						key,
+						"prefs",
+					);
+		expect(value).toBe("");
+		expect(entries.get(key)).toBe("");
+		expect(writes).toBe(0);
+	});
 }

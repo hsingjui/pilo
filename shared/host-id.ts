@@ -30,13 +30,19 @@ export async function readMigratedStorage(
 	if (current !== null || legacyKey === undefined) return current;
 	const legacy = await storage.getItem(legacyKey);
 	if (legacy === null) return null;
+	let value = legacy;
 	try {
+		const latest = await storage.getItem(key);
+		if (latest !== null) return latest;
 		await storage.setItem(key, legacy);
+		const saved = await storage.getItem(key);
+		if (saved === null) return value;
+		value = saved;
 		await storage.removeItem(legacyKey);
 	} catch {
 		// Keep the legacy value usable even if storage refuses the migration.
 	}
-	return legacy;
+	return value;
 }
 
 export function readMigratedStorageSync(
@@ -49,13 +55,19 @@ export function readMigratedStorageSync(
 	for (const legacyKey of legacyKeys) {
 		const legacy = storage.getItem(legacyKey);
 		if (legacy === null) continue;
+		let value = legacy;
 		try {
+			const latest = storage.getItem(key);
+			if (latest !== null) return latest;
 			storage.setItem(key, legacy);
+			const saved = storage.getItem(key);
+			if (saved === null) return value;
+			value = saved;
 			storage.removeItem(legacyKey);
 		} catch {
 			// Keep the legacy value usable even if storage refuses the migration.
 		}
-		return legacy;
+		return value;
 	}
 	return null;
 }
