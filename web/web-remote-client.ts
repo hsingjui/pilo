@@ -573,6 +573,28 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		});
 	}
 
+	archiveSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionIndexEntry> {
+		return this.updateSessionUiState(
+			sessionPath,
+			{ archived: true },
+			projectId,
+		);
+	}
+
+	unarchiveSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionIndexEntry> {
+		return this.updateSessionUiState(
+			sessionPath,
+			{ archived: false },
+			projectId,
+		);
+	}
+
 	pauseCacheKeepAlive(sessionKey: string): Promise<void> {
 		return this.requestJson<void>("/api/v1/cache-keep-alive/pause", {
 			method: "POST",

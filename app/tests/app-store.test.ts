@@ -99,6 +99,8 @@ function fakeClient() {
 				: Promise.resolve(read(sessionPath, revision, revision));
 		},
 		updateSessionUiState: () => Promise.reject(new Error("unused")),
+		archiveSession: () => Promise.reject(new Error("unused")),
+		unarchiveSession: () => Promise.reject(new Error("unused")),
 		deleteSession: () =>
 			answers.deleteResult instanceof Error
 				? Promise.reject(answers.deleteResult)

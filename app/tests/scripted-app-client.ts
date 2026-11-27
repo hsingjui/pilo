@@ -311,8 +311,12 @@ export function scriptedClient(script: AppScript = {}) {
 	);
 	const running = new Set<string>();
 	const removed: string[] = [];
-	/** UI state written through `updateSessionUiState`, by session path. */
-	const uiState = new Map<string, SessionUiStateUpdate>();
+	const uiState = new Map<
+		string,
+		Partial<Pick<SessionIndexEntry, "pinned" | "titleOverride" | "archivedAt">>
+	>();
+	const uiStateKey = (sessionPath: string, projectId?: string) =>
+		JSON.stringify([projectId, sessionPath]);
 	/** Session paths deleted through `deleteSession`, gone from `listSessions`. */
 	const deleted = new Set<string>();
 	let attempts = 0;
@@ -417,15 +421,42 @@ export function scriptedClient(script: AppScript = {}) {
 			emit({ type: "project_model_scope_changed", scope });
 			return Promise.resolve(scope);
 		},
-		updateSessionUiState(sessionPath, update, projectId) {
-			uiState.set(sessionPath, update);
-			return Promise.resolve(
+		async updateSessionUiState(sessionPath, update, projectId) {
+			const { archived, ...uiPatch } = update;
+			const key = uiStateKey(sessionPath, projectId);
+			if (archived !== undefined && projectId !== undefined) {
+				const entry = (await client.listSessions(projectId)).find(
+					(session) => session.sessionPath === sessionPath,
+				);
+				if (!entry) throw new Error(`session '${sessionPath}' is not indexed`);
+				await script.onUpdateSessionUiState?.(sessionPath, update, projectId);
+				const patch = {
+					...uiPatch,
+					...(archived ? { pinned: false } : {}),
+					archivedAt: archived ? Date.now() : null,
+				};
+				uiState.set(key, { ...uiState.get(key), ...patch });
+				emit({ type: "sessions_indexed", projectId });
+				return { ...entry, ...patch };
+			}
+			uiState.set(key, { ...uiState.get(key), ...uiPatch });
+			return (
 				script.onUpdateSessionUiState?.(sessionPath, update, projectId) ??
-					({
-						sessionPath,
-						pinned: update.pinned,
-						titleOverride: update.titleOverride,
-					} as SessionIndexEntry),
+				({ sessionPath, ...uiPatch } as SessionIndexEntry)
+			);
+		},
+		archiveSession(projectId, sessionPath) {
+			return client.updateSessionUiState(
+				sessionPath,
+				{ archived: true },
+				projectId,
+			);
+		},
+		unarchiveSession(projectId, sessionPath) {
+			return client.updateSessionUiState(
+				sessionPath,
+				{ archived: false },
+				projectId,
 			);
 		},
 		searchSessions: (projectId, query, limit) =>
@@ -478,7 +509,11 @@ export function scriptedClient(script: AppScript = {}) {
 			const listed = (await script.sessions?.(projectId)) ?? [];
 			return listed
 				.filter((entry) => !deleted.has(entry.sessionPath))
-				.map((entry) => ({ ...entry, ...uiState.get(entry.sessionPath) }));
+				.map((entry) => ({
+					...entry,
+					...uiState.get(uiStateKey(entry.sessionPath)),
+					...uiState.get(uiStateKey(entry.sessionPath, projectId)),
+				}));
 		},
 		loadConnectionModels: (connectionId) =>
 			Promise.resolve(script.connectionModels?.[connectionId] ?? []),
