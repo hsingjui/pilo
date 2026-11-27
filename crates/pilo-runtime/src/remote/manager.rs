@@ -43,6 +43,7 @@ struct RunningRemoteServer {
     pairing: Arc<PairingSession>,
     shutdown: watch::Sender<bool>,
     auth_generation: watch::Sender<u64>,
+    origins: watch::Sender<Vec<RemoteAccessAddress>>,
     events: RuntimeEventBus,
     task: JoinHandle<()>,
 }
@@ -248,6 +249,10 @@ impl RemoteServerManager {
             .running
             .as_ref()
             .map(|running| running.pairing.clone());
+        let origins = inner
+            .running
+            .as_ref()
+            .map(|running| running.origins.clone());
         tokio::task::spawn_blocking(move || {
             let host = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
             let lan_base_url = lan_base_url.unwrap_or_else(|| {
@@ -263,6 +268,9 @@ impl RemoteServerManager {
                 pairing.invalidate();
             }
             storage::set_remote_access_config(&storage::open_with_paths(&paths)?, &config)?;
+            if let Some(origins) = origins {
+                origins.send_replace(config.addresses.clone());
+            }
             if changed && let Some(pairing) = &pairing {
                 pairing.regenerate(&paths, config.addresses)?;
             }
@@ -489,9 +497,11 @@ impl RemoteServerManager {
         let pairing_for_init = pairing.clone();
         let paths_for_init = paths.clone();
         let lan_for_init = lan_base_url.clone();
-        tokio::task::spawn_blocking(move || {
+        let addresses = tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths_for_init, &lan_for_init)?;
-            pairing_for_init.regenerate(&paths_for_init, access::pairing_addresses(&config))
+            let addresses = access::pairing_addresses(&config);
+            pairing_for_init.regenerate(&paths_for_init, addresses.clone())?;
+            Ok::<_, String>(addresses)
         })
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
@@ -500,6 +510,7 @@ impl RemoteServerManager {
         }
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(next_auth_generation());
+        let (origins, origins_rx) = watch::channel(addresses);
         let mut shutdown_for_task = shutdown.subscribe();
         let events = runtime.events.clone();
         events.set_web_events_enabled(true);
@@ -508,6 +519,7 @@ impl RemoteServerManager {
             pairing.clone(),
             shutdown_rx,
             auth_generation_rx,
+            origins_rx,
         );
         let pairing_for_expiry = pairing.clone();
         let task = tokio::spawn(async move {
@@ -548,6 +560,7 @@ impl RemoteServerManager {
             pairing,
             shutdown,
             auth_generation,
+            origins,
             events,
             task,
         });
@@ -606,7 +619,138 @@ async fn lan_ip() -> IpAddr {
 
 #[cfg(test)]
 mod tests {
-    use super::{effective_base_url, normalize_public_base_url};
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    #[tokio::test]
+    async fn gateway_enforces_configured_origins_and_limits_device_failures_per_ip() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-requests-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
+        let request = |path, headers: &'static str| async move {
+            let socket = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .unwrap();
+            let mut socket = BufReader::new(socket);
+            socket.write_all(format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{headers}\r\n").as_bytes()).await.unwrap();
+            let mut line = String::new();
+            tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+                .await
+                .unwrap()
+                .unwrap();
+            line.split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse::<u16>()
+                .unwrap()
+        };
+        let addresses = vec![RemoteAccessAddress {
+            id: "proxy".into(),
+            name: String::new(),
+            base_url: "https://remote.example.com".into(),
+        }];
+        runtime
+            .remote
+            .set_addresses(
+                &runtime,
+                RemoteAccessConfig {
+                    addresses,
+                    entry_address_id: "proxy".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(request("/api/v1/health", "").await, 200);
+        assert_eq!(
+            request("/api/v1/health", "Origin: https://remote.example.com\r\n").await,
+            200
+        );
+        for headers in [
+            "Origin: https://remote.example.com:8080\r\n",
+            "Origin: https://remote.example.com.evil.test\r\n",
+            "Origin: null\r\n",
+            "Origin: https://remote.example.com\r\nOrigin: https://evil.test\r\n",
+        ] {
+            assert_eq!(request("/api/v1/health", headers).await, 403);
+        }
+        for _ in 0..5 {
+            assert_eq!(
+                request("/api/v1/auth/device", "Authorization: Bearer invalid\r\n").await,
+                401
+            );
+        }
+        assert_eq!(
+            request(
+                "/api/v1/auth/device",
+                "Sec-WebSocket-Protocol: pilo, pilo-token.invalid\r\n"
+            )
+            .await,
+            429
+        );
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn disabling_gateway_cancels_an_in_flight_http_call() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-cancel-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
+        let socket = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        let mut socket = BufReader::new(socket);
+        socket.write_all(b"POST /api/v1/auth/pairing HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 30\r\nExpect: 100-continue\r\n\r\n").await.unwrap();
+        let mut line = String::new();
+        tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(line.trim(), "HTTP/1.1 100 Continue");
+        assert!(
+            !runtime
+                .remote
+                .set_enabled(&runtime, false)
+                .await
+                .unwrap()
+                .running
+        );
+        line.clear();
+        tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(line, "\r\n");
+        line.clear();
+        tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(line.trim(), "HTTP/1.1 503 Service Unavailable");
+        assert!(
+            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_err()
+        );
+        runtime.remote.start(&runtime, port).await.unwrap();
+        assert!(
+            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_ok()
+        );
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[tokio::test]
     async fn dropping_runtime_stops_remote_listener_without_shutdown() {

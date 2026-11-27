@@ -6,17 +6,53 @@ use std::{
 
 use axum::{
     Json,
-    extract::{ConnectInfo, Extension, MatchedPath, Request},
+    extract::{ConnectInfo, Extension, MatchedPath, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 
 use crate::remote::{auth, pairing::PairingError};
-use pilo_domain::RemoteDevice;
+use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
-use super::{ApiFailureDiagnostic, AuthSession, RemoteHttpState, api_error};
+use super::{ApiFailureDiagnostic, AuthKind, AuthSession, RemoteHttpState, api_error};
+
+pub(super) async fn cancel_on_shutdown(
+    State(mut shutdown): State<watch::Receiver<bool>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    tokio::select! {
+        biased;
+        _ = shutdown.wait_for(|stopped| *stopped) => {
+            api_error(StatusCode::SERVICE_UNAVAILABLE, "remote connections disabled")
+        }
+        response = next.run(request) => response,
+    }
+}
+
+pub(super) async fn enforce_origin(
+    State(addresses): State<watch::Receiver<Vec<RemoteAccessAddress>>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut origins = request.headers().get_all(header::ORIGIN).iter();
+    if let Some(origin) = origins.next()
+        && (origins.next().is_some()
+            || !addresses
+                .borrow()
+                .iter()
+                .any(|address| origin == address.base_url.as_str()))
+    {
+        return api_error(
+            StatusCode::FORBIDDEN,
+            "remote request origin is not configured",
+        );
+    }
+    next.run(request).await
+}
 
 pub(super) async fn log_request_failure(request: Request, next: Next) -> Response {
     static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
@@ -98,7 +134,10 @@ pub(super) async fn pairing_info(
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     Json(request): Json<PairingInfoRequest>,
 ) -> Response {
-    if state.rate_limiter.is_blocked(address.ip()) {
+    if state
+        .rate_limiter
+        .is_blocked(AuthKind::Pairing, address.ip())
+    {
         return api_error(
             StatusCode::TOO_MANY_REQUESTS,
             "too many authentication attempts",
@@ -116,7 +155,10 @@ pub(super) async fn pair(
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     Json(request): Json<PairRequest>,
 ) -> Response {
-    if state.rate_limiter.is_blocked(address.ip()) {
+    if state
+        .rate_limiter
+        .is_blocked(AuthKind::Pairing, address.ip())
+    {
         return api_error(
             StatusCode::TOO_MANY_REQUESTS,
             "too many authentication attempts",
@@ -161,11 +203,11 @@ fn pairing_response<T: Serialize>(
 ) -> Response {
     match result {
         Ok(value) => {
-            state.rate_limiter.clear(ip);
+            state.rate_limiter.clear(AuthKind::Pairing, ip);
             Json(value).into_response()
         }
         Err(PairingError::Unauthorized) => {
-            state.rate_limiter.record_failure(ip);
+            state.rate_limiter.record_failure(AuthKind::Pairing, ip);
             api_error(StatusCode::UNAUTHORIZED, "invalid or expired pairing link")
         }
         Err(PairingError::InvalidRequest(message)) => api_error(StatusCode::BAD_REQUEST, message),
@@ -212,14 +254,19 @@ pub(super) async fn device_renew(
 
 pub(super) async fn require_auth(
     state: RemoteHttpState,
+    ConnectInfo(address): ConnectInfo<SocketAddr>,
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Device tokens are 32 random bytes (SHA-256 indexed), so there is no
-    // brute-force surface worth locking an IP out for. Applying the pairing
-    // rate limiter here masked the 401 that tells a WebUI client its stale
-    // token is dead, turning 401s into an unrecoverable 429 lockout.
+    let ip = address.ip();
+    if state.rate_limiter.is_blocked(AuthKind::Device, ip) {
+        return api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many authentication attempts",
+        );
+    }
     let Some(token) = token_from_headers(request.headers()) else {
+        state.rate_limiter.record_failure(AuthKind::Device, ip);
         return api_error(StatusCode::UNAUTHORIZED, "authentication required");
     };
     let paths = state.runtime.paths.clone();
@@ -231,12 +278,16 @@ pub(super) async fn require_auth(
     .await;
     match result {
         Ok(Ok(Some(device))) => {
+            state.rate_limiter.clear(AuthKind::Device, ip);
             request
                 .extensions_mut()
                 .insert(AuthSession { device, token });
             next.run(request).await
         }
-        Ok(Ok(None)) => api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token"),
+        Ok(Ok(None)) => {
+            state.rate_limiter.record_failure(AuthKind::Device, ip);
+            api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token")
+        }
         Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         Err(error) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -26,7 +26,7 @@ use crate::{
     storage,
     web_assets::{WebAsset, WebAssets},
 };
-use pilo_domain::{Project, RemoteDevice};
+use pilo_domain::{Project, RemoteAccessAddress, RemoteDevice};
 
 use super::pairing::PairingSession;
 
@@ -77,17 +77,23 @@ impl FromRequestParts<RemoteRouterState> for RemoteHttpState {
 
 #[derive(Default)]
 struct AuthRateLimiter {
-    failures: StdMutex<HashMap<IpAddr, VecDeque<Instant>>>,
+    failures: StdMutex<HashMap<(AuthKind, IpAddr), VecDeque<Instant>>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum AuthKind {
+    Pairing,
+    Device,
 }
 
 impl AuthRateLimiter {
-    fn is_blocked(&self, ip: IpAddr) -> bool {
+    fn is_blocked(&self, kind: AuthKind, ip: IpAddr) -> bool {
         let now = Instant::now();
         let mut failures = self
             .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(attempts) = failures.get_mut(&ip) else {
+        let Some(attempts) = failures.get_mut(&(kind, ip)) else {
             return false;
         };
         while attempts
@@ -99,27 +105,32 @@ impl AuthRateLimiter {
         attempts.len() >= AUTH_FAILURE_LIMIT
     }
 
-    fn record_failure(&self, ip: IpAddr) {
+    fn record_failure(&self, kind: AuthKind, ip: IpAddr) {
         let now = Instant::now();
         let mut failures = self
             .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let attempts = failures.entry(ip).or_default();
-        while attempts
-            .front()
-            .is_some_and(|attempt| now.duration_since(*attempt) > AUTH_FAILURE_WINDOW)
-        {
-            attempts.pop_front();
+        failures.retain(|_, attempts| {
+            while attempts
+                .front()
+                .is_some_and(|attempt| now.duration_since(*attempt) > AUTH_FAILURE_WINDOW)
+            {
+                attempts.pop_front();
+            }
+            !attempts.is_empty()
+        });
+        let attempts = failures.entry((kind, ip)).or_default();
+        if attempts.len() < AUTH_FAILURE_LIMIT {
+            attempts.push_back(now);
         }
-        attempts.push_back(now);
     }
 
-    fn clear(&self, ip: IpAddr) {
+    fn clear(&self, kind: AuthKind, ip: IpAddr) {
         self.failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&ip);
+            .remove(&(kind, ip));
     }
 }
 
@@ -134,12 +145,13 @@ pub(crate) fn router(
     pairing: Arc<PairingSession>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
+    origins: watch::Receiver<Vec<RemoteAccessAddress>>,
 ) -> Router {
     let state = RemoteRouterState {
         runtime: runtime.downgrade(),
         pairing,
         rate_limiter: Arc::new(AuthRateLimiter::default()),
-        shutdown,
+        shutdown: shutdown.clone(),
         auth_generation,
     };
 
@@ -249,6 +261,8 @@ pub(crate) fn router(
             Duration::from_secs(45),
         ))
         .layer(from_fn(middleware::log_request_failure))
+        .layer(from_fn_with_state(origins, middleware::enforce_origin))
+        .layer(from_fn_with_state(shutdown, middleware::cancel_on_shutdown))
         .with_state(state)
 }
 
@@ -465,6 +479,21 @@ fn api_error(status: StatusCode, message: &str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_failure_limit_keeps_ips_independent() {
+        let limiter = AuthRateLimiter::default();
+        let first = "192.168.1.1".parse().unwrap();
+        let second = "192.168.1.2".parse().unwrap();
+        for _ in 0..AUTH_FAILURE_LIMIT {
+            limiter.record_failure(AuthKind::Device, first);
+        }
+        assert!(limiter.is_blocked(AuthKind::Device, first));
+        assert!(!limiter.is_blocked(AuthKind::Device, second));
+        assert!(!limiter.is_blocked(AuthKind::Pairing, first));
+        limiter.clear(AuthKind::Device, first);
+        assert!(!limiter.is_blocked(AuthKind::Device, first));
+    }
 
     #[tokio::test]
     async fn request_state_upgrades_only_while_runtime_is_alive() {
