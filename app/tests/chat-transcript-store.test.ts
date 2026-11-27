@@ -14,8 +14,8 @@ import type { ConversationReducerContext } from "@shared/chat/conversation-types
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-	NshPiloClientBootstrap,
-} from "../client/nsh-pilo-client";
+	DesktopHostBootstrap,
+} from "../client/host-api";
 import { AppStore, type AppStoreClient } from "../state/app-store";
 import {
 	type ChatTranscriptClient,
@@ -1128,7 +1128,7 @@ test("a refresh with no chat open asks for nothing", async () => {
 /** An app store over a client the test drives, with its chat transcript. */
 function fakeApp() {
 	const listeners = new Set<PiloClientEventOptions>();
-	const bootstraps: Reply<NshPiloClientBootstrap>[] = [];
+	const bootstraps: Reply<DesktopHostBootstrap>[] = [];
 	const { store: chatStore, snapshots, texts } = fakeClient();
 	const client: AppStoreClient = {
 		closed: false,
@@ -1160,7 +1160,7 @@ function fakeApp() {
 			chatSessions: [],
 			latestSequence,
 			preferences: { revision: 1 },
-		}) as unknown as NshPiloClientBootstrap;
+		}) as unknown as DesktopHostBootstrap;
 	const send = (...events: PiloClientEvent[]) => {
 		for (const listener of [...listeners]) {
 			listener.onMessage({ type: "events", events });

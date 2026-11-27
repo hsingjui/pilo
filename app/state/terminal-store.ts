@@ -1,9 +1,9 @@
 import { type Accessor, signal } from "nsh";
 
-import type { NshPiloClient, TerminalEvent } from "../client/nsh-pilo-client";
+import type { DesktopHostClient, TerminalEvent } from "../client/host-api";
 
 export type TerminalClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	| "openTerminal"
 	| "writeTerminal"
 	| "resizeTerminal"

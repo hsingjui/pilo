@@ -3,13 +3,13 @@ import { effect, lifecycle, signal, untracked } from "nsh";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import type { AppStore } from "../state/app-store";
 import {
 	defaultDesktopNotifications,
 	type DesktopNotificationsApi,
 } from "./desktop-notifications";
-import type { DesktopShell } from "./desktop-shell";
+import type { DesktopWindowShell } from "./desktop-shell";
 import { t } from "./i18n";
 
 const SESSION_PREFIX = "pilo-session:";
@@ -44,10 +44,10 @@ function decodeTarget(id: string) {
 }
 
 export function connectSessionNotifications(
-	client: Pick<NshPiloClient, "chatState"> &
-		Partial<Pick<NshPiloClient, "listCachedSessions" | "listSessions">>,
+	client: Pick<DesktopHostClient, "chatState"> &
+		Partial<Pick<DesktopHostClient, "listCachedSessions" | "listSessions">>,
 	store: AppStore,
-	desktop: Pick<DesktopShell, "show" | "isQuitting">,
+	desktop: Pick<DesktopWindowShell, "show" | "isQuitting">,
 	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
 	options?: {
 		/** 当用户前台正停留在目标会话聊天视图时返回 true，以静默抑制打扰通知。 */

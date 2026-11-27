@@ -15,7 +15,7 @@ import type {
 	ConversationReducerContext,
 	ConversationState,
 } from "@shared/chat/conversation-types";
-import type { ChatTranscriptSnapshot } from "../client/nsh-pilo-client";
+import type { ChatTranscriptSnapshot } from "../client/host-api";
 
 export type LocalPromptEcho = {
 	text: string;

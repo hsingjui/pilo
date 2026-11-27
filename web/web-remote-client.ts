@@ -39,7 +39,7 @@ import type {
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-} from "../app/client/nsh-pilo-client";
+} from "../app/client/host-api";
 import type { AppStoreBootstrap, AppStoreClient } from "../app/state/app-store";
 import type { ChatRunConfigClient } from "../app/state/chat-run-config";
 import type { ChatTranscriptClient } from "../app/state/chat-transcript-store";

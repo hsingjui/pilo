@@ -34,6 +34,7 @@ import { ModelCatalogStore } from "../app/state/model-catalog";
 import { MobileAppShell } from "./mobile-app-shell";
 import { RemoteChatQueue } from "./remote-chat-queue";
 import { RemoteExtensionUi } from "./remote-extension-ui";
+import { webDesktopShell } from "./web-desktop-shell";
 import { browserSessionStorage } from "./web-remote-browser";
 import { WebRemotePiloClient } from "./web-remote-client";
 
@@ -139,6 +140,7 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	});
 	const composer = new ComposerStore({
 		client,
+		shell: webDesktopShell,
 		app: store.state,
 		draftTextStorage: tabStorage && {
 			read: (target) => {
@@ -277,6 +279,7 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	return (
 		<MobileAppShell
 			store={store}
+			shell={webDesktopShell}
 			chat={chat}
 			composer={composer}
 			initialProjectId={initialProjectId}

@@ -1,6 +1,7 @@
 import { appInfo, cleanup, Image, openUrl, Text, View } from "nsh";
 
 import appIcon from "../assets/app-icon.png";
+import type { DesktopShell } from "../shell/desktop-shell";
 import {
 	createDesktopUpdate,
 	type DesktopUpdate,
@@ -17,7 +18,6 @@ import {
 	SettingsSection,
 	SettingsStatus,
 } from "./layout";
-import type { SettingsClient } from "./settings-dialog";
 
 /**
  * Application version and updater.
@@ -26,10 +26,11 @@ import type { SettingsClient } from "./settings-dialog";
  * backs standalone mounts.
  */
 export function AboutPane(props: {
-	client: SettingsClient;
+	shell?: Pick<DesktopShell, "openExternal" | "openLogDirectory">;
 	update?: DesktopUpdate;
 }) {
 	const { version } = appInfo();
+	const openExternal = props.shell?.openExternal ?? openUrl;
 	const ownedUpdate = props.update
 		? null
 		: createDesktopUpdate({ autoCheck: false });
@@ -100,7 +101,7 @@ export function AboutPane(props: {
 					<SettingsActionButton
 						testID="settings-repository"
 						onPress={() => {
-							void openUrl(REPOSITORY_URL).catch((error: unknown) =>
+							void openExternal(REPOSITORY_URL).catch((error: unknown) =>
 								console.error("openUrl failed", error),
 							);
 						}}
@@ -114,8 +115,8 @@ export function AboutPane(props: {
 					<SettingsActionButton
 						testID="settings-open-log-directory"
 						onPress={() => {
-							void props.client
-								.openLogDirectory()
+							void props.shell
+								?.openLogDirectory?.()
 								.catch((error: unknown) =>
 									console.error("openLogDirectory failed", error),
 								);
@@ -186,7 +187,7 @@ export function AboutPane(props: {
 					<SettingsActionButton
 						testID="settings-release-notes"
 						onPress={() => {
-							void openUrl(RELEASES_URL).catch((error: unknown) =>
+							void openExternal(RELEASES_URL).catch((error: unknown) =>
 								console.error("openUrl failed", error),
 							);
 						}}

@@ -12,7 +12,7 @@ import { HeaderActions } from "../shell/header-actions";
 import { initializeI18n } from "../shell/i18n";
 import { canOpenToolFilePath, openToolFilePath } from "../shell/open-file-link";
 import { SessionHeader } from "../shell/session-header";
-import type { GitStatus } from "../client/nsh-pilo-client";
+import type { GitStatus } from "@shared/api/git-types";
 import { WorkspaceStore } from "../state/workspace-store";
 import { Button } from "../ui/button";
 

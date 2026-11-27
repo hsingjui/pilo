@@ -1,12 +1,47 @@
 import { effect, keymap, platform, signal } from "nsh";
 import { Application, GlobalShortcut, Tray, type WindowRef } from "nsh/desktop";
 
+import type { SystemFontFamily } from "@shared/font-settings";
+import type { WorkspaceFile } from "@shared/project-workspace";
 import macTrayIcon from "../assets/tray-template.svg";
 // nsh renders SVG tray icons as monochrome templates on Windows too; use the
 // pre-rendered RGBA PNG (from assets/branding/tray.svg) to preserve colors.
 import windowsTrayIcon from "../assets/tray.png";
 import { APP_SHORTCUTS } from "../shortcuts";
+import type { DesktopNotificationsApi } from "./desktop-notifications";
+import type { DesktopUpdate, DesktopUpdateOptions } from "./desktop-update";
 import { t } from "./i18n";
+
+export type ProjectNativeApp =
+	| "finder"
+	| "ghostty"
+	| "rex"
+	| "winc"
+	| "explorer"
+	| "powershell";
+
+export interface DesktopShell {
+	openExternal(url: string): Promise<unknown>;
+	pickLocalProjectDirectory?(): Promise<string | null>;
+	saveImage?(suggestedName: string, bytes: Uint8Array): Promise<boolean>;
+	readLocalFile?(uri: string): Promise<Uint8Array<ArrayBuffer>>;
+	systemFontFamilies?(): Promise<SystemFontFamily[]>;
+	openLogDirectory?(): Promise<void>;
+	openProjectInApp?(
+		projectId: string,
+		app: ProjectNativeApp,
+		path?: string,
+	): Promise<void>;
+	openFileLink?(
+		projectId: string,
+		url: string,
+		preview: boolean,
+	): Promise<WorkspaceFile | null>;
+	notifications?: DesktopNotificationsApi;
+	dock?: DesktopDockApi;
+	settings?: DesktopSettingsClient;
+	createUpdate?(options: DesktopUpdateOptions): DesktopUpdate;
+}
 
 export type DesktopSettingsClient = {
 	loadDesktopSettings(): Promise<{
@@ -294,4 +329,4 @@ export function connectDesktopShell(
 	};
 }
 
-export type DesktopShell = ReturnType<typeof connectDesktopShell>;
+export type DesktopWindowShell = ReturnType<typeof connectDesktopShell>;

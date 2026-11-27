@@ -74,7 +74,8 @@ import {
 import { appLocale, t } from "../shell/i18n";
 import { rememberLocalChatImages } from "../chat/chat-user-image-cache";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
+import type { DesktopShell } from "../shell/desktop-shell";
 import {
 	type AppState,
 	isExternalTurnOpen,
@@ -91,7 +92,7 @@ export type ComposerTarget = {
 };
 
 export type ComposerClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	| "startChat"
 	| "chatState"
 	| "sendChatCommand"
@@ -99,9 +100,7 @@ export type ComposerClient = Pick<
 	| "searchProjectFiles"
 	| "uploadChatFile"
 	| "removeChatFile"
-> &
-	// Optional so test stand-ins without native file reads still fit.
-	Partial<Pick<NshPiloClient, "readLocalFile">>;
+>;
 
 export type ComposerViewState = {
 	value: string;
@@ -209,6 +208,7 @@ type HistoryStore = Record<string, string[]>;
  */
 export class ComposerStore {
 	private readonly client: ComposerClient;
+	private readonly shell?: Pick<DesktopShell, "readLocalFile">;
 	private readonly app: Accessor<AppState>;
 	private readonly activeModel?: Accessor<PiModel | null>;
 	private readonly catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
@@ -308,6 +308,7 @@ export class ComposerStore {
 
 	constructor(deps: {
 		client: ComposerClient;
+		shell?: Pick<DesktopShell, "readLocalFile">;
 		app: Accessor<AppState>;
 		/** The open chat's active model, used to check image input support early. */
 		activeModel?: Accessor<PiModel | null>;
@@ -333,6 +334,7 @@ export class ComposerStore {
 		onNotice?: (notice: ComposerNotice) => void;
 	}) {
 		this.client = deps.client;
+		this.shell = deps.shell;
 		this.app = deps.app;
 		this.activeModel = deps.activeModel;
 		this.draftTextStorage = deps.draftTextStorage;
@@ -1200,8 +1202,8 @@ export class ComposerStore {
 		let batchBytes = 0;
 		for (const uri of uris.slice(0, MAX_CHAT_IMAGE_COUNT)) {
 			try {
-				if (!this.client.readLocalFile) throw new Error("no local file reads");
-				const bytes = await this.client.readLocalFile(uri);
+				if (!this.shell?.readLocalFile) throw new Error("no local file reads");
+				const bytes = await this.shell.readLocalFile(uri);
 				if (bytes.length <= MAX_CHAT_IMAGE_BYTES) {
 					batchBytes += bytes.length;
 					if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {

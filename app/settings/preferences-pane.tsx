@@ -4,7 +4,7 @@ import { userErrorMessage } from "@shared/app-error";
 import { isAppLocale } from "@shared/i18n/locale-types";
 import type { PreferencePatch } from "@shared/host-preferences-types";
 import { AppToaster, showToast } from "../shell/app-toasts";
-import type { DesktopShell } from "../shell/desktop-shell";
+import type { DesktopWindowShell } from "../shell/desktop-shell";
 import type { AppState } from "../state/app-state";
 import { t } from "../shell/i18n";
 import { Select } from "../ui/select";
@@ -16,7 +16,7 @@ import type { SettingsClient } from "./settings-dialog";
 export function PreferencesPane(props: {
 	state: Accessor<AppState>;
 	client: Pick<SettingsClient, "savePreferences">;
-	desktop?: DesktopShell;
+	desktop?: DesktopWindowShell;
 }) {
 	const toasts = AppToaster();
 	const values = () => props.state().preferences?.values;

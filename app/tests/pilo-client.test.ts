@@ -1,10 +1,12 @@
 import { expect, open, test } from "nsh/test";
+import process from "process";
 
 import type {
 	PiloClientEventMessage,
 	PiloClientEventOptions,
 } from "@shared/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
+import { createNativeDesktopShell } from "../shell/native-desktop-shell";
 
 type Call = [method: string, ...args: unknown[]];
 
@@ -23,7 +25,7 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		completedRevision: 2,
 		readRevision: 1,
 	};
-	const pilo: PiloNative = {
+	const pilo: PiloNative & Parameters<typeof createNativeDesktopShell>[0] = {
 		bootstrap: answer("bootstrap", {
 			eventSequence: 41,
 			projects: [{ id: "p1" }],
@@ -202,6 +204,36 @@ test("bootstrap carries the native event cut as latestSequence", async () => {
 		latestSequence: 41,
 		preferences,
 	});
+});
+
+test("the desktop shell picks directories and passes the process log file to the native module", async () => {
+	const { pilo, calls } = fakeNative();
+	const shell = createNativeDesktopShell(pilo);
+	expect(await shell.pickLocalProjectDirectory()).toBe("/code/picked");
+	await shell.openLogDirectory();
+	expect(calls).toEqual([
+		["pickLocalProjectDirectory"],
+		["openLogDirectory", process.logFile],
+	]);
+});
+
+test("the desktop shell preserves picker cancellation and missing native capability behavior", async () => {
+	const { pilo } = fakeNative();
+	const shell = createNativeDesktopShell({
+		...pilo,
+		pickLocalProjectDirectory: async () => null,
+	});
+	expect(await shell.pickLocalProjectDirectory()).toBe(null);
+	expect(await shell.systemFontFamilies()).toEqual([]);
+	let caught: unknown;
+	try {
+		await shell.readLocalFile("file:///image.png");
+	} catch (error) {
+		caught = error;
+	}
+	expect((caught as Error).message).toBe(
+		"The native call readLocalFile is unavailable",
+	);
 });
 
 test("data calls pass their arguments to the native module and return its answers", async () => {

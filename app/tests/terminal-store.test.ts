@@ -1,6 +1,6 @@
 import { expect, test } from "nsh/test";
 
-import type { TerminalEvent } from "../client/nsh-pilo-client";
+import type { TerminalEvent } from "../client/host-api";
 import { type TerminalClient, TerminalStore } from "../state/terminal-store";
 
 function deferred<T>() {

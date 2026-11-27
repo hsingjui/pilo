@@ -38,8 +38,8 @@ import type {
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-	NshPiloClient,
-} from "../client/nsh-pilo-client";
+	DesktopHostClient,
+} from "../client/host-api";
 import { isTemporarySessionKey } from "./app-state";
 import {
 	applyChatEvents,
@@ -51,7 +51,7 @@ import {
 import type { SessionHistoryMetadata } from "./chat-run-config";
 
 export type ChatTranscriptClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	"chatState" | "chatTranscriptSnapshot" | "loadHistory"
 >;
 

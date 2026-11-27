@@ -238,6 +238,7 @@ async function run() {
 				composer={composer}
 				searchSessions={runtime.client}
 				settings={runtime.client}
+				shell={runtime.shell}
 			/>
 			<View class="absolute bottom-2 right-2 flex-row items-center gap-2">
 				<Text testID="settings-probe">

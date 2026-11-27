@@ -11,7 +11,7 @@ function run() {
 	mount(() => (
 		<Scroll class="flex-1 bg-background">
 			<View class="p-3">
-				<AboutPane client={runtime.client} />
+				<AboutPane shell={runtime.shell} />
 			</View>
 		</Scroll>
 	));

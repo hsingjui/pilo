@@ -18,7 +18,7 @@ import { userErrorMessage } from "@shared/app-error";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { connectionLabel } from "../shell/connection-label";
 import type { AppState } from "../state/app-state";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
@@ -46,7 +46,7 @@ import { AUTH_LABEL_KEYS, sshTargetLabel } from "./ssh-connection-draft";
 
 /** The native calls the pane makes; tests pass a scripted stand-in. */
 export type ConnectionsClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	| "getLocalConnection"
 	| "updateConnectionSettings"
 	| "setConnectionShownInHome"
@@ -67,7 +67,7 @@ export type ConnectionsClient = Pick<
 > &
 	Partial<
 		Pick<
-			NshPiloClient,
+			DesktopHostClient,
 			"getConnectionHealth" | "listSshConfigHosts" | "listSshLocalKeys"
 		>
 	>;

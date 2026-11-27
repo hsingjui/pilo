@@ -17,7 +17,7 @@ import { Button as BaseButton, Dialog } from "nsh/base";
 import { Select } from "../ui/select";
 
 import type { AppState } from "../state/app-state";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { classNames } from "../ui/class-names";
 import { DialogClose } from "../ui/dialog-close";
@@ -27,8 +27,7 @@ import { Icon, type IconName } from "../ui/icon";
 import { MOTION, tactileTransition, useMountedDialog } from "../ui/motion";
 import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
-import type { DesktopNotificationsApi } from "../shell/desktop-notifications";
-import type { DesktopShell } from "../shell/desktop-shell";
+import type { DesktopShell, DesktopWindowShell } from "../shell/desktop-shell";
 import type { DesktopUpdate } from "../shell/desktop-update";
 import { t } from "../shell/i18n";
 import { AboutPane } from "./about-pane";
@@ -46,7 +45,7 @@ import { ThemePane } from "./theme-pane";
 
 /** The native calls the settings panes make; grows as panes land. */
 export type SettingsClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	| "savePreferences"
 	| "saveThemeSettings"
 	| "loadConnectionModels"
@@ -85,15 +84,9 @@ export type SettingsClient = Pick<
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
 	| "remoteDeviceRename"
-	| "openLogDirectory"
 > &
 	/** Optional host-only discovery helpers. */
-	Partial<
-		Pick<
-			NshPiloClient,
-			"systemFontFamilies" | "listSshConfigHosts" | "listSshLocalKeys"
-		>
-	>;
+	Partial<Pick<DesktopHostClient, "listSshConfigHosts" | "listSshLocalKeys">>;
 
 export interface SettingsDialogProps {
 	open: () => boolean;
@@ -101,8 +94,11 @@ export interface SettingsDialogProps {
 	/** The app state the panes read (preferences, theme, projects). */
 	state: Accessor<AppState>;
 	client: SettingsClient;
-	desktop?: DesktopShell;
-	notifications?: DesktopNotificationsApi;
+	desktop?: DesktopWindowShell;
+	shell?: Pick<
+		DesktopShell,
+		"systemFontFamilies" | "openLogDirectory" | "openExternal" | "notifications"
+	>;
 	update?: DesktopUpdate;
 }
 
@@ -424,6 +420,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														<FontsPane
 															state={props.state}
 															client={props.client}
+															shell={props.shell}
 														/>
 													);
 												case "connections":
@@ -458,7 +455,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														<NotificationsPane
 															state={props.state}
 															client={props.client}
-															notifications={props.notifications}
+															notifications={props.shell?.notifications}
 														/>
 													);
 												case "shortcuts":
@@ -472,7 +469,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												case "about":
 													return (
 														<AboutPane
-															client={props.client}
+															shell={props.shell}
 															update={props.update}
 														/>
 													);

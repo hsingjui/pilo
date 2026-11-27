@@ -1,3 +1,5 @@
+import { openUrl } from "nsh";
+
 import type {
 	PiloClientEvent,
 	PiloClientEventOptions,
@@ -61,9 +63,10 @@ import type {
 } from "@shared/theme-settings-types";
 import type { PiCommandClient } from "../client/chat-rpc";
 import type {
-	NshPiloClient,
-	NshPiloClientBootstrap,
-} from "../client/nsh-pilo-client";
+	DesktopHostClient,
+	DesktopHostBootstrap,
+} from "../client/host-api";
+import type { DesktopShell } from "../shell/desktop-shell";
 import type { AppStoreClient } from "../state/app-store";
 import type { ChatTranscriptClient } from "../state/chat-transcript-store";
 
@@ -75,7 +78,6 @@ export type ScriptedChatClient = PiCommandClient & {
 		connectionId: string,
 		path?: string,
 	) => Promise<FsEntry[]>;
-	pickLocalProjectDirectory: () => Promise<string | null>;
 	startChat: (input: PiloClientStartChatInput) => Promise<PiSessionSnapshot>;
 	stopChat: (sessionKey: string, reason?: string) => Promise<void>;
 	loadModels: (projectId: string) => Promise<ProjectPiModels | null>;
@@ -103,7 +105,7 @@ export type ScriptedChatClient = PiCommandClient & {
 
 /** The native calls the settings panes make; the script answers them. */
 export type ScriptedSettingsClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	| "loadPreferences"
 	| "savePreferences"
 	| "saveThemeSettings"
@@ -143,7 +145,6 @@ export type ScriptedSettingsClient = Pick<
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
 	| "remoteDeviceRename"
-	| "openLogDirectory"
 	| "connectEvents"
 >;
 
@@ -160,7 +161,7 @@ export type AppScript = {
 	historyMeta?: Partial<SessionHistory>;
 	readStates?: SessionReadState[];
 	/** Replaces a bootstrap's answer; `undefined` answers from the script. */
-	bootstrap?: (attempt: number) => Promise<NshPiloClientBootstrap> | undefined;
+	bootstrap?: (attempt: number) => Promise<DesktopHostBootstrap> | undefined;
 	/**
 	 * Answers a command sent over the chat command channel. A reply object is
 	 * delivered as an `rpc_message` response carrying the command's `id`;
@@ -180,7 +181,7 @@ export type AppScript = {
 	 */
 	onSnapshot?: (
 		sessionKey: string,
-	) => import("../client/nsh-pilo-client").ChatTranscriptSnapshot | undefined;
+	) => import("../client/host-api").ChatTranscriptSnapshot | undefined;
 	/** A project's saved model catalog; `loadModels` answers null otherwise. */
 	models?: Record<string, ProjectPiModels>;
 	/** A project's saved model scope; null inherits Pi when left out. */
@@ -496,8 +497,6 @@ export function scriptedClient(script: AppScript = {}) {
 		},
 		readConnectionDir: (connectionId, path) =>
 			Promise.resolve(script.onReadConnectionDir?.(connectionId, path) ?? []),
-		pickLocalProjectDirectory: () =>
-			Promise.resolve(script.onPickLocalProjectDirectory?.() ?? null),
 		removeProject: (projectId) => {
 			removed.push(projectId);
 			return Promise.resolve(
@@ -755,9 +754,6 @@ export function scriptedClient(script: AppScript = {}) {
 			emit({ type: "session_read_state_changed", state });
 			return Promise.resolve(state);
 		},
-		openLogDirectory() {
-			return Promise.resolve();
-		},
 		remoteHostState() {
 			if (script.remoteHostError)
 				return Promise.reject(new Error(script.remoteHostError));
@@ -820,8 +816,18 @@ export function scriptedClient(script: AppScript = {}) {
 			});
 		},
 	};
+	const shell: Pick<
+		DesktopShell,
+		"pickLocalProjectDirectory" | "openLogDirectory" | "openExternal"
+	> = {
+		pickLocalProjectDirectory: () =>
+			Promise.resolve(script.onPickLocalProjectDirectory?.() ?? null),
+		openLogDirectory: () => Promise.resolve(),
+		openExternal: openUrl,
+	};
 	return {
 		client,
+		shell,
 		emit,
 		/** Every `savePreferences` patch, in order. */
 		preferencePatches,

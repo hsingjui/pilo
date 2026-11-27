@@ -48,7 +48,7 @@ import type { ChatQueueStore } from "../state/chat-queue-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import { defaultKeyboardShortcuts } from "@shared/keyboard-shortcuts-core";
 import type {
 	KeyboardShortcutMap,
@@ -69,8 +69,7 @@ import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import { deleteSessionWithToast } from "./delete-session";
-import type { DesktopNotificationsApi } from "./desktop-notifications";
-import type { DesktopShell } from "./desktop-shell";
+import type { DesktopShell, DesktopWindowShell } from "./desktop-shell";
 import { createDesktopUpdate, type DesktopUpdate } from "./desktop-update";
 import { t } from "./i18n";
 import { UpdateDialog } from "./update-dialog";
@@ -91,7 +90,7 @@ import {
 import { HeaderActions } from "./header-actions";
 import { SessionHeader } from "./session-header";
 import { TerminalLayer } from "./terminal-view";
-import type { ProjectNativeApp } from "../client/nsh-pilo-client";
+import type { ProjectNativeApp } from "./desktop-shell";
 import type { TerminalStore } from "../state/terminal-store";
 import { WorkspaceStore } from "../state/workspace-store";
 import {
@@ -168,13 +167,21 @@ export interface AppShellProps {
 	/** Forks the open session at an assistant message. */
 	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 	/** Searches saved message text for the command palette. */
-	searchSessions?: Pick<NshPiloClient, "searchSessions">;
+	searchSessions?: Pick<DesktopHostClient, "searchSessions">;
 	/** The settings panes' saves and reads; no settings entry without it. */
 	settings?: SettingsClient;
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
-	desktop?: DesktopShell;
-	notifications?: DesktopNotificationsApi;
+	desktop?: DesktopWindowShell;
+	shell?: Pick<
+		DesktopShell,
+		| "pickLocalProjectDirectory"
+		| "systemFontFamilies"
+		| "openLogDirectory"
+		| "openExternal"
+		| "notifications"
+		| "createUpdate"
+	>;
 	/** Desktop updater state shared by the sidebar button, About pane, and update dialog. */
 	update?: DesktopUpdate;
 	/** The project terminals the title bar opens in tabs; none without it. */
@@ -314,7 +321,7 @@ export function AppShell(props: AppShellProps) {
 	const ownedUpdate =
 		props.update || !props.settings
 			? null
-			: createDesktopUpdate({
+			: (props.shell?.createUpdate ?? createDesktopUpdate)({
 					restart: props.desktop?.restart,
 					hasActiveWork: () => {
 						const state = store.state();
@@ -1014,6 +1021,7 @@ export function AppShell(props: AppShellProps) {
 													project={project}
 													readProjectImage={props.readProjectImage}
 													onFileLink={handleFileLink}
+													openExternal={props.shell?.openExternal}
 												/>
 											)}
 											preferences={() => store.state().preferences?.values}
@@ -1277,7 +1285,7 @@ export function AppShell(props: AppShellProps) {
 								state={store.state}
 								client={props.settings}
 								desktop={props.desktop}
-								notifications={props.notifications}
+								shell={props.shell}
 								update={update}
 							/>
 						) : null
@@ -1290,6 +1298,9 @@ export function AppShell(props: AppShellProps) {
 							<AddProjectDialog
 								open={addProjectOpen}
 								api={props.projectClient}
+								pickLocalProjectDirectory={
+									props.shell?.pickLocalProjectDirectory
+								}
 								connectionId={addProjectConnection}
 								projects={() => store.state().projects}
 								onAdd={async (connectionId, path) => {
@@ -1318,6 +1329,7 @@ export function AppShell(props: AppShellProps) {
 						image={previewImage}
 						onClose={() => previewImage.set(null)}
 						onSaveImage={props.saveImage}
+						openExternal={props.shell?.openExternal}
 					/>
 					<AppToastStack toasts={toasts} />
 				</View>
