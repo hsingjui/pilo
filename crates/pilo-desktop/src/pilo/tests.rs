@@ -1,8 +1,16 @@
 use super::*;
 use pilo_domain::{Project, ProjectMetadata};
 use pilo_runtime::{preferences::preferences_patch, storage};
+use serde_json::json;
 
 mod host_api;
+
+async fn load_bootstrap(host: Host) -> Result<serde_json::Value, String> {
+    run_with_runtime(host, |runtime| async move {
+        host::call_local(&runtime, "host.bootstrap", json!({})).await
+    })
+    .await
+}
 
 #[test]
 fn bootstrap_reads_existing_projects_and_shutdown_closes_the_handle() {
@@ -28,18 +36,19 @@ fn bootstrap_reads_existing_projects_and_shutdown_closes_the_handle() {
 
     let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
     pilo.executor.block_on(async {
-        let initial = Pilo::load_bootstrap(pilo.host.clone()).await.unwrap();
-        let saved = initial
-            .projects
+        let initial = load_bootstrap(pilo.host.clone()).await.unwrap();
+        let saved = initial["projects"]
+            .as_array()
+            .unwrap()
             .iter()
             .find(|item| item["id"] == project.id)
             .unwrap();
         assert_eq!(saved, &serde_json::to_value(project).unwrap());
-        assert!(initial.chat_sessions.is_empty());
+        assert_eq!(initial["chatSessions"], json!([]));
 
         let host = pilo.host.clone();
         let ((), ()) = tokio::join!(stop_host(host.clone()), stop_host(host.clone()));
-        assert!(matches!(Pilo::load_bootstrap(host).await, Err(error) if error == CLOSED));
+        assert!(matches!(load_bootstrap(host).await, Err(error) if error == CLOSED));
     });
 }
 
@@ -50,10 +59,10 @@ fn bootstrap_surfaces_database_errors() {
     std::fs::create_dir(&database).unwrap();
     let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
     pilo.executor.block_on(async {
-        let result = Pilo::load_bootstrap(pilo.host.clone()).await;
+        let result = load_bootstrap(pilo.host.clone()).await;
         assert!(matches!(result, Err(error) if error.contains("failed to open Pilo SQLite index")));
         std::fs::remove_dir(database).unwrap();
-        assert!(Pilo::load_bootstrap(pilo.host.clone()).await.is_ok());
+        assert!(load_bootstrap(pilo.host.clone()).await.is_ok());
         stop_host(pilo.host.clone()).await;
     });
 }

@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 
 const fixture = new BootstrapFixture();
@@ -23,9 +24,10 @@ async function expectError(promise: Promise<unknown>, message: string) {
 async function run() {
 	fixture.seedLegacyThemeSettings(css);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	let saved: ThemeSettings;
 	try {
-		const legacy = (await pilo.loadThemeSettings()) as ThemeSettings;
+		const legacy = (await hostClient.loadThemeSettings()) as ThemeSettings;
 		assert(
 			legacy.revision === 7 &&
 				legacy.themeFamily === "custom" &&
@@ -37,11 +39,11 @@ async function run() {
 			"legacy settings were not converted on load",
 		);
 		await expectError(
-			pilo.saveThemeSettings([]),
-			"theme settings update must be an object",
+			hostClient.saveThemeSettings([] as never),
+			"invalid length 0, expected struct ThemeSettingsUpdate",
 		);
 		await expectError(
-			pilo.saveThemeSettings({
+			hostClient.saveThemeSettings({
 				themeCustomTokens: { light: { primary: "not-a-color" } },
 			}),
 			"issues",
@@ -50,7 +52,9 @@ async function run() {
 			theme: "dark",
 			themeCustomConversion: { current: [{ text: "injected" }] },
 		};
-		const patched = (await pilo.saveThemeSettings(patch)) as ThemeSettings;
+		const patched = (await hostClient.saveThemeSettings(
+			patch as never,
+		)) as ThemeSettings;
 		assert(
 			patched.revision === 8 &&
 				patched.theme === "dark" &&
@@ -59,7 +63,7 @@ async function run() {
 			"partial update did not preserve the Host conversion report",
 		);
 
-		saved = (await pilo.saveThemeSettings({
+		saved = (await hostClient.saveThemeSettings({
 			saveCustomTheme: {
 				name: "Legacy",
 				tokens: { light: { primary: "#112233ff" } },
@@ -80,18 +84,19 @@ async function run() {
 		await pilo.shutdown();
 	}
 	await expectError(
-		pilo.loadThemeSettings(),
+		hostClient.loadThemeSettings(),
 		"Pilo runtime has been shut down",
 	);
 	await expectError(
-		pilo.saveThemeSettings({ theme: "light" }),
+		hostClient.saveThemeSettings({ theme: "light" }),
 		"Pilo runtime has been shut down",
 	);
 
 	const reopened = new Pilo(fixture.dataDir());
+	const reopenedClient = createNativeHostClient(reopened);
 	try {
 		assert(
-			JSON.stringify(await reopened.loadThemeSettings()) ===
+			JSON.stringify(await reopenedClient.loadThemeSettings()) ===
 				JSON.stringify(saved),
 			"Host theme settings did not persist",
 		);

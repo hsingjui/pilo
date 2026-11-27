@@ -1,5 +1,6 @@
 import { mount, signal, Text } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
@@ -42,7 +43,8 @@ async function save(
 	previousRevision: number,
 	sequence: number,
 ) {
-	const saved = (await pilo.savePromptEnhancementSettings(
+	const hostClient = createNativeHostClient(pilo);
+	const saved = (await hostClient.savePromptEnhancementSettings(
 		"local",
 		enabled,
 		selected,
@@ -87,24 +89,31 @@ async function save(
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const { eventSequence } = await pilo.bootstrap();
+		const { latestSequence: eventSequence } = await hostClient.bootstrap();
 		const enabled = await save(pilo, true, model, 0, eventSequence + 1);
 		await expectError(
-			pilo.savePromptEnhancementSettings("local", true, { ...model, id: " " }),
+			hostClient.savePromptEnhancementSettings("local", true, {
+				...model,
+				id: " ",
+			}),
 			"enhancement model provider and id must be nonempty and within limits",
 		);
 		await expectError(
-			pilo.savePromptEnhancementSettings("local", true, {
+			hostClient.savePromptEnhancementSettings("local", true, {
 				provider: "fixture",
-			}),
+			} as never),
 			"missing field",
 		);
 		await expectError(
-			pilo.savePromptEnhancementSettings("missing", false, null),
+			hostClient.savePromptEnhancementSettings("missing", false, null),
 			"Connection 'missing' was not found",
 		);
-		expectSnapshot(await pilo.loadPromptEnhancementSettings("local"), enabled);
+		expectSnapshot(
+			await hostClient.loadPromptEnhancementSettings("local"),
+			enabled,
+		);
 		const disabled = await save(
 			pilo,
 			false,
@@ -122,13 +131,14 @@ async function run() {
 
 		await pilo.shutdown();
 		await expectError(
-			pilo.savePromptEnhancementSettings("local", false, null),
+			hostClient.savePromptEnhancementSettings("local", false, null),
 			"Pilo runtime has been shut down",
 		);
 		const reopened = new Pilo(fixture.dataDir());
+		const reopenedClient = createNativeHostClient(reopened);
 		try {
 			expectSnapshot(
-				await reopened.loadPromptEnhancementSettings("local"),
+				await reopenedClient.loadPromptEnhancementSettings("local"),
 				inherited,
 			);
 		} finally {

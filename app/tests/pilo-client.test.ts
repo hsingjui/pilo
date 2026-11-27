@@ -83,7 +83,7 @@ function fakeNative(
 			"pickLocalProjectDirectory",
 			"/code/picked",
 		),
-		openFileLink: answer("openFileLink", null),
+		openFileLink: answer("openFileLink", undefined),
 		openLogDirectory: answer("openLogDirectory", undefined),
 		...overrides,
 	};
@@ -193,7 +193,7 @@ test("the Host previews file links while the desktop shell only opens them", asy
 	expect((caught as Error).message).toBe("file not found");
 	expect(calls).toEqual([
 		["project.file.preview", { projectId: "p1", url: "file:///code/empty.md" }],
-		["openFileLink", "p1", "file:///code/report.html", false],
+		["openFileLink", "p1", "file:///code/report.html"],
 		[
 			"project.file.preview",
 			{ projectId: "p1", url: "file:///code/missing.md" },

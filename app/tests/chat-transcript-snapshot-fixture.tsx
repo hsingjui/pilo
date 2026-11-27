@@ -1,5 +1,6 @@
 import { host, mount, signal, Text } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
 import type { SessionHistoryResult } from "@shared/api/sessions-types";
 import type { ConversationEvent } from "@shared/chat/conversation-types";
@@ -42,7 +43,8 @@ async function start(
 	sessionPath?: string,
 	noSession = false,
 ) {
-	const snapshot = (await pilo.startChat({
+	const hostClient = createNativeHostClient(pilo);
+	const snapshot = (await hostClient.startChat({
 		projectId: "chat-fixture",
 		sessionKey,
 		sessionPath,
@@ -58,9 +60,10 @@ async function snapshot(
 	generation: number,
 	window?: unknown,
 ) {
-	const result = (await pilo.chatTranscriptSnapshot(
+	const hostClient = createNativeHostClient(pilo);
+	const result = (await hostClient.chatTranscriptSnapshot(
 		sessionKey,
-		window,
+		window as never,
 	)) as Snapshot;
 	if (
 		result.sessionKey !== sessionKey ||
@@ -84,8 +87,9 @@ function seed(fixture: ChatFixture) {
 }
 
 async function loadThenStart(pilo: Pilo, fixture: ChatFixture) {
+	const hostClient = createNativeHostClient(pilo);
 	const path = seed(fixture);
-	const settled = (await pilo.loadHistory(
+	const settled = (await hostClient.loadHistory(
 		"chat-fixture",
 		path,
 	)) as SessionHistoryResult;
@@ -102,6 +106,7 @@ async function loadThenStart(pilo: Pilo, fixture: ChatFixture) {
 }
 
 async function fake(pilo: Pilo, fixture: ChatFixture) {
+	const hostClient = createNativeHostClient(pilo);
 	const path = seed(fixture);
 	const generation = await start(pilo, key, path);
 	const idle = await snapshot(pilo, key, generation, {
@@ -121,7 +126,7 @@ async function fake(pilo: Pilo, fixture: ChatFixture) {
 		throw new Error(`unexpected idle snapshot: ${JSON.stringify(idle)}`);
 	}
 	async function promptAndWait(sessionKey: string) {
-		await pilo.sendChatCommand(sessionKey, {
+		await hostClient.sendChatCommand(sessionKey, {
 			type: "prompt",
 			id: "fixture-transcript-turn",
 			message: "new question",
@@ -151,7 +156,7 @@ async function fake(pilo: Pilo, fixture: ChatFixture) {
 	) {
 		throw new Error(`unexpected active snapshot: ${JSON.stringify(active)}`);
 	}
-	await pilo.stopChat(key);
+	await hostClient.stopChat(key);
 
 	const unsavedKey = `${key}-unsaved`;
 	const unsavedGeneration = await start(pilo, unsavedKey, undefined, true);
@@ -199,12 +204,13 @@ function plainTranscript(events: (ConversationEvent | PiloRuntimeEvent)[]) {
 }
 
 async function real(pilo: Pilo) {
+	const hostClient = createNativeHostClient(pilo);
 	const generation = await start(pilo, key);
 	async function checkedCommand(
 		type: string,
 		fields: Record<string, unknown> = {},
 	) {
-		await pilo.sendChatCommand(key, { ...fields, type, id: type });
+		await hostClient.sendChatCommand(key, { ...fields, type, id: type });
 		const event = await waitFor(
 			pilo,
 			key,
@@ -296,6 +302,7 @@ async function run() {
 	const loadHistoryFirst = host.params.loadHistoryFirst === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
 		if (realPi) await real(pilo);
 		else if (loadHistoryFirst) await loadThenStart(pilo, fixture);

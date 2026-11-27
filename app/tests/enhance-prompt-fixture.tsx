@@ -1,5 +1,6 @@
 import { host, mount, signal, Text } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("checking prompt enhancement");
 const project = "chat-fixture";
@@ -19,12 +20,13 @@ async function run() {
 	const realPi = host.params.realPi === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
 		if (realPi) {
-			await pilo.savePromptEnhancementSettings("local", true, null);
+			await hostClient.savePromptEnhancementSettings("local", true, null);
 			const draft =
 				"parser unit test pls. Keep PILO_ENHANCE_42 verbatim. Don't edit production files.";
-			const rewritten = await pilo.enhancePrompt(project, draft, {
+			const rewritten = await hostClient.enhancePrompt(project, draft, {
 				provider: "relay",
 				id: "deepseek-flash",
 			});
@@ -40,16 +42,20 @@ async function run() {
 		}
 
 		await expectError(
-			pilo.enhancePrompt(project, "  ", null),
+			hostClient.enhancePrompt(project, "  ", null),
 			"Draft is empty",
 		);
 		await expectError(
-			pilo.enhancePrompt(project, "rewrite this", null),
+			hostClient.enhancePrompt(project, "rewrite this", null),
 			"Prompt enhancement is disabled",
 		);
 
-		await pilo.savePromptEnhancementSettings("local", true, model("rewrite"));
-		const configured = await pilo.enhancePrompt(
+		await hostClient.savePromptEnhancementSettings(
+			"local",
+			true,
+			model("rewrite"),
+		);
+		const configured = await hostClient.enhancePrompt(
 			project,
 			"  rewrite this  ",
 			model("chat"),
@@ -57,8 +63,8 @@ async function run() {
 		if (configured !== "rewrite: rewrite this") {
 			throw new Error(`unexpected configured-model rewrite: ${configured}`);
 		}
-		await pilo.savePromptEnhancementSettings("local", true, null);
-		const fallback = await pilo.enhancePrompt(
+		await hostClient.savePromptEnhancementSettings("local", true, null);
+		const fallback = await hostClient.enhancePrompt(
 			project,
 			"rewrite this",
 			model("chat"),
@@ -67,19 +73,19 @@ async function run() {
 			throw new Error(`unexpected chat-model rewrite: ${fallback}`);
 		}
 		await expectError(
-			pilo.enhancePrompt(project, "rewrite this", model(" ")),
+			hostClient.enhancePrompt(project, "rewrite this", model(" ")),
 			"Invalid enhancement model",
 		);
 		await expectError(
-			pilo.enhancePrompt(project, "rewrite this", model("unavailable")),
+			hostClient.enhancePrompt(project, "rewrite this", model("unavailable")),
 			"Model fixture/unavailable is unavailable",
 		);
 		await expectError(
-			pilo.enhancePrompt(project, "empty rewrite", model("chat")),
+			hostClient.enhancePrompt(project, "empty rewrite", model("chat")),
 			"Model returned no prompt text",
 		);
 		await expectError(
-			pilo.enhancePrompt(project, "fail generation", model("chat")),
+			hostClient.enhancePrompt(project, "fail generation", model("chat")),
 			"fixture generation failed",
 		);
 		return "prompt enhancement verified";

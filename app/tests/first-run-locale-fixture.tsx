@@ -16,9 +16,14 @@ async function run() {
 			const previous = new Pilo(fixture.dataDir());
 			try {
 				if (host.params.mode === "saved") {
-					await previous.savePreferences({ locale: "en-US" });
+					await createNativeHostClient(previous).savePreferences({
+						locale: "en-US",
+					});
 				} else {
-					await previous.savePreferences({ locale: "zh-CN" }, true);
+					await createNativeHostClient(previous).savePreferences(
+						{ locale: "zh-CN" },
+						true,
+					);
 				}
 			} finally {
 				await previous.shutdown();

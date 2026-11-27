@@ -1,5 +1,6 @@
 import { host, mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo, SessionFilesFixture } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("checking session actions");
 const projectId = "session-files";
@@ -44,9 +45,13 @@ async function searchAndDelete() {
 		.join("\n");
 	const fixture = new SessionFilesFixture(`${jsonl}\n`);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	const sessionPath = fixture.sessionPath();
 	try {
-		const matches = (await pilo.searchSessions(projectId, "  NEEDLE  ")) as {
+		const matches = (await hostClient.searchSessions(
+			projectId,
+			"  NEEDLE  ",
+		)) as {
 			sessionPath: string;
 			sessionId: string;
 			role: string;
@@ -67,28 +72,31 @@ async function searchAndDelete() {
 			`unexpected search results: ${JSON.stringify(matches)}`,
 		);
 		check(
-			(await pilo.searchSessions(projectId, "needle", 1)).length === 1 &&
-				(await pilo.searchSessions(projectId, "    ")).length === 0 &&
-				(await pilo.searchSessions(projectId, "no match")).length === 0,
+			(await hostClient.searchSessions(projectId, "needle", 1)).length === 1 &&
+				(await hostClient.searchSessions(projectId, "    ")).length === 0 &&
+				(await hostClient.searchSessions(projectId, "no match")).length === 0,
 			"unexpected limited or empty search results",
 		);
 		await expectError(
-			pilo.searchSessions(projectId, "needle", 1.5),
-			"non-negative safe integer",
+			hostClient.searchSessions(projectId, "needle", 1.5),
+			"invalid type: floating point `1.5`",
 		);
 		await expectError(
-			pilo.searchSessions("missing", "needle"),
+			hostClient.searchSessions("missing", "needle"),
 			"was not found",
 		);
 		await expectError(
-			pilo.deleteSession(projectId, sessionPath),
+			hostClient.deleteSession(projectId, sessionPath),
 			"not indexed",
 		);
 		check(
-			(await pilo.listSessions(projectId)).length === 1,
+			(await hostClient.listSessions(projectId)).length === 1,
 			"session was not indexed by reconciliation",
 		);
-		const deletion = (await pilo.deleteSession(projectId, sessionPath)) as {
+		const deletion = (await hostClient.deleteSession(
+			projectId,
+			sessionPath,
+		)) as {
 			method: string;
 		};
 		check(
@@ -96,12 +104,12 @@ async function searchAndDelete() {
 			`unexpected delete result: ${JSON.stringify(deletion)}`,
 		);
 		await expectError(
-			pilo.deleteSession(projectId, sessionPath),
+			hostClient.deleteSession(projectId, sessionPath),
 			"not indexed",
 		);
 		check(
-			(await pilo.searchSessions(projectId, "needle")).length === 0 &&
-				(await pilo.listSessions(projectId)).length === 0,
+			(await hostClient.searchSessions(projectId, "needle")).length === 0 &&
+				(await hostClient.listSessions(projectId)).length === 0,
 			"deleted session is still discoverable",
 		);
 	} finally {
@@ -109,11 +117,11 @@ async function searchAndDelete() {
 		fixture.dispose();
 	}
 	await expectError(
-		pilo.searchSessions(projectId, "needle"),
+		hostClient.searchSessions(projectId, "needle"),
 		"Pilo runtime has been shut down",
 	);
 	await expectError(
-		pilo.deleteSession(projectId, sessionPath),
+		hostClient.deleteSession(projectId, sessionPath),
 		"Pilo runtime has been shut down",
 	);
 	status.set("session search and deletion verified");
@@ -124,22 +132,23 @@ async function generateTitle() {
 	const message = "Repair the parser";
 	const fixture = new ChatFixture(false);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
 		check(
-			(await pilo.generateSessionTitle(projectId, message)) === null,
+			(await hostClient.generateSessionTitle(projectId, message)) === null,
 			"an unconfigured naming model returned a title",
 		);
 		fixture.configureNamingModel();
 		check(
-			(await pilo.generateSessionTitle(projectId, "    ")) === null,
+			(await hostClient.generateSessionTitle(projectId, "    ")) === null,
 			"blank input returned a title",
 		);
 		await expectError(
-			pilo.generateSessionTitle("missing", message),
+			hostClient.generateSessionTitle("missing", message),
 			"was not found",
 		);
 		check(
-			(await pilo.generateSessionTitle(projectId, `  ${message}  `)) ===
+			(await hostClient.generateSessionTitle(projectId, `  ${message}  `)) ===
 				message,
 			"the naming prompt did not return a normalized title",
 		);
@@ -148,7 +157,7 @@ async function generateTitle() {
 		fixture.dispose();
 	}
 	await expectError(
-		pilo.generateSessionTitle(projectId, message),
+		hostClient.generateSessionTitle(projectId, message),
 		"Pilo runtime has been shut down",
 	);
 	status.set("session title generation verified");

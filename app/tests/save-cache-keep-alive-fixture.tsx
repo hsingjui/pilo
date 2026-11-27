@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("saving cache keep-alive policies");
 
@@ -74,14 +75,15 @@ async function expectSettingsEvent(
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const initial = await pilo.bootstrap();
+		const initial = await hostClient.bootstrap();
 		const saved = expectPolicy(
-			await pilo.saveCacheKeepAliveSettings(policy),
+			await hostClient.saveCacheKeepAliveSettings(policy as never),
 			policy,
 			0,
 		);
-		await expectSettingsEvent(pilo, initial.eventSequence + 1, saved);
+		await expectSettingsEvent(pilo, initial.latestSequence + 1, saved);
 
 		for (const invalid of [
 			{ cacheTtlSeconds: 9 },
@@ -90,32 +92,45 @@ async function run() {
 			{ modelId: "" },
 		]) {
 			await expectError(
-				pilo.saveCacheKeepAliveSettings({ ...policy, ...invalid }),
+				hostClient.saveCacheKeepAliveSettings({
+					...policy,
+					...invalid,
+				} as never),
 				"invalid cache keep-alive settings",
 			);
 		}
 		await expectError(
-			pilo.saveCacheKeepAliveSettings({ ...policy, connectionId: "missing" }),
+			hostClient.saveCacheKeepAliveSettings({
+				...policy,
+				connectionId: "missing",
+			} as never),
 			"Connection 'missing' was not found",
 		);
-		expectPolicyList(await pilo.loadCacheKeepAliveSettings("local"), saved);
+		expectPolicyList(
+			await hostClient.loadCacheKeepAliveSettings("local"),
+			saved,
+		);
 
 		const changed = { ...policy, enabled: false, cacheTtlSeconds: 600 };
 		const updated = expectPolicy(
-			await pilo.saveCacheKeepAliveSettings({ ...changed, updatedAtMs: 1 }),
+			await hostClient.saveCacheKeepAliveSettings({
+				...changed,
+				updatedAtMs: 1,
+			}),
 			changed,
 			saved.updatedAtMs,
 		);
-		await expectSettingsEvent(pilo, initial.eventSequence + 2, updated);
+		await expectSettingsEvent(pilo, initial.latestSequence + 2, updated);
 		await pilo.shutdown();
 		await expectError(
-			pilo.saveCacheKeepAliveSettings(policy),
+			hostClient.saveCacheKeepAliveSettings(policy as never),
 			"Pilo runtime has been shut down",
 		);
 		const reopened = new Pilo(fixture.dataDir());
+		const reopenedClient = createNativeHostClient(reopened);
 		try {
 			expectPolicyList(
-				await reopened.loadCacheKeepAliveSettings("local"),
+				await reopenedClient.loadCacheKeepAliveSettings("local"),
 				updated,
 			);
 		} finally {

@@ -55,7 +55,7 @@ export function createNativeDesktopShell(
 		},
 		async openFileLink(projectId, url) {
 			if (!pilo.openFileLink) throw unavailable("openFileLink");
-			await pilo.openFileLink(projectId, url, false);
+			await pilo.openFileLink(projectId, url);
 		},
 		createUpdate: createDesktopUpdate,
 		notifications: options.notifications ?? defaultDesktopNotifications(),

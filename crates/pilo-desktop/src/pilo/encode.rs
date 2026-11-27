@@ -5,8 +5,6 @@ use nsh_core::JsonValue;
 use pilo_runtime::{TerminalEvent, events::EventBatch};
 use serde::Serialize;
 
-use super::objects::NativeHistoryFingerprint;
-
 pub(super) fn encode_list(values: Vec<impl Serialize>) -> Result<Vec<JsonValue>, String> {
     values
         .into_iter()
@@ -75,19 +73,6 @@ pub(super) fn encode_terminal_events(events: Vec<TerminalEvent>) -> Vec<JsonValu
         .collect()
 }
 
-pub(super) fn history_fingerprint_args(
-    fingerprint: Option<NativeHistoryFingerprint>,
-) -> Result<(Option<u64>, Option<String>), String> {
-    let Some(fingerprint) = fingerprint else {
-        return Ok((None, None));
-    };
-    let size = fingerprint.file_size;
-    if !(0.0..=9_007_199_254_740_991.0).contains(&size) || size.fract() != 0.0 {
-        return Err("session history file size must be a non-negative safe integer".into());
-    }
-    Ok((Some(size as u64), Some(fingerprint.file_mtime_ns)))
-}
-
 /// A count the TSX client passes as a number: a positive safe integer.
 pub(super) fn positive_count(value: f64, name: &str) -> Result<usize, String> {
     let invalid = || format!("{name} must be a positive safe integer");
@@ -95,14 +80,4 @@ pub(super) fn positive_count(value: f64, name: &str) -> Result<usize, String> {
         return Err(invalid());
     }
     usize::try_from(value as u64).map_err(|_| invalid())
-}
-
-/// A terminal's columns and rows: whole numbers from 1 to 65,535.
-pub(super) fn terminal_size(cols: f64, rows: f64) -> Result<(u16, u16), String> {
-    let cell = |value: f64| {
-        (value >= 1.0 && value <= f64::from(u16::MAX) && value.fract() == 0.0)
-            .then_some(value as u16)
-            .ok_or("terminal size must be whole numbers from 1 to 65535")
-    };
-    Ok((cell(cols)?, cell(rows)?))
 }

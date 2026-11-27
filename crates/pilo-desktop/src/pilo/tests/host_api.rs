@@ -55,15 +55,19 @@ async fn request_bytes(
     (status, body)
 }
 
+async fn call(pilo: &Instance<Pilo>, method: &str, params: Value) -> Value {
+    Pilo::call(pilo.clone(), method.into(), params)
+        .await
+        .unwrap()
+}
+
 async fn enable_and_pair(pilo: &Instance<Pilo>) -> (SocketAddr, String) {
     let addr = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
         .unwrap();
-    Pilo::remote_set_port(pilo.clone(), f64::from(addr.port()))
-        .await
-        .unwrap();
-    let remote = Pilo::remote_set_enabled(pilo.clone(), true).await.unwrap();
+    call(pilo, "remote.port.set", json!({"port": addr.port()})).await;
+    let remote = call(pilo, "remote.enabled.set", json!({"enabled": true})).await;
     let secret = remote["pairingUrl"]
         .as_str()
         .unwrap()
@@ -126,22 +130,27 @@ fn native_calls_match_authenticated_v1_routes() {
         let (addr, token) = enable_and_pair(&pilo).await;
         let token = Some(token.as_str());
 
-        let prefs = Pilo::save_preferences(pilo.clone(), json!({"locale": "zh-CN"}), None)
-            .await
-            .unwrap();
+        let prefs = call(
+            &pilo,
+            "preferences.patch",
+            json!({"patch": {"locale": "zh-CN"}}),
+        )
+        .await;
         let (status, body) = request(addr, "/api/v1/preferences", None, token).await;
         assert_eq!(
             (status, body),
             (
                 200,
-                json!({"revision": prefs.revision, "values": prefs.values})
+                json!({"revision": prefs["revision"], "values": prefs["values"]})
             )
         );
 
-        let native_sessions =
-            Pilo::list_sessions(pilo.clone(), PROJECT_ID.into(), Some(true), None)
-                .await
-                .unwrap();
+        let native_sessions = call(
+            &pilo,
+            "session.list",
+            json!({"projectId": PROJECT_ID, "cached": true}),
+        )
+        .await;
         let (status, body) = request(
             addr,
             "/api/v1/sessions?projectId=saved-project&cached=true",
@@ -152,9 +161,13 @@ fn native_calls_match_authenticated_v1_routes() {
         assert_eq!((status, body), (200, json!(native_sessions)));
 
         let command = json!({"type": "prompt", "message": "hello", "images": vec![Value::Null; 9]});
-        let error = Pilo::send_chat_command(pilo.clone(), "test".into(), command.clone())
-            .await
-            .unwrap_err();
+        let error = Pilo::call(
+            pilo.clone(),
+            "chat.rpc".into(),
+            json!({"sessionKey": "test", "command": command}),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error, "at most 8 images can be sent at once");
         let (status, body) = request(
             addr,
@@ -165,9 +178,13 @@ fn native_calls_match_authenticated_v1_routes() {
         .await;
         assert_eq!((status, body), (400, json!({"error": error})));
 
-        let error = Pilo::read_project_image(pilo.clone(), "missing".into(), "image.png".into())
-            .await
-            .unwrap_err();
+        let error = Pilo::download(
+            pilo.clone(),
+            "files.image".into(),
+            json!({"projectId": "missing", "path": "image.png"}),
+        )
+        .await
+        .unwrap_err();
         let (status, body) = request(
             addr,
             "/api/v1/files/image?projectId=missing&path=image.png",
@@ -185,8 +202,6 @@ fn native_calls_match_authenticated_v1_routes() {
 #[test]
 fn native_and_v1_send_read_and_upload() {
     use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
-
-    use crate::pilo::{NativeHistoryOptions, NativeStartChatInput};
 
     const FIXTURE_ROOT: &str = "PILO_HOST_API_TEST_ROOT";
     let Some(root) = std::env::var_os(FIXTURE_ROOT) else {
@@ -246,25 +261,18 @@ done
     executor.block_on(async {
         let (addr, token) = enable_and_pair(&pilo).await;
         let token = Some(token.as_str());
-        Pilo::start_chat(
-            pilo.clone(),
-            NativeStartChatInput {
-                project_id: PROJECT_ID.into(),
-                session_key: "native".into(),
-                session_path: None,
-                no_session: Some(true),
-                builtin_extensions: None,
-            },
+        call(
+            &pilo,
+            "chat.start",
+            json!({"projectId": PROJECT_ID, "sessionKey": "native", "noSession": true}),
         )
-        .await
-        .unwrap();
-        Pilo::send_chat_command(
-            pilo.clone(),
-            "native".into(),
-            json!({"type":"prompt","message":"from native"}),
+        .await;
+        call(
+            &pilo,
+            "chat.rpc",
+            json!({"sessionKey": "native", "command": {"type":"prompt","message":"from native"}}),
         )
-        .await
-        .unwrap();
+        .await;
         let (status, snapshot) = request(
             addr,
             "/api/v1/chat/start",
@@ -303,18 +311,17 @@ done
         .expect("both prompts should reach Pi");
 
         for (start, expected) in [(0, "first"), (1, "second"), (2, "third")] {
-            let native = Pilo::load_history(
-                pilo.clone(),
-                PROJECT_ID.into(),
-                session_path.into(),
-                Some(NativeHistoryOptions {
-                    start_message: Some(f64::from(start)),
-                    message_limit: Some(1.0),
-                    ..Default::default()
+            let native = call(
+                &pilo,
+                "session.history",
+                json!({
+                    "projectId": PROJECT_ID,
+                    "sessionPath": session_path,
+                    "startMessage": start,
+                    "messageLimit": 1,
                 }),
             )
-            .await
-            .unwrap();
+            .await;
             let (status, web) = request(
                 addr,
                 &format!("/api/v1/history?{history_query}&startMessage={start}&messageLimit=1"),
@@ -328,12 +335,10 @@ done
             assert_eq!(web["history"]["totalMessages"], 3);
             assert_eq!(web["history"]["events"][0]["text"], expected);
         }
-        let native = Pilo::read_history_image(
+        let native = Pilo::download(
             pilo.clone(),
-            PROJECT_ID.into(),
-            session_path.into(),
-            "u2:1".into(),
-            None,
+            "session.historyImage".into(),
+            json!({"projectId": PROJECT_ID, "sessionPath": session_path, "imageId": "u2:1"}),
         )
         .await
         .unwrap();
@@ -351,13 +356,14 @@ done
         const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
         for length in [MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_BYTES + 1] {
             let data = vec![0x5a; length];
-            let native = Pilo::upload_chat_file(
+            let native = Pilo::upload(
                 pilo.clone(),
-                PROJECT_ID.into(),
-                "parity.bin".into(),
+                "chat.files.upload".into(),
+                json!({"projectId": PROJECT_ID, "name": "parity.bin"}),
                 data.clone(),
             )
-            .await;
+            .await
+            .map(|path| path.as_str().unwrap().to_owned());
             let (status, body) = request_bytes(
                 addr,
                 "/api/v1/chat/files?projectId=saved-project&name=parity.bin",
@@ -371,9 +377,12 @@ done
                 let web: String = serde_json::from_slice(&body).unwrap();
                 for path in [native, web] {
                     assert_eq!(fs::read(&path).unwrap(), data);
-                    Pilo::remove_chat_file(pilo.clone(), PROJECT_ID.into(), path)
-                        .await
-                        .unwrap();
+                    call(
+                        &pilo,
+                        "chat.files.remove",
+                        json!({"projectId": PROJECT_ID, "path": path}),
+                    )
+                    .await;
                 }
             } else {
                 assert_eq!(

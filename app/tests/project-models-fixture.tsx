@@ -1,25 +1,27 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("loading project models");
 
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	let projectId = "";
 	try {
-		const projects = (await pilo.listProjects()) as {
+		const projects = (await hostClient.listProjects()) as {
 			id: string;
 			connection: { id: string };
 		}[];
 		const project = projects.find((entry) => entry.connection.id === "local");
 		if (!project) throw new Error("missing local fixture project");
 		projectId = project.id;
-		if ((await pilo.loadModels(projectId)) !== null) {
+		if ((await hostClient.loadModels(projectId)) !== null) {
 			throw new Error("unexpected catalog for an uncached project");
 		}
 		fixture.seedModelCache(projectId);
-		const catalog = (await pilo.loadModels(projectId)) as {
+		const catalog = (await hostClient.loadModels(projectId)) as {
 			projectId: string;
 			models: { id: string; scopeOrder: number; scopeThinkingLevel: string }[];
 			commands: { name: string; sourceInfo: { scope: string } }[];
@@ -38,7 +40,7 @@ async function run() {
 			catalog.defaultModel.id !== "workspace-model" ||
 			catalog.defaultThinkingLevel !== "medium" ||
 			catalog.refreshedAtMs !== 123 ||
-			(await pilo.loadModels("missing")) !== null
+			(await hostClient.loadModels("missing")) !== null
 		) {
 			throw new Error(`unexpected project catalog: ${JSON.stringify(catalog)}`);
 		}
@@ -47,7 +49,7 @@ async function run() {
 		fixture.dispose();
 	}
 	try {
-		await pilo.loadModels(projectId);
+		await hostClient.loadModels(projectId);
 	} catch (error) {
 		if (
 			error instanceof Error &&

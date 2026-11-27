@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const fixture = new BootstrapFixture();
 const status = signal("waiting for runtime events");
@@ -54,22 +55,23 @@ function expectClosed(batch: unknown) {
 
 async function run() {
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const initial = await pilo.bootstrap();
+		const initial = await hostClient.bootstrap();
 		for (const max of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
 			await expectInvalidBatchSize(pilo, max);
 		}
-		const first = await pilo.savePreferences({ locale: "zh-CN" });
-		const second = await pilo.savePreferences({ locale: "en-US" });
+		const first = await hostClient.savePreferences({ locale: "zh-CN" });
+		const second = await hostClient.savePreferences({ locale: "en-US" });
 		expectPreferenceEvent(
 			await pilo.nextEvents(1),
-			initial.eventSequence + 1,
+			initial.latestSequence + 1,
 			first.revision,
 			"zh-CN",
 		);
 		expectPreferenceEvent(
 			await pilo.nextEvents(1),
-			initial.eventSequence + 2,
+			initial.latestSequence + 2,
 			second.revision,
 			"en-US",
 		);
@@ -79,7 +81,7 @@ async function run() {
 			settled = true;
 			return batch;
 		});
-		await pilo.bootstrap();
+		await hostClient.bootstrap();
 		if (settled) throw new Error("empty event stream did not wait");
 		const [closed] = await Promise.all([pending, pilo.shutdown()]);
 		expectClosed(closed);

@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("loading project model scope");
 
@@ -16,8 +17,9 @@ async function expectError(promise: Promise<unknown>, message: string) {
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const projects = (await pilo.listProjects()) as {
+		const projects = (await hostClient.listProjects()) as {
 			id: string;
 			connection: { id: string };
 		}[];
@@ -27,7 +29,7 @@ async function run() {
 		if (!project) throw new Error("missing local fixture project");
 		const projectId = project.id;
 
-		const initial = (await pilo.loadModelScope(projectId)) as {
+		const initial = (await hostClient.loadModelScope(projectId)) as {
 			projectId: string;
 			models: unknown;
 			updatedAtMs: number;
@@ -41,7 +43,7 @@ async function run() {
 		}
 
 		fixture.seedLegacyModelScope(projectId);
-		const stored = (await pilo.loadModelScope(projectId)) as {
+		const stored = (await hostClient.loadModelScope(projectId)) as {
 			projectId: string;
 			models: {
 				provider: string;
@@ -65,12 +67,12 @@ async function run() {
 		}
 
 		await expectError(
-			pilo.loadModelScope("missing"),
+			hostClient.loadModelScope("missing"),
 			"Project 'missing' was not found",
 		);
 		await pilo.shutdown();
 		await expectError(
-			pilo.loadModelScope(projectId),
+			hostClient.loadModelScope(projectId),
 			"Pilo runtime has been shut down",
 		);
 	} finally {
