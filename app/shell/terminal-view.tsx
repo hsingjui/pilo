@@ -70,6 +70,18 @@ function TerminalView(props: {
 		});
 		return true;
 	};
+	let focusVersion = 0;
+	let focusArmed = false;
+	const focusSoon = () => {
+		if (!focusArmed) return;
+		const version = ++focusVersion;
+		setTimeout(() => {
+			if (version === focusVersion && props.visible()) ref?.focus();
+		}, 0);
+	};
+	cleanup(() => {
+		focusVersion += 1;
+	});
 	const pasteFromClipboard = async () => {
 		try {
 			const text = await Clipboard.readText();
@@ -90,19 +102,23 @@ function TerminalView(props: {
 			},
 			exit: () => {
 				flush();
-				show("\r\n[process exited]\r\n");
+				show(`\r\n[${t("terminal.processExited")}]\r\n`);
 			},
 			error: (message) => {
 				flush();
-				show(`\r\n[terminal error] ${message}\r\n`);
+				show(`\r\n[${t("terminal.terminalError", { message })}]\r\n`);
 			},
 		}),
 	);
 	effect(() => {
 		if (props.visible()) {
+			focusArmed = true;
 			untracked(() => ref?.focus());
+			focusSoon();
 			return;
 		}
+		focusArmed = false;
+		focusVersion += 1;
 		untracked(() => {
 			selectedText.set("");
 			containerRef?.clearSelection();
@@ -150,7 +166,10 @@ function TerminalView(props: {
 			onSelectionChange={({ text }) => {
 				selectedText.set(text);
 			}}
-			onFocusIn={() => focused.set(true)}
+			onFocusIn={() => {
+				focusArmed = false;
+				focused.set(true);
+			}}
 			onFocusOut={() => focused.set(false)}
 			class="absolute inset-0 bg-background pt-1.5 pr-1 pb-1.5 pl-3"
 			style={[
@@ -179,6 +198,7 @@ function TerminalView(props: {
 				cursorClass="bg-foreground/60"
 				accessibilityLabel={t("terminal.show")}
 				onData={({ data }) => props.store.write(id, encoder.encode(data))}
+				onLayout={focusSoon}
 				onResize={({ cols, rows }) => {
 					if (cols > 0 && rows > 0) props.store.resize(id, cols, rows);
 				}}
