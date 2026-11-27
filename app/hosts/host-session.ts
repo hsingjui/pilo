@@ -29,7 +29,10 @@ import {
 import { followOpenSessionRead } from "../shell/read-open-session";
 import { SessionForker } from "../shell/session-fork";
 import { createSessionAutoTitle } from "../shell/session-auto-title";
-import { connectSessionNotifications } from "../shell/session-notifications";
+import {
+	connectSessionNotifications,
+	type SessionNotifier,
+} from "../shell/session-notifications";
 import { SidebarSettingsStore } from "../shell/sidebar-settings";
 
 /** What a Host lets this window do: everything locally, its paired scopes remotely. */
@@ -70,7 +73,7 @@ export class HostSession {
 	readonly forker: SessionForker;
 	readonly toasts = new AppToasts();
 	readonly sidebarSettings: SidebarSettingsStore;
-	private notify: ((event: PiloClientEvent) => Promise<void>) | undefined;
+	private notify: SessionNotifier | undefined;
 	private disposed = false;
 
 	constructor(private readonly options: HostSessionOptions) {
@@ -181,6 +184,7 @@ export class HostSession {
 		isActive: () => boolean;
 	}) {
 		const { store, chat, client, toasts } = this;
+		store.isShown = context.isActive;
 		this.composer.followBackgroundSessions();
 		followOpenSession(store, chat);
 		endLeftTemporaryChats(
@@ -228,6 +232,7 @@ export class HostSession {
 			);
 		}
 		effect(() => () => {
+			this.notify?.dispose();
 			this.notify = undefined;
 		});
 	}
@@ -309,6 +314,9 @@ export class HostSession {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.notify?.dispose();
+		this.notify = undefined;
+		this.store.isShown = () => false;
 		this.store.stop();
 		this.terminals.dispose();
 		this.client.dispose();

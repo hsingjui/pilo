@@ -104,6 +104,8 @@ export class AppStore {
 			: null;
 	});
 
+	/** Whether the window shows this Host; only a shown Host's open chat is marked read. */
+	isShown: () => boolean = () => true;
 	private readonly liveListeners = new Set<
 		(event: PiloClientEvent | null) => void
 	>();
@@ -483,6 +485,7 @@ export class AppStore {
 	 * event.
 	 */
 	acknowledgeOpenSession() {
+		if (!this.isShown()) return;
 		const state = this.current();
 		const opened = state.navigation.session;
 		const { projectId, sessionPath } = opened ?? {};

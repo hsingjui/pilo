@@ -66,7 +66,7 @@ export function connectSessionNotifications(
 	const hostId = options?.hostId ?? LOCAL_HOST_ID;
 	const requested = signal<ReturnType<typeof decodeTarget>>(null);
 	let loading: ReturnType<typeof decodeTarget> = null;
-	notifications.onPress(({ id }) => {
+	const unbindPress = notifications.onPress(({ id }) => {
 		const target = decodeTarget(id);
 		if (!target || target.hostId !== hostId || desktop.isQuitting()) return;
 		options?.onActivate?.();
@@ -120,7 +120,7 @@ export function connectSessionNotifications(
 		}
 	});
 
-	return async (event: PiloClientEvent) => {
+	const notify = async (event: PiloClientEvent) => {
 		if (
 			event.type !== "assistant_message_end" ||
 			event.stopReason === "aborted"
@@ -217,4 +217,12 @@ export function connectSessionNotifications(
 			waitForClick: true,
 		});
 	};
+	/** Stops following notification presses: the Host's session closed. */
+	const dispose = () => {
+		unbindPress();
+		requested.set(null);
+	};
+	return Object.assign(notify, { dispose });
 }
+
+export type SessionNotifier = ReturnType<typeof connectSessionNotifications>;

@@ -672,6 +672,28 @@ test("a turn completed in the open session is acknowledged when asked", async ()
 	expect(store.state().navigation.session?.sessionPath).toBe("open");
 });
 
+test("only the Host the window shows marks its open chat read", async () => {
+	const fake = fakeClient();
+	fake.answers.readStates = [read("open", 3, 1)];
+	const store = new AppStore(fake.client);
+	let shown = false;
+	store.isShown = () => shown;
+	const started = store.start();
+	await settle();
+	fake.bootstraps[0]?.resolve(snapshot(10, 3, "p1"));
+	await started;
+
+	store.selectSession("p1", "open");
+	store.acknowledgeOpenSession();
+	expect(fake.marked).toEqual([]);
+
+	shown = true;
+	store.acknowledgeOpenSession();
+	expect(fake.marked).toEqual([
+		{ projectId: "p1", sessionPath: "open", revision: 3 },
+	]);
+});
+
 test("a failed acknowledgment leaves the session open and unread", async () => {
 	const fake = fakeClient();
 	fake.answers.readStates = [read("unread", 3, 1)];

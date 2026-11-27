@@ -292,6 +292,9 @@ test("connectSessionNotifications sends on completion and navigates on click", a
 		projectId: "p1",
 		sessionPath,
 	});
+	// A closed Host session stops following presses.
+	notify.dispose();
+	expect(pressHandlers.length).toBe(0);
 	store.stop();
 });
 
