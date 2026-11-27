@@ -84,6 +84,10 @@ function TerminalView(props: {
 	};
 	cleanup(
 		props.store.attach(id, {
+			reset: () => {
+				decoder.decode();
+				show("\x1bc");
+			},
 			output: (data) =>
 				show(decoder.decode(fromBase64(data), { stream: true })),
 			outputTruncated: () => {

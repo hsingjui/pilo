@@ -1,6 +1,7 @@
 import { expect, test } from "nsh/test";
 
-import type { TerminalEvent } from "../client/host-api";
+import type { TerminalEvent, TerminalSnapshot } from "@shared/api/host-methods";
+import type { HostTransportConnectionState } from "@shared/api/host-transport";
 import { type TerminalClient, TerminalStore } from "../state/terminal-store";
 
 function deferred<T>() {
@@ -132,4 +133,60 @@ test("terminal store marks errored tabs exited, switches active tab on close, an
 	expect(store.tabs().map((t) => t.id)).toEqual(["t-3"]);
 	expect(store.activeId()).toBeNull();
 	fake.closeStream();
+});
+
+test("remote terminals reattach after reconnect and merge the snapshot with live output once", async () => {
+	const fake = fakeTerminalClient();
+	let status: (state: HostTransportConnectionState) => void = () => {};
+	let receive: (event: TerminalEvent) => void = () => {};
+	const calls: string[] = [];
+	const reconnect = deferred<TerminalSnapshot>();
+	const store = new TerminalStore({
+		...fake.client,
+		reconnectsEvents: true,
+		eventStream: () => ({
+			subscribeEvents: () => () => {},
+			subscribeTerminal: () => () => {},
+			onConnectionState: (listener) => {
+				status = listener;
+				return () => {};
+			},
+		}),
+		subscribeTerminal: (_id, listener) => {
+			receive = listener;
+			return () => {};
+		},
+		attachTerminal: async (id) => {
+			calls.push(`attach:${id}`);
+			return { id, projectId: "p1", title: "P1" };
+		},
+		snapshotTerminal: async (id) => {
+			calls.push(`snapshot:${id}`);
+			if (calls.length === 2)
+				return { terminalId: id, data: "YQ==", endOffset: 1 };
+			return reconnect.promise;
+		},
+	});
+	await store.open("p1");
+	await flush();
+	const output: string[] = [];
+	store.attach("t-1", {
+		output: (data) => output.push(atob(data)),
+		exit: () => {},
+		error: () => {},
+	});
+	status("reconnecting");
+	status("connected");
+	await flush();
+	receive({ type: "output", terminalId: "t-1", data: "Y2Q=", startOffset: 2 });
+	reconnect.resolve({ terminalId: "t-1", data: "YWJj", endOffset: 3 });
+	await flush();
+	expect(calls).toEqual([
+		"attach:t-1",
+		"snapshot:t-1",
+		"attach:t-1",
+		"snapshot:t-1",
+	]);
+	expect(output.join("")).toBe("abcd");
+	store.dispose();
 });

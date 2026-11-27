@@ -75,6 +75,7 @@ import type {
 	PromptEnhancementSettings,
 } from "@shared/prompt-enhancement-types";
 import type { SessionReadState } from "@shared/session-read-state";
+import { randomId } from "@shared/random-id";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
@@ -89,6 +90,7 @@ export class HostClient implements PiloClient {
 	private readonly transport: HostTransport;
 	private readonly noSessionStarts = new Map<string, Set<Promise<unknown>>>();
 	private isShutdown = false;
+	readonly rpcIdPrefix = `nsh-rpc-${randomId()}`;
 
 	constructor(transport: HostTransport) {
 		this.transport = transport;
@@ -100,6 +102,10 @@ export class HostClient implements PiloClient {
 
 	get capabilities(): HostCapabilities | null {
 		return this.transport.capabilities ?? null;
+	}
+
+	get reconnectsEvents(): boolean {
+		return this.transport.reconnectsEvents ?? false;
 	}
 
 	hasMethod(name: HostApiMethodName): boolean {

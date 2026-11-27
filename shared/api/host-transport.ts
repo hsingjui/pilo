@@ -76,6 +76,7 @@ export interface HostTransport {
 	events(): HostEventStream;
 	readonly closed?: boolean;
 	readonly capabilities?: HostCapabilities | null;
+	readonly reconnectsEvents?: boolean;
 	dispose(): void;
 }
 
@@ -315,6 +316,9 @@ function parseTerminalEvent(
 			type: "output",
 			terminalId: parsed.terminalId,
 			data: parsed.data,
+			...(typeof parsed.startOffset === "number"
+				? { startOffset: parsed.startOffset }
+				: {}),
 		};
 	}
 	if (parsed.event === "exit") {
@@ -366,6 +370,9 @@ export class HttpTransport implements HostTransport {
 	private hostId: string | null;
 	private latestCapabilities: HostCapabilities | null = null;
 	private latestHello: HostHelloMessage | null = null;
+	private negotiationError: HostApiError | undefined;
+	private readonly helloWaiters = new Set<(error?: HostApiError) => void>();
+	private authProbe: Promise<void> | undefined;
 	private connectionState: HostTransportConnectionState = "connecting";
 	private replayCursor = 0;
 	private persistedCursor: number | undefined;
@@ -399,6 +406,7 @@ export class HttpTransport implements HostTransport {
 		(state: HostTransportConnectionState) => void
 	>();
 	private readonly stream: HostEventStream;
+	readonly reconnectsEvents = true;
 
 	constructor(options: HttpTransportOptions) {
 		this.origin = trimTrailingSlash(options.origin);
@@ -469,7 +477,7 @@ export class HttpTransport implements HostTransport {
 		params: unknown,
 		opts?: HostCallOptions,
 	): Promise<T> {
-		this.assertOpen();
+		await this.waitForHello(method, opts);
 		const token = this.requireToken();
 		const url = `${this.origin}/api/v2/call/${encodeURIComponent(method)}`;
 		const response = await this.fetchFn(url, {
@@ -491,7 +499,7 @@ export class HttpTransport implements HostTransport {
 		bytes: Uint8Array,
 		opts?: HostCallOptions,
 	): Promise<T> {
-		this.assertOpen();
+		await this.waitForHello(method, opts);
 		const token = this.requireToken();
 		const qs = encodeQuery(params);
 		const path = `/api/v2/upload/${encodeURIComponent(method)}`;
@@ -514,7 +522,7 @@ export class HttpTransport implements HostTransport {
 		params: Record<string, string>,
 		opts?: HostCallOptions,
 	): Promise<Uint8Array<ArrayBuffer>> {
-		this.assertOpen();
+		await this.waitForHello(method, opts);
 		const token = this.requireToken();
 		const qs = encodeQuery(params);
 		const path = `/api/v2/blob/${encodeURIComponent(method)}`;
@@ -554,6 +562,13 @@ export class HttpTransport implements HostTransport {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.finishNegotiation(
+			new HostApiError(
+				"unavailable",
+				"Host transport has been disposed",
+				false,
+			),
+		);
 		this.flushCursor();
 		this.clearReconnectTimer();
 		this.clearProbeTimer();
@@ -581,11 +596,92 @@ export class HttpTransport implements HostTransport {
 		}
 	}
 
+	private async waitForHello(
+		method: string,
+		opts?: HostCallOptions,
+	): Promise<void> {
+		this.assertOpen();
+		if (this.negotiationError) throw this.negotiationError;
+		if (!this.latestHello) {
+			await new Promise<void>((resolve, reject) => {
+				const finish = (error?: HostApiError) => {
+					this.helloWaiters.delete(finish);
+					this.scheduler.clearTimeout(timer);
+					if (error) reject(error);
+					else resolve();
+				};
+				const timer = this.scheduler.setTimeout(
+					() =>
+						finish(
+							new HostApiError(
+								"timeout",
+								"Timed out waiting for Host hello",
+								true,
+							),
+						),
+					15_000,
+				);
+				this.helloWaiters.add(finish);
+				this.ensureSocket();
+			});
+		}
+		this.assertOpen();
+		if (this.negotiationError) throw this.negotiationError;
+		if (opts?.signal?.aborted) throw new Error("Host request aborted");
+		if (
+			this.latestCapabilities?.methods &&
+			!this.latestCapabilities.methods.includes(method)
+		) {
+			throw new HostApiError(
+				"not_found",
+				`The connected Host does not support ${method}. Upgrade Pilo on the Host to use this feature.`,
+				false,
+			);
+		}
+	}
+
+	private finishNegotiation(error?: HostApiError): void {
+		this.negotiationError = error;
+		for (const finish of this.helloWaiters) finish(error);
+	}
+
+	private markUnauthorized(): void {
+		if (this.disposed || this.connectionState === "unauthorized") return;
+		this.finishNegotiation(
+			new HostApiError(
+				"unauthorized",
+				"Remote device authorization expired",
+				false,
+			),
+		);
+		this.clearReconnectTimer();
+		this.closeSocketOnly();
+		this.setState("unauthorized");
+		this.notifyEventStatus(false);
+		this.onUnauthorized?.();
+	}
+
+	private probeAuthorization(token: string): void {
+		if (this.authProbe || !this.online || this.disposed) return;
+		this.authProbe = this.fetchFn(`${this.origin}/api/v1/auth/device`, {
+			headers: { authorization: `Bearer ${token}` },
+			cache: "no-store",
+		})
+			.then((response) => {
+				if (response.status === 401 && this.tokens.getToken() === token) {
+					this.markUnauthorized();
+				}
+			})
+			.catch(() => undefined)
+			.finally(() => {
+				this.authProbe = undefined;
+			});
+	}
+
 	private requireToken(): string {
 		const token = this.tokens.getToken();
 		if (!token) {
-			this.setState("unauthorized");
-			this.onUnauthorized?.();
+			this.markUnauthorized();
 			throw new HostApiError(
 				"unauthorized",
 				"Missing remote device authentication token",
@@ -598,6 +694,7 @@ export class HttpTransport implements HostTransport {
 	private async parseEnvelopeResponse<T>(
 		response: FetchResponseLike,
 	): Promise<T> {
+		if (response.status === 401) this.markUnauthorized();
 		let body: unknown;
 		try {
 			body = await response.json();
@@ -614,15 +711,10 @@ export class HttpTransport implements HostTransport {
 			const payload = parseErrorPayload(body.error);
 			if (payload) {
 				if (payload.code === "unauthorized") {
-					this.setState("unauthorized");
-					this.onUnauthorized?.();
+					this.markUnauthorized();
 				}
 				throw HostApiError.fromPayload(payload);
 			}
-		}
-		if (response.status === 401) {
-			this.setState("unauthorized");
-			this.onUnauthorized?.();
 		}
 		const message =
 			isRecord(body) && typeof body.error === "string"
@@ -636,10 +728,7 @@ export class HttpTransport implements HostTransport {
 	}
 
 	private async throwHttpError(response: FetchResponseLike): Promise<never> {
-		if (response.status === 401) {
-			this.setState("unauthorized");
-			this.onUnauthorized?.();
-		}
+		if (response.status === 401) this.markUnauthorized();
 		let message = `Host request failed (${response.status})`;
 		try {
 			const parsed = await response.json();
@@ -750,6 +839,7 @@ export class HttpTransport implements HostTransport {
 
 	private hasAnyStreamSubscribers(): boolean {
 		return (
+			this.helloWaiters.size > 0 ||
 			this.eventListeners.size > 0 ||
 			this.terminalListeners.size > 0 ||
 			this.allTerminalListeners.size > 0
@@ -853,8 +943,7 @@ export class HttpTransport implements HostTransport {
 		if (this.disposed || !this.hasAnyStreamSubscribers()) return;
 		const token = this.tokens.getToken();
 		if (!token) {
-			this.setState("unauthorized");
-			this.onUnauthorized?.();
+			this.markUnauthorized();
 			return;
 		}
 		this.clearReconnectTimer();
@@ -891,6 +980,7 @@ export class HttpTransport implements HostTransport {
 					this.handleHello(socket, parsed);
 					return;
 				}
+				if (!this.socketReady) return;
 
 				const terminalEvent = parseTerminalEvent(parsed);
 				if (terminalEvent) {
@@ -934,6 +1024,7 @@ export class HttpTransport implements HostTransport {
 			}
 			this.setState(this.online ? "reconnecting" : "offline");
 			this.notifyEventStatus(false);
+			this.probeAuthorization(token);
 			this.scheduleReconnect();
 		};
 
@@ -954,6 +1045,13 @@ export class HttpTransport implements HostTransport {
 		const protocolVersion =
 			typeof parsed.protocolVersion === "string" ? parsed.protocolVersion : "";
 		if (!isCompatibleProtocolVersion(protocolVersion, this.expectedMajor)) {
+			this.finishNegotiation(
+				new HostApiError(
+					"unavailable",
+					`Incompatible Host protocol version ${protocolVersion || "(missing)"}; expected major version ${this.expectedMajor}. Upgrade Pilo on the client or Host.`,
+					false,
+				),
+			);
 			this.setState("incompatible");
 			this.closeSocketOnly();
 			this.notifyEventStatus(false);
@@ -986,14 +1084,12 @@ export class HttpTransport implements HostTransport {
 			this.setReplayCursor(0, true);
 		}
 
+		const reconnect = this.latestHello !== null;
 		const hello = parsed as unknown as HostHelloMessage;
 		this.latestHello = hello;
 		this.latestCapabilities = hello.capabilities ?? null;
 		this.socketReady = true;
 		this.reconnectAttempts = 0;
-		this.setState("connected");
-		this.notifyEventStatus(true);
-
 		for (const listener of this.helloListeners) {
 			listener(hello);
 		}
@@ -1007,6 +1103,12 @@ export class HttpTransport implements HostTransport {
 				type: "resyncRequired",
 				latestSequence,
 			});
+		} else if (reconnect) {
+			this.broadcastEventMessage({
+				type: "resyncRequired",
+				latestSequence: this.replayCursor,
+				replayPending: true,
+			});
 		}
 
 		// Re-subscribe any active terminal streams on this socket.
@@ -1015,6 +1117,9 @@ export class HttpTransport implements HostTransport {
 				this.sendSocketJson({ type: "terminal.subscribe", terminalId });
 			}
 		}
+		this.finishNegotiation();
+		this.setState("connected");
+		this.notifyEventStatus(true);
 	}
 
 	private sendSocketJson(payload: unknown): void {

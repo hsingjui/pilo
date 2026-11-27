@@ -36,17 +36,26 @@ pub(super) fn encode_terminal_events(events: Vec<TerminalEvent>) -> Vec<JsonValu
     let mut coalesced: Vec<TerminalEvent> = Vec::with_capacity(events.len());
     for event in events {
         match event {
-            TerminalEvent::Output { terminal_id, data } => {
+            TerminalEvent::Output {
+                terminal_id,
+                data,
+                start_offset,
+            } => {
                 if let Some(TerminalEvent::Output {
                     terminal_id: prev_id,
                     data: prev_data,
+                    ..
                 }) = coalesced.last_mut()
                     && *prev_id == terminal_id
                 {
                     prev_data.extend_from_slice(&data);
                     continue;
                 }
-                coalesced.push(TerminalEvent::Output { terminal_id, data });
+                coalesced.push(TerminalEvent::Output {
+                    terminal_id,
+                    data,
+                    start_offset,
+                });
             }
             other => coalesced.push(other),
         }
@@ -54,7 +63,9 @@ pub(super) fn encode_terminal_events(events: Vec<TerminalEvent>) -> Vec<JsonValu
     coalesced
         .into_iter()
         .map(|event| match event {
-            TerminalEvent::Output { terminal_id, data } => serde_json::json!({
+            TerminalEvent::Output {
+                terminal_id, data, ..
+            } => serde_json::json!({
                 "type": "output",
                 "terminalId": terminal_id,
                 "data": BASE64.encode(data),

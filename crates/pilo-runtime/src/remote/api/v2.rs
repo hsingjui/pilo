@@ -316,13 +316,6 @@ impl DeviceWsGuard {
         }
     }
 
-    fn clear_subscriptions(&mut self) {
-        let owner = TerminalOwner::Device(self.device_id.clone());
-        for terminal_id in self.subscribed.drain() {
-            self.terminals.unsubscribe_ws(&owner, &terminal_id);
-        }
-    }
-
     fn contains(&self, terminal_id: &str) -> bool {
         self.subscribed.contains(terminal_id)
     }
@@ -391,6 +384,7 @@ async fn event_socket_v2(
 
     let mut receiver = events.subscribe_web();
     let snapshot_sequence = events.latest_sequence();
+    let scopes = auth_session.device.scopes;
     log::info!(
         target: "remote-v2",
         "v2 event socket opened deviceId={} after={after:?} latestSequence={snapshot_sequence}",
@@ -405,7 +399,7 @@ async fn event_socket_v2(
             "hostName": host_name(),
             "deviceId": auth_session.device.id,
             "protocolVersion": PROTOCOL_VERSION,
-            "scopes": auth_session.device.scopes.as_str(),
+            "scopes": scopes.as_str(),
             "latestSequence": snapshot_sequence,
             "capabilities": host_capabilities(),
         }),
@@ -470,8 +464,9 @@ async fn event_socket_v2(
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication expired";
                 }
-                if auth_session.device.scopes != RemoteScopes::ChatWorkspace {
-                    ws_guard.clear_subscriptions();
+                if auth_session.device.scopes != scopes {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break "device scopes changed";
                 }
             }
             changed = auth_generation.changed() => {
@@ -482,8 +477,9 @@ async fn event_socket_v2(
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication changed";
                 }
-                if auth_session.device.scopes != RemoteScopes::ChatWorkspace {
-                    ws_guard.clear_subscriptions();
+                if auth_session.device.scopes != scopes {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break "device scopes changed";
                 }
             }
             incoming = socket.recv() => {
@@ -534,7 +530,7 @@ async fn event_socket_v2(
                 let mut send_failed = false;
                 for event in term_batch {
                     let (terminal_id, payload, finished) = match event {
-                        TerminalEvent::Output { terminal_id, data } => {
+                        TerminalEvent::Output { terminal_id, data, start_offset } => {
                             let encoded = BASE64.encode(data);
                             (
                                 terminal_id.clone(),
@@ -543,6 +539,7 @@ async fn event_socket_v2(
                                     "event": "output",
                                     "terminalId": terminal_id,
                                     "data": encoded,
+                                    "startOffset": start_offset,
                                 }),
                                 false,
                             )

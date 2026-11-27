@@ -1,7 +1,7 @@
 import { mount, signal, Text, View, type InputRef } from "nsh";
 import { Input } from "nsh/base";
 
-import type { TerminalEvent } from "../client/host-api";
+import type { TerminalEvent } from "@shared/api/host-methods";
 import { TerminalLayer } from "../shell/terminal-view";
 import { type TerminalClient, TerminalStore } from "../state/terminal-store";
 
