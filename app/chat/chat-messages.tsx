@@ -570,6 +570,8 @@ export function ChatMessages(props: ChatMessagesProps) {
 						webEndAttached() || followPaused() ? undefined : followEnd
 					}
 					bounces={false}
+					smoothWheel
+					wheelLineHeight={platform.os === "windows" ? 20 : undefined}
 					scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 					footer={props.footer}
 					onLayout={web ? attachWebEnd : undefined}
