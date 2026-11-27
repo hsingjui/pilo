@@ -318,7 +318,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 	const drawerExternal = computed(() => store.state().externalActivity);
 	const drawerReadStates = computed(() => store.state().readStates);
 	const drawerPendingDrafts = computed(() => store.state().pendingDrafts);
-	const drawerUnsentDrafts = computed(() => store.state().unsentDrafts);
+	const drawerSentDrafts = computed(() => store.state().sentDrafts);
 	const recent = computed(
 		() => {
 			// Keep the list current during drawer animations, but skip it when hidden.
@@ -329,14 +329,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 			drawerRunningSince();
 			drawerExternal();
 			drawerReadStates();
-			openSession();
 			drawerPendingDrafts();
-			drawerUnsentDrafts();
-			return recentSessions(
-				untracked(store.state),
-				t("app.newChat"),
-				store.startedDraft(),
-			);
+			drawerSentDrafts();
+			return recentSessions(untracked(store.state), t("app.newChat"));
 		},
 		{
 			equals: (previous, next) =>
@@ -877,7 +872,6 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																					store.state(),
 																					project.id,
 																					t("app.newChat"),
-																					store.startedDraft(),
 																				)
 																			: [];
 																		const sessionCount = projExpanded

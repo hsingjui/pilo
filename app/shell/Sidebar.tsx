@@ -276,12 +276,8 @@ function RecentSection(
 	const runningSince = computed(() => store.state().runningSince);
 	const externalActivity = computed(() => store.state().externalActivity);
 	const readStates = computed(() => store.state().readStates);
-	const openDraft = computed(() => {
-		const open = store.state().navigation.session;
-		return open?.sessionId !== undefined
-			? `${open.projectId}:${open.sessionId}`
-			: null;
-	});
+	const pendingDrafts = computed(() => store.state().pendingDrafts);
+	const sentDrafts = computed(() => store.state().sentDrafts);
 	const sessions = computed(
 		() => {
 			props.projects();
@@ -290,12 +286,9 @@ function RecentSection(
 			runningSince();
 			externalActivity();
 			readStates();
-			openDraft();
-			return recentSessions(
-				untracked(store.state),
-				t("app.newChat"),
-				store.startedDraft(),
-			);
+			pendingDrafts();
+			sentDrafts();
+			return recentSessions(untracked(store.state), t("app.newChat"));
 		},
 		{
 			equals: (previous, next) =>
@@ -547,12 +540,8 @@ function AllProjectSessions(
 	const chatSessions = computed(() => store.state().chatSessions);
 	const runningSince = computed(() => store.state().runningSince);
 	const readStates = computed(() => store.state().readStates);
-	const openDraftId = computed(() => {
-		const open = store.state().navigation.session;
-		return open?.projectId === props.projectId && open.sessionId !== undefined
-			? open.sessionId
-			: null;
-	});
+	const pendingDrafts = computed(() => store.state().pendingDrafts);
+	const sentDrafts = computed(() => store.state().sentDrafts);
 	const rows = computed(
 		() => {
 			projectIndex();
@@ -560,12 +549,12 @@ function AllProjectSessions(
 			chatSessions();
 			runningSince();
 			readStates();
-			openDraftId();
+			pendingDrafts();
+			sentDrafts();
 			return sidebarSessions(
 				untracked(store.state),
 				props.projectId,
 				t("app.newChat"),
-				store.startedDraft(),
 			);
 		},
 		{

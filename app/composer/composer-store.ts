@@ -314,7 +314,7 @@ export class ComposerStore {
 		queue?: ComposerQueue;
 		/** Shows a prompt that starts a turn at once, before Pi takes it. */
 		transcript?: ComposerTranscript;
-		/** Keeps a background send's draft navigable until the prompt settles. */
+		/** Tracks a background draft submission until the prompt settles. */
 		onPendingDraft?: (target: ComposerTarget, text: string | null) => void;
 		/** Keeps unsent new-chat drafts reachable after navigation. */
 		onUnsentDraft?: (target: ComposerTarget, text: string | null) => void;

@@ -93,7 +93,7 @@ export type Navigation = {
 	session: SessionSelection | null;
 };
 
-type PendingDraft = {
+type DraftSummary = {
 	projectId: string;
 	title: string;
 	startedAt: number;
@@ -106,9 +106,11 @@ export type AppState = {
 	projects: Project[];
 	chatSessions: ChatSessionRuntimeState[];
 	/** Drafts whose first prompt is still being sent, keyed by session key. */
-	pendingDrafts: ReadonlyMap<string, PendingDraft>;
+	pendingDrafts: ReadonlyMap<string, DraftSummary>;
 	/** New chats with unsent text or attachments, keyed by session key. */
-	unsentDrafts?: ReadonlyMap<string, PendingDraft>;
+	unsentDrafts?: ReadonlyMap<string, DraftSummary>;
+	/** New chats with a confirmed user message, until their files are indexed. */
+	sentDrafts?: ReadonlyMap<string, DraftSummary>;
 	/**
 	 * When each running chat (by session key) was first seen running, so the
 	 * sidebar keeps running sessions in a stable order as their files change.
@@ -154,6 +156,7 @@ export type AppAction =
 			activities: SessionExternalActivity[];
 	  }
 	| { type: "project_selected"; projectId: string; sessionId?: string }
+	| { type: "draft_sent"; sessionKey: string; text: string }
 	| { type: "session_selected"; projectId: string; sessionPath: string }
 	| {
 			type: "session_deleted";
@@ -440,21 +443,61 @@ function withRunningSince(
 }
 
 /** Pi allocates a path before writing it. Only an indexed file promotes a draft. */
-function adoptIndexedSession(state: AppState): AppState {
-	const open = state.navigation.session;
-	if (!open?.sessionId) return state;
-	const key = chatSessionKey(open.projectId, open.sessionId);
+function indexedDraftSession(state: AppState, projectId: string, key: string) {
 	const path = state.chatSessions.find(
 		(chat) => chat.sessionKey === key,
 	)?.sessionPath;
-	if (!path) return state;
+	if (!path) return undefined;
 	const pathKey = runtimeSessionPathKey(path);
-	const indexed = state.sessionIndexes[open.projectId]?.sessions.find(
+	return state.sessionIndexes[projectId]?.sessions.find(
 		(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
 	);
-	if (!indexed) return state;
+}
+
+function withSentDraft(
+	state: AppState,
+	sessionKey: string,
+	text: string,
+	startedAt = Date.now(),
+): AppState {
+	if (state.sentDrafts?.has(sessionKey)) return state;
+	const parsed = parseChatSessionKey(sessionKey);
+	if (!parsed) return state;
+	const [projectId, sessionId] = parsed;
+	if (
+		!isDraftSessionId(sessionId) ||
+		!hasProject(state.projects, projectId) ||
+		indexedDraftSession(state, projectId, sessionKey)
+	)
+		return state;
+	const sentDrafts = new Map(state.sentDrafts);
+	sentDrafts.set(sessionKey, {
+		projectId,
+		title: text.replace(/\s+/g, " ").trim(),
+		startedAt,
+	});
+	return { ...state, sentDrafts };
+}
+
+function adoptIndexedSession(state: AppState): AppState {
+	let sentDrafts: Map<string, DraftSummary> | undefined;
+	for (const [key, draft] of state.sentDrafts ?? []) {
+		if (
+			!hasProject(state.projects, draft.projectId) ||
+			indexedDraftSession(state, draft.projectId, key)
+		) {
+			sentDrafts ??= new Map(state.sentDrafts);
+			sentDrafts.delete(key);
+		}
+	}
+	const next = sentDrafts ? { ...state, sentDrafts } : state;
+	const open = next.navigation.session;
+	if (!open?.sessionId) return next;
+	const key = chatSessionKey(open.projectId, open.sessionId);
+	const indexed = indexedDraftSession(next, open.projectId, key);
+	if (!indexed) return next;
 	return {
-		...state,
+		...next,
 		navigation: {
 			projectId: open.projectId,
 			session: { projectId: open.projectId, sessionPath: indexed.sessionPath },
@@ -483,6 +526,10 @@ function reduceEvent(state: AppState, event: PiloClientEvent): AppState {
 			}));
 		case "external_session_activity_changed":
 			return withExternalActivity(state, event.projectId, event.activities);
+		case "user_message_start":
+			return event.sessionKey
+				? withSentDraft(state, event.sessionKey, event.text, event.timestampMs)
+				: state;
 		case "session_read_state_changed": {
 			const key = readStateKey(event.state.projectId, event.state.sessionPath);
 			return {
@@ -605,6 +652,8 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 							: null,
 				},
 			};
+		case "draft_sent":
+			return withSentDraft(state, action.sessionKey, action.text);
 		case "session_selected": {
 			const { projectId, sessionPath } = action;
 			if (!hasProject(state.projects, projectId)) return state;

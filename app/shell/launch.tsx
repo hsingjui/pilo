@@ -120,6 +120,14 @@ export async function launch(
 	});
 	const workspace = new WorkspaceStore();
 	const terminals = new TerminalStore(client);
+	const nameSession = createSessionAutoTitle(client, (target, error) => {
+		composer.setStatus(
+			`${t("settings.automaticNamingFailed")}: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+			target.sessionKey,
+		);
+	});
 	const composer: ComposerStore = new ComposerStore({
 		client,
 		app: store.state,
@@ -131,14 +139,10 @@ export async function launch(
 		transcript: chat,
 		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
 		onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),
-		onPromptStarted: createSessionAutoTitle(client, (target, error) =>
-			composer.setStatus(
-				`${t("settings.automaticNamingFailed")}: ${
-					error instanceof Error ? error.message : String(error)
-				}`,
-				target.sessionKey,
-			),
-		),
+		onPromptStarted: (target, text) => {
+			store.confirmDraft(target, text);
+			nameSession(target, text);
+		},
 		onNewChat: () => {
 			const projectId =
 				composer.target()?.projectId ?? store.state().navigation.projectId;

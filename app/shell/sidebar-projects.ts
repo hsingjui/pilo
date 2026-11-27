@@ -1,6 +1,5 @@
 import { sortSidebarSessionsActiveFirst } from "@shared/sidebar/session-list";
 import type { SidebarSession } from "@shared/sidebar/sidebar-types";
-import { chatSessionKey } from "@shared/api/chat-session-key";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { Project } from "@shared/api/projects-types";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
@@ -9,12 +8,7 @@ import {
 	runtimeSessionIdFromKey,
 	runtimeSessionPathKey,
 } from "@shared/chat/chat-session-runtime-model";
-import {
-	type AppState,
-	isDraftSessionId,
-	isSessionUnread,
-} from "../state/app-state";
-import type { StartedDraft } from "../state/app-store";
+import { type AppState, isSessionUnread } from "../state/app-state";
 
 /** A connection and its projects, as the sidebar groups them. */
 export type SidebarGroup = { connection: Connection; projects: Project[] };
@@ -75,17 +69,13 @@ export function projectSection(projectId: string) {
 }
 
 /**
- * The sessions of a project as the sidebar lists them: its new chats Pi has
- * not saved yet, as the WebUI lists its opened chats, then its saved
- * ones, each marked running or with a finished turn the user has not seen.
- * `untitled` names a session that has no title and no first message;
- * `draft` is the open new chat once a prompt was sent from it.
+ * The sessions of a project: new chats with a confirmed prompt, then saved
+ * sessions, marked running or with a finished turn the user has not seen.
  */
 export function sidebarSessions(
 	state: AppState,
 	projectId: string,
 	untitled: string,
-	draft?: StartedDraft | null,
 ): SidebarSession[] {
 	// Since when each saved session runs, by `runtimeSessionPathKey` of its file.
 	const running = new Map<string, number>();
@@ -117,7 +107,7 @@ export function sidebarSessions(
 			isSessionUnread(state, projectId, entry.sessionPath),
 		),
 	);
-	const unsaved = unsavedSessions(state, projectId, untitled, draft, entries);
+	const unsaved = unsavedSessions(state, projectId, untitled);
 	return unsaved.length > 0 ? [...unsaved, ...saved] : saved;
 }
 
@@ -214,88 +204,29 @@ function savedSession(
 	return row;
 }
 
-/**
- * New chats of the project that Pi has not saved to an indexed file yet:
- * the open one once a prompt was sent, running chats, and unsent drafts.
- * Their `sessionPath` is empty; their `id` is the draft's session id.
- */
+/** Confirmed chats whose files have not reached the index yet. */
 function unsavedSessions(
 	state: AppState,
 	projectId: string,
 	untitled: string,
-	draft: StartedDraft | null | undefined,
-	entries: readonly SessionIndexEntry[],
 ): SidebarSession[] {
 	const rows: SidebarSession[] = [];
-	const open = state.navigation.session;
-	const openKey =
-		open?.projectId === projectId && open.sessionId !== undefined
-			? chatSessionKey(projectId, open.sessionId)
-			: null;
-	const pending = openKey ? state.pendingDrafts.get(openKey) : undefined;
-	const openDraft =
-		draft ??
-		pending ??
-		(openKey ? state.unsentDrafts?.get(openKey) : undefined);
-	if (openKey && open?.sessionId && openDraft) {
-		const chat = state.chatSessions.find((held) => held.sessionKey === openKey);
-		const since = state.runningSince[openKey] ?? openDraft.startedAt;
-		const active =
-			!!pending || !!draft?.active || chatRuntimeShowsActivity(chat);
-		rows.push(
-			reuseUnsavedRow(
-				openKey,
-				open.sessionId,
-				openDraft.title || untitled,
-				projectId,
-				openDraft.startedAt,
-				active,
-				active ? since : undefined,
-			),
-		);
-	}
-	const chats = new Map(
-		state.chatSessions
-			.filter((chat) => chat.projectId === projectId)
-			.map((chat) => [chat.sessionKey, chat]),
-	);
-	const keys = new Set<string>();
-	for (const [key, chat] of chats) {
-		if (chatRuntimeShowsActivity(chat)) keys.add(key);
-	}
-	for (const [key, draft] of state.pendingDrafts) {
-		if (draft.projectId === projectId) keys.add(key);
-	}
-	for (const [key, draft] of state.unsentDrafts ?? []) {
-		if (draft.projectId === projectId) keys.add(key);
-	}
-	let indexed: Set<string> | undefined;
-	for (const key of keys) {
-		if (key === openKey) continue;
-		const pendingDraft = state.pendingDrafts.get(key);
-		const draft = pendingDraft ?? state.unsentDrafts?.get(key);
-		const chat = chats.get(key);
+	for (const [key, draft] of state.sentDrafts ?? []) {
+		if (draft.projectId !== projectId) continue;
 		const sessionId = runtimeSessionIdFromKey(key, projectId);
-		if (!sessionId || !isDraftSessionId(sessionId)) continue;
-		indexed ??= new Set(
-			entries.map((entry) => runtimeSessionPathKey(entry.sessionPath)),
-		);
-		if (
-			chat?.sessionPath &&
-			indexed.has(runtimeSessionPathKey(chat.sessionPath))
-		)
-			continue;
-		const sinceMs = state.runningSince[key] ?? draft?.startedAt ?? 0;
-		const active = !!pendingDraft || chatRuntimeShowsActivity(chat);
+		if (!sessionId) continue;
+		const chat = state.chatSessions.find((held) => held.sessionKey === key);
+		const active =
+			state.pendingDrafts.has(key) || chatRuntimeShowsActivity(chat);
 		rows.push(
 			reuseUnsavedRow(
 				key,
 				sessionId,
-				draft?.title || untitled,
+				draft.title || untitled,
 				projectId,
-				sinceMs,
+				draft.startedAt,
 				active,
-				active ? sinceMs : undefined,
+				active ? (state.runningSince[key] ?? draft.startedAt) : undefined,
 			),
 		);
 	}
@@ -323,14 +254,10 @@ function latestMessageAt(entry: SessionIndexEntry) {
 const RECENT_SESSION_LIMIT = 50;
 
 /** The latest sessions of every project: the running ones, then by time. */
-export function recentSessions(
-	state: AppState,
-	untitled: string,
-	draft?: StartedDraft | null,
-) {
+export function recentSessions(state: AppState, untitled: string) {
 	return sortSidebarSessionsActiveFirst(
 		state.projects.flatMap((project) =>
-			sidebarSessions(state, project.id, untitled, draft),
+			sidebarSessions(state, project.id, untitled),
 		),
 	).slice(0, RECENT_SESSION_LIMIT);
 }

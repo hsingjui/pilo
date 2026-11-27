@@ -83,10 +83,9 @@ export function ProjectSection(props: {
 		return (
 			open.projectId === id() &&
 			open.sessionId !== undefined &&
-			store.startedDraft() === null &&
 			!store
 				.state()
-				.pendingDrafts.has(chatSessionKey(open.projectId, open.sessionId))
+				.sentDrafts?.has(chatSessionKey(open.projectId, open.sessionId))
 		);
 	});
 	// Reading the sessions again, as the WebUI row's `refreshing`.
@@ -445,11 +444,11 @@ function ProjectSessions(props: {
 				previous.every((item, at) => item === next[at]),
 		},
 	);
-	const projectUnsentDrafts = computed(
+	const projectSentDrafts = computed(
 		() => {
 			const pid = props.projectId();
 			const result: string[] = [];
-			for (const [key, draft] of store.state().unsentDrafts ?? []) {
+			for (const [key, draft] of store.state().sentDrafts ?? []) {
 				if (draft.projectId === pid) {
 					result.push(`${key}:${draft.title}:${draft.startedAt}`);
 				}
@@ -500,27 +499,18 @@ function ProjectSessions(props: {
 				previous.every((item, at) => item === next[at]),
 		},
 	);
-	// Switching between saved sessions never changes this project's unsaved draft row.
-	const openDraftId = computed(() => {
-		const open = store.openSession();
-		return open?.projectId === props.projectId() && open.sessionId !== undefined
-			? open.sessionId
-			: null;
-	});
 	const listed = computed(() => {
 		index();
 		externalActivity();
 		projectChats();
 		projectPendingDrafts();
-		projectUnsentDrafts();
+		projectSentDrafts();
 		projectRunningSince();
 		projectReadStates();
-		openDraftId();
 		return sidebarSessions(
 			untracked(store.state),
 			props.projectId(),
 			t("app.newChat"),
-			store.startedDraft(),
 		);
 	});
 	const openedId = computed(() => {

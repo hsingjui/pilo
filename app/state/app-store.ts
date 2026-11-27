@@ -57,27 +57,6 @@ export type AppStoreClient = Partial<
 		readonly reconnectsEvents?: boolean;
 	};
 
-/** The open new chat once a prompt was sent from it, as the sidebar lists it. */
-export type StartedDraft = {
-	/** The first prompt on one line; empty for a prompt of images only. */
-	title: string;
-	/** Whether a turn shows as running, before Pi reports one too. */
-	active: boolean;
-	/** When the first prompt was sent. */
-	startedAt: number;
-};
-
-function sameDraft(a: StartedDraft | null, b: StartedDraft | null) {
-	return (
-		a === b ||
-		(a !== null &&
-			b !== null &&
-			a.title === b.title &&
-			a.active === b.active &&
-			a.startedAt === b.startedAt)
-	);
-}
-
 /**
  * The app state as one signal, kept current from the Pilo client: a bootstrap
  * fills it, runtime events move it, and a gap in the event stream or a
@@ -145,39 +124,6 @@ export class AppStore {
 		this.client = client;
 		this.chat = chat;
 	}
-
-	/**
-	 * The open new chat once a prompt was sent from it, read from its
-	 * transcript, so the sidebar lists it before Pi has saved it (the WebUI
-	 * app's pending opened chat). It changes only with what the row shows,
-	 * not with each streamed event.
-	 */
-	readonly startedDraft: Accessor<StartedDraft | null> = computed(
-		(previous) => {
-			const open = this.current().navigation.session;
-			// A temporary chat is never listed.
-			if (
-				!this.chat ||
-				!open?.sessionId ||
-				isTemporarySessionId(open.sessionId)
-			)
-				return null;
-			const { sessionKey, conversation } = this.chat.state();
-			if (sessionKey !== chatSessionKey(open.projectId, open.sessionId)) {
-				return null;
-			}
-			const first = conversation?.messages.find(
-				(message) => message.role === "user",
-			);
-			if (!first) return null;
-			return {
-				title: first.text.replace(/\s+/g, " ").trim(),
-				active: conversation?.active != null,
-				startedAt: first.timestampMs ?? previous?.startedAt ?? Date.now(),
-			};
-		},
-		{ equals: sameDraft },
-	);
 
 	/** Whether runtime events are being received. */
 	get connected() {
@@ -320,13 +266,30 @@ export class AppStore {
 			focusComposer,
 		}: { temporary: boolean; focusComposer: boolean },
 	) {
-		if (!this.keepsOpenDraft(projectId, temporary)) {
+		const state = this.current();
+		const openId = this.keepsOpenDraft(projectId, temporary)
+			? state.navigation.session?.sessionId
+			: undefined;
+		const openKey = openId && chatSessionKey(projectId, openId);
+		// A draft no longer has a sidebar row, so return to it via its project.
+		const recover =
+			!temporary &&
+			!(openKey && state.unsentDrafts?.has(openKey)) &&
+			[...(state.unsentDrafts ?? [])].find(
+				([key, draft]) =>
+					draft.projectId === projectId &&
+					!state.pendingDrafts.has(key) &&
+					!state.sentDrafts?.has(key),
+			);
+		const restoredId =
+			recover && runtimeSessionIdFromKey(recover[0], projectId);
+		if (!openId || restoredId) {
 			this.apply({
 				type: "project_selected",
 				projectId,
-				sessionId: temporary
-					? createTemporarySessionId()
-					: createDraftSessionId(),
+				sessionId:
+					restoredId ||
+					(temporary ? createTemporarySessionId() : createDraftSessionId()),
 			});
 		}
 		const open = this.current().navigation.session;
@@ -352,10 +315,15 @@ export class AppStore {
 		const active = state.chatSessions.some(
 			(chat) => chat.sessionKey === sessionKey && chat.activeTurn,
 		);
-		return !hasMessages && !active && !state.pendingDrafts.has(sessionKey);
+		return (
+			!hasMessages &&
+			!active &&
+			!state.pendingDrafts.has(sessionKey) &&
+			!state.sentDrafts?.has(sessionKey)
+		);
 	}
 
-	/** Keeps the draft navigable before Pi has accepted its first prompt. */
+	/** Keeps background startup state before Pi has accepted the prompt. */
 	setPendingDraft(
 		{ sessionKey, projectId }: ChatTranscriptTarget,
 		text: string | null,
@@ -375,7 +343,15 @@ export class AppStore {
 		});
 	}
 
-	/** Keeps unsent new chats reachable without marking them as running. */
+	/** Makes an accepted prompt visible even if Pi has not yet echoed it. */
+	confirmDraft(
+		{ sessionKey, sessionPath }: ChatTranscriptTarget,
+		text: string,
+	) {
+		if (!sessionPath) this.apply({ type: "draft_sent", sessionKey, text });
+	}
+
+	/** Keeps unsent new chats reachable via their project, not the sidebar list. */
 	setUnsentDraft(
 		{ sessionKey, projectId, sessionPath }: ChatTranscriptTarget,
 		text: string | null,
