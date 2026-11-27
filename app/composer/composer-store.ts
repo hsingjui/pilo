@@ -9,6 +9,11 @@ import {
 } from "nsh";
 import { Storage } from "nsh";
 
+import {
+	hostStorageKey,
+	LOCAL_HOST_ID,
+	readMigratedStorage,
+} from "@shared/host-id";
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import { bytesToBase64 } from "@shared/base64";
@@ -209,6 +214,7 @@ type HistoryStore = Record<string, string[]>;
 export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly shell?: Pick<DesktopShell, "readLocalFile">;
+	private readonly hostId: string;
 	private readonly app: Accessor<AppState>;
 	private readonly activeModel?: Accessor<PiModel | null>;
 	private readonly catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
@@ -309,6 +315,7 @@ export class ComposerStore {
 	constructor(deps: {
 		client: ComposerClient;
 		shell?: Pick<DesktopShell, "readLocalFile">;
+		hostId?: string;
 		app: Accessor<AppState>;
 		/** The open chat's active model, used to check image input support early. */
 		activeModel?: Accessor<PiModel | null>;
@@ -335,6 +342,7 @@ export class ComposerStore {
 	}) {
 		this.client = deps.client;
 		this.shell = deps.shell;
+		this.hostId = deps.hostId ?? LOCAL_HOST_ID;
 		this.app = deps.app;
 		this.activeModel = deps.activeModel;
 		this.draftTextStorage = deps.draftTextStorage;
@@ -763,13 +771,17 @@ export class ComposerStore {
 			-CHAT_INPUT_HISTORY_LIMIT,
 		);
 		void Storage.setItem(
-			INPUT_HISTORY_KEY,
+			hostStorageKey(this.hostId, INPUT_HISTORY_KEY),
 			JSON.stringify(this.histories),
 		).catch(() => {});
 	}
 
 	loadHistories(): Promise<void> {
-		return (this.historiesLoad ??= Storage.getItem(INPUT_HISTORY_KEY)
+		return (this.historiesLoad ??= readMigratedStorage(
+			Storage,
+			hostStorageKey(this.hostId, INPUT_HISTORY_KEY),
+			this.hostId === LOCAL_HOST_ID ? INPUT_HISTORY_KEY : undefined,
+		)
 			.then((raw) => {
 				if (!raw) return;
 				const parsed: unknown = JSON.parse(raw);

@@ -1,4 +1,4 @@
-import { effect, signal } from "nsh";
+import { effect, signal, Storage } from "nsh";
 import { expect, test } from "nsh/test";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
@@ -164,6 +164,35 @@ test("ArrowUp recalls the project's earlier prompts", async () => {
 	expect(store.state().value).toBe("first");
 	expect((await store.navigateHistory("newer")).handled).toBe(true);
 	expect(store.state().value).toBe("second");
+});
+
+test("composer history upgrades without leaking between Hosts", async () => {
+	const key = "pilo.chatInputHistory.v1";
+	const history = '{"p1":["before upgrade"]}';
+	const { client } = fakeClient();
+	const { store, app } = storeFor(client);
+	const other = new ComposerStore({ client, app: () => app, hostId: "other" });
+	const localKey = `${key}@local`;
+	const otherKey = `${key}@other`;
+	const previous = await Storage.getItem(localKey);
+	try {
+		await Storage.removeItem(localKey);
+		await Storage.setItem(key, history);
+		await Storage.setItem(otherKey, "{corrupt");
+		other.setTarget(targetA);
+		expect((await other.navigateHistory("older")).handled).toBe(false);
+		expect(await Storage.getItem(key)).toBe(history);
+		store.setTarget(targetA);
+		expect((await store.navigateHistory("older")).handled).toBe(true);
+		expect(store.state().value).toBe("before upgrade");
+		expect(await Storage.getItem(localKey)).toBe(history);
+		expect(await Storage.getItem(key)).toBe(null);
+	} finally {
+		if (previous === null) await Storage.removeItem(localKey);
+		else await Storage.setItem(localKey, previous);
+		await Storage.removeItem(key);
+		await Storage.removeItem(otherKey);
+	}
 });
 
 test("switching before dispatch restores the original session draft without polluting another session", async () => {
