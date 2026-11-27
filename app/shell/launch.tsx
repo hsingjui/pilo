@@ -258,6 +258,7 @@ export async function launch(
 		if (isAvailable) {
 			// nsh creates the implicit main window as part of mount.
 			const main = currentWindow();
+			main.set({ title: manifest.name });
 			if (desktopSettings) {
 				desktop = connectDesktopShell(
 					main,
