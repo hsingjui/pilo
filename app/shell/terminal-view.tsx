@@ -65,7 +65,16 @@ function TerminalView(props: {
 		<View
 			testID={`terminal:${id}`}
 			class="absolute inset-0 bg-background pt-1.5 pr-1 pb-1.5 pl-3"
-			style={[fade.style, { display: props.visible() ? "flex" : "none" }]}
+			style={[
+				fade.style,
+				// Keep layout intact while hidden: `display: none` reports a 0x0
+				// frame to `nsh/base`'s Terminal, which clamps it to 1x1 and
+				// truncates every screen row to one column.
+				{
+					visibility: props.visible() ? "visible" : "hidden",
+					pointerEvents: props.visible() ? "auto" : "none",
+				},
+			]}
 		>
 			<Terminal
 				ref={(node) => {
@@ -104,7 +113,10 @@ export function TerminalLayer(props: {
 		<View
 			testID="terminal-layer"
 			class="absolute inset-0 z-30 bg-background"
-			style={{ display: props.shown() ? "flex" : "none" }}
+			style={{
+				visibility: props.shown() ? "visible" : "hidden",
+				pointerEvents: props.shown() ? "auto" : "none",
+			}}
 		>
 			<Each of={props.terminals.tabs()} key={(tab) => tab.id}>
 				{(tab) => (
