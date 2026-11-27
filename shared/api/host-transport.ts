@@ -374,6 +374,7 @@ export class HttpTransport implements HostTransport {
 	private socket: WebSocketLike | null = null;
 	private socketCursorHostId: string | null = null;
 	private socketCursorSent = 0;
+	private hostIdSwitchAttempted = false;
 	private detachSocketListeners: (() => void) | undefined;
 	private socketReady = false;
 	private reconnectAttempts = 0;
@@ -969,12 +970,14 @@ export class HttpTransport implements HostTransport {
 			const stored = Math.max(0, this.cursors.getCursor(incomingHostId));
 			this.replayCursor = stored;
 			this.persistedCursor = stored;
-			if (stored !== this.socketCursorSent) {
+			if (stored !== this.socketCursorSent && !this.hostIdSwitchAttempted) {
+				this.hostIdSwitchAttempted = true;
 				this.closeSocketOnly();
 				this.openSocket();
 				return;
 			}
 		}
+		this.hostIdSwitchAttempted = false;
 
 		const latestSequence =
 			typeof parsed.latestSequence === "number" ? parsed.latestSequence : 0;

@@ -530,4 +530,53 @@ describe("HttpTransport & HostClient", () => {
 
 		transport.dispose();
 	});
+
+	it("bounds hostId mismatch reconnects to at most once per connection cycle", () => {
+		const scheduler = new FakeScheduler();
+		const cursors = new MemoryCursorStore();
+		cursors.setCursor("host-a", 10);
+		cursors.setCursor("host-b", 25);
+
+		const sockets: FakeSocket[] = [];
+		const messages: PiloClientEventMessage[] = [];
+		const transport = new HttpTransport({
+			origin: "http://127.0.0.1:7891",
+			tokens: { getToken: () => "tok-flap" },
+			cursors,
+			scheduler,
+			reconnectDelaysMs: [100],
+			fetch: () => Promise.resolve(jsonResponse(200, { ok: true, result: {} })),
+			createWebSocket: (url, protocols) => {
+				const sock = new FakeSocket(url, protocols);
+				sockets.push(sock);
+				return sock;
+			},
+		});
+
+		transport.events().subscribeEvents({
+			onMessage: (m) => messages.push(m),
+			onStatus: () => undefined,
+		});
+
+		// Socket 0 sends after=0 -> receives host-a (cursor 10) -> switches once to Socket 1 (after=10).
+		assert.equal(sockets.length, 1);
+		sockets[0]!.emitMessage(
+			makeHello({ hostId: "host-a", latestSequence: 12 }),
+		);
+		assert.equal(sockets.length, 2);
+		assert.ok(sockets[1]!.url.endsWith("after=10"));
+
+		// Socket 1 flaps to host-b (cursor 25) -> must NOT spin-reconnect a second time;
+		// adopts host-b as the latest hostId and completes hello.
+		sockets[1]!.emitMessage(
+			makeHello({ hostId: "host-b", latestSequence: 30 }),
+		);
+		assert.equal(sockets.length, 2);
+		assert.equal(transport.currentHostId, "host-b");
+		assert.equal(transport.currentState, "connected");
+		assert.equal(messages.length, 1);
+		assert.equal(messages[0]!.type, "hello");
+
+		transport.dispose();
+	});
 });
