@@ -123,6 +123,15 @@ export type TerminalSnapshot = {
 	data: string;
 };
 
+export type HostBootstrapWire = {
+	eventSequence: number;
+	latestSequence?: number;
+	projects: Project[];
+	chatSessions: ChatSessionRuntimeState[];
+	preferences: PreferencesSnapshot;
+	localPiResources?: Record<string, boolean>;
+};
+
 export type HostBootstrap = PiloClientBootstrap & {
 	preferences: PreferencesSnapshot;
 };
@@ -165,7 +174,7 @@ export type EmptyParams = Record<string, never>;
 export type HostApiMethods = {
 	"host.bootstrap": {
 		params: { includePreferences?: boolean };
-		result: HostBootstrap;
+		result: HostBootstrapWire;
 	};
 	"host.shutdown": { params: EmptyParams; result: void };
 	"project.list": { params: EmptyParams; result: Project[] };

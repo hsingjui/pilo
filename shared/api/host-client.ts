@@ -123,8 +123,17 @@ export class HostClient implements PiloClient {
 		);
 	}
 
-	bootstrap(): Promise<HostBootstrap> {
-		return this.call("host.bootstrap", { includePreferences: true });
+	async bootstrap(): Promise<HostBootstrap> {
+		const snapshot = await this.call("host.bootstrap", {
+			includePreferences: true,
+		});
+		return {
+			projects: snapshot.projects,
+			chatSessions: snapshot.chatSessions,
+			latestSequence: snapshot.latestSequence ?? snapshot.eventSequence,
+			preferences: snapshot.preferences,
+			localPiResources: snapshot.localPiResources,
+		};
 	}
 
 	listProjects(): Promise<Project[]> {
@@ -527,6 +536,11 @@ export class HostClient implements PiloClient {
 		sessionPath: string,
 		revision: number,
 	): Promise<SessionReadState> {
+		if (!Number.isSafeInteger(revision) || revision <= 0) {
+			return Promise.reject(
+				new Error("session read revision must be a positive safe integer"),
+			);
+		}
 		return this.call("session.markRead", {
 			projectId,
 			sessionPath,
