@@ -1,4 +1,11 @@
+import { TextView } from "nsh/base";
 import { expect, open, test } from "nsh/test";
+
+import {
+	annotateMarkdownDocumentFileLinks,
+	createMarkdownFileLinkAnnotator,
+} from "@shared/chat/chat-markdown-links";
+import { createStreamingMarkdownParser } from "@shared/chat/streaming-markdown-parser";
 
 const desktop = {
 	platform: "macos",
@@ -105,4 +112,169 @@ test("inline code renders with a theme-adaptive pill background", async () => {
 	const darkCode = dark.spanStyle("text:inline code");
 	expect(darkCode.backgroundColor).toBeTruthy();
 	expect(darkCode.backgroundColor).not.toBe(lightCode.backgroundColor);
+});
+
+test("incremental streaming parser matches full TextView.parse + file link annotation and parses only the tail", () => {
+	const fullMarkdown = [
+		"## Streaming Architecture",
+		"",
+		"Check `src/main.ts:12` and plain app/chat/chat-markdown.tsx:240 for details.",
+		"",
+		"- first list item",
+		"",
+		"- second loose item with **bold** text",
+		"",
+		"| col | val |",
+		"| --- | --- |",
+		"| a | 1 |",
+		"",
+		"> quote line 1",
+		">",
+		"> quote line 2",
+		"",
+		"```ts",
+		"export function demo(x: number) {",
+		"",
+		"  return x + 1;",
+		"}",
+		"```",
+		"",
+		"Final paragraph referencing `shared/chat/streaming-markdown-parser.ts`.",
+		"",
+	].join("\n");
+
+	const parsedChunks: string[] = [];
+	const incremental = createStreamingMarkdownParser({
+		parse: (text, streaming) => {
+			parsedChunks.push(text);
+			return TextView.parse(text, { streaming });
+		},
+		createAnnotator: createMarkdownFileLinkAnnotator,
+	});
+
+	for (let end = 12; end < fullMarkdown.length; end += 19) {
+		const slice = fullMarkdown.slice(0, end);
+		const incDoc = incremental({
+			text: slice,
+			streaming: true,
+			key: "reply-1",
+			annotate: true,
+			projectPath: "/work/demo",
+		});
+		const fullDoc = annotateMarkdownDocumentFileLinks(
+			TextView.parse(slice, { streaming: true }),
+			"/work/demo",
+		);
+		expect(incDoc).toEqual(fullDoc);
+	}
+
+	// Ensure the full document length is streamed and prefix blocks are cached.
+	const fullStreamingInc = incremental({
+		text: fullMarkdown,
+		streaming: true,
+		key: "reply-1",
+		annotate: true,
+		projectPath: "/work/demo",
+	});
+	expect(fullStreamingInc).toEqual(
+		annotateMarkdownDocumentFileLinks(
+			TextView.parse(fullMarkdown, { streaming: true }),
+			"/work/demo",
+		),
+	);
+
+	// Appending one more token to the active tail must only pass the tail to TextView.parse.
+	parsedChunks.length = 0;
+	const appended = `${fullMarkdown}More trailing words.`;
+	const appendedInc = incremental({
+		text: appended,
+		streaming: true,
+		key: "reply-1",
+		annotate: true,
+		projectPath: "/work/demo",
+	});
+	expect(appendedInc).toEqual(
+		annotateMarkdownDocumentFileLinks(
+			TextView.parse(appended, { streaming: true }),
+			"/work/demo",
+		),
+	);
+	expect(parsedChunks.length).toBe(1);
+	expect(parsedChunks[0]?.includes("## Streaming Architecture")).toBe(false);
+	expect(parsedChunks[0]!.length).toBeLessThan(appended.length / 2);
+
+	const settledInc = incremental({
+		text: appended,
+		streaming: false,
+		key: "reply-1",
+		annotate: true,
+		projectPath: "/work/demo",
+	});
+	const settledFull = annotateMarkdownDocumentFileLinks(
+		TextView.parse(appended, { streaming: false }),
+		"/work/demo",
+	);
+	expect(settledInc).toEqual(settledFull);
+});
+
+test("incremental streaming parser handles blockquote/list ref defs, nested details, and duplicate heading anchors", () => {
+	const cases = [
+		"See [docs][d].\n\nMiddle paragraph.\n\n> [d]: https://example.com\n",
+		"See [docs][d].\n\nMiddle paragraph.\n\n- [d]: https://example.com\n",
+		[
+			"<details>",
+			"<summary>Outer</summary>",
+			"",
+			"<details>",
+			"<summary>Inner</summary>",
+			"",
+			"Inner body",
+			"</details>",
+			"",
+			"Outer body",
+			"</details>",
+			"",
+			"After nested details.",
+			"",
+		].join("\n"),
+		"## Usage\n\nFirst section.\n\n## Usage\n\nSecond section.\n\n## Usage\n\nThird section.\n",
+	];
+
+	for (const [caseIndex, doc] of cases.entries()) {
+		const incremental = createStreamingMarkdownParser({
+			parse: (text, streaming) => TextView.parse(text, { streaming }),
+			createAnnotator: createMarkdownFileLinkAnnotator,
+		});
+		for (let end = 10; end <= doc.length; end += 11) {
+			const slice = doc.slice(0, end);
+			expect(
+				incremental({
+					text: slice,
+					streaming: true,
+					key: `edge-${caseIndex}`,
+					annotate: true,
+					projectPath: "/work/demo",
+				}),
+			).toEqual(
+				annotateMarkdownDocumentFileLinks(
+					TextView.parse(slice, { streaming: true }),
+					"/work/demo",
+				),
+			);
+		}
+		expect(
+			incremental({
+				text: doc,
+				streaming: true,
+				key: `edge-${caseIndex}`,
+				annotate: true,
+				projectPath: "/work/demo",
+			}),
+		).toEqual(
+			annotateMarkdownDocumentFileLinks(
+				TextView.parse(doc, { streaming: true }),
+				"/work/demo",
+			),
+		);
+	}
 });

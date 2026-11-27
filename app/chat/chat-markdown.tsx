@@ -33,6 +33,7 @@ import {
 	resolveChatImageMimeType,
 } from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
+import { createStreamingMarkdownParser } from "@shared/chat/streaming-markdown-parser";
 import { createStreamingTextThrottle } from "@shared/chat/streaming-text-throttle";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
@@ -243,12 +244,20 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 	const projectId = computed(() => activeProject()?.id);
 	const projectPath = computed(() => activeProject()?.path);
 	const fileLinkHandler = () => props.onFileLink ?? media.onFileLink;
-	const annotateDocument = createMarkdownFileLinkAnnotator();
-	const document = computed<TextViewDocument>(() => {
-		const parsed = TextView.parse(renderedText(), { streaming: isStreaming() });
-		if (!fileLinkHandler()) return parsed;
-		return annotateDocument(parsed, projectPath());
-	});
+	const parseStreamingDocument =
+		createStreamingMarkdownParser<TextViewDocument>({
+			parse: (text, streaming) => TextView.parse(text, { streaming }),
+			createAnnotator: createMarkdownFileLinkAnnotator,
+		});
+	const document = computed<TextViewDocument>(() =>
+		parseStreamingDocument({
+			text: renderedText(),
+			streaming: isStreaming(),
+			key: textKey(),
+			annotate: Boolean(fileLinkHandler()),
+			projectPath: projectPath(),
+		}),
+	);
 	// Keep a path's first read while streaming, not across recycled rows.
 	const imageCache = computed(() => {
 		textKey();
