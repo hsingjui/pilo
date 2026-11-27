@@ -211,16 +211,11 @@ function FilePreviewPanel(props: {
 			class="absolute inset-0 flex-col bg-background"
 			style={[fade.style, { display: props.visible() ? "flex" : "none" }]}
 		>
-			<View
-				testID="file-preview-toolbar"
-				class="h-8 shrink-0 flex-row items-center justify-between gap-2 border-b border-border/60 bg-background/95 px-4"
-			>
-				<View selectable class="min-w-0 flex-1">
-					<Text class="truncate font-mono text-[11px] text-muted-foreground">
-						{filePath}
-					</Text>
-				</View>
-				{isMarkdown ? (
+			{isMarkdown ? (
+				<View
+					testID="file-preview-toolbar"
+					class="h-8 shrink-0 flex-row items-center justify-end border-b border-border/60 bg-background/95 px-4"
+				>
 					<Button
 						testID="file-preview-toggle-source"
 						variant="ghost"
@@ -237,8 +232,8 @@ function FilePreviewPanel(props: {
 							{() => t(showSource() ? "file.previewMode" : "file.sourceMode")}
 						</Text>
 					</Button>
-				) : null}
-			</View>
+				</View>
+			) : null}
 			{() =>
 				showSource() ? (
 					<Editor
@@ -263,7 +258,7 @@ function FilePreviewPanel(props: {
 							gutter: "bg-background pl-4 pr-3",
 							lineNumber: "text-muted-foreground/40",
 							activeLineNumber: "text-muted-foreground/80",
-							content: "pl-2 pr-6 py-3",
+							content: "pt-1 pr-6 pb-3 pl-2",
 						}}
 						styles={{
 							lineNumber: { fontSize: lineNumberFontSize() },

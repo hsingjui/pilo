@@ -12,7 +12,7 @@ import {
 import { Button as BaseButton } from "nsh/base";
 
 import { fileBasename } from "@shared/chat/chat-tool-result";
-import { compactMiddlePath } from "@shared/project-path";
+import { compactMiddlePath, displayProjectPath } from "@shared/project-path";
 import type { WorkspaceFile } from "@shared/project-workspace";
 import {
 	computeMaxVisibleAuxTabs,
@@ -35,6 +35,7 @@ import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
+import { HoverCard } from "../ui/hover-card";
 import { Icon, type IconName } from "../ui/icon";
 import { MOTION, tactileTransition, viewTransition } from "../ui/motion";
 import { Input } from "../ui/input";
@@ -110,8 +111,8 @@ interface AuxTabItem {
 	closeTestID: string;
 	icon: IconName;
 	label: () => string;
-	tooltip: () => string;
-	tooltipMono?: boolean;
+	tooltip?: () => string;
+	filePath?: string;
 	closeLabel: () => string;
 	onSelect: () => void;
 	onClose: () => void;
@@ -151,8 +152,7 @@ export function SessionHeader(props: SessionHeaderProps) {
 				closeTestID: `file-tab-close:${file.path}`,
 				icon: FILE_ICON_MAP[workspaceFileIconKind(file.path)],
 				label: () => name,
-				tooltip: () => file.path,
-				tooltipMono: true,
+				filePath: displayProjectPath(file.path),
 				closeLabel: () => t("file.closeFile", { name }),
 				onSelect: () => props.files?.onSelect(file.path),
 				onClose: () => props.files?.onClose(file.path),
@@ -369,7 +369,7 @@ function WorkspaceHeaderTab(props: {
 	const active = () => props.selected();
 	const showClose = () => active() || hover.hovered();
 	const pointerBlur = blurOnPointerPress();
-	return (
+	const tab = (
 		<View
 			testID={props.tab.testID}
 			{...hover.props}
@@ -392,18 +392,13 @@ function WorkspaceHeaderTab(props: {
 				role="tab"
 				selected={active()}
 				accessibilityLabel={props.tab.label()}
+				accessibilityHint={props.tab.filePath}
 				tooltip={
-					<Tooltip>
-						<Text
-							class={
-								props.tab.tooltipMono
-									? "font-mono text-xs text-(length:--pilo-ui-text-xs)"
-									: "font-sans"
-							}
-						>
-							{props.tab.tooltip}
-						</Text>
-					</Tooltip>
+					props.tab.tooltip ? (
+						<Tooltip>
+							<Text class="font-sans">{props.tab.tooltip}</Text>
+						</Tooltip>
+					) : undefined
 				}
 				onPress={props.tab.onSelect}
 			>
@@ -441,6 +436,25 @@ function WorkspaceHeaderTab(props: {
 				<Icon name="X" size={12} color={token("muted-foreground")} />
 			</Button>
 		</View>
+	);
+	if (!props.tab.filePath) return tab;
+	return (
+		<HoverCard
+			class="max-w-44 shrink-0"
+			openDelay={500}
+			closeDelay={600}
+			placement="bottom"
+			offset={4}
+			margin={4}
+			popupClass="w-auto max-w-[420px] px-3 py-1.5"
+			trigger={tab}
+		>
+			<View selectable>
+				<Text class="font-mono text-xs text-(length:--pilo-ui-text-xs)">
+					{props.tab.filePath}
+				</Text>
+			</View>
+		</HoverCard>
 	);
 }
 
