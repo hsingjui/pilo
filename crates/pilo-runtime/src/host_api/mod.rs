@@ -12,8 +12,29 @@ mod handlers;
 mod validation;
 pub use handlers::methods;
 
+pub const PROTOCOL_VERSION: &str = "2.0";
 pub const MAX_JSON_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 pub const GATEWAY_TIMEOUT: Duration = Duration::from_secs(45);
+
+pub fn method_table_json() -> Value {
+    let entries: Vec<Value> = methods()
+        .iter()
+        .map(|spec| {
+            serde_json::json!({
+                "name": spec.name,
+                "scope": spec.scope,
+                "kind": spec.kind,
+                "maxRequestBytes": spec.limits.max_request_bytes,
+                "maxBinaryInputBytes": spec.limits.max_binary_input_bytes,
+                "timeoutMs": u64::try_from(spec.limits.timeout.as_millis()).unwrap_or(u64::MAX),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "methods": entries,
+    })
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -389,5 +410,23 @@ mod tests {
         }
         assert!(workspace.is_empty() && admin.is_empty());
         assert!(names.contains("host.bootstrap"));
+    }
+
+    #[test]
+    fn generated_host_methods_json_matches_registry() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../shared/api/host-methods.json");
+        let raw = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read {} (run `pnpm generate:host-api`): {error}",
+                path.display()
+            )
+        });
+        let parsed: Value = serde_json::from_str(&raw).expect("valid host-methods.json");
+        assert_eq!(
+            parsed,
+            method_table_json(),
+            "shared/api/host-methods.json is out of sync; run `pnpm generate:host-api`"
+        );
     }
 }

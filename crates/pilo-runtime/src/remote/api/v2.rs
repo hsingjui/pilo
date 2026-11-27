@@ -37,7 +37,7 @@ use super::{
     },
 };
 
-pub const PROTOCOL_VERSION: &str = "2.0";
+pub use crate::host_api::PROTOCOL_VERSION;
 const WS_BATCH_MAX_EVENTS: usize = 64;
 const WS_TERMINAL_BATCH_MAX_EVENTS: usize = 32;
 
