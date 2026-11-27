@@ -14,6 +14,7 @@ const STATUS_KEYS = {
 	disconnected: "hosts.disconnected",
 	unauthorized: "hosts.unauthorized",
 	incompatible: "hosts.incompatible",
+	rateLimited: "hosts.rateLimited",
 } as const satisfies Record<HostEntryStatus, string>;
 
 function statusColor(status: HostEntryStatus) {
@@ -21,6 +22,7 @@ function statusColor(status: HostEntryStatus) {
 		case "connected":
 			return token("status-success");
 		case "connecting":
+		case "rateLimited":
 			return token("status-warning");
 		case "unauthorized":
 		case "incompatible":

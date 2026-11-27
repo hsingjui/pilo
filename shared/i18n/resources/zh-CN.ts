@@ -1174,6 +1174,7 @@ const zhCN = {
 		disconnected: "已断开",
 		unauthorized: "需重新配对",
 		incompatible: "需升级 Pilo",
+		rateLimited: "被限流，稍后重试",
 		connect: "连接",
 		disconnect: "断开",
 		remove: "移除",
@@ -1191,6 +1192,12 @@ const zhCN = {
 			"聊天 + 工作区：本机将可以在那台机器上执行终端命令、读写项目文件。",
 		plaintextWarning:
 			"该地址使用 http 且不在局域网私有地址内：token 与全部内容将明文传输，建议改用 https 地址。",
+		plaintextEntryWarning:
+			"该链接使用 http 且不在局域网私有地址内：配对密钥将明文传输。仅在可信网络中继续。",
+		continuePlaintext: "仍通过 http 继续",
+		plaintextFallbacks:
+			"以下备用地址同样使用 http 且不在局域网私有地址内：{{addresses}}",
+		allowPlaintextFallbacks: "所选地址不可达时也允许通过它们连接",
 		invalidLink: "这不是 Pilo 配对链接。",
 		pairFailed: "配对失败",
 		paired: "已与 {{name}} 配对",

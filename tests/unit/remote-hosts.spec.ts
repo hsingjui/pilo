@@ -10,6 +10,7 @@ import {
 	parseRemoteHostRecords,
 	REMOTE_HOST_OFFLINE_AFTER_MS,
 	remoteHostAddressOrder,
+	remoteHostConnectOrder,
 	resolveRemoteHostStatus,
 	serializeRemoteHostRecords,
 	upsertRemoteHostRecord,
@@ -58,6 +59,29 @@ test("records round-trip and malformed or duplicate entries are skipped", () => 
 	assert.equal(parsed[1].scopes, "chat");
 	assert.deepEqual(parseRemoteHostRecords("not json"), []);
 	assert.deepEqual(parseRemoteHostRecords(null), []);
+});
+
+test("connecting skips plaintext fallbacks the user did not agree to", () => {
+	const lanFirst = { ...record, preferredAddressId: "lan" };
+	assert.deepEqual(
+		remoteHostConnectOrder(lanFirst).map(({ id }) => id),
+		["lan", "public"],
+	);
+	assert.deepEqual(
+		remoteHostConnectOrder({ ...lanFirst, plaintextAddressIds: ["ts"] }).map(
+			({ id }) => id,
+		),
+		["lan", "ts", "public"],
+	);
+	// The preferred address was confirmed when pairing.
+	assert.deepEqual(
+		remoteHostConnectOrder(record).map(({ id }) => id),
+		["ts", "lan", "public"],
+	);
+	const raw = serializeRemoteHostRecords([
+		{ ...record, plaintextAddressIds: ["ts", "gone"] },
+	]);
+	assert.deepEqual(parseRemoteHostRecords(raw)[0]?.plaintextAddressIds, ["ts"]);
 });
 
 test("upsert replaces a Host in place and appends a new one", () => {

@@ -1232,6 +1232,7 @@ const enUS = {
 		disconnected: "Disconnected",
 		unauthorized: "Pair again",
 		incompatible: "Update Pilo",
+		rateLimited: "Busy, retrying",
 		connect: "Connect",
 		disconnect: "Disconnect",
 		remove: "Remove",
@@ -1250,6 +1251,13 @@ const enUS = {
 			"Chat + workspace: this desktop can run terminal commands and read and write project files on that machine.",
 		plaintextWarning:
 			"This address uses plain http outside a private network: the token and everything you send travel unencrypted. Prefer an https address.",
+		plaintextEntryWarning:
+			"This link uses plain http outside a private network: the pairing secret would travel unencrypted. Continue only on a network you trust.",
+		continuePlaintext: "Continue over http",
+		plaintextFallbacks:
+			"These other addresses also use plain http outside a private network: {{addresses}}",
+		allowPlaintextFallbacks:
+			"Also connect through them when the chosen address is unreachable",
 		invalidLink: "This is not a Pilo pairing link.",
 		pairFailed: "Pairing failed",
 		paired: "Paired with {{name}}",

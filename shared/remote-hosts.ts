@@ -12,6 +12,8 @@ export type RemoteHostRecord = {
 	scopes: RemoteScopes;
 	/** The Host's platform as its last hello reported (`macos`, `windows`, `linux`). */
 	platform?: string;
+	/** Plain-http addresses outside private networks the user agreed to connect through. */
+	plaintextAddressIds?: string[];
 };
 
 export const REMOTE_HOSTS_STORAGE_KEY = "pilo.remoteHosts.v1";
@@ -67,6 +69,15 @@ function parseRecord(value: unknown): RemoteHostRecord | null {
 		deviceId: value.deviceId,
 		scopes: value.scopes === "chat,workspace" ? "chat,workspace" : "chat",
 		...(typeof value.platform === "string" ? { platform: value.platform } : {}),
+		...(Array.isArray(value.plaintextAddressIds)
+			? {
+					plaintextAddressIds: value.plaintextAddressIds.filter(
+						(id): id is string =>
+							typeof id === "string" &&
+							addresses.some((address) => address.id === id),
+					),
+				}
+			: {}),
 	};
 }
 
@@ -173,6 +184,26 @@ export function isPlaintextRemoteAddress(baseUrl: string): boolean {
 	}
 }
 
+/**
+ * The addresses to connect through, in order: the preferred one, then the
+ * rest, skipping plain-http addresses outside private networks the user did
+ * not agree to when pairing.
+ */
+export function remoteHostConnectOrder(
+	record: Pick<
+		RemoteHostRecord,
+		"addresses" | "preferredAddressId" | "plaintextAddressIds"
+	>,
+): RemoteAccessAddress[] {
+	const allowed = new Set(record.plaintextAddressIds ?? []);
+	return remoteHostAddressOrder(record).filter(
+		(address, index) =>
+			index === 0 ||
+			allowed.has(address.id) ||
+			!isPlaintextRemoteAddress(address.baseUrl),
+	);
+}
+
 export type DesktopPairingLink = {
 	/** The address the link was opened from: its origin. */
 	entryOrigin: string;
@@ -217,7 +248,9 @@ export type RemoteHostStatus =
 	| "connecting"
 	| "offline"
 	| "unauthorized"
-	| "incompatible";
+	| "incompatible"
+	/** The Host is turning this device's requests away for now; retried with backoff. */
+	| "rateLimited";
 
 /** How long a dropped connection shows "connecting" before it shows offline. */
 export const REMOTE_HOST_OFFLINE_AFTER_MS = 4_000;
