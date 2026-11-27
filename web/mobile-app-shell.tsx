@@ -1194,7 +1194,11 @@ export function MobileAppShell(props: MobileAppShellProps) {
 									sessionKey={chatSessionKey}
 								/>
 							) : null}
-							<AppToastStack toasts={toasts} />
+							<AppToastStack
+								toasts={toasts}
+								touch
+								topInset={viewport.safeAreaTop}
+							/>
 						</View>
 					</ChatReadingFont.Provider>
 				</ConversationColumnLayout.Provider>

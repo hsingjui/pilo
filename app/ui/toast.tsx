@@ -28,6 +28,8 @@ export interface ToastProps extends BaseToastProps {
 	icon?: JSX.Element;
 	closeButton?: boolean;
 	closeLabel?: string;
+	/** Touch/mobile presentation: mobile radius, upward swipe dismiss, always-visible close control. */
+	touch?: boolean;
 }
 
 export function Toast(props: ToastProps) {
@@ -37,6 +39,8 @@ export function Toast(props: ToastProps) {
 		"startingClass",
 		"endingClass",
 		"swipingClass",
+		"swipeDirection",
+		"swipeThreshold",
 		"children",
 		"variant",
 		"description",
@@ -44,6 +48,7 @@ export function Toast(props: ToastProps) {
 		"icon",
 		"closeButton",
 		"closeLabel",
+		"touch",
 		"onDismissRequest",
 	]);
 	const variant = () => variants[local.variant ?? "default"];
@@ -51,14 +56,28 @@ export function Toast(props: ToastProps) {
 	return (
 		<BaseToast
 			{...rest}
+			swipeDirection={
+				local.swipeDirection === undefined
+					? local.touch
+						? "up"
+						: undefined
+					: local.swipeDirection
+			}
+			swipeThreshold={local.swipeThreshold ?? (local.touch ? 28 : undefined)}
 			onDismissRequest={local.onDismissRequest}
 			class={classNames(
-				"group flex-row items-start gap-2.5 rounded-(--pilo-floating-radius) border border-border bg-popover text-popover-foreground px-3.5 py-3 font-sans text-sm leading-snug",
+				"group flex-row items-center gap-2.5 border border-border/80 bg-popover text-popover-foreground py-2.5 font-sans text-sm text-(length:--pilo-ui-text-sm) leading-snug",
+				local.touch && local.closeButton !== false && local.onDismissRequest
+					? "pl-3.5 pr-2"
+					: "px-3.5",
+				local.touch
+					? "rounded-(--pilo-mobile-radius-xl)"
+					: "rounded-(--pilo-radius-xl)",
 				local.class,
 			)}
 			style={[
 				motion().style,
-				{ boxShadow: styleVar("pilo-shadow-floating") },
+				{ boxShadow: styleVar("pilo-shadow-panel") },
 				local.style,
 			]}
 			startingClass={classNames(motion().startingClass, local.startingClass)}
@@ -69,26 +88,27 @@ export function Toast(props: ToastProps) {
 				{() => {
 					const name = variant().icon;
 					return (
-						local.icon ?? (name ? <Icon name={name} class="mt-0.5" /> : null)
+						local.icon ?? (name ? <Icon name={name} class="shrink-0" /> : null)
 					);
 				}}
 			</Foreground.Provider>
 			<View class="flex-1 min-w-0 gap-0.5">
-				<View class="font-medium text-popover-foreground leading-5">
+				<View class="font-medium text-popover-foreground text-sm text-(length:--pilo-ui-text-sm) leading-snug">
 					{local.children}
 				</View>
 				{() =>
 					local.description ? (
-						<Text class="font-sans text-xs text-muted-foreground leading-4">
+						<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) text-muted-foreground leading-snug tabular-nums">
 							{local.description}
 						</Text>
 					) : null
 				}
-				{local.action}
 			</View>
+			{local.action}
 			{() =>
 				local.closeButton !== false && local.onDismissRequest ? (
 					<ToastCloseButton
+						touch={local.touch}
 						accessibilityLabel={local.closeLabel ?? "Dismiss notification"}
 						onPress={local.onDismissRequest}
 					/>

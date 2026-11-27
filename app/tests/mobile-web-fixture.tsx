@@ -8,9 +8,11 @@ import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { createChatSubmission } from "@shared/chat/chat-submission";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 
+import { AppToasts } from "../shell/app-toasts";
 import { initializeI18n } from "../shell/i18n";
 import { LandingProjectPicker } from "../shell/landing";
 import { conversationContext, followOpenSession } from "../shell/open-chat";
+import { MobileViewport } from "../../web/mobile-viewport";
 import type {
 	WebRemoteConnectionState,
 	WebRemoteRecoveryState,
@@ -451,11 +453,17 @@ async function run() {
 		scope: { projectId: "p1", models: null, updatedAtMs: 1_763_863_200_000 },
 	});
 
+	const toasts = scenario === "toast" ? new AppToasts() : undefined;
+	const toastActionCount = signal(0);
+	const safeAreaTopOverride = Number(
+		(await Storage.getItem("fixture.safeAreaTop")) ?? "0",
+	);
 	const shellProps = {
 		store,
 		chat,
 		composer,
 		queue,
+		toasts,
 		runConfig: {
 			state: runConfigState,
 			scopeModels: models,
@@ -480,7 +488,46 @@ async function run() {
 			recoveryState.set("recovered");
 		},
 	};
-	if (scenario === "font-scale") {
+	if (scenario === "toast" && toasts) {
+		const viewportState = {
+			managed: () => true,
+			availableHeight: () => 844,
+			requestSync: () => {},
+			keyboardOpen: () => false,
+			offsetTop: () => 0,
+			safeAreaTop: () => safeAreaTopOverride,
+			safeAreaBottom: () => 0,
+		};
+		mount(() => (
+			<MobileViewport.Provider value={viewportState}>
+				<View class="flex-1 bg-background">
+					<MobileAppShell {...shellProps} />
+					<View class="absolute bottom-24 left-3 z-40 flex-row gap-2">
+						<Button
+							testID="probe-show-toast"
+							onPress={() => {
+								toasts.show({
+									variant: "info",
+									title: "Leaving temporary chat",
+									description: "Chat will be cleared shortly",
+									timeout: 60_000,
+									action: {
+										label: "Return",
+										onPress: () => toastActionCount.update((n) => n + 1),
+									},
+								});
+							}}
+						>
+							<Text>Show toast</Text>
+						</Button>
+						<Text testID="probe-toast-actions">
+							{() => `toastActions:${toastActionCount()}`}
+						</Text>
+					</View>
+				</View>
+			</MobileViewport.Provider>
+		));
+	} else if (scenario === "font-scale") {
 		mount(() => (
 			<View class="flex-1 bg-background">
 				<MobileAppShell {...shellProps} />

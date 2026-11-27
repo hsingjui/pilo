@@ -219,3 +219,57 @@ export function resolveMobileSheetMaxHeight(viewportHeight: number): number {
 	const available = Math.max(160, Math.round(viewportHeight - 16));
 	return Math.min(available, Math.max(320, Math.round(viewportHeight * 0.85)));
 }
+
+export const TOAST_MAX_WIDTH = 384;
+export const TOAST_DESKTOP_TOP = 20;
+export const TOAST_DESKTOP_HORIZONTAL_MARGIN = 16;
+export const TOAST_MOBILE_HORIZONTAL_MARGIN = 12;
+
+export interface ToastOverlayLayout {
+	top: number;
+	left: number;
+	width: number;
+}
+
+/**
+ * Computes fixed-overlay geometry for top-center toasts so narrow mobile
+ * viewports and safe-area insets never clip or overlap status bars.
+ */
+export function resolveToastOverlayLayout(params: {
+	viewportWidth: number;
+	safeAreaTop: number;
+	safeAreaLeft: number;
+	safeAreaRight: number;
+	touch: boolean;
+}): ToastOverlayLayout {
+	const safeTop = Math.max(
+		0,
+		Number.isFinite(params.safeAreaTop) ? Math.round(params.safeAreaTop) : 0,
+	);
+	const safeLeft = Math.max(
+		0,
+		Number.isFinite(params.safeAreaLeft) ? Math.round(params.safeAreaLeft) : 0,
+	);
+	const safeRight = Math.max(
+		0,
+		Number.isFinite(params.safeAreaRight)
+			? Math.round(params.safeAreaRight)
+			: 0,
+	);
+	const horizontalMargin = params.touch
+		? TOAST_MOBILE_HORIZONTAL_MARGIN
+		: TOAST_DESKTOP_HORIZONTAL_MARGIN;
+	const top = params.touch
+		? Math.max(12, safeTop + 8)
+		: safeTop + TOAST_DESKTOP_TOP;
+	const viewportWidth =
+		Number.isFinite(params.viewportWidth) && params.viewportWidth > 0
+			? params.viewportWidth
+			: TOAST_MAX_WIDTH + horizontalMargin * 2;
+	const leftInset = safeLeft + horizontalMargin;
+	const rightInset = safeRight + horizontalMargin;
+	const availableWidth = Math.max(0, viewportWidth - leftInset - rightInset);
+	const width = Math.min(TOAST_MAX_WIDTH, availableWidth);
+	const left = Math.round(leftInset + (availableWidth - width) / 2);
+	return { top, left, width: Math.round(width) };
+}

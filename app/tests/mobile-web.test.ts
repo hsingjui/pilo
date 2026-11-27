@@ -582,3 +582,45 @@ test("mobile shell applies unified mobile UI font scale and allows per-browser s
 	await restored.waitFor("id:mobile-app");
 	await restored.waitFor("text:fontScale uiSm=18 code=15");
 });
+
+test("mobile toasts adapt to narrow viewports, safe area, visible close button, touch action, and font scale", async () => {
+	const narrow = await open("./mobile-web-fixture.tsx", {
+		platform: "ios",
+		locale: "en-US",
+		width: 320,
+		height: 568,
+		storage: {
+			"fixture.scenario": "toast",
+			"fixture.safeAreaTop": "59",
+			"pilo.web.font-scale.v1": "large",
+		},
+	});
+
+	await narrow.waitFor("id:probe-show-toast");
+	await narrow.press("id:probe-show-toast");
+	await narrow.waitFor("id:app-toast-overlay");
+	await narrow.waitFor("text:Leaving temporary chat");
+
+	// Overlay fits 320pt viewport (12pt margin each side) and sits below top safe area (59 + 8 = 67).
+	const overlayLayout = narrow.layout("id:app-toast-overlay");
+	expect(overlayLayout?.width).toBe(296);
+	expect(overlayLayout?.x).toBe(12);
+	expect(overlayLayout?.y).toBe(67);
+
+	// Title follows the per-browser large UI text scale (18px).
+	expect(narrow.spanStyle("text:Leaving temporary chat").fontSize).toBe(18);
+
+	// Action button uses mobile touch target height (>= 40pt) and executes on tap.
+	const actionLayout = narrow.layout("label:Return");
+	expect(actionLayout?.height).toBeGreaterThanOrEqual(40);
+	await narrow.press("label:Return");
+	await narrow.waitFor("text:toastActions:1");
+	await narrow.waitFor("id:app-toast-overlay", { state: "gone" });
+
+	// Close button is immediately visible without hover and dismisses the toast on tap.
+	await narrow.press("id:probe-show-toast");
+	await narrow.waitFor("id:app-toast-overlay");
+	expect(narrow.viewStyle("label:Close")?.opacity).toBe(1);
+	await narrow.press("label:Close");
+	await narrow.waitFor("id:app-toast-overlay", { state: "gone" });
+});

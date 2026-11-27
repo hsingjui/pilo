@@ -280,7 +280,7 @@ export function endLeftTemporaryChats(
 				return;
 			}
 			cancelPending(left.sessionKey);
-			const graceMs = options.graceMs ?? 8_000;
+			const graceMs = options.graceMs ?? 5_000;
 			const entry: {
 				timer?: ReturnType<typeof setTimeout>;
 				dismissToast?: () => void;

@@ -1,4 +1,18 @@
-import { cleanup, context, Overlay, signal, Text, token } from "nsh";
+import {
+	type Accessor,
+	cleanup,
+	computed,
+	context,
+	Overlay,
+	safeArea,
+	signal,
+	type Signal,
+	Text,
+	token,
+	windowSize,
+} from "nsh";
+
+import { resolveToastOverlayLayout } from "@shared/mobile-viewport";
 
 import { Button } from "../ui/button";
 import { Toast } from "../ui/toast";
@@ -9,6 +23,8 @@ export interface AppToast {
 	variant?: "default" | "success" | "info" | "warning" | "error";
 	title: string;
 	description?: string;
+	/** Optional countdown formatter; updates the description each second while active. */
+	countdown?: (secondsLeft: number) => string;
 	action?: { label: string; onPress: () => void };
 	/** Triggered when the toast expires or is dismissed without clicking `action`. */
 	onDismiss?: () => void;
@@ -29,21 +45,41 @@ export class AppToasts {
 	private readonly manager = new ToastManager();
 	// ToastManager stores JSON, so callbacks must stay on the JS side.
 	private readonly actions = new Map<string, () => void>();
+	private readonly countdowns = new Map<
+		string,
+		{
+			format: (secondsLeft: number) => string;
+			remainingMs: number;
+			present: boolean;
+			seconds: Signal<number>;
+		}
+	>();
 	private readonly dismissCallbacks = new Map<string, () => void>();
 	private readonly current = signal<ToastEntry[]>([]);
 	private readonly expanded = signal(false);
 	private timer: ReturnType<typeof setInterval> | null = null;
+	private lastAdvanceAt = performance.now();
 	private disposed = false;
 
-	show({ action, onDismiss, ...toast }: AppToast): string | null {
+	show({ action, countdown, onDismiss, ...toast }: AppToast): string | null {
 		// A settings request can finish after its dialog closes.
 		if (this.disposed) return null;
 		const id = `toast-${++sequence}`;
+		const timeout = toast.timeout ?? DEFAULT_TIMEOUT_MS;
 		if (action) this.actions.set(id, action.onPress);
+		if (countdown && Number.isFinite(timeout) && timeout > 0) {
+			this.countdowns.set(id, {
+				format: countdown,
+				remainingMs: timeout,
+				present: false,
+				seconds: signal(Math.ceil(timeout / 1_000)),
+			});
+		}
 		if (onDismiss) this.dismissCallbacks.set(id, onDismiss);
 		const value = action ? { ...toast, actionLabel: action.label } : toast;
+		// Counted toasts use the same clock for their label and dismissal.
 		this.manager.push(id, value, {
-			timeout: toast.timeout ?? DEFAULT_TIMEOUT_MS,
+			timeout: this.countdowns.has(id) ? null : timeout,
 		});
 		this.tick();
 		return id;
@@ -53,6 +89,8 @@ export class AppToasts {
 		this.actions.delete(id);
 		const onDismiss = this.dismissCallbacks.get(id);
 		this.dismissCallbacks.delete(id);
+		const countdown = this.countdowns.get(id);
+		if (countdown) countdown.present = false;
 		this.manager.dismiss(id);
 		this.tick();
 		onDismiss?.();
@@ -71,6 +109,12 @@ export class AppToasts {
 		return this.current();
 	}
 
+	descriptionFor(id: string, fallback?: string): string | undefined {
+		const countdown = this.countdowns.get(id);
+		if (!countdown) return fallback;
+		return countdown.format(countdown.seconds());
+	}
+
 	setExpanded(expanded: boolean): void {
 		this.expanded.set(expanded);
 	}
@@ -80,19 +124,49 @@ export class AppToasts {
 		if (this.timer !== null) clearInterval(this.timer);
 		this.timer = null;
 		this.actions.clear();
+		this.countdowns.clear();
 		this.dismissCallbacks.clear();
 		this.manager.dispose();
 	}
 
 	private advance(): boolean {
-		const { changed, ending } = this.manager.advance(this.expanded());
+		const now = performance.now();
+		const elapsed = now - this.lastAdvanceAt;
+		this.lastAdvanceAt = now;
+		const paused = this.expanded();
+		const { changed, presented, ending, removed } =
+			this.manager.advance(paused);
+		let expired = false;
+		if (!paused) {
+			for (const [id, countdown] of this.countdowns) {
+				if (!countdown.present) continue;
+				countdown.remainingMs -= elapsed;
+				if (countdown.remainingMs <= 0) {
+					countdown.present = false;
+					if (this.manager.dismiss(id)) {
+						ending.push(id);
+						expired = true;
+					}
+				} else {
+					const seconds = Math.ceil(countdown.remainingMs / 1_000);
+					if (seconds !== countdown.seconds()) countdown.seconds.set(seconds);
+				}
+			}
+		}
+		for (const id of presented) {
+			const countdown = this.countdowns.get(id);
+			if (countdown) countdown.present = true;
+		}
 		for (const id of ending) {
 			this.actions.delete(id);
 			const onDismiss = this.dismissCallbacks.get(id);
 			this.dismissCallbacks.delete(id);
 			onDismiss?.();
 		}
-		return changed;
+		for (const entry of removed) {
+			this.countdowns.delete(entry.id);
+		}
+		return changed || expired;
 	}
 
 	// The lifecycle advances on a timer only while a toast is mounted.
@@ -125,19 +199,56 @@ export function showToast(toasts: AppToasts | null, toast: AppToast): void {
 	else console.warn("No toaster for", toast.title);
 }
 
+export interface AppToastStackProps {
+	toasts: AppToasts;
+	/** Touch/mobile presentation: safe-area aware, responsive width, visible close button, upward swipe dismiss. */
+	touch?: boolean;
+	/** Override top safe-area inset (e.g. `MobileViewport().safeAreaTop`). */
+	topInset?: Accessor<number> | number;
+}
+
 /** The stack at the window's top center, as React's Sonner. */
-export function AppToastStack(props: { toasts: AppToasts }) {
+export function AppToastStack(props: AppToastStackProps) {
 	const { toasts } = props;
+	const layout = computed(
+		() => {
+			const size = windowSize();
+			const insets = safeArea();
+			const topInset =
+				typeof props.topInset === "function"
+					? props.topInset()
+					: (props.topInset ?? insets.top);
+			return resolveToastOverlayLayout({
+				viewportWidth: size.width,
+				safeAreaTop: topInset,
+				safeAreaLeft: insets.left,
+				safeAreaRight: insets.right,
+				touch: Boolean(props.touch),
+			});
+		},
+		{
+			equals: (previous, next) =>
+				previous.top === next.top &&
+				previous.left === next.left &&
+				previous.width === next.width,
+		},
+	);
 	cleanup(() => toasts.dispose());
 	return (
 		<>
 			{() =>
 				toasts.entries().length > 0 ? (
 					<Overlay
-						class="top-5 left-1/2 -ml-48 w-96"
-						style={{ zIndex: token("z-toast") }}
+						testID="app-toast-overlay"
+						style={{
+							top: layout().top,
+							left: layout().left,
+							width: layout().width,
+							zIndex: token("z-toast"),
+						}}
 					>
 						<ToastStack
+							class="w-full"
 							onExpandedChange={({ expanded }) => toasts.setExpanded(expanded)}
 							onCancel={() => {
 								const newest = toasts.entries().at(-1);
@@ -152,20 +263,31 @@ export function AppToastStack(props: { toasts: AppToasts }) {
 									return (
 										<Toast
 											testID={`app-toast-${entry().id}`}
+											touch={props.touch}
 											transitionStatus={entry().status}
 											variant={toast.variant}
-											description={toast.description}
+											description={toasts.descriptionFor(
+												entry().id,
+												toast.description,
+											)}
 											action={
 												toast.actionLabel && (
 													<Button
-														class="mt-1 self-start"
+														testID={`app-toast-action-${entry().id}`}
+														class={
+															props.touch
+																? "shrink-0 min-h-10 rounded-(--pilo-mobile-radius-lg) px-3.5"
+																: "shrink-0 h-7 rounded-(--pilo-radius-lg) px-2.5"
+														}
 														size="sm"
-														variant="secondary"
+														variant="default"
 														disabled={entry().status === "ending"}
 														accessibilityLabel={toast.actionLabel}
 														onPress={() => toasts.performAction(entry().id)}
 													>
-														<Text class="font-sans">{toast.actionLabel}</Text>
+														<Text class="font-sans font-medium text-xs text-(length:--pilo-ui-text-xs) text-primary-foreground">
+															{toast.actionLabel}
+														</Text>
 													</Button>
 												)
 											}
@@ -173,7 +295,9 @@ export function AppToastStack(props: { toasts: AppToasts }) {
 											closeLabel={t("common.close")}
 											onDismissRequest={() => toasts.dismiss(entry().id)}
 										>
-											<Text class="font-sans">{toast.title}</Text>
+											<Text class="font-sans font-medium text-sm text-(length:--pilo-ui-text-sm) leading-snug text-popover-foreground">
+												{toast.title}
+											</Text>
 										</Toast>
 									);
 								}}

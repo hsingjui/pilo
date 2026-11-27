@@ -184,11 +184,11 @@ export async function launch(
 		chat,
 		(sessionKey, reason) => client.stopChat(sessionKey, reason),
 		{
-			graceMs: 8_000,
 			onLeaving: ({ graceMs, restore, onDismiss }) => {
 				const toastId = toasts.show({
 					variant: "info",
 					title: t("app.temporaryChatLeaving"),
+					countdown: (count) => t("app.temporaryChatClearingIn", { count }),
 					timeout: graceMs,
 					onDismiss,
 					action: {

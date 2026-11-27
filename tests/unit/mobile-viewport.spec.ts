@@ -8,6 +8,7 @@ import {
 	resolveMobileSafeAreaBottom,
 	resolveMobileSafeAreaTop,
 	resolveMobileSheetMaxHeight,
+	resolveToastOverlayLayout,
 } from "@shared/mobile-viewport";
 
 test("computeMobileViewportLayout keeps default inset on desktop and steady full viewport", () => {
@@ -429,4 +430,78 @@ test("resolveMobileSheetMaxHeight fits compact keyboard-reduced viewports withou
 	assert.equal(resolveMobileSheetMaxHeight(480), 408);
 	assert.equal(resolveMobileSheetMaxHeight(300), 284);
 	assert.equal(resolveMobileSheetMaxHeight(0), 320);
+});
+
+test("resolveToastOverlayLayout fits narrow mobile viewports and safe areas while keeping desktop top-center geometry", () => {
+	// Desktop 1280px wide keeps 384px centered at top 20.
+	assert.deepEqual(
+		resolveToastOverlayLayout({
+			viewportWidth: 1280,
+			safeAreaTop: 0,
+			safeAreaLeft: 0,
+			safeAreaRight: 0,
+			touch: false,
+		}),
+		{ top: 20, left: 448, width: 384 },
+	);
+
+	// Narrow desktop window clamps inside 16px horizontal margin.
+	assert.deepEqual(
+		resolveToastOverlayLayout({
+			viewportWidth: 360,
+			safeAreaTop: 0,
+			safeAreaLeft: 0,
+			safeAreaRight: 0,
+			touch: false,
+		}),
+		{ top: 20, left: 16, width: 328 },
+	);
+
+	// Standard phone portrait (390px) uses 12px side insets and top 12.
+	assert.deepEqual(
+		resolveToastOverlayLayout({
+			viewportWidth: 390,
+			safeAreaTop: 0,
+			safeAreaLeft: 0,
+			safeAreaRight: 0,
+			touch: true,
+		}),
+		{ top: 12, left: 12, width: 366 },
+	);
+
+	// Compact 320px phone never clips horizontally.
+	assert.deepEqual(
+		resolveToastOverlayLayout({
+			viewportWidth: 320,
+			safeAreaTop: 0,
+			safeAreaLeft: 0,
+			safeAreaRight: 0,
+			touch: true,
+		}),
+		{ top: 12, left: 12, width: 296 },
+	);
+
+	// Notched / Dynamic Island PWA respects top safe area with breathing room.
+	assert.deepEqual(
+		resolveToastOverlayLayout({
+			viewportWidth: 393,
+			safeAreaTop: 59,
+			safeAreaLeft: 0,
+			safeAreaRight: 0,
+			touch: true,
+		}),
+		{ top: 67, left: 12, width: 369 },
+	);
+
+	// Landscape phone centers within horizontal safe areas and caps width at 384px.
+	assert.deepEqual(
+		resolveToastOverlayLayout({
+			viewportWidth: 844,
+			safeAreaTop: 0,
+			safeAreaLeft: 47,
+			safeAreaRight: 47,
+			touch: true,
+		}),
+		{ top: 12, left: 230, width: 384 },
+	);
 });

@@ -7,12 +7,19 @@ import { Foreground } from "./foreground";
 import { Icon } from "./icon";
 import { tactileTransition } from "./motion";
 
-export function ToastCloseButton(props: ButtonProps) {
+export interface ToastCloseButtonProps extends ButtonProps {
+	/** Touch/mobile layout: always visible with an enlarged tap target. */
+	touch?: boolean;
+}
+
+export function ToastCloseButton(props: ToastCloseButtonProps) {
 	const [local, rest] = split(props, [
 		"class",
 		"children",
 		"focusVisibleStyle",
+		"hitSlop",
 		"ref",
+		"touch",
 		"onMouseUp",
 		"onMouseEnter",
 		"onMouseLeave",
@@ -26,12 +33,15 @@ export function ToastCloseButton(props: ButtonProps) {
 			<BaseButton
 				{...rest}
 				ref={pointerBlur.ref}
+				hitSlop={local.hitSlop ?? (local.touch ? 6 : undefined)}
 				onMouseUp={pointerBlur.onMouseUp}
 				class={buttonVariants({
 					variant: "ghost",
 					size: "icon",
 					class: classNames(
-						"size-5 p-0 text-muted-foreground hover:text-popover-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+						local.touch
+							? "size-8 shrink-0 rounded-full p-0 text-muted-foreground opacity-100 active:bg-hover active:text-popover-foreground"
+							: "size-6 shrink-0 rounded-full p-0 text-muted-foreground hover:text-popover-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
 						local.class,
 					),
 				})}
@@ -52,7 +62,7 @@ export function ToastCloseButton(props: ButtonProps) {
 					local.onMouseLeave?.(event);
 				}}
 			>
-				{local.children ?? <Icon name="X" size={14} />}
+				{local.children ?? <Icon name="X" size={local.touch ? 15 : 14} />}
 			</BaseButton>
 		</Foreground.Provider>
 	);
