@@ -33,21 +33,31 @@ pub(super) async fn events(
         .on_upgrade(move |socket| event_socket(socket, state, auth_session, query.after))
 }
 
-async fn remote_token_is_valid(paths: &HostPaths, token: &str, auth_generation: u64) -> bool {
+async fn refresh_auth_session(
+    paths: &HostPaths,
+    session: &mut AuthSession,
+    auth_generation: u64,
+) -> bool {
     let paths = paths.clone();
-    let token = token.to_owned();
-    tokio::task::spawn_blocking(move || auth::authenticate_cached(&paths, &token, auth_generation))
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .flatten()
-        .is_some()
+    let token = session.token.clone();
+    let device = tokio::task::spawn_blocking(move || {
+        auth::authenticate_cached(&paths, &token, auth_generation)
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .flatten();
+    let Some(device) = device else {
+        return false;
+    };
+    session.device = device;
+    true
 }
 
 async fn event_socket(
     mut socket: WebSocket,
     state: RemoteHttpState,
-    auth_session: AuthSession,
+    mut auth_session: AuthSession,
     after: Option<u64>,
 ) {
     let events = state.runtime.events.clone();
@@ -120,7 +130,7 @@ async fn event_socket(
             }
             _ = auth_tick.tick() => {
                 let current_gen = *auth_generation.borrow();
-                if !remote_token_is_valid(&paths, &auth_session.token, current_gen).await {
+                if !refresh_auth_session(&paths, &mut auth_session, current_gen).await {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication expired";
                 }
@@ -128,7 +138,7 @@ async fn event_socket(
             changed = auth_generation.changed() => {
                 let current_gen = *auth_generation.borrow();
                 if changed.is_err()
-                    || !remote_token_is_valid(&paths, &auth_session.token, current_gen).await
+                    || !refresh_auth_session(&paths, &mut auth_session, current_gen).await
                 {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication changed";

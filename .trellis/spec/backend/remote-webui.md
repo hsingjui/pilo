@@ -552,11 +552,23 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
 - **Device rename**: `remote_device_rename` reuses `auth::normalize_device_name`,
   so the same 80-char bound applies. Renaming requires the device to exist and
   not be revoked.
-- **Auth scope**: authenticated == full MVP capability. No roles/capabilities yet.
-- **Auth rate limiting**: only the pairing secret is IP-rate-limited (5 failures /
-  60 s). Device tokens are 32 random bytes looked up by SHA-256 hash, so they are
-  **not** rate-limited — blocking them turned the `401` a client needs to drop a
-  stale token into an unrecoverable `429` lockout (and also gated `/auth/pair`).
+- Native adapters use `host_api::Principal::Local`. Remote middleware inserts
+  `Principal::Device { id, scopes }` from the authenticated device. `HostRequest`
+  passes this extension to the Registry for JSON and binary operations. Both device
+  permission sets allow Chat. Workspace requires `RemoteScopes::ChatWorkspace`,
+  serialized as `"chat,workspace"`. Existing devices and ordinary pairing default
+  to `"chat"`. Admin requires Local, including connection configuration, device
+  management and pairing regeneration. Scope denial returns `HostApiError` with
+  code `forbidden` and HTTP 403 on v1. WebSocket reauthentication refreshes
+  `AuthSession` when the auth generation changes and closes the connection if
+  the token is no longer valid.
+- **Auth rate limiting**: pairing and device-token failures have separate
+  per-IP budgets (5 failures / 60 s). Authenticate a presented device token
+  before consulting the budget: valid credentials pass regardless of the IP's
+  budget, missing credentials return `401` without spending it, and invalid
+  credentials return `429` only after the budget is exhausted. Check and record
+  each failure atomically. The table holds up to 4096 IPs, prunes expired
+  failures when accessing an IP, and evicts the oldest tracked IP on overflow.
 - **Stale auth responses**: HTTP JSON/image helpers clear localStorage on 401
   only if its token still equals the token sent by that request. Pairing pages
   do not clear it again; the workspace error handler adopts the current stored

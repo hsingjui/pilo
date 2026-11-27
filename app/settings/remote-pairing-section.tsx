@@ -10,6 +10,7 @@ import {
 	View,
 } from "nsh";
 
+import type { RemoteScopes } from "@shared/api/remote-types";
 import { t } from "../shell/i18n";
 import { qrMatrix } from "../lib/qr-matrix";
 import { CopyStatusIcon } from "../ui/copy-status-icon";
@@ -21,6 +22,7 @@ import {
 	SettingsRow,
 	SettingsSection,
 } from "./layout";
+import { remoteScopeLabel, RemoteScopeSelect } from "./remote-scope-select";
 
 /** The pairing link's QR code, drawn like `<QRCodeSVG level="M">`. */
 function PairingQr(props: { url: string; size: number }) {
@@ -94,13 +96,35 @@ export function RemotePairingSection(props: {
 	hasLink: Accessor<boolean>;
 	url: Accessor<string | null>;
 	regenerating: Accessor<boolean>;
+	disabled: Accessor<boolean>;
+	scopes: Accessor<RemoteScopes | null>;
 	copied?: Accessor<boolean>;
 	onCopy: () => void;
-	onRegenerate: () => void;
+	onRegenerate: (scopes: RemoteScopes) => void;
 }) {
 	const wide = () => !isNarrowSettings();
+	const scopeDraft = signal<RemoteScopes | null>(null);
+	const nextScopes = () => scopeDraft() ?? props.scopes() ?? "chat";
+	const regenerate = () => props.onRegenerate(nextScopes());
 	return (
 		<SettingsSection title={t("settings.remotePairing")}>
+			<SettingsRow
+				label={t("settings.remotePairingPermissions")}
+				helper={
+					nextScopes() === "chat,workspace" ||
+					props.scopes() === "chat,workspace"
+						? t("settings.remoteWorkspaceWarning")
+						: undefined
+				}
+			>
+				<RemoteScopeSelect
+					testID="remote-pairing-scopes"
+					label={t("settings.remotePairingPermissions")}
+					value={nextScopes()}
+					disabled={props.disabled()}
+					onChange={scopeDraft.set}
+				/>
+			</SettingsRow>
 			{() =>
 				props.hasLink() ? (
 					<View
@@ -113,6 +137,13 @@ export function RemotePairingSection(props: {
 						<View class={wide() ? "min-w-0 flex-1 gap-2" : "min-w-0 gap-2"}>
 							<Text class="font-sans text-sm font-medium">
 								{t("settings.remoteOpenLink")}
+							</Text>
+							<Text class="font-sans text-xs text-muted-foreground">
+								{() =>
+									t("settings.remotePairingLinkPermissions", {
+										scope: remoteScopeLabel(props.scopes() ?? "chat"),
+									})
+								}
 							</Text>
 							<PairingUrl url={props.url} />
 							<View class="flex-row flex-wrap gap-1.5">
@@ -131,8 +162,8 @@ export function RemotePairingSection(props: {
 								</SettingsActionButton>
 								<SettingsActionButton
 									testID="remote-pairing-regenerate"
-									disabled={props.regenerating()}
-									onPress={props.onRegenerate}
+									disabled={props.disabled()}
+									onPress={regenerate}
 								>
 									{() =>
 										props.regenerating() ? (
@@ -165,8 +196,8 @@ export function RemotePairingSection(props: {
 						<SettingsActionButton
 							variant="outline"
 							testID="remote-pairing-regenerate"
-							disabled={props.regenerating()}
-							onPress={props.onRegenerate}
+							disabled={props.disabled()}
+							onPress={regenerate}
 						>
 							{() =>
 								props.regenerating() ? (

@@ -2,6 +2,7 @@
 
 use std::{future::Future, io, pin::Pin, time::Duration};
 
+use pilo_domain::RemoteScopes;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
@@ -22,16 +23,22 @@ pub enum Scope {
     Admin,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScopeSet {
-    Chat,
-    ChatAndWorkspace,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Principal {
     Local,
-    Device { id: String, scopes: ScopeSet },
+    Device { id: String, scopes: RemoteScopes },
+}
+
+impl Principal {
+    fn allows(&self, scope: Scope) -> bool {
+        match (self, scope) {
+            (Self::Local, _) | (Self::Device { .. }, Scope::Chat) => true,
+            (Self::Device { scopes, .. }, Scope::Workspace) => {
+                *scopes == RemoteScopes::ChatWorkspace
+            }
+            (Self::Device { .. }, Scope::Admin) => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -196,6 +203,12 @@ async fn execute(
         .iter()
         .find(|spec| spec.name == method)
         .ok_or_else(|| HostApiError::not_found(format!("Unknown Host API method '{method}'")))?;
+    if !who.allows(spec.scope) {
+        return Err(HostApiError::new(
+            ErrorCode::Forbidden,
+            format!("Access to '{method}' is forbidden"),
+        ));
+    }
     let bytes = match (spec.kind, call_kind) {
         (MethodKind::Json, CallKind::Json) | (MethodKind::BinaryOut, CallKind::Binary(None)) => {
             None
@@ -261,6 +274,53 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test]
+    async fn registry_enforces_scopes_before_decoding_parameters() {
+        let runtime = Runtime::new(crate::host_paths::HostPaths::for_test(
+            std::path::PathBuf::new(),
+        ));
+        let params = || serde_json::json!({});
+        let chat = Principal::Device {
+            id: "chat".into(),
+            scopes: RemoteScopes::Chat,
+        };
+        let workspace = Principal::Device {
+            id: "workspace".into(),
+            scopes: RemoteScopes::ChatWorkspace,
+        };
+        for (principal, workspace_error, admin_error) in [
+            (
+                &Principal::Local,
+                ErrorCode::InvalidParams,
+                ErrorCode::InvalidParams,
+            ),
+            (&chat, ErrorCode::Forbidden, ErrorCode::Forbidden),
+            (&workspace, ErrorCode::InvalidParams, ErrorCode::Forbidden),
+        ] {
+            assert_eq!(
+                call(&runtime, principal, "chat.rpc", params())
+                    .await
+                    .unwrap_err()
+                    .code,
+                ErrorCode::InvalidParams
+            );
+            assert_eq!(
+                call(&runtime, principal, "project.add", params())
+                    .await
+                    .unwrap_err()
+                    .code,
+                workspace_error
+            );
+            assert_eq!(
+                call(&runtime, principal, "connection.namingModels.set", params())
+                    .await
+                    .unwrap_err()
+                    .code,
+                admin_error
+            );
+        }
+    }
+
     #[test]
     fn every_method_has_a_unique_name_and_the_expected_scope() {
         let mut workspace = HashSet::from([
@@ -299,6 +359,8 @@ mod tests {
             "remote.addresses.set",
             "remote.device.rename",
             "remote.device.revoke",
+            "remote.devices.revokeAll",
+            "remote.devices.setScopes",
             "remote.enabled.set",
             "remote.lanAddresses",
             "remote.pairing.regenerate",

@@ -63,6 +63,7 @@ import type {
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
+	RemoteScopes,
 } from "@shared/api/remote-types";
 import type { SystemFontFamily } from "@shared/font-settings";
 import type {
@@ -147,6 +148,8 @@ export type PiloNative = Pick<
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
+	| "remoteDevicesRevokeAll"
+	| "remoteDeviceSetScopes"
 	| "remoteDeviceRename"
 	| "openLogDirectory"
 	| "shutdown"
@@ -904,13 +907,29 @@ export class NshPiloClient implements PiloClient {
 	}
 
 	/** Regenerates the pairing link; resolves with the live state. */
-	async remotePairingRegenerate(): Promise<RemoteHostState> {
-		return (await this.pilo.remotePairingRegenerate()) as RemoteHostState;
+	async remotePairingRegenerate(
+		scopes: RemoteScopes,
+	): Promise<RemoteHostState> {
+		return (await this.pilo.remotePairingRegenerate(scopes)) as RemoteHostState;
 	}
 
 	/** Revokes a paired device; resolves with the live state. */
 	async remoteDeviceRevoke(deviceId: string): Promise<RemoteHostState> {
 		return (await this.pilo.remoteDeviceRevoke(deviceId)) as RemoteHostState;
+	}
+
+	async remoteDevicesRevokeAll(): Promise<RemoteHostState> {
+		return (await this.pilo.remoteDevicesRevokeAll()) as RemoteHostState;
+	}
+
+	async remoteDeviceSetScopes(
+		deviceId: string,
+		scopes: RemoteScopes,
+	): Promise<RemoteHostState> {
+		return (await this.pilo.remoteDeviceSetScopes(
+			deviceId,
+			scopes,
+		)) as RemoteHostState;
 	}
 
 	/** Renames a paired device; resolves with the live state. */

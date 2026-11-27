@@ -976,8 +976,12 @@ impl Pilo {
     }
 
     /// Regenerates the Remote Host's pairing link.
-    pub async fn remote_pairing_regenerate(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::host_call(this, "remote.pairing.regenerate", json!({})).await
+    pub async fn remote_pairing_regenerate(
+        this: Instance<Self>,
+        scopes: String,
+    ) -> Result<JsonValue, String> {
+        let scopes: pilo_domain::RemoteScopes = scopes.parse().map_err(str::to_owned)?;
+        Self::host_call(this, "remote.pairing.regenerate", json!({"scopes": scopes})).await
     }
 
     /// Revokes a paired Remote device.
@@ -986,6 +990,26 @@ impl Pilo {
         device_id: String,
     ) -> Result<JsonValue, String> {
         Self::host_call(this, "remote.device.revoke", json!({"deviceId": device_id})).await
+    }
+
+    /// Revokes every Remote device and invalidates the active pairing link.
+    pub async fn remote_devices_revoke_all(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::host_call(this, "remote.devices.revokeAll", json!({})).await
+    }
+
+    /// Updates the permissions of a paired Remote device.
+    pub async fn remote_device_set_scopes(
+        this: Instance<Self>,
+        device_id: String,
+        scopes: String,
+    ) -> Result<JsonValue, String> {
+        let scopes: pilo_domain::RemoteScopes = scopes.parse().map_err(str::to_owned)?;
+        Self::host_call(
+            this,
+            "remote.devices.setScopes",
+            json!({"deviceId": device_id, "scopes": scopes}),
+        )
+        .await
     }
 
     /// Renames a paired Remote device.

@@ -1,7 +1,7 @@
 use pilo_domain::{
     CacheKeepAliveSettings, Connection, NextPromptModel, NextPromptRequest, ProjectModelCache,
-    ProjectScopedModel, PromptEnhancementModel, RemoteAccessAddress, SessionUiStateUpdate,
-    ThemeSettingsUpdate,
+    ProjectScopedModel, PromptEnhancementModel, RemoteAccessAddress, RemoteScopes,
+    SessionUiStateUpdate, ThemeSettingsUpdate,
 };
 use pilo_protocol::{BuiltinExtension, MAX_BINARY_PAYLOAD_BYTES, MAX_CHAT_FILE_BYTES};
 use serde::Deserialize;
@@ -202,14 +202,20 @@ register! {
     "remote.addresses.set": Admin Json |rt, _who| (addresses: Vec<RemoteAccessAddress>, entry_address_id: String) {
         json(remote::remote_set_addresses(rt, addresses, entry_address_id).await.map_err(HostApiError::invalid)?)
     }
-    "remote.pairing.regenerate": Admin Json |rt, _who| () {
-        json(remote::remote_pairing_regenerate(rt).await.map_err(HostApiError::invalid)?)
+    "remote.pairing.regenerate": Admin Json |rt, _who| (scopes: RemoteScopes) {
+        json(remote::remote_pairing_regenerate(rt, scopes).await.map_err(HostApiError::invalid)?)
     }
     "remote.device.revoke": Admin Json |rt, _who| (device_id: String) {
         json(remote::remote_device_revoke(rt, device_id).await.map_err(HostApiError::invalid)?)
     }
     "remote.device.rename": Admin Json |rt, _who| (device_id: String, name: String) {
         json(remote::remote_device_rename(rt, device_id, name).await.map_err(HostApiError::invalid)?)
+    }
+    "remote.devices.setScopes": Admin Json |rt, _who| (device_id: String, scopes: RemoteScopes) {
+        json(remote::remote_device_set_scopes(rt, device_id, scopes).await.map_err(HostApiError::invalid)?)
+    }
+    "remote.devices.revokeAll": Admin Json |rt, _who| () {
+        json(remote::remote_devices_revoke_all(rt).await.map_err(HostApiError::invalid)?)
     }
 
     "preferences.get": Chat Json |rt, _who| () {

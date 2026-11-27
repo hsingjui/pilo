@@ -1,7 +1,10 @@
+export type RemoteScopes = "chat" | "chat,workspace";
+
 export type RemoteDevice = {
 	id: string;
 	name: string;
 	pairIp: string;
+	scopes: RemoteScopes;
 	createdAtMs: number;
 	lastSeenAtMs: number;
 	expiresAtMs: number;
@@ -25,6 +28,7 @@ export type RemoteHostState = {
 	addressConfigError: string | null;
 	pairingRemainingUses: number;
 	pairingTotalUses: number;
+	pairingScopes: RemoteScopes | null;
 	pairingUrl: string | null;
 	pairingExpiresAtMs: number | null;
 	lastError: string | null;

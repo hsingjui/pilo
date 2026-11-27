@@ -11,6 +11,7 @@ import { Collapsible } from "nsh/base";
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
+	RemoteScopes,
 } from "@shared/api/remote-types";
 import { userErrorMessage } from "@shared/app-error";
 import {
@@ -61,6 +62,7 @@ export function RemotePane(props: {
 	const toasts = AppToaster();
 	const portDraft = signal<string | null>(null);
 	const pendingPortConfirm = signal<number | null>(null);
+	const revokeAllConfirm = signal(false);
 	const addressDraft = signal<RemoteAccessAddress[] | null>(null);
 	const savingAddressDraft = signal(false);
 	/* The same guards as React's refs: a save in flight blocks refresh, and
@@ -240,11 +242,11 @@ export function RemotePane(props: {
 		}
 	};
 
-	const regenerate = async () => {
+	const regenerate = async (scopes: RemoteScopes) => {
 		if (busy()) return;
 		busy.set("pairing");
 		try {
-			state.set(await client.remotePairingRegenerate());
+			state.set(await client.remotePairingRegenerate(scopes));
 			error.set(null);
 		} catch (caught) {
 			fail(caught);
@@ -272,6 +274,33 @@ export function RemotePane(props: {
 			error.set(null);
 		} catch (caught) {
 			fail(caught);
+		}
+	};
+
+	const setScopes = async (deviceId: string, scopes: RemoteScopes) => {
+		if (busy()) return;
+		busy.set("scopes");
+		try {
+			state.set(await client.remoteDeviceSetScopes(deviceId, scopes));
+			error.set(null);
+		} catch (caught) {
+			fail(caught);
+		} finally {
+			busy.set(null);
+		}
+	};
+
+	const revokeAll = async () => {
+		if (busy()) return;
+		busy.set("revoke-all");
+		try {
+			state.set(await client.remoteDevicesRevokeAll());
+			error.set(null);
+			revokeAllConfirm.set(false);
+		} catch (caught) {
+			fail(caught);
+		} finally {
+			busy.set(null);
 		}
 	};
 
@@ -358,7 +387,7 @@ export function RemotePane(props: {
 			<SettingsSection>
 				{() =>
 					!loaded() ? (
-						<SettingsRow label={t("settings.remoteWebUi")}>
+						<SettingsRow label={t("settings.remoteAllowConnections")}>
 							<View class="flex-row items-center gap-2">
 								<Spinner class="size-3.5" />
 								<Text class="font-sans text-xs text-muted-foreground">
@@ -369,7 +398,7 @@ export function RemotePane(props: {
 					) : (
 						<>
 							<SettingsRow
-								label={t("settings.remoteWebUi")}
+								label={t("settings.remoteAllowConnections")}
 								helper={t("settings.remoteDescription")}
 							>
 								<View class="flex-row flex-wrap items-center gap-x-3 gap-y-2">
@@ -403,7 +432,7 @@ export function RemotePane(props: {
 											testID="remote-enabled-switch"
 											checked={current().enabled}
 											disabled={busy() === "toggle"}
-											accessibilityLabel={t("settings.remoteWebUi")}
+											accessibilityLabel={t("settings.remoteAllowConnections")}
 											onChange={(event) => void toggle(event.checked)}
 										/>
 									</View>
@@ -590,11 +619,13 @@ export function RemotePane(props: {
 									hasLink={hasPairingLink}
 									url={() => current().pairingUrl}
 									regenerating={() => busy() === "pairing"}
+									disabled={() => Boolean(busy())}
+									scopes={() => current().pairingScopes}
 									copied={() => copiedKey() === "pairing"}
 									onCopy={() =>
 										void copyToClipboard(current().pairingUrl, "pairing")
 									}
-									onRegenerate={() => void regenerate()}
+									onRegenerate={(scopes) => void regenerate(scopes)}
 								/>
 							}
 						/>
@@ -603,12 +634,32 @@ export function RemotePane(props: {
 							devices={activeDevices}
 							showEmptyHint={() => pairingVisible() && hasPairingLink()}
 							isRevoking={(deviceId) => busy() === deviceId}
+							busy={() => Boolean(busy())}
+							canRevokeAll={() =>
+								activeDevices().length > 0 || hasPairingLink()
+							}
 							onRename={(deviceId, name) => void rename(deviceId, name)}
 							onRevoke={(deviceId) => void revoke(deviceId)}
+							onRevokeAll={() => revokeAllConfirm.set(true)}
+							onSetScopes={(deviceId, scopes) =>
+								void setScopes(deviceId, scopes)
+							}
 						/>
 					</>
 				) : null
 			}
+			<SettingsConfirmDialog
+				testID="remote-revoke-all-dialog"
+				open={revokeAllConfirm()}
+				title={t("settings.remoteRevokeAll")}
+				description={t("settings.remoteRevokeAllDescription")}
+				confirmLabel={t("settings.remoteRevoke")}
+				busyLabel={t("common.saving")}
+				busy={busy() === "revoke-all"}
+				destructive
+				onOpenChange={revokeAllConfirm.set}
+				onConfirm={() => void revokeAll()}
+			/>
 			<SettingsConfirmDialog
 				testID="remote-port-confirm-dialog"
 				open={pendingPortConfirm() !== null}

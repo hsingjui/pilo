@@ -122,7 +122,7 @@ mod tests {
     fn device() -> Principal {
         Principal::Device {
             id: "test".into(),
-            scopes: super::super::ScopeSet::Chat,
+            scopes: pilo_domain::RemoteScopes::Chat,
         }
     }
 

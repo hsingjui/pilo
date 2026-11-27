@@ -58,6 +58,32 @@ test("regenerating refreshes the pairing link", async () => {
 	await app.waitFor("text:http://192.168.1.5:48001/pair?code=PAIR-CODE-regen");
 });
 
+test("pairing records the chosen permissions only when a new link is generated", async () => {
+	const app = await openPane();
+	await app.press("id:remote-pairing-scopes");
+	await app.press("text:Chat + workspace");
+	await app.waitFor(
+		"text:Workspace access allows running terminal commands and reading and writing project files.",
+	);
+	expect(app.shows("text:Current link: Chat only")).toBe(true);
+	await app.press("id:remote-pairing-regenerate");
+	await app.waitFor("text:Current link: Chat + workspace");
+});
+
+test("a device's permissions can be changed and all devices can be revoked together", async () => {
+	const app = await openPane();
+	await app.press("id:remote-device:dev-iphone:scopes");
+	await app.press("text:Chat + workspace");
+	await app.waitFor("text:Chat + workspace");
+	await app.press("id:remote-devices-revoke-all");
+	await app.waitFor("id:remote-revoke-all-dialog-confirm");
+	expect(app.shows("text:2 active")).toBe(true);
+	await app.press("id:remote-revoke-all-dialog-confirm");
+	await app.waitFor("text:No authorized devices");
+	expect(app.shows("id:remote-pairing-qr")).toBe(false);
+	expect(app.shows("text:Running")).toBe(true);
+});
+
 test("revoking a device removes it from the list", async () => {
 	const app = await openPane();
 	await app.press("id:remote-device:dev-ipad:revoke");

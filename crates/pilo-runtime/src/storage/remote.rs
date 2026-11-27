@@ -1,6 +1,8 @@
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, TransactionBehavior, params};
 
-use pilo_domain::{RemoteAccessConfig, RemoteDevice, RemoteHostConfig, random_remote_port};
+use pilo_domain::{
+    RemoteAccessConfig, RemoteDevice, RemoteHostConfig, RemoteScopes, random_remote_port,
+};
 
 fn as_i64(value: u64, field: &str) -> Result<i64, String> {
     i64::try_from(value).map_err(|_| format!("{field} is out of SQLite integer range"))
@@ -98,15 +100,21 @@ pub(crate) fn replace_remote_pairing(
     db: &SqliteConnection,
     secret_hash: &str,
     expires_at_ms: u64,
+    scopes: RemoteScopes,
 ) -> Result<(), String> {
     db.execute(
-        "INSERT INTO remote_pairing(id,secret_hash,expires_at_ms,consumed_at_ms)
-         VALUES(1,?1,?2,NULL)
+        "INSERT INTO remote_pairing(id,secret_hash,expires_at_ms,consumed_at_ms,scopes)
+         VALUES(1,?1,?2,NULL,?3)
          ON CONFLICT(id) DO UPDATE SET
            secret_hash=excluded.secret_hash,
            expires_at_ms=excluded.expires_at_ms,
-           consumed_at_ms=NULL",
-        params![secret_hash, as_i64(expires_at_ms, "pairing expiry")?],
+           consumed_at_ms=NULL,
+           scopes=excluded.scopes",
+        params![
+            secret_hash,
+            as_i64(expires_at_ms, "pairing expiry")?,
+            scopes.as_str()
+        ],
     )
     .map_err(|error| format!("failed to persist Remote WebUI pairing secret: {error}"))?;
     Ok(())
@@ -167,8 +175,8 @@ pub(crate) fn insert_remote_device(
 ) -> Result<(), String> {
     db.execute(
         "INSERT INTO remote_devices(
-           id,name,pair_ip,token_hash,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms
-         ) VALUES(?1,?2,?3,?4,?5,?6,?7,NULL)",
+           id,name,pair_ip,token_hash,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,scopes
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,NULL,?8)",
         params![
             device.id,
             device.name,
@@ -177,6 +185,7 @@ pub(crate) fn insert_remote_device(
             as_i64(device.created_at_ms, "device created time")?,
             as_i64(device.last_seen_at_ms, "device last-seen time")?,
             as_i64(device.expires_at_ms, "device expiry")?,
+            device.scopes.as_str(),
         ],
     )
     .map_err(|error| format!("failed to persist Remote WebUI device: {error}"))?;
@@ -198,8 +207,12 @@ pub(crate) fn insert_remote_pairing_device(
     let valid = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM remote_pairing WHERE id=1 AND secret_hash=?1
-             AND expires_at_ms>?2 AND consumed_at_ms IS NULL)",
-            params![secret_hash, as_i64(now_ms, "pairing time")?],
+             AND expires_at_ms>?2 AND consumed_at_ms IS NULL AND scopes=?3)",
+            params![
+                secret_hash,
+                as_i64(now_ms, "pairing time")?,
+                device.scopes.as_str()
+            ],
             |row| row.get::<_, bool>(0),
         )
         .map_err(|error| format!("failed to validate Remote WebUI pairing: {error}"))?;
@@ -245,6 +258,16 @@ fn row_to_remote_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<(RemoteDevi
             id: row.get(0)?,
             name: row.get(1)?,
             pair_ip: row.get(2)?,
+            scopes: row
+                .get::<_, String>(8)?
+                .parse::<RemoteScopes>()
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        8,
+                        rusqlite::types::Type::Text,
+                        error.into(),
+                    )
+                })?,
             created_at_ms: u64::try_from(created_at_ms).unwrap_or_default(),
             last_seen_at_ms: u64::try_from(last_seen_at_ms).unwrap_or_default(),
             expires_at_ms: u64::try_from(expires_at_ms).unwrap_or_default(),
@@ -264,7 +287,7 @@ pub(crate) fn authenticate_remote_device(
 ) -> Result<Option<RemoteDevice>, String> {
     let result = db
         .query_row(
-            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash
+            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes
              FROM remote_devices
              WHERE token_hash=?1 AND revoked_at_ms IS NULL AND expires_at_ms>=?2",
             params![token_hash, as_i64(now_ms, "authentication time")?],
@@ -314,7 +337,7 @@ pub(crate) fn authenticate_remote_device(
 pub(crate) fn list_remote_devices(db: &SqliteConnection) -> Result<Vec<RemoteDevice>, String> {
     let mut statement = db
         .prepare(
-            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash
+            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes
              FROM remote_devices
              ORDER BY last_seen_at_ms DESC, created_at_ms DESC",
         )
@@ -346,6 +369,28 @@ pub(crate) fn revoke_remote_device(
         )
         .map_err(|error| format!("failed to revoke Remote WebUI device: {error}"))?;
     Ok(changed > 0)
+}
+
+pub(crate) fn set_remote_device_scopes(
+    db: &SqliteConnection,
+    device_id: &str,
+    scopes: RemoteScopes,
+) -> Result<bool, String> {
+    db.execute(
+        "UPDATE remote_devices SET scopes=?1 WHERE id=?2 AND revoked_at_ms IS NULL",
+        params![scopes.as_str(), device_id],
+    )
+    .map(|changed| changed > 0)
+    .map_err(|error| format!("failed to change Remote WebUI device scopes: {error}"))
+}
+
+pub(crate) fn revoke_all_remote_devices(db: &SqliteConnection, now_ms: u64) -> Result<(), String> {
+    db.execute(
+        "UPDATE remote_devices SET revoked_at_ms=?1 WHERE revoked_at_ms IS NULL",
+        params![as_i64(now_ms, "device revoke time")?],
+    )
+    .map(|_| ())
+    .map_err(|error| format!("failed to revoke Remote WebUI devices: {error}"))
 }
 
 /// Returns the new expiry only if the device is still valid.
@@ -423,14 +468,42 @@ mod tests {
     }
 
     #[test]
+    fn old_remote_devices_and_pairing_migrate_to_chat() {
+        let db = SqliteConnection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE remote_pairing (
+                id INTEGER PRIMARY KEY, secret_hash TEXT NOT NULL, expires_at_ms INTEGER NOT NULL,
+                consumed_at_ms INTEGER
+             );
+             INSERT INTO remote_pairing VALUES(1, 'pair-hash', 100, NULL);
+             CREATE TABLE remote_devices (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+                created_at_ms INTEGER NOT NULL, last_seen_at_ms INTEGER NOT NULL,
+                expires_at_ms INTEGER NOT NULL, revoked_at_ms INTEGER
+             );
+             INSERT INTO remote_devices VALUES('legacy', 'Legacy', 'token-hash', 10, 10, 100, NULL);",
+        )
+        .unwrap();
+        initialize_schema(&db).unwrap();
+        initialize_schema(&db).unwrap();
+        let devices = list_remote_devices(&db).unwrap();
+        assert_eq!(devices[0].id, "legacy");
+        assert_eq!(devices[0].scopes, RemoteScopes::Chat);
+        let scopes: String = db
+            .query_row("SELECT scopes FROM remote_pairing", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(scopes, "chat");
+    }
+
+    #[test]
     fn pairing_is_one_time_and_expires() {
         let mut db = db();
-        replace_remote_pairing(&db, "hash", 200).unwrap();
+        replace_remote_pairing(&db, "hash", 200, RemoteScopes::Chat).unwrap();
         assert!(!consume_remote_pairing(&mut db, "wrong", 100).unwrap());
         assert!(consume_remote_pairing(&mut db, "hash", 100).unwrap());
         assert!(!consume_remote_pairing(&mut db, "hash", 101).unwrap());
 
-        replace_remote_pairing(&db, "hash-2", 200).unwrap();
+        replace_remote_pairing(&db, "hash-2", 200, RemoteScopes::ChatWorkspace).unwrap();
         assert!(!consume_remote_pairing(&mut db, "hash-2", 201).unwrap());
     }
 
@@ -441,6 +514,7 @@ mod tests {
             id: "device-1".to_owned(),
             name: "Phone".to_owned(),
             pair_ip: "192.168.1.20".to_owned(),
+            scopes: RemoteScopes::ChatWorkspace,
             created_at_ms: 10,
             last_seen_at_ms: 10,
             expires_at_ms: 100,
@@ -452,6 +526,15 @@ mod tests {
         assert!(rename_remote_device(&db, "device-1", "My phone").unwrap());
         assert_eq!(list_remote_devices(&db).unwrap()[0].name, "My phone");
         assert!(!rename_remote_device(&db, "missing", "Nope").unwrap());
+        assert_eq!(
+            list_remote_devices(&db).unwrap()[0].scopes,
+            RemoteScopes::ChatWorkspace
+        );
+        assert!(set_remote_device_scopes(&db, "device-1", RemoteScopes::Chat).unwrap());
+        assert_eq!(
+            list_remote_devices(&db).unwrap()[0].scopes,
+            RemoteScopes::Chat
+        );
         assert_eq!(clear_remote_devices(&db).unwrap(), 1);
         assert!(list_remote_devices(&db).unwrap().is_empty());
     }
@@ -463,6 +546,7 @@ mod tests {
             id: "device-1".to_owned(),
             name: "Phone".to_owned(),
             pair_ip: String::new(),
+            scopes: RemoteScopes::ChatWorkspace,
             created_at_ms: 10,
             last_seen_at_ms: 10,
             expires_at_ms: 100,
@@ -485,6 +569,7 @@ mod tests {
             id: "device-2".to_owned(),
             name: "Old phone".to_owned(),
             pair_ip: String::new(),
+            scopes: RemoteScopes::Chat,
             created_at_ms: 1,
             last_seen_at_ms: 1,
             expires_at_ms: 2,

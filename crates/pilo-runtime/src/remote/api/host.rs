@@ -80,7 +80,7 @@ pub(super) async fn theme_settings_set(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host_api::{Principal, ScopeSet};
+    use crate::host_api::Principal;
     use crate::{
         Runtime,
         bootstrap::tests::runtime_with_mid_snapshot_change,
@@ -95,7 +95,7 @@ mod tests {
             runtime,
             principal: Principal::Device {
                 id: "test".into(),
-                scopes: ScopeSet::Chat,
+                scopes: pilo_domain::RemoteScopes::Chat,
             },
         }
     }

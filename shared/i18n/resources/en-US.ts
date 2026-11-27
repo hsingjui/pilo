@@ -185,6 +185,8 @@ const enUS = {
 		pendingPane: "This pane is not available yet.",
 		remote: "Remote",
 		remoteWebUi: "Remote WebUI",
+		remoteAllowConnections:
+			"Allow remote connections (WebUI and other Pilo clients)",
 		remoteDescription:
 			"Access Pilo through LAN, public or mesh-network addresses.",
 		remoteLoading: "Loading Remote WebUI…",
@@ -216,6 +218,13 @@ const enUS = {
 		remoteError: "Remote WebUI error",
 		remoteActionFailed: "Remote WebUI action failed",
 		remotePairing: "Pair a device",
+		remotePairingPermissions: "Permissions for the next link",
+		remotePairingLinkPermissions: "Current link: {{scope}}",
+		remoteDevicePermissions: "Device permissions",
+		remoteScopeChat: "Chat only",
+		remoteScopeWorkspace: "Chat + workspace",
+		remoteWorkspaceWarning:
+			"Workspace access allows running terminal commands and reading and writing project files.",
 		remoteOpenLink: "Scan the QR code or open the link",
 		remoteCopyLink: "Copy link",
 		remoteAccessAddress: "Access address",
@@ -266,6 +275,7 @@ const enUS = {
 			"Changing the port to {{port}} disconnects {{count}} authorized devices. They will need to scan a new QR code.",
 		remoteDevices: "Authorized devices",
 		remoteDeviceCount: "{{count}} active",
+		remoteDeviceLastSeen: "Last used: {{date}}",
 		remoteNoDevices: "No authorized devices",
 		remoteNoDevicesDescription:
 			"Scan the pairing QR code from a phone or tablet to add one.",
@@ -273,6 +283,9 @@ const enUS = {
 		remoteRenameHint: "Click to rename",
 		remoteRevoke: "Revoke",
 		remoteRevokeConfirm: "Confirm revoke",
+		remoteRevokeAll: "Disconnect and revoke all devices",
+		remoteRevokeAllDescription:
+			"All paired devices will be disconnected and the current pairing link will be invalidated. Devices must pair again to reconnect.",
 		about: "About",
 		conversation: "Conversation",
 		developer: "Developer",

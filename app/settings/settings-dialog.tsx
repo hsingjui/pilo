@@ -84,6 +84,8 @@ export type SettingsClient = Pick<
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
+	| "remoteDevicesRevokeAll"
+	| "remoteDeviceSetScopes"
 	| "remoteDeviceRename"
 	| "openLogDirectory"
 > &
