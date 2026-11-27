@@ -372,6 +372,8 @@ export class HttpTransport implements HostTransport {
 	private cursorFlushTimer: unknown;
 
 	private socket: WebSocketLike | null = null;
+	private socketCursorHostId: string | null = null;
+	private socketCursorSent = 0;
 	private detachSocketListeners: (() => void) | undefined;
 	private socketReady = false;
 	private reconnectAttempts = 0;
@@ -858,8 +860,10 @@ export class HttpTransport implements HostTransport {
 		this.clearProbeTimer();
 		this.setState(this.reconnectAttempts > 0 ? "reconnecting" : "connecting");
 
+		const cursorToSend = this.replayCursor;
+		const cursorHostId = this.hostId;
 		const url = toWebSocketUrl(this.origin, "/api/v2/events", {
-			after: String(this.replayCursor),
+			after: String(cursorToSend),
 		});
 
 		let socket: WebSocketLike;
@@ -871,6 +875,8 @@ export class HttpTransport implements HostTransport {
 			return;
 		}
 		this.socket = socket;
+		this.socketCursorHostId = cursorHostId;
+		this.socketCursorSent = cursorToSend;
 
 		const handleMessage = (event: { data: unknown }) => {
 			if (this.socket !== socket || this.disposed) return;
@@ -958,13 +964,16 @@ export class HttpTransport implements HostTransport {
 			typeof parsed.hostId === "string" && parsed.hostId.length > 0
 				? parsed.hostId
 				: this.hostId;
-		if (incomingHostId && incomingHostId !== this.hostId) {
+		if (incomingHostId && incomingHostId !== this.socketCursorHostId) {
 			this.hostId = incomingHostId;
 			const stored = Math.max(0, this.cursors.getCursor(incomingHostId));
-			if (stored > this.replayCursor) {
-				this.replayCursor = stored;
-			}
+			this.replayCursor = stored;
 			this.persistedCursor = stored;
+			if (stored !== this.socketCursorSent) {
+				this.closeSocketOnly();
+				this.openSocket();
+				return;
+			}
 		}
 
 		const latestSequence =

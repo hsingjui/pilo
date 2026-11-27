@@ -450,4 +450,84 @@ describe("HttpTransport & HostClient", () => {
 
 		transport.dispose();
 	});
+
+	it("reconnects with the discovered hostId cursor on first connect and on same-address host swap", () => {
+		const scheduler = new FakeScheduler();
+		const cursors = new MemoryCursorStore();
+		cursors.setCursor("host-alpha", 15);
+		cursors.setCursor("host-beta", 7);
+
+		const sockets: FakeSocket[] = [];
+		const messages: PiloClientEventMessage[] = [];
+		const transport = new HttpTransport({
+			origin: "http://127.0.0.1:7891",
+			tokens: { getToken: () => "tok-swap" },
+			cursors,
+			scheduler,
+			reconnectDelaysMs: [100],
+			fetch: () => Promise.resolve(jsonResponse(200, { ok: true, result: {} })),
+			createWebSocket: (url, protocols) => {
+				const sock = new FakeSocket(url, protocols);
+				sockets.push(sock);
+				return sock;
+			},
+		});
+
+		transport.events().subscribeEvents({
+			onMessage: (m) => messages.push(m),
+			onStatus: () => undefined,
+		});
+
+		// 1. First connect has unknown hostId -> sends after=0, hello reveals host-alpha (stored 15)
+		//    -> immediately closes first socket and reconnects with after=15 without emitting hello for socket 0.
+		assert.equal(sockets.length, 1);
+		assert.ok(sockets[0]!.url.endsWith("after=0"));
+		sockets[0]!.emitMessage(
+			makeHello({ hostId: "host-alpha", latestSequence: 20 }),
+		);
+		assert.equal(sockets[0]!.readyState, 3);
+		assert.equal(sockets.length, 2);
+		assert.ok(sockets[1]!.url.endsWith("after=15"));
+		assert.equal(messages.length, 0);
+
+		// Second socket completes hello and advances host-alpha cursor to 42.
+		sockets[1]!.emitMessage(
+			makeHello({ hostId: "host-alpha", latestSequence: 42 }),
+		);
+		sockets[1]!.emitMessage({
+			type: "events",
+			events: [{ type: "chat_state", sequence: 42 } as never],
+		});
+		scheduler.advance(1_000);
+		assert.equal(cursors.getCursor("host-alpha"), 42);
+
+		// 2. Socket closes and same origin now serves host-beta (stored cursor 7 < 42).
+		//    Must NOT take max(42, 7); must switch to 7 and reconnect with after=7 while keeping host-alpha=42.
+		sockets[1]!.emitClose();
+		scheduler.advance(100);
+		assert.equal(sockets.length, 3);
+		assert.ok(sockets[2]!.url.endsWith("after=42"));
+
+		sockets[2]!.emitMessage(
+			makeHello({ hostId: "host-beta", latestSequence: 12 }),
+		);
+		assert.equal(sockets[2]!.readyState, 3);
+		assert.equal(sockets.length, 4);
+		assert.ok(sockets[3]!.url.endsWith("after=7"));
+		assert.equal(transport.currentHostId, "host-beta");
+		assert.equal(cursors.getCursor("host-alpha"), 42);
+
+		sockets[3]!.emitMessage(
+			makeHello({ hostId: "host-beta", latestSequence: 12 }),
+		);
+		sockets[3]!.emitMessage({
+			type: "events",
+			events: [{ type: "chat_state", sequence: 9 } as never],
+		});
+		scheduler.advance(1_000);
+		assert.equal(cursors.getCursor("host-beta"), 9);
+		assert.equal(cursors.getCursor("host-alpha"), 42);
+
+		transport.dispose();
+	});
 });
