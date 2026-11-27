@@ -156,6 +156,10 @@ function jsonResponse(status: number, payload: unknown): FetchResponseLike {
 	};
 }
 
+function timesOut(error: unknown): boolean {
+	return error instanceof HostApiError && error.code === "timeout";
+}
+
 describe("HttpTransport & HostClient", () => {
 	it("routes call, upload, and download to /api/v2 endpoints and surfaces HostApiError", async () => {
 		const calls: { url: string; init?: FetchRequestInitLike }[] = [];
@@ -290,6 +294,133 @@ describe("HttpTransport & HostClient", () => {
 		);
 		assert.equal(unauthorizedCalls, 1);
 
+		transport.dispose();
+	});
+
+	it("waits for a new hello after a disconnect and cancels queued requests immediately", async () => {
+		const scheduler = new FakeScheduler();
+		const sockets: FakeSocket[] = [];
+		const calls: string[] = [];
+		const transport = new HttpTransport({
+			origin: "https://host.example",
+			hostId: "host-a",
+			tokens: { getToken: () => "token" },
+			scheduler,
+			fetch: async (url) => {
+				if (!url.includes("/auth/")) calls.push(url);
+				return jsonResponse(200, { ok: true, result: [] });
+			},
+			createWebSocket: (url, protocols) => {
+				const socket = new FakeSocket(url, protocols);
+				sockets.push(socket);
+				return socket;
+			},
+		});
+		const first = transport.call("project.list", {});
+		sockets[0]!.emitMessage(makeHello());
+		await first;
+		sockets[0]!.emitClose();
+
+		const controller = new AbortController();
+		const cancelled = assert.rejects(
+			transport.call("project.list", {}, { signal: controller.signal }),
+			{ name: "AbortError" },
+		);
+		controller.abort();
+		await cancelled;
+
+		const expired = assert.rejects(
+			transport.upload("chat.files.upload", {}, new Uint8Array()),
+			timesOut,
+		);
+		scheduler.advance(14_999);
+		assert.equal(calls.length, 1);
+		scheduler.advance(1);
+		await expired;
+
+		const queued = transport.download("files.image", {});
+		await Promise.resolve();
+		assert.equal(calls.length, 1);
+		sockets.at(-1)!.emitMessage(
+			makeHello({
+				capabilities: { methods: ["files.image"] },
+			}),
+		);
+		await queued;
+		assert.equal(calls.length, 2);
+		transport.dispose();
+	});
+
+	it("aborts finite HTTP requests at their kind deadline including response bodies", async () => {
+		const scheduler = new FakeScheduler();
+		const socket = new FakeSocket("wss://host.example", []);
+		const business: FetchRequestInitLike[] = [];
+		let finishLong!: (value: FetchResponseLike) => void;
+		const long = new Promise<FetchResponseLike>((resolve) => {
+			finishLong = resolve;
+		});
+		const transport = new HttpTransport({
+			origin: "https://host.example",
+			hostId: "host-a",
+			tokens: { getToken: () => "token" },
+			scheduler,
+			createWebSocket: () => socket,
+			fetch: async (url, init) => {
+				business.push(init!);
+				if (url.endsWith("/chat.start")) return long;
+				return {
+					...jsonResponse(200, {}),
+					json: () => new Promise(() => {}),
+					arrayBuffer: () => new Promise(() => {}),
+				};
+			},
+		});
+		const json = assert.rejects(transport.call("project.list", {}), timesOut);
+		const upload = assert.rejects(
+			transport.upload("chat.files.upload", {}, new Uint8Array()),
+			timesOut,
+		);
+		const download = assert.rejects(
+			transport.download("files.image", {}),
+			timesOut,
+		);
+		const startup = transport.call("chat.start", {});
+		socket.emitMessage(
+			makeHello({
+				capabilities: {
+					methods: [
+						"project.list",
+						"chat.files.upload",
+						"files.image",
+						"chat.start",
+					],
+				},
+			}),
+		);
+		await Promise.resolve();
+		assert.equal(business.length, 4);
+		scheduler.advance(50_000);
+		await json;
+		assert.equal(business[0]!.signal?.aborted, true);
+		assert.equal(business[1]!.signal?.aborted, false);
+		assert.equal(business[2]!.signal?.aborted, false);
+		scheduler.advance(10_000);
+		await Promise.all([upload, download]);
+		assert.equal(business[1]!.signal?.aborted, true);
+		assert.equal(business[2]!.signal?.aborted, true);
+		finishLong(jsonResponse(200, { ok: true, result: "started" }));
+		await assert.doesNotReject(async () =>
+			assert.equal(await startup, "started"),
+		);
+
+		const controller = new AbortController();
+		const cancelled = assert.rejects(
+			transport.call("project.list", {}, { signal: controller.signal }),
+			{ name: "AbortError" },
+		);
+		controller.abort();
+		await cancelled;
+		assert.equal(business[4]!.signal?.aborted, true);
 		transport.dispose();
 	});
 

@@ -39,6 +39,13 @@ export type HostTransportConnectionState =
 
 export type AbortSignalLike = {
 	readonly aborted: boolean;
+	addEventListener(type: "abort", listener: () => void): void;
+	removeEventListener(type: "abort", listener: () => void): void;
+};
+
+type AbortControllerLike = {
+	readonly signal: AbortSignalLike;
+	abort(): void;
 };
 
 export type HostCallOptions = {
@@ -182,6 +189,19 @@ const DEFAULT_RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
 const DEFAULT_PROBE_TIMEOUT_MS = 2_500;
 const DEFAULT_FOREGROUND_PROBE_MIN_HIDDEN_MS = 5_000;
 const DEFAULT_CURSOR_FLUSH_DELAY_MS = 1_000;
+const HELLO_TIMEOUT_MS = 15_000;
+const HTTP_TIMEOUT_MS = { json: 50_000, upload: 60_000, download: 60_000 };
+const LONG_HTTP_METHODS = new Set([
+	"chat.start",
+	"promptEnhancement.enhance",
+	"session.title",
+]);
+
+function abortError(): Error {
+	const error = new Error("Host request aborted");
+	error.name = "AbortError";
+	return error;
+}
 
 export class MemoryCursorStore implements CursorStore {
 	private readonly cursors = new Map<string, number>();
@@ -374,7 +394,7 @@ export class HttpTransport implements HostTransport {
 	private latestCapabilities: HostCapabilities | null = null;
 	private latestHello: HostHelloMessage | null = null;
 	private negotiationError: HostApiError | undefined;
-	private readonly helloWaiters = new Set<(error?: HostApiError) => void>();
+	private readonly helloWaiters = new Set<(error?: Error) => void>();
 	private authProbe: Promise<void> | undefined;
 	private connectionState: HostTransportConnectionState = "connecting";
 	private replayCursor = 0;
@@ -484,20 +504,20 @@ export class HttpTransport implements HostTransport {
 		params: unknown,
 		opts?: HostCallOptions,
 	): Promise<T> {
-		await this.waitForHello(method, opts);
-		const token = this.requireToken();
 		const url = `${this.origin}/api/v2/call/${encodeURIComponent(method)}`;
-		const response = await this.fetchFn(url, {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${token}`,
-				"content-type": "application/json",
-			},
-			body: JSON.stringify(params ?? {}),
-			cache: "no-store",
-			signal: opts?.signal,
+		return this.request(method, "json", opts, async (signal) => {
+			const response = await this.fetchFn(url, {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${this.requireToken()}`,
+					"content-type": "application/json",
+				},
+				body: JSON.stringify(params ?? {}),
+				cache: "no-store",
+				signal,
+			});
+			return this.parseEnvelopeResponse<T>(response);
 		});
-		return this.parseEnvelopeResponse<T>(response);
 	}
 
 	async upload<T = unknown>(
@@ -506,22 +526,22 @@ export class HttpTransport implements HostTransport {
 		bytes: Uint8Array,
 		opts?: HostCallOptions,
 	): Promise<T> {
-		await this.waitForHello(method, opts);
-		const token = this.requireToken();
 		const qs = encodeQuery(params);
 		const path = `/api/v2/upload/${encodeURIComponent(method)}`;
 		const url = qs ? `${this.origin}${path}?${qs}` : `${this.origin}${path}`;
-		const response = await this.fetchFn(url, {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${token}`,
-				"content-type": "application/octet-stream",
-			},
-			body: new Uint8Array(bytes),
-			cache: "no-store",
-			signal: opts?.signal,
+		return this.request(method, "upload", opts, async (signal) => {
+			const response = await this.fetchFn(url, {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${this.requireToken()}`,
+					"content-type": "application/octet-stream",
+				},
+				body: new Uint8Array(bytes),
+				cache: "no-store",
+				signal,
+			});
+			return this.parseEnvelopeResponse<T>(response);
 		});
-		return this.parseEnvelopeResponse<T>(response);
 	}
 
 	async download(
@@ -529,22 +549,20 @@ export class HttpTransport implements HostTransport {
 		params: Record<string, string>,
 		opts?: HostCallOptions,
 	): Promise<Uint8Array<ArrayBuffer>> {
-		await this.waitForHello(method, opts);
-		const token = this.requireToken();
 		const qs = encodeQuery(params);
 		const path = `/api/v2/blob/${encodeURIComponent(method)}`;
 		const url = qs ? `${this.origin}${path}?${qs}` : `${this.origin}${path}`;
-		const response = await this.fetchFn(url, {
-			method: "GET",
-			headers: {
-				authorization: `Bearer ${token}`,
-			},
-			signal: opts?.signal,
+		return this.request(method, "download", opts, async (signal) => {
+			const response = await this.fetchFn(url, {
+				method: "GET",
+				headers: {
+					authorization: `Bearer ${this.requireToken()}`,
+				},
+				signal,
+			});
+			if (!response.ok) await this.throwHttpError(response);
+			return new Uint8Array(await response.arrayBuffer());
 		});
-		if (!response.ok) {
-			await this.throwHttpError(response);
-		}
-		return new Uint8Array(await response.arrayBuffer());
 	}
 
 	reconnectNow(): void {
@@ -603,38 +621,48 @@ export class HttpTransport implements HostTransport {
 		}
 	}
 
-	private async waitForHello(
+	private async request<T>(
 		method: string,
-		opts?: HostCallOptions,
-	): Promise<void> {
-		this.assertOpen();
-		if (this.negotiationError) throw this.negotiationError;
-		if (!this.latestHello) {
+		kind: keyof typeof HTTP_TIMEOUT_MS,
+		opts: HostCallOptions | undefined,
+		run: (signal: AbortSignalLike | undefined) => Promise<T>,
+	): Promise<T> {
+		const signal = opts?.signal;
+		const deadline = this.scheduler.now() + HELLO_TIMEOUT_MS;
+		const check = () => {
+			this.assertOpen();
+			if (this.negotiationError) throw this.negotiationError;
+			if (signal?.aborted) throw abortError();
+		};
+		check();
+		while (!this.socketReady) {
+			const remaining = deadline - this.scheduler.now();
+			const timeout = new HostApiError(
+				"timeout",
+				"Timed out waiting for Host hello",
+				true,
+			);
+			if (remaining <= 0) throw timeout;
+			// oxlint-disable-next-line no-await-in-loop -- A negotiated socket can close before the waiter resumes.
 			await new Promise<void>((resolve, reject) => {
-				const finish = (error?: HostApiError) => {
+				const cancel = () => finish(abortError());
+				const finish = (error?: Error) => {
 					this.helloWaiters.delete(finish);
 					this.scheduler.clearTimeout(timer);
+					signal?.removeEventListener("abort", cancel);
 					if (error) reject(error);
 					else resolve();
 				};
 				const timer = this.scheduler.setTimeout(
-					() =>
-						finish(
-							new HostApiError(
-								"timeout",
-								"Timed out waiting for Host hello",
-								true,
-							),
-						),
-					15_000,
+					() => finish(timeout),
+					remaining,
 				);
 				this.helloWaiters.add(finish);
+				signal?.addEventListener("abort", cancel);
 				this.ensureSocket();
 			});
+			check();
 		}
-		this.assertOpen();
-		if (this.negotiationError) throw this.negotiationError;
-		if (opts?.signal?.aborted) throw new Error("Host request aborted");
 		if (
 			this.latestCapabilities?.methods &&
 			!this.latestCapabilities.methods.includes(method)
@@ -644,6 +672,39 @@ export class HttpTransport implements HostTransport {
 				`The connected Host does not support ${method}. Upgrade Pilo on the Host to use this feature.`,
 				false,
 			);
+		}
+
+		if (LONG_HTTP_METHODS.has(method)) return run(signal);
+		const { AbortController } = globalThis as unknown as {
+			AbortController: new () => AbortControllerLike;
+		};
+		const controller = new AbortController();
+		let interrupt!: (error: Error) => void;
+		const interrupted = new Promise<never>((_resolve, reject) => {
+			interrupt = reject;
+		});
+		const stop = (error: Error) => {
+			interrupt(error);
+			controller.abort();
+		};
+		const cancel = () => stop(abortError());
+		const timer = this.scheduler.setTimeout(
+			() =>
+				stop(
+					new HostApiError(
+						"timeout",
+						`Host request timed out: ${method}`,
+						true,
+					),
+				),
+			HTTP_TIMEOUT_MS[kind],
+		);
+		signal?.addEventListener("abort", cancel);
+		try {
+			return await Promise.race([run(controller.signal), interrupted]);
+		} finally {
+			this.scheduler.clearTimeout(timer);
+			signal?.removeEventListener("abort", cancel);
 		}
 	}
 
