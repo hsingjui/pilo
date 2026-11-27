@@ -161,7 +161,9 @@ export function AddRemoteHostDialog(props: {
 								testID="add-remote-host-address"
 								items={offered.addresses.map((address) => ({
 									value: address.id,
-									title: `${address.name} · ${address.baseUrl}`,
+									title: address.name
+										? `${address.name} · ${address.baseUrl}`
+										: address.baseUrl,
 								}))}
 								value={addressId() ?? undefined}
 								disabled={busy()}
