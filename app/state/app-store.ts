@@ -12,6 +12,7 @@ import type {
 import type { Project } from "@shared/api/projects-types";
 import type { SessionDeleteResult } from "@shared/api/sessions-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { t } from "../shell/i18n";
 import {
 	type AppAction,
 	type AppState,
@@ -569,7 +570,7 @@ export class AppStore {
 		} else {
 			this.apply({
 				type: "bootstrap_failed",
-				message: "The runtime event stream stopped.",
+				message: t("app.runtimeEventStreamStopped"),
 			});
 		}
 	}

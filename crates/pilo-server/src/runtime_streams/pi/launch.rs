@@ -138,6 +138,13 @@ pub(super) fn build_launch_command(
         std::path::PathBuf::from(&params.project)
     };
     let mut command = process_command(pi_executable, &args, path);
+    command.env_remove("PILO_STALL_QUEUE_BARRIER");
+    if params
+        .builtin_extensions
+        .contains(&BuiltinExtension::StreamGuard)
+    {
+        command.env("PILO_STALL_QUEUE_BARRIER", "1");
+    }
     for key in [
         "PILO_CTL",
         "PILO_CONTROL_ENDPOINT",

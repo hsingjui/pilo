@@ -80,15 +80,23 @@ pub(crate) fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>)
 
 /// Delete a Pi session using the same policy as Pi's interactive session selector:
 /// prefer the optional `trash` CLI, then fall back to permanent file removal.
-pub(crate) fn session_delete(params: SessionDeleteParams) -> Result<Value, String> {
+pub(crate) fn session_delete(
+    params: SessionDeleteParams,
+    trash_only: bool,
+) -> Result<Value, String> {
     let path = checked_session_file(&params.path)?;
     let mut trash = Command::new("trash");
     if params.path.starts_with('-') {
         trash.arg("--");
     }
     let trash_status = trash.arg(&path).status();
-    if trash_status.is_ok_and(|status| status.success()) || !path.exists() {
+    if trash_status.is_ok_and(|status| status.success()) || (!trash_only && !path.exists()) {
         return Ok(json!({ "method": "trash" }));
+    }
+    if trash_only {
+        return Err(
+            "cannot move session to trash; permanent deletion was not attempted".to_owned(),
+        );
     }
 
     std::fs::remove_file(&path)

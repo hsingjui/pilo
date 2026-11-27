@@ -107,7 +107,7 @@ pub struct PiLaunchOptions {
     pub model: Option<String>,
     pub thinking: Option<String>,
     pub system_prompt: Option<String>,
-    pub agent_control: bool,
+    pub agent_control_session: Option<String>,
 }
 
 #[derive(Clone)]
@@ -455,7 +455,7 @@ impl ServerPiSession {
             async {
                 let mut control_stream = None;
                 let mut remote_control = None;
-                if options.agent_control {
+                if let Some(session_key) = options.agent_control_session.as_deref() {
                     let runtime = servers.control_runtime()?;
                     let control_id = format!("control:{stream_id}");
                     let (_, lease) = super::control::attach(
@@ -463,6 +463,7 @@ impl ServerPiSession {
                         client.clone(),
                         control_id.clone(),
                         &project.id,
+                        session_key,
                         matches!(project.connection.kind, pilo_domain::ConnectionKind::Local),
                     )
                     .await?;
@@ -484,6 +485,7 @@ impl ServerPiSession {
                             remote_client,
                             format!("remote-control:{stream_id}"),
                             &project.id,
+                            session_key,
                             false,
                         )
                         .await?;

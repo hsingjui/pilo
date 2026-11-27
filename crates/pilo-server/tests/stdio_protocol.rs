@@ -175,6 +175,140 @@ async fn closing_server_stdin_reaps_running_pi_process() {
     std::fs::remove_file(fake_pi).unwrap();
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn forwards_follow_up_as_prompt_at_settlement_but_rejects_it_after_stall() {
+    use std::{os::unix::fs::PermissionsExt, time::Duration};
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target")
+        .join(format!("follow-up-{}-{unique}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fake_pi = dir.join("pi.sh");
+    // Finish the turn after the input arrives, but before handling it. Echo the
+    // input to expose exactly what was written to Pi, including duplicates.
+    std::fs::write(
+        &fake_pi,
+        r#"#!/bin/sh
+printf '%s\n' '{"type":"agent_start"}'
+IFS= read -r command || exit
+printf '%s\n' '{"type":"agent_settled"}' "$command"
+printf '%s\n' '{"type":"response","command":"prompt","id":"follow-up","success":true,"data":{"disposition":"started"}}'
+while IFS= read -r command; do
+    case "$command" in
+        *'"test_stall"'*)
+            printf '%s\n' '{"type":"agent_start"}' '{"type":"agent_end","messages":[{"role":"assistant","errorMessage":"PILO_STREAM_STALLED: test"}]}' '{"type":"agent_settled"}' ;;
+        *) printf '%s\n' "$command" ;;
+    esac
+done
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_pi, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let mut server = Command::new(env!("CARGO_BIN_EXE_pilo-server"))
+        .env("PILO_SERVER_RUNTIME_DIR", &dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = server.stdin.take().unwrap();
+    let mut stdout = server.stdout.take().unwrap();
+    let send = |command| json!({ "streamId": "follow-up-test", "command": command });
+    let forwarded = json!({
+        "type": "prompt", "id": "follow-up", "message": "follow-up", "streamingBehavior": "followUp",
+        "images": [{"type": "image", "mimeType": "image/png", "data": "AQID"}],
+    });
+    let mut follow_up = forwarded.clone();
+    follow_up["type"] = json!("pilo_follow_up_prompt");
+    follow_up["piloQueueOwner"] = json!("test-owner");
+    let fresh = json!({ "type": "prompt", "id": "fresh", "message": "explicit send" });
+
+    for (index, (method, params, expected_events, expected_error)) in [
+        (
+            "pi.start",
+            json!({
+                "streamId": "follow-up-test", "project": dir, "piExecutable": fake_pi,
+                "noSession": true, "builtinExtensions": [{"id": "stream-guard"}],
+            }),
+            vec![json!({"type": "agent_start"})],
+            None,
+        ),
+        (
+            "pi.send",
+            send(follow_up.clone()),
+            vec![
+                json!({"type": "agent_settled"}),
+                forwarded,
+                json!({"type": "response", "command": "prompt", "id": "follow-up", "success": true, "data": {"disposition": "started"}}),
+            ],
+            None,
+        ),
+        (
+            "pi.send",
+            send(json!({"type": "test_stall"})),
+            vec![
+                json!({"type": "agent_start"}),
+                json!({"type": "agent_end", "messages": [{"role": "assistant", "errorMessage": "PILO_STREAM_STALLED: test"}]}),
+                json!({"type": "agent_settled"}),
+            ],
+            None,
+        ),
+        (
+            "pi.send",
+            send(follow_up),
+            vec![],
+            Some("PILO_STALLED_TURN_INPUT_CLOSED"),
+        ),
+        ("pi.send", send(fresh.clone()), vec![fresh], None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = index as u64 + 1;
+        write_frame(&mut stdin, Envelope::request(id, method, params))
+            .await
+            .unwrap();
+        let mut events = expected_events.into_iter().peekable();
+        let mut answered = false;
+        while !answered || events.peek().is_some() {
+            let frame = tokio::time::timeout(Duration::from_secs(10), read_frame(&mut stdout))
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            match frame {
+                Envelope::Response { id: reply_id, error, .. } if !answered => {
+                    assert_eq!(reply_id, id);
+                    assert_eq!(error.as_ref().map(|error| error.message.as_str()), expected_error);
+                    answered = true;
+                }
+                Envelope::Event { stream_id, event, binary, .. }
+                    if stream_id == "follow-up-test" && event == "pi.rpc_json" =>
+                {
+                    let actual: Value = serde_json::from_slice(&binary[0]).unwrap();
+                    assert_eq!(Some(actual), events.next());
+                }
+                other => panic!("unexpected frame for request {id}: {other:?}"),
+            }
+        }
+    }
+
+    drop(stdin);
+    let status = tokio::time::timeout(Duration::from_secs(5), server.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(status.success());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[tokio::test]
 async fn session_read_returns_file_fingerprint() {
     let unique = SystemTime::now()

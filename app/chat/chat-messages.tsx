@@ -3,6 +3,7 @@ import {
 	cleanup,
 	computed,
 	createMotion,
+	effect,
 	List,
 	type ListRef,
 	type ListSlot,
@@ -370,6 +371,8 @@ export interface ChatMessagesProps {
 	 * both arrays on every streaming delta.
 	 */
 	liveMessages?: () => readonly ChatMessage[];
+	/** Changes identity when the user submits a message in this chat. */
+	lastSubmission?: () => object | undefined;
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	assistantText?: ChatTextBody;
@@ -553,6 +556,23 @@ export function ChatMessages(props: ChatMessagesProps) {
 			animated: !reduceMotion(),
 		});
 	};
+	const jumpToLatest = (animated: boolean) => {
+		restoring = false;
+		followPaused.set(false);
+		webEnd?.startScrollToEnd();
+		list?.scrollToEnd({ animated });
+	};
+	// Only react to new submissions, not the last one when reopening the chat.
+	let lastSubmission = untracked(() => props.lastSubmission?.());
+	effect(() => {
+		const submission = props.lastSubmission?.();
+		if (submission === lastSubmission) return;
+		lastSubmission = submission;
+		if (!submission) return;
+		// Let the newly submitted rows reach the list before jumping.
+		const frame = requestAnimationFrame(() => jumpToLatest(false));
+		return () => cancelAnimationFrame(frame);
+	});
 	return (
 		<ChatDisclosureAction.Provider value={disclose}>
 			<View class="min-h-0 flex-1">
@@ -679,11 +699,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 											</Text>
 										</Tooltip>
 									}
-									onPress={() => {
-										followPaused.set(false);
-										webEnd?.startScrollToEnd();
-										list?.scrollToEnd({ animated: !reduceMotion() });
-									}}
+									onPress={() => jumpToLatest(!reduceMotion())}
 								>
 									<Icon name="ArrowDown" />
 								</Button>

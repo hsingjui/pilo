@@ -967,6 +967,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 													class="min-h-0 min-w-0 flex-1"
 												>
 													<ChatMessageList
+														lastSubmission={composer.lastSubmission}
 														assistantText={(text, textKey, streaming) => (
 															<ChatMarkdown
 																text={text}
@@ -1124,6 +1125,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 
 							<CommandPalette
 								open={searchOpen}
+								touch
 								store={store}
 								shortcuts={() => ({})}
 								searchSessions={props.searchSessions}

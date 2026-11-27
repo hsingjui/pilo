@@ -84,7 +84,7 @@ test("mobile shell shows connection recovery notice above composer and reconnect
 
 	await app.waitFor("id:mobile-connection-banner");
 	await app.press("id:mobile-reconnect-button");
-	await app.waitFor("text:Remote connected");
+	await app.waitFor("text:Connected");
 	expect(app.shows("id:mobile-reconnect-button")).toBe(false);
 });
 
@@ -515,7 +515,7 @@ test("mobile pending queue disables actions while offline and re-enables after r
 
 	// Reconnecting unlocks the queue actions.
 	await app.press("id:mobile-reconnect-button");
-	await app.waitFor("text:Remote connected");
+	await app.waitFor("text:Connected");
 	await app.press("id:chat-pending-send-now-0");
 	await app.waitFor("id:chat-pending-queue", { state: "gone" });
 });

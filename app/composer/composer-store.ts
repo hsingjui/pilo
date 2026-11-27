@@ -252,6 +252,9 @@ export class ComposerStore {
 		status: null,
 	});
 	private readonly targetSignal = signal<ComposerTarget | null>(null);
+	private readonly lastSubmissionSignal = signal<{ sessionKey: string } | null>(
+		null,
+	);
 	private readonly sessionCommandsSignal = signal<{
 		sessionKey: string;
 		commands: readonly PiCommand[];
@@ -288,6 +291,8 @@ export class ComposerStore {
 
 	readonly state: Accessor<ComposerViewState>;
 	readonly target: Accessor<ComposerTarget | null>;
+	/** A new token for each message submitted from this composer. */
+	readonly lastSubmission = () => this.lastSubmissionSignal();
 	readonly commands: Accessor<readonly ComposerSuggestion[]>;
 	readonly fileSuggestions: Accessor<readonly ComposerSuggestion[]>;
 	private readonly appProjects: Accessor<AppState["projects"]>;
@@ -1520,6 +1525,9 @@ export class ComposerStore {
 					command.name === slash.name && command.source !== "extension",
 			);
 
+		if (!knownExtensionCommand && !needsExtensionCheck) {
+			this.lastSubmissionSignal.set({ sessionKey: target.sessionKey });
+		}
 		const delivery = mode ?? sendMode;
 		if (delivery === "send_now") {
 			this.resetTransientSendMode();
@@ -1542,24 +1550,21 @@ export class ComposerStore {
 					submission,
 					undefined,
 					async () => {
-						let startedFromPending = false;
-						if (pendingStart) {
-							startedFromPending = await pendingStart.settled;
-							if (!startedFromPending) return false;
-						}
+						if (pendingStart && !(await pendingStart.settled)) return false;
 						if (
 							this.beforeSend &&
 							!(await this.beforeSend(target.sessionKey))
 						) {
 							return false;
 						}
-						if (
-							mode === "follow_up" &&
-							((!startedFromPending && !this.running()) || this.compacting())
-						) {
-							return false;
-						}
-						return true;
+						if (mode !== "follow_up") return true;
+						if (this.chatState(target.sessionKey)?.compacting) return false;
+						// Only slash input requires the previous turn to still be running.
+						return (
+							!chatSubmissionMessage(submission).startsWith("/") ||
+							pendingStart !== undefined ||
+							this.running(target.sessionKey)
+						);
 					},
 				);
 				if (outcome === "cancelled") {
@@ -1706,6 +1711,7 @@ export class ComposerStore {
 					liveCommands !== null &&
 					createPiExtensionCommandNames(liveCommands).has(slash.name);
 				if (!isExtensionCommand) {
+					this.lastSubmissionSignal.set({ sessionKey: target.sessionKey });
 					local =
 						this.transcript?.submitLocal(
 							target.sessionKey,

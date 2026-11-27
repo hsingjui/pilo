@@ -6,17 +6,19 @@ mod session_start;
 mod transcript;
 mod turn_projection;
 
+pub(crate) use session_control::{PiCommandError, same_session_file};
+
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc, Mutex as StdMutex, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
 use pilo_protocol::BuiltinExtension;
 use serde::Serialize;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{Mutex, RwLock, oneshot};
 
 use pilo_domain::Project;
 
@@ -98,6 +100,7 @@ struct ChatRegistry {
     shutting_down: bool,
     usage_sequence: u64,
     idle_since: HashMap<String, (u64, std::time::Instant)>,
+    session_file_gates: HashMap<String, Weak<RwLock<()>>>,
 }
 
 #[derive(Clone, Default)]
@@ -145,11 +148,20 @@ impl ChatSessions {
     }
 
     pub async fn states(&self) -> Vec<ChatSessionState> {
+        self.states_inner(true).await
+    }
+
+    pub(crate) async fn persistent_states(&self) -> Vec<ChatSessionState> {
+        self.states_inner(false).await
+    }
+
+    async fn states_inner(&self, include_temporary: bool) -> Vec<ChatSessionState> {
         let processes = {
             let registry = self.registry.lock().await;
             registry
                 .processes
                 .iter()
+                .filter(|(_, process)| include_temporary || !process.no_session)
                 .map(|(session_key, process)| {
                     (
                         session_key.clone(),
@@ -194,6 +206,22 @@ impl ChatSessions {
         states
     }
 
+    pub(crate) async fn session_file_gate(&self, project_id: &str) -> Arc<RwLock<()>> {
+        let mut registry = self.registry.lock().await;
+        registry
+            .session_file_gates
+            .retain(|_, gate| gate.strong_count() != 0);
+        let entry = registry
+            .session_file_gates
+            .entry(project_id.to_owned())
+            .or_default();
+        entry.upgrade().unwrap_or_else(|| {
+            let gate = Arc::new(RwLock::new(()));
+            *entry = Arc::downgrade(&gate);
+            gate
+        })
+    }
+
     async fn process(
         &self,
         project: &Project,
@@ -209,6 +237,12 @@ impl ChatSessions {
             return Err("temporary session cannot resume a persisted session".to_owned());
         }
         self.prune_idle(session_key).await;
+        // Register resumed files before CLI trash can check for a managed owner.
+        let _files = if session_path.is_some() {
+            Some(self.session_file_gate(&project.id).await.read_owned().await)
+        } else {
+            None
+        };
         let process = {
             let mut registry = self.registry.lock().await;
             if registry.shutting_down || registry.unavailable_projects.contains_key(&project.id) {

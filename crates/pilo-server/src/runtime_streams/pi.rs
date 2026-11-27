@@ -553,11 +553,15 @@ pub(crate) async fn pi_send(
         )
     };
     let guarded_clear = params.command["type"] == "pilo_clear_owned_queue";
+    let queued_follow_up = params.command["type"] == "pilo_follow_up_prompt";
     if guarded_clear {
         params.command["type"] = json!("clear_queue");
+    } else if queued_follow_up {
+        params.command["type"] = json!("prompt");
     }
     let command = params.command["type"].as_str().unwrap_or_default();
     let queues_input = queues_chat_input(command);
+    let starts_after_stall = command == "prompt" && !queued_follow_up;
     let tracked = track_work && (queues_input || matches!(command, "compact" | "bash"));
     if track_work && queues_input && params.command["id"].as_str().is_none_or(str::is_empty) {
         params.command["id"] = json!(format!(
@@ -601,7 +605,7 @@ pub(crate) async fn pi_send(
         // Only a new prompt may follow a stalled turn; queue input sent before the
         // client saw the stall is already back in its draft.
         if queues_input
-            && (work.clearing_stalled_queue || (command != "prompt" && work.stalled_input_closed))
+            && (work.clearing_stalled_queue || (work.stalled_input_closed && !starts_after_stall))
         {
             return Err(STALLED_INPUT_CLOSED.to_owned());
         }
@@ -642,7 +646,7 @@ pub(crate) async fn pi_send(
         if tracked && result.is_err() {
             work.pending.remove(id);
         }
-        if result.is_ok() && command == "prompt" {
+        if result.is_ok() && starts_after_stall {
             work.stalled_input_closed = false;
         }
         if result.is_ok() && command == "extension_ui_response" {

@@ -73,6 +73,7 @@ test("opens Git tab once, renders branch/files/diff, switches working/staged, op
 	expect(app.shows("text:The working tree has no unstaged changes.")).toBe(
 		true,
 	);
+	expect(app.shows("text:There are no changed files to diff.")).toBe(true);
 
 	// Returning to p1 restores p1's view preferences and reloads status.
 	await app.press("id:switch-project");
@@ -94,7 +95,10 @@ test("handles status failure retry, missing file fallback on refresh, and diff f
 	await app.press("id:header-open-git");
 	await app.waitFor("id:git-status-error");
 	expect(app.shows("text:Unable to read Git status")).toBe(true);
-	expect(app.shows("text:not a git repository")).toBe(true);
+	expect(
+		app.shows("text:Check that the current project is a Git repository."),
+	).toBe(true);
+	expect(app.shows("text:not a git repository")).toBe(false);
 
 	await app.press("id:scenario-normal");
 	await app.press("id:git-status-retry");

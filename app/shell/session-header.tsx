@@ -90,6 +90,9 @@ export interface SessionHeaderProps {
 		activeId: () => string | null;
 		onSelect: (terminalId: string | null) => void;
 		onClose: (terminalId: string) => void;
+		onNew?: () => void;
+		onRestart?: () => void;
+		disabled?: () => boolean;
 	};
 	/** The buttons before the session menu (terminal, temporary chat, quick open). */
 	actions?: JSX.Element;
@@ -337,6 +340,55 @@ export function SessionHeader(props: SessionHeaderProps) {
 				{() =>
 					hasOverflow() ? (
 						<OverflowTabsMenu items={() => partitioned().overflow} />
+					) : null
+				}
+				{() => {
+					const terminals = props.terminals;
+					const active = terminals?.activeId();
+					const exited =
+						active !== null &&
+						terminalTabs().some((tab) => tab.id === active && tab.exited);
+					return exited && terminals?.onRestart ? (
+						<Button
+							testID="terminal-restart-tab"
+							variant="ghost"
+							size="icon"
+							class="size-7 shrink-0"
+							disabled={terminals.disabled?.() ?? false}
+							accessibilityLabel={t("terminal.restart")}
+							tooltip={
+								<Tooltip>
+									<Text class="font-sans">{() => t("terminal.restart")}</Text>
+								</Tooltip>
+							}
+							onPress={terminals.onRestart}
+						>
+							<Icon
+								name="RotateCcw"
+								size={14}
+								color={token("muted-foreground")}
+							/>
+						</Button>
+					) : null;
+				}}
+				{() =>
+					terminalTabs().length > 0 && props.terminals?.onNew ? (
+						<Button
+							testID="terminal-new-tab"
+							variant="ghost"
+							size="icon"
+							class="size-7 shrink-0"
+							disabled={props.terminals.disabled?.() ?? false}
+							accessibilityLabel={t("terminal.new")}
+							tooltip={
+								<Tooltip>
+									<Text class="font-sans">{() => t("terminal.new")}</Text>
+								</Tooltip>
+							}
+							onPress={props.terminals.onNew}
+						>
+							<Icon name="Plus" size={14} color={token("muted-foreground")} />
+						</Button>
 					) : null
 				}
 			</View>

@@ -59,6 +59,7 @@ const enUS = {
 		unexpectedError: "An unexpected error occurred.",
 		runtimeStopped: "Pilo's runtime stopped",
 		runtimeStoppedDescription: "Restart Pilo to continue.",
+		runtimeEventStreamStopped: "The runtime event stream stopped.",
 		reload: "Reload",
 		newChat: "New session",
 		temporaryChat: "Temporary session",
@@ -190,7 +191,7 @@ const enUS = {
 		remoteRunning: "Running",
 		remoteNotRunning: "Enabled · Not running",
 		remoteStopped: "Stopped",
-		remoteConnected: "Remote connected",
+		remoteConnected: "Connected",
 		remoteConnectionLost: "Connection to Pilo lost",
 		remoteSignOut: "Sign out",
 		remoteSignOutConfirm: "Confirm sign out",
@@ -245,6 +246,8 @@ const enUS = {
 		remoteOpenPilo: "Open Pilo",
 		remoteManualTokenToggle: "Have a device token? Enter manually",
 		remoteManualTokenPlaceholder: "Paste device token…",
+		remoteManualTokenInvalid:
+			"This device token is invalid or expired. Check it and try again.",
 		remotePairingAddressUsed:
 			"This address was already paired by another request. Open it if this browser is authorized; otherwise scan a new QR code.",
 		remotePairingStorageUnavailable:
@@ -303,6 +306,8 @@ const enUS = {
 		systemManaged: "Managed by system",
 		recheckPermission: "Check permission again",
 		testNotification: "Test notification",
+		testNotificationDescription:
+			"Requires desktop notifications to be enabled and allowed by the system.",
 		sending: "Sending…",
 		connectionName: "Name",
 		connectionMethod: "Connection method",
@@ -475,7 +480,7 @@ const enUS = {
 		newline: "New line",
 		resetDefault: "Reset to default",
 		resetAllDefaults: "Reset all shortcuts to defaults",
-		pressNewShortcut: "Press a new shortcut…",
+		pressNewShortcut: "Press shortcut… Esc to cancel",
 	},
 	connection: {
 		shownInHome: "Show on home",
@@ -547,6 +552,8 @@ const enUS = {
 		connectionFailed: "{{name}} connection failed",
 		piAvailable: "{{name}} Pi is available",
 		piUnavailable: "No usable Pi detected on {{name}}",
+		localLoadFailed: "Failed to load the local connection",
+		wslLoadFailed: "Failed to load WSL connections",
 		sshLoadFailed: "Failed to load SSH connections",
 		saveFailed: "Failed to save connection",
 		wslAdded: "WSL added · {{name}}",
@@ -584,6 +591,7 @@ const enUS = {
 			"{{connection}} · Enter a remote directory, or browse from the root.",
 		projectDirectory: "Project directory",
 		browseRemote: "Browse remote folder",
+		parentDirectory: "Parent directory",
 		selectCurrentDirectory: "Select current directory",
 		filterFolders: "Filter folders",
 		noMatchingFolders: "No folders match “{{query}}”",
@@ -848,6 +856,8 @@ const enUS = {
 		contextUsageKnownPending:
 			"Context usage pending update (showing last known value)",
 		contextUsage: "Context usage {{percent}}",
+		contextUsageDescription:
+			"Share of the model context window currently used by this session.",
 		contextUsageUnknown:
 			"Context usage is not available yet; it will update after the first response or the next response after compaction.",
 		contextUsageAfterCompaction:
@@ -987,7 +997,7 @@ const enUS = {
 		recentSessions: "Recent sessions",
 		messageGroup: "Message content",
 		searchingHistory: "Searching history",
-		toggle: "Toggle",
+		toggle: "Navigate",
 		select: "Select",
 		close: "Close",
 		user: "You",
@@ -1073,6 +1083,8 @@ const enUS = {
 		reading: "Reading files…",
 		noDiff: "No diff to display",
 		noDiffDescription: "This file has no text changes in the current view.",
+		noFilesToDiff: "There are no changed files to diff.",
+		selectFileToDiff: "Select a changed file to view its diff.",
 		gitRefresh: "Refresh Git status",
 		gitReadFailed: "Unable to read Git status",
 		gitRepoHint: "Check that the current project is a Git repository.",
@@ -1100,9 +1112,12 @@ const enUS = {
 	terminal: {
 		openFailed: "Unable to open Terminal",
 		outputTruncated: "Older terminal output was discarded",
+		processExited: "Process exited",
+		terminalError: "Terminal error: {{message}}",
 		partialCloseFailed: "Some Terminals could not be closed normally",
 		resize: "Adjust terminal height",
 		rename: "Rename Terminal",
+		restart: "Restart Terminal",
 		close: "Close Terminal",
 		new: "New Terminal",
 		hide: "Hide terminal",

@@ -673,6 +673,7 @@ export class ChatQueueStore implements ComposerQueue {
 			target.sessionKey,
 			{
 				type,
+				...(type === "follow_up" ? { piloStartIfIdle: true } : {}),
 				piloQueueOwner: this.queueOwner,
 				message: chatSubmissionMessage(submission),
 				...(submission.images.length > 0

@@ -96,6 +96,7 @@ export function MobileAuthRequiredView(props: {
 								placeholder={t("settings.remoteManualTokenPlaceholder")}
 								autoCorrect={false}
 								autoCapitalize="none"
+								masked
 								class="min-h-11"
 								style={{
 									fontSize: webInputFontSize(token("pilo-ui-text-sm")),
@@ -110,7 +111,7 @@ export function MobileAuthRequiredView(props: {
 								disabled={!tokenDraft().trim()}
 								onPress={submit}
 							>
-								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-primary-foreground">
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium">
 									{() => t("common.confirm")}
 								</Text>
 							</Button>

@@ -15,6 +15,7 @@ use crate::ServerState;
 use crate::output::ServerWriter;
 
 const STALL_CLEAR_QUEUE_ID: &str = "pilo-stall-clear-queue";
+const STALL_QUEUE_BARRIER: &str = "pilo.stall-queue-barrier.v1";
 const STALL_QUEUE_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn should_observe_rpc_event(bytes: &[u8], watch_stalls: bool) -> bool {
@@ -64,6 +65,7 @@ pub(super) fn spawn_output_tasks(
                 Ok(Some(bytes)) => {
                     trace_pi_rpc_line(&stream_id, &bytes);
                     let mut clear_queue = false;
+                    let mut stall_barrier = None;
                     if track_work
                         && should_observe_rpc_event(&bytes, watch_stalls)
                         && let Ok(event) = serde_json::from_slice::<Value>(&bytes)
@@ -71,51 +73,81 @@ pub(super) fn spawn_output_tasks(
                         let mut work = work
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        work.observe(&event);
-                        if watch_stalls {
-                            match event["type"].as_str() {
-                                Some("agent_end") => {
-                                    let stalled = ended_with_stream_stall(&event);
-                                    work.clearing_stalled_queue = stalled;
-                                    work.stalled_input_closed = stalled;
+                        if watch_stalls
+                            && event["type"] == "extension_ui_request"
+                            && event["method"] == "confirm"
+                            && event["title"] == STALL_QUEUE_BARRIER
+                            && let Some(id) = event["id"].as_str()
+                        {
+                            work.clearing_stalled_queue = true;
+                            work.stalled_input_closed = true;
+                            stall_barrier = Some(id.to_owned());
+                        } else {
+                            work.observe(&event);
+                            if watch_stalls {
+                                match event["type"].as_str() {
+                                    Some("agent_end") => {
+                                        let stalled = work.clearing_stalled_queue
+                                            || ended_with_stream_stall(&event);
+                                        work.clearing_stalled_queue = stalled;
+                                        work.stalled_input_closed = stalled;
+                                    }
+                                    Some("agent_settled") if work.clearing_stalled_queue => {
+                                        clear_queue = work.has_queued_input()
+                                            || work.has_pending_chat_input();
+                                        work.clearing_stalled_queue = clear_queue;
+                                    }
+                                    _ => {}
                                 }
-                                Some("agent_settled") if work.clearing_stalled_queue => {
-                                    clear_queue =
-                                        work.has_queued_input() || work.has_pending_chat_input();
-                                    work.clearing_stalled_queue = clear_queue;
-                                }
-                                _ => {}
                             }
                         }
                     }
-                    if clear_queue {
+                    if clear_queue || stall_barrier.is_some() {
                         // Abort leaves Pi's queue intact. Do not let clients restore
                         // their drafts until Pi acknowledges clearing it.
                         let result = tokio::time::timeout(
                             STALL_QUEUE_CLEANUP_TIMEOUT,
-                            clear_stalled_pi_queue(
-                                &mut reader,
-                                &stdout_identity,
-                                &work,
-                                &writer,
-                                &stream_id,
-                            ),
+                            async {
+                                clear_stalled_pi_queue(
+                                    &mut reader,
+                                    &stdout_identity,
+                                    &work,
+                                    &writer,
+                                    &stream_id,
+                                )
+                                .await?;
+                                if let Some(id) = &stall_barrier {
+                                    write_pi_command(
+                                        &stdout_identity,
+                                        &json!({ "type": "extension_ui_response", "id": id, "confirmed": true }),
+                                    )
+                                    .await?;
+                                }
+                                Ok::<(), String>(())
+                            },
                         )
                         .await;
-                        match result {
-                            Ok(Ok(())) => {
-                                work.lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                    .clearing_stalled_queue = false
-                            }
-                            failure => {
-                                eprintln!(
-                                    "[runtime-diagnostics] stalled queue cleanup failed streamId={stream_id}: {failure:?}"
-                                );
-                                settle_after_stop = Some(bytes);
-                                break;
-                            }
+                        if !matches!(result, Ok(Ok(()))) {
+                            eprintln!(
+                                "[runtime-diagnostics] stalled queue cleanup failed streamId={stream_id}: {result:?}"
+                            );
+                            // While Pi is held at the barrier, message_end has already
+                            // reported the stall but no native settlement is possible.
+                            settle_after_stop = Some(if stall_barrier.is_some() {
+                                br#"{"type":"agent_settled","aborted":true}"#.to_vec()
+                            } else {
+                                bytes
+                            });
+                            break;
                         }
+                        if stall_barrier.is_some() {
+                            // This is a Server/Pi handshake, not a user dialog. Keep
+                            // admission closed until the real agent_settled arrives.
+                            continue;
+                        }
+                        work.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .clearing_stalled_queue = false;
                     }
                     if writer
                         .send(Envelope::event_with_binary(
@@ -267,16 +299,11 @@ async fn clear_stalled_pi_queue<R: AsyncBufRead + Unpin>(
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .has_pending_chat_input();
         if !sent && !input_pending {
-            let mut command =
-                serde_json::to_vec(&json!({ "id": STALL_CLEAR_QUEUE_ID, "type": "clear_queue" }))
-                    .map_err(|error| error.to_string())?;
-            command.push(b'\n');
-            let pipe = stdin.upgrade().ok_or("Pi stdin closed")?;
-            let mut pipe = pipe.lock().await;
-            pipe.write_all(&command)
-                .await
-                .map_err(|error| error.to_string())?;
-            pipe.flush().await.map_err(|error| error.to_string())?;
+            write_pi_command(
+                stdin,
+                &json!({ "id": STALL_CLEAR_QUEUE_ID, "type": "clear_queue" }),
+            )
+            .await?;
             sent = true;
         }
         let bytes = read_rpc_line(reader)
@@ -309,6 +336,17 @@ async fn clear_stalled_pi_queue<R: AsyncBufRead + Unpin>(
             ))
             .await?;
     }
+}
+
+async fn write_pi_command(stdin: &Weak<Mutex<ChildStdin>>, command: &Value) -> Result<(), String> {
+    let mut bytes = serde_json::to_vec(command).map_err(|error| error.to_string())?;
+    bytes.push(b'\n');
+    let pipe = stdin.upgrade().ok_or("Pi stdin closed")?;
+    let mut pipe = pipe.lock().await;
+    pipe.write_all(&bytes)
+        .await
+        .map_err(|error| error.to_string())?;
+    pipe.flush().await.map_err(|error| error.to_string())
 }
 
 async fn read_rpc_line<R: AsyncBufRead + Unpin>(

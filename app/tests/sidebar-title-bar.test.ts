@@ -10,6 +10,7 @@ import {
 const lodyCard = {
 	frameTop: 9,
 	frameLeft: 9,
+	frameWidth: 18,
 	radius: 12,
 	paddingTop: 2,
 	top: 11,
@@ -17,6 +18,7 @@ const lodyCard = {
 const dockedCard = {
 	frameTop: 0,
 	frameLeft: 0,
+	frameWidth: 0,
 	radius: 0,
 	paddingTop: 8,
 	top: 8,

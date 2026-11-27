@@ -118,6 +118,7 @@ const FLOATING_CONTROLS_MIN_INSET = 12;
 export interface SidebarSurfaceFrame {
 	frameTop: number;
 	frameLeft: number;
+	frameWidth: number;
 	radius: number;
 }
 
@@ -151,12 +152,14 @@ export function sidebarSurface() {
 	};
 	const frameTop = margin.top + border.top;
 	const frameLeft = margin.left + border.left;
+	const frameWidth = margin.left + margin.right + border.left + border.right;
 	return {
 		style,
 		radius,
 		paddingTop: padding.top,
 		frameTop,
 		frameLeft,
+		frameWidth,
 		top: frameTop + padding.top,
 		left: frameLeft + padding.left,
 	};
@@ -270,7 +273,10 @@ export function SidebarPanel(props: SidebarPanelProps) {
 			<View
 				testID="sidebar-surface"
 				class="relative min-h-0 flex-1"
-				style={card().style}
+				style={[
+					card().style,
+					{ width: Math.max(0, layout.width() - card().frameWidth) },
+				]}
 			>
 				<View
 					testID="sidebar-title-bar"
