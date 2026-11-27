@@ -828,10 +828,9 @@ export function MobileAppShell(props: MobileAppShellProps) {
 											const id = project()?.id;
 											if (!id || !terminals) return;
 											workspace.selectChat(id);
-											const existing = terminals.projectTabs(id)[0];
-											if (existing) terminals.select(existing.id);
-											else
-												void terminals.open(id).catch((error: unknown) => {
+											void terminals
+												.selectOrOpen(id)
+												.catch((error: unknown) => {
 													showToast(toasts, {
 														variant: "error",
 														title: t("terminal.openFailed"),

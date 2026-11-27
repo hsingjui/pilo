@@ -678,7 +678,7 @@ impl TerminalManager {
         &self,
         owner: &TerminalOwner,
         terminal_id: &str,
-    ) -> Result<TerminalInfo, TerminalAccessError> {
+    ) -> Result<u64, TerminalAccessError> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let session = state.sessions.get_mut(terminal_id).ok_or_else(|| {
             TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
@@ -692,7 +692,11 @@ impl TerminalManager {
         if let Some(timer) = session.disconnect_timer.take() {
             timer.abort();
         }
-        Ok(session.info())
+        Ok(session
+            .output_buffer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .end_offset)
     }
 
     pub(crate) fn unsubscribe_ws(&self, owner: &TerminalOwner, terminal_id: &str) {

@@ -94,9 +94,9 @@ export class TerminalStore {
 			this.disconnectRemote = client
 				.eventStream?.()
 				.onConnectionState?.((state) => {
-					for (const [id, terminal] of this.remote) {
-						if (state === "connected") void this.recover(id, terminal);
-						else terminal.recovery = undefined;
+					if (state !== "connected") {
+						for (const terminal of this.remote.values())
+							terminal.recovery = undefined;
 					}
 				});
 		}
@@ -115,6 +115,12 @@ export class TerminalStore {
 				(tab) => tab.id === id && tab.projectId === projectId,
 			) ?? null
 		);
+	}
+
+	async selectOrOpen(projectId: string): Promise<void> {
+		const existing = this.projectTabs(projectId).find((tab) => !tab.exited);
+		if (existing) this.select(existing.id);
+		else await this.open(projectId);
 	}
 
 	/** Opens a shell in the project in a new tab and shows it. */
@@ -211,7 +217,12 @@ export class TerminalStore {
 		if (!this.client.reconnectsEvents || !this.client.subscribeTerminal) return;
 		const terminal: RemoteTerminal = {
 			offset: 0,
-			unsubscribe: this.client.subscribeTerminal(id, (event) => {
+			unsubscribe: () => {},
+		};
+		this.remote.set(id, terminal);
+		terminal.unsubscribe = this.client.subscribeTerminal(
+			id,
+			(event) => {
 				const current = this.remote.get(id);
 				if (!current) return;
 				const pending = current.recovery;
@@ -226,10 +237,22 @@ export class TerminalStore {
 					pending.events.push(event);
 					if (event.type === "output") pending.bytes += outputBytes(event.data);
 				}
-			}),
-		};
-		this.remote.set(id, terminal);
-		void this.recover(id, terminal);
+			},
+			(ack) => {
+				if (this.remote.get(id) !== terminal) return;
+				if (ack instanceof HostApiError) this.handleRecoveryError(id, ack);
+				else void this.recover(id, terminal);
+			},
+		);
+	}
+
+	private handleRecoveryError(id: string, error: unknown) {
+		if (
+			error instanceof HostApiError &&
+			(error.code === "not_found" || error.code === "forbidden")
+		) {
+			this.dispatch({ type: "error", terminalId: id, message: error.message });
+		}
 	}
 
 	private async recover(id: string, terminal: RemoteTerminal) {
@@ -264,17 +287,7 @@ export class TerminalStore {
 				this.dispatch({ type: "output", terminalId: id, data: snapshot.data });
 			}
 		} catch (error) {
-			if (
-				current() &&
-				error instanceof HostApiError &&
-				(error.code === "not_found" || error.code === "forbidden")
-			) {
-				this.dispatch({
-					type: "error",
-					terminalId: id,
-					message: error.message,
-				});
-			}
+			if (current()) this.handleRecoveryError(id, error);
 		} finally {
 			if (current()) {
 				terminal.recovery = undefined;

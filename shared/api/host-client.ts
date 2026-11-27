@@ -25,6 +25,7 @@ import type {
 	HostCapabilities,
 	HostEventStream,
 	HostTransport,
+	TerminalSubscriptionAck,
 } from "@shared/api/host-transport";
 import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type {
@@ -728,8 +729,11 @@ export class HostClient implements PiloClient {
 	subscribeTerminal(
 		terminalId: string,
 		listener: (event: TerminalEvent) => void,
+		onSubscribed?: (ack: TerminalSubscriptionAck) => void,
 	): () => void {
-		return this.transport.events().subscribeTerminal(terminalId, listener);
+		return this.transport
+			.events()
+			.subscribeTerminal(terminalId, listener, onSubscribed);
 	}
 
 	nextTerminalEvents(max: number): Promise<TerminalEvent[]> {

@@ -45,11 +45,14 @@ export type HostCallOptions = {
 	signal?: AbortSignalLike;
 };
 
+export type TerminalSubscriptionAck = number | HostApiError;
+
 export interface HostEventStream {
 	subscribeEvents(options: PiloClientEventOptions): () => void;
 	subscribeTerminal(
 		terminalId: string,
 		listener: (event: TerminalEvent) => void,
+		onSubscribed?: (ack: TerminalSubscriptionAck) => void,
 	): () => void;
 	subscribeAllTerminals?(listener: (event: TerminalEvent) => void): () => void;
 	nextTerminalEvents?(max: number): Promise<TerminalEvent[]>;
@@ -394,8 +397,12 @@ export class HttpTransport implements HostTransport {
 	private readonly eventListeners = new Set<PiloClientEventOptions>();
 	private readonly terminalListeners = new Map<
 		string,
-		Set<(event: TerminalEvent) => void>
+		Map<
+			(event: TerminalEvent) => void,
+			((ack: TerminalSubscriptionAck) => void) | undefined
+		>
 	>();
+	private readonly terminalAcks = new Map<string, TerminalSubscriptionAck>();
 	private readonly allTerminalListeners = new Set<
 		(event: TerminalEvent) => void
 	>();
@@ -443,8 +450,8 @@ export class HttpTransport implements HostTransport {
 
 		this.stream = {
 			subscribeEvents: (opts) => this.subscribeEvents(opts),
-			subscribeTerminal: (terminalId, listener) =>
-				this.subscribeTerminal(terminalId, listener),
+			subscribeTerminal: (terminalId, listener, onSubscribed) =>
+				this.subscribeTerminal(terminalId, listener, onSubscribed),
 			subscribeAllTerminals: (listener) => this.subscribeAllTerminals(listener),
 			onHello: (listener) => this.onHello(listener),
 			onConnectionState: (listener) => this.onConnectionState(listener),
@@ -774,25 +781,33 @@ export class HttpTransport implements HostTransport {
 	private subscribeTerminal(
 		terminalId: string,
 		listener: (event: TerminalEvent) => void,
+		onSubscribed?: (ack: TerminalSubscriptionAck) => void,
 	): () => void {
 		if (this.disposed) return () => undefined;
 		let set = this.terminalListeners.get(terminalId);
 		const isFirst = !set;
 		if (!set) {
-			set = new Set();
+			set = new Map();
 			this.terminalListeners.set(terminalId, set);
 		}
-		set.add(listener);
+		set.set(listener, onSubscribed);
 		this.ensureSocket();
 		if (isFirst && this.socketReady && this.socket?.readyState === WS_OPEN) {
-			this.sendSocketJson({ type: "terminal.subscribe", terminalId });
+			this.sendSocketJson({
+				type: "terminal.subscribe",
+				terminalId,
+				ack: true,
+			});
 		}
+		const ack = this.terminalAcks.get(terminalId);
+		if (ack !== undefined) onSubscribed?.(ack);
 		return () => {
 			const listeners = this.terminalListeners.get(terminalId);
 			if (!listeners) return;
 			listeners.delete(listener);
 			if (listeners.size === 0) {
 				this.terminalListeners.delete(terminalId);
+				this.terminalAcks.delete(terminalId);
 				if (this.socketReady && this.socket?.readyState === WS_OPEN) {
 					this.sendSocketJson({ type: "terminal.unsubscribe", terminalId });
 				}
@@ -988,6 +1003,11 @@ export class HttpTransport implements HostTransport {
 					return;
 				}
 
+				if (parsed.type === "terminal.subscribed") {
+					this.handleTerminalAck(parsed);
+					return;
+				}
+
 				let consumed = this.replayCursor;
 				if (
 					parsed.type === "resyncRequired" &&
@@ -1114,7 +1134,11 @@ export class HttpTransport implements HostTransport {
 		// Re-subscribe any active terminal streams on this socket.
 		if (this.socket === socket && socket.readyState === WS_OPEN) {
 			for (const terminalId of this.terminalListeners.keys()) {
-				this.sendSocketJson({ type: "terminal.subscribe", terminalId });
+				this.sendSocketJson({
+					type: "terminal.subscribe",
+					terminalId,
+					ack: true,
+				});
 			}
 		}
 		this.finishNegotiation();
@@ -1140,13 +1164,26 @@ export class HttpTransport implements HostTransport {
 	private broadcastTerminalEvent(event: TerminalEvent): void {
 		const targeted = this.terminalListeners.get(event.terminalId);
 		if (targeted) {
-			for (const listener of Array.from(targeted)) {
+			for (const listener of Array.from(targeted.keys())) {
 				listener(event);
 			}
 		}
 		for (const listener of Array.from(this.allTerminalListeners)) {
 			listener(event);
 		}
+	}
+
+	private handleTerminalAck(parsed: Record<string, unknown>): void {
+		if (!this.socketReady || typeof parsed.terminalId !== "string") return;
+		const listeners = this.terminalListeners.get(parsed.terminalId);
+		if (!listeners) return;
+		const error = parseErrorPayload(parsed.error);
+		const ack = error
+			? new HostApiError(error.code, error.message, error.retryable)
+			: parsed.offset;
+		if (!(ack instanceof HostApiError) && typeof ack !== "number") return;
+		this.terminalAcks.set(parsed.terminalId, ack);
+		for (const listener of Array.from(listeners.values())) listener?.(ack);
 	}
 
 	private notifyEventStatus(connected: boolean): void {
@@ -1213,6 +1250,7 @@ export class HttpTransport implements HostTransport {
 		const socket = this.socket;
 		this.socket = null;
 		this.socketReady = false;
+		this.terminalAcks.clear();
 		this.detachSocketListeners?.();
 		this.detachSocketListeners = undefined;
 		if (!socket) return;

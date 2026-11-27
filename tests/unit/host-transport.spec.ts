@@ -461,16 +461,26 @@ describe("HttpTransport & HostClient", () => {
 			},
 		});
 
-		const unsubTerm = transport
-			.events()
-			.subscribeTerminal("term-1", (ev) => terminalEvents.push(ev));
+		const terminalAcks: unknown[] = [];
+		const unsubTerm = transport.events().subscribeTerminal(
+			"term-1",
+			(ev) => terminalEvents.push(ev),
+			(ack) => terminalAcks.push(ack),
+		);
 
 		assert.equal(sockets.length, 1);
 		sockets[0]!.emitMessage(makeHello());
 		assert.deepEqual(
 			sockets[0]!.sent.map((s) => JSON.parse(s)),
-			[{ type: "terminal.subscribe", terminalId: "term-1" }],
+			[{ type: "terminal.subscribe", terminalId: "term-1", ack: true }],
 		);
+		assert.deepEqual(terminalAcks, []);
+		sockets[0]!.emitMessage({
+			type: "terminal.subscribed",
+			terminalId: "term-1",
+			offset: 17,
+		});
+		assert.deepEqual(terminalAcks, [17]);
 
 		sockets[0]!.emitMessage({
 			type: "terminal",
@@ -493,8 +503,14 @@ describe("HttpTransport & HostClient", () => {
 		sockets[1]!.emitMessage(makeHello());
 		assert.deepEqual(
 			sockets[1]!.sent.map((s) => JSON.parse(s)),
-			[{ type: "terminal.subscribe", terminalId: "term-1" }],
+			[{ type: "terminal.subscribe", terminalId: "term-1", ack: true }],
 		);
+		sockets[1]!.emitMessage({
+			type: "terminal.subscribed",
+			terminalId: "term-1",
+			offset: 25,
+		});
+		assert.deepEqual(terminalAcks, [17, 25]);
 
 		unsubTerm();
 		assert.deepEqual(JSON.parse(sockets[1]!.sent.at(-1)!), {
