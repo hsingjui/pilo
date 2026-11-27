@@ -148,7 +148,10 @@ export function ProjectSection(props: {
 	};
 	const hoverAction = () => (menuOpen() ? "opacity-100" : HOVER_ACTION);
 	return (
-		<View testID={section()} class="w-full min-w-0 gap-px">
+		<View
+			testID={section()}
+			class="w-full min-w-0 gap-(--pilo-sidebar-row-gap)"
+		>
 			<Foreground.Provider value={foreground}>
 				<View ref={row.set} testID={`${section()}:row`}>
 					<Button

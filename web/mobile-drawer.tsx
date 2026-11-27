@@ -789,7 +789,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 														defaultWorkspaceShown()[group.connection.id] ===
 														true;
 													return (
-														<View>
+														<View class="gap-1">
 															<View class="min-h-11 flex-row items-center">
 																<BaseButton
 																	class={`min-h-11 min-w-0 flex-1 flex-row items-center gap-2 ${ROW_RADIUS_CLASS} px-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
@@ -992,7 +992,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																						) : (
 																							<BaseButton
 																								testID={`mobile-project-empty-new:${project.id}`}
-																								class={`min-h-11 flex-row items-center gap-2 ${ROW_RADIUS_CLASS} pl-8 pr-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
+																								class={`mt-1 min-h-11 flex-row items-center gap-2 ${ROW_RADIUS_CLASS} pl-8 pr-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
 																								onPress={() =>
 																									startNewChat(project.id)
 																								}
