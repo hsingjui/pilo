@@ -9,12 +9,13 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, FromRequestParts},
-    http::{HeaderMap, HeaderValue, StatusCode, Uri, header, request::Parts},
+    http::{HeaderMap, Method, StatusCode, Uri, header, request::Parts},
     middleware::{from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use tower_http::timeout::TimeoutLayer;
 
@@ -282,8 +283,8 @@ fn has_content_hash_segment(segment: &str) -> bool {
         .any(|part| part.len() >= 8 && part.bytes().all(|byte| byte.is_ascii_hexdigit()))
 }
 
-fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
-    if spa_fallback || path == "index.html" || path == "manifest.webmanifest" {
+fn asset_cache_control(path: &str) -> &'static str {
+    if path == "index.html" || path == "manifest.webmanifest" {
         return "no-cache";
     }
     if path.starts_with("assets/")
@@ -297,22 +298,24 @@ fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
     "no-cache"
 }
 
-async fn asset(state: RemoteHttpState, uri: Uri, headers: HeaderMap) -> Response {
-    let assets = state.runtime.web_assets();
-    let path = uri.path().trim_start_matches('/');
-    let name = path.rsplit('/').next().unwrap_or_default();
-    // A fingerprint can be in the filename or a parent directory.
-    if path.starts_with("api/")
-        || !path.split('/').any(has_content_hash_segment)
-        || !matches!(
-            name.rsplit_once('.'),
-            Some((_, "wasm" | "js" | "css" | "bin"))
-        )
-    {
-        return serve_asset(assets, uri);
-    }
+async fn asset(state: RemoteHttpState, uri: Uri, method: Method, headers: HeaderMap) -> Response {
+    serve_asset(state.runtime.web_assets(), uri, method, &headers)
+}
 
-    let [br, gzip, identity, wildcard] = encoding_qualities(&headers);
+fn accepts_sidecars(path: &str) -> bool {
+    path == "index.html"
+        || (path.split('/').any(has_content_hash_segment)
+            && matches!(
+                path.rsplit_once('.'),
+                Some((_, "wasm" | "js" | "css" | "bin"))
+            ))
+}
+
+fn compressed_asset(
+    assets: &dyn WebAssets,
+    path: &str,
+    [br, gzip, identity, wildcard]: [Option<f32>; 4],
+) -> Option<(WebAsset, &'static str)> {
     let mut encodings = [
         ("br", "br", br.or(wildcard).unwrap_or(0.0)),
         ("gzip", "gz", gzip.or(wildcard).unwrap_or(0.0)),
@@ -320,34 +323,16 @@ async fn asset(state: RemoteHttpState, uri: Uri, headers: HeaderMap) -> Response
     if encodings[1].2 > encodings[0].2 {
         encodings.swap(0, 1);
     }
-    let compressed = assets.and_then(|assets| {
-        encodings
-            .into_iter()
-            .find_map(|(coding, extension, quality)| {
-                if quality == 0.0 || quality < identity.unwrap_or(0.0) {
-                    return None;
-                }
-                let asset = assets.get_precompressed(path, extension)?;
-                let mut response = asset_response(asset, asset_cache_control(path, false));
-                response
-                    .headers_mut()
-                    .insert(header::CONTENT_ENCODING, HeaderValue::from_static(coding));
-                Some(response)
-            })
-    });
-    let mut response = compressed.unwrap_or_else(|| {
-        let response = serve_asset(assets, uri);
-        if response.status().is_success() && identity.or(wildcard) == Some(0.0) {
-            return StatusCode::NOT_ACCEPTABLE.into_response();
-        }
-        response
-    });
-    if response.status().is_success() || response.status() == StatusCode::NOT_ACCEPTABLE {
-        response
-            .headers_mut()
-            .append(header::VARY, HeaderValue::from_static("Accept-Encoding"));
-    }
-    response
+    encodings
+        .into_iter()
+        .find_map(|(coding, extension, quality)| {
+            if quality == 0.0 || quality < identity.unwrap_or(0.0) {
+                return None;
+            }
+            assets
+                .get_precompressed(path, extension)
+                .map(|asset| (asset, coding))
+        })
 }
 
 fn encoding_qualities(headers: &HeaderMap) -> [Option<f32>; 4] {
@@ -379,35 +364,60 @@ fn encoding_qualities(headers: &HeaderMap) -> [Option<f32>; 4] {
     qualities
 }
 
-fn serve_asset(assets: Option<&dyn WebAssets>, uri: Uri) -> Response {
-    let requested_path = uri.path().trim_start_matches('/');
-    if requested_path.starts_with("api/") {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let path = if requested_path.is_empty() {
-        "index.html"
-    } else {
-        requested_path
-    };
-    let mut spa_fallback = false;
-    let asset = assets.and_then(|assets| assets.get(path)).or_else(|| {
-        if !allows_spa_fallback(path) {
-            return None;
-        }
-        spa_fallback = true;
-        assets.and_then(|assets| assets.get("index.html"))
-    });
-    let Some(asset) = asset else {
+fn serve_asset(
+    assets: Option<&dyn WebAssets>,
+    uri: Uri,
+    method: Method,
+    headers: &HeaderMap,
+) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let Some(assets) = assets.filter(|_| !path.starts_with("api/")) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    asset_response(asset, asset_cache_control(path, spa_fallback))
-}
+    let path = if path.is_empty() { "index.html" } else { path };
+    let qualities = encoding_qualities(headers);
+    let (path, representation) = match asset_representation(assets, path, qualities) {
+        Some(representation) => (path, representation),
+        None if path != "index.html" && allows_spa_fallback(path) => (
+            "index.html",
+            match asset_representation(assets, "index.html", qualities) {
+                Some(representation) => representation,
+                None => return StatusCode::NOT_FOUND.into_response(),
+            },
+        ),
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
 
-fn asset_response(asset: WebAsset, cache_control: &'static str) -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
+    let varies = accepts_sidecars(path);
+    let (asset, encoding) = representation;
+    let [_, _, identity, wildcard] = qualities;
+    if varies && encoding.is_none() && identity.or(wildcard) == Some(0.0) {
+        return (
+            StatusCode::NOT_ACCEPTABLE,
+            [(header::VARY, "Accept-Encoding")],
+        )
+            .into_response();
+    }
+
+    let mut response = Response::builder().header(header::CACHE_CONTROL, asset_cache_control(path));
+    if varies {
+        response = response.header(header::VARY, "Accept-Encoding");
+    }
+    if matches!(path, "index.html" | "manifest.webmanifest") {
+        let etag = format!("\"{:x}\"", Sha256::digest(&asset.bytes));
+        response = response.header(header::ETAG, &etag);
+        if matches!(method, Method::GET | Method::HEAD) && matches_etag(headers, &etag) {
+            return response
+                .status(StatusCode::NOT_MODIFIED)
+                .body(Body::empty())
+                .expect("valid asset headers");
+        }
+    }
+    if let Some(encoding) = encoding {
+        response = response.header(header::CONTENT_ENCODING, encoding);
+    }
+    response
         .header(header::CONTENT_TYPE, asset.mime_type)
-        .header(header::CACHE_CONTROL, cache_control)
         .body(Body::from(asset.bytes))
         .unwrap_or_else(|error| {
             api_error(
@@ -415,6 +425,28 @@ fn asset_response(asset: WebAsset, cache_control: &'static str) -> Response {
                 &format!("failed to build asset response: {error}"),
             )
         })
+}
+
+fn asset_representation(
+    assets: &dyn WebAssets,
+    path: &str,
+    qualities: [Option<f32>; 4],
+) -> Option<(WebAsset, Option<&'static str>)> {
+    if accepts_sidecars(path)
+        && let Some((asset, coding)) = compressed_asset(assets, path, qualities)
+    {
+        return Some((asset, Some(coding)));
+    }
+    assets.get(path).map(|asset| (asset, None))
+}
+
+fn matches_etag(headers: &HeaderMap, etag: &str) -> bool {
+    headers
+        .get_all(header::IF_NONE_MATCH)
+        .iter()
+        .flat_map(|value| value.as_bytes().split(|&byte| byte == b','))
+        .map(|tag| tag.trim_ascii())
+        .any(|tag| tag == b"*" || tag.strip_prefix(b"W/").unwrap_or(tag) == etag.as_bytes())
 }
 
 #[derive(Clone, Copy)]
@@ -489,12 +521,32 @@ mod tests {
                 _ => None,
             }
         }
+
+        fn get_precompressed(&self, path: &str, extension: &str) -> Option<WebAsset> {
+            let mime_type = match path {
+                "index.html" => "text/html",
+                "nsh.04f05f7ecb.wasm" => "application/wasm",
+                _ => return None,
+            };
+            match extension {
+                "br" | "gz" => Some(WebAsset {
+                    bytes: extension.as_bytes().to_vec(),
+                    mime_type: mime_type.into(),
+                }),
+                _ => None,
+            }
+        }
     }
 
     #[tokio::test]
     async fn serves_in_memory_assets_and_preserves_fallback_and_missing_routes() {
         for path in ["/", "/pair", "/pair/complete", "/chat/session"] {
-            let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
+            let response = serve_asset(
+                Some(&MemoryAssets),
+                Uri::from_static(path),
+                Method::GET,
+                &HeaderMap::new(),
+            );
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
             assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
@@ -513,7 +565,12 @@ mod tests {
             "/browser.b998e17dc5/runtime.js",
             "/icons/192.1b09b59f5c.png",
         ] {
-            let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
+            let response = serve_asset(
+                Some(&MemoryAssets),
+                Uri::from_static(path),
+                Method::GET,
+                &HeaderMap::new(),
+            );
             assert_eq!(response.status(), StatusCode::OK, "{path}");
             assert_eq!(
                 response.headers()[header::CACHE_CONTROL],
@@ -525,6 +582,8 @@ mod tests {
         let manifest = serve_asset(
             Some(&MemoryAssets),
             Uri::from_static("/manifest.webmanifest"),
+            Method::GET,
+            &HeaderMap::new(),
         );
         assert_eq!(manifest.status(), StatusCode::OK);
         assert_eq!(manifest.headers()[header::CACHE_CONTROL], "no-cache");
@@ -538,13 +597,80 @@ mod tests {
             "/missing.js",
         ] {
             assert_eq!(
-                serve_asset(Some(&MemoryAssets), Uri::from_static(path)).status(),
+                serve_asset(
+                    Some(&MemoryAssets),
+                    Uri::from_static(path),
+                    Method::GET,
+                    &HeaderMap::new()
+                )
+                .status(),
                 StatusCode::NOT_FOUND,
                 "{path}"
             );
         }
         assert_eq!(
-            serve_asset(None, Uri::from_static("/")).status(),
+            serve_asset(None, Uri::from_static("/"), Method::GET, &HeaderMap::new()).status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn negotiates_document_compression_and_validates_cached_representations() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT_ENCODING, "gzip, br".parse().unwrap());
+        let get = |path: &'static str, headers: &HeaderMap| {
+            serve_asset(
+                Some(&MemoryAssets),
+                Uri::from_static(path),
+                Method::GET,
+                headers,
+            )
+        };
+        let root = get("/", &headers);
+        assert_eq!(root.status(), StatusCode::OK);
+        assert_eq!(root.headers()[header::CONTENT_ENCODING], "br");
+        assert_eq!(root.headers()[header::CONTENT_TYPE], "text/html");
+        assert_eq!(root.headers()[header::CACHE_CONTROL], "no-cache");
+        assert_eq!(root.headers()[header::VARY], "Accept-Encoding");
+        let tag = root.headers()[header::ETAG].clone();
+        headers.insert(
+            header::IF_NONE_MATCH,
+            format!("\"other\", W/{}", tag.to_str().unwrap())
+                .parse()
+                .unwrap(),
+        );
+        for path in ["/", "/index.html", "/pair"] {
+            let cached = get(path, &headers);
+            assert_eq!(cached.status(), StatusCode::NOT_MODIFIED, "{path}");
+            assert_eq!(cached.headers()[header::ETAG], tag);
+            assert_eq!(cached.headers()[header::VARY], "Accept-Encoding");
+            assert_eq!(cached.headers()[header::CACHE_CONTROL], "no-cache");
+        }
+
+        headers.insert(header::ACCEPT_ENCODING, "br;q=0.5, gzip".parse().unwrap());
+        let gzip = get("/", &headers);
+        assert_eq!(gzip.status(), StatusCode::OK);
+        assert_eq!(gzip.headers()[header::CONTENT_ENCODING], "gzip");
+        assert_ne!(gzip.headers()[header::ETAG], tag);
+        headers.remove(header::ACCEPT_ENCODING);
+        let raw = get("/", &headers);
+        assert_eq!(raw.status(), StatusCode::OK);
+        assert!(!raw.headers().contains_key(header::CONTENT_ENCODING));
+        assert_ne!(raw.headers()[header::ETAG], tag);
+
+        headers.insert(header::ACCEPT_ENCODING, "br, identity;q=0".parse().unwrap());
+        let wasm = get("/nsh.04f05f7ecb.wasm", &headers);
+        assert_eq!(wasm.headers()[header::CONTENT_ENCODING], "br");
+        assert_eq!(
+            wasm.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            get("/app.50797f7b13.js", &headers).status(),
+            StatusCode::NOT_ACCEPTABLE
+        );
+        assert_eq!(
+            get("/app.00000000.js", &headers).status(),
             StatusCode::NOT_FOUND
         );
     }
@@ -564,38 +690,32 @@ mod tests {
 
     #[test]
     fn only_fingerprinted_assets_are_immutable() {
-        assert_eq!(asset_cache_control("index.html", false), "no-cache");
-        assert_eq!(asset_cache_control("sessions/abc", true), "no-cache");
+        assert_eq!(asset_cache_control("index.html"), "no-cache");
+        assert_eq!(asset_cache_control("sessions/abc"), "no-cache");
+        assert_eq!(asset_cache_control("manifest.webmanifest"), "no-cache");
+        assert_eq!(asset_cache_control("pilo-192.png"), "no-cache");
         assert_eq!(
-            asset_cache_control("manifest.webmanifest", false),
-            "no-cache"
-        );
-        assert_eq!(asset_cache_control("pilo-192.png", false), "no-cache");
-        assert_eq!(
-            asset_cache_control("app.50797f7b13.js", false),
+            asset_cache_control("app.50797f7b13.js"),
             "public, max-age=31536000, immutable"
         );
         assert_eq!(
-            asset_cache_control("nsh.04f05f7ecb.wasm", false),
+            asset_cache_control("nsh.04f05f7ecb.wasm"),
             "public, max-age=31536000, immutable"
         );
         assert_eq!(
-            asset_cache_control(
-                "assets/fonts/inter-latin-400-normal.8909904ab6.woff2",
-                false
-            ),
+            asset_cache_control("assets/fonts/inter-latin-400-normal.8909904ab6.woff2",),
             "public, max-age=31536000, immutable"
         );
         assert_eq!(
-            asset_cache_control("browser.b998e17dc5/runtime.js", false),
+            asset_cache_control("browser.b998e17dc5/runtime.js"),
             "public, max-age=31536000, immutable"
         );
         assert_eq!(
-            asset_cache_control("facades/nsh.7433008113.js", false),
+            asset_cache_control("facades/nsh.7433008113.js"),
             "public, max-age=31536000, immutable"
         );
         assert_eq!(
-            asset_cache_control("icons/192.1b09b59f5c.png", false),
+            asset_cache_control("icons/192.1b09b59f5c.png"),
             "public, max-age=31536000, immutable"
         );
     }

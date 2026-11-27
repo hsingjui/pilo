@@ -368,9 +368,11 @@ headless hosts can inject their own asset resolver. Missing assets retain the ex
 SPA fallback, content-type and cache-control behavior. Tests serve an in-memory
 index file through the same response path.
 
-- **Scope:** Only `.wasm`, `.js`, `.css` and `.bin` assets with a fingerprint in
-  a path segment negotiate compression. This includes `browser.<hash>/bootstrap.js`.
-  HTML, SPA fallback and API routes are unchanged.
+- **Scope:** The index document (including SPA fallback) and `.wasm`, `.js`,
+  `.css` and `.bin` assets with a fingerprint in a path segment negotiate
+  compression. This includes `browser.<hash>/bootstrap.js`.
+  The index and web manifest revalidate with representation-specific ETags.
+  API routes are not part of this negotiation.
 - **Signature:** `WebAssets::get_precompressed(path, extension)` is optional;
   it returns sidecar bytes with the original asset's MIME type.
 - **Contract:** Use the `Accept-Encoding` weights to select the `.br` or `.gz`
