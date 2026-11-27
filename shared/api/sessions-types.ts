@@ -29,11 +29,13 @@ export type SessionIndexEntry = {
 	indexedAtMs: number;
 	pinned: boolean;
 	titleOverride: string | null;
+	archivedAt?: number | null;
 };
 
 export type SessionUiStateUpdate = {
-	pinned: boolean;
-	titleOverride: string | null;
+	pinned?: boolean;
+	titleOverride?: string | null;
+	archived?: boolean;
 };
 
 export type SessionSearchMatch = {

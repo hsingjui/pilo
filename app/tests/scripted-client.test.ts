@@ -1,6 +1,7 @@
 import { expect, test } from "nsh/test";
 
 import type { PiloClientEventOptions } from "@shared/api/pilo-client";
+import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { requestPiRpc } from "../client/chat-rpc";
 import { scriptedClient } from "./scripted-app-client";
 
@@ -93,4 +94,43 @@ test("chat lifecycle, model cache, scope and ui-state calls round-trip", async (
 	});
 	// The scope save sends no chat command.
 	expect(commands).toEqual([]);
+});
+
+test("scripted archive and restore update only the targeted project's index", async () => {
+	const entry = (projectId: string) =>
+		({
+			projectId,
+			sessionPath: "/s.jsonl",
+			pinned: true,
+			titleOverride: "Renamed",
+		}) as SessionIndexEntry;
+	const { client } = scriptedClient({
+		sessions: async (projectId) =>
+			projectId === "empty" ? [] : [entry(projectId)],
+	});
+	const events: unknown[] = [];
+	const disconnect = await client.connectEvents({
+		onMessage: (message) => {
+			if (message.type === "events") events.push(...message.events);
+		},
+		onStatus: () => {},
+	});
+	const archived = await client.archiveSession("p1", "/s.jsonl");
+	expect(typeof archived.archivedAt).toBe("number");
+	expect(archived.pinned).toBe(false);
+	expect(archived.titleOverride).toBe("Renamed");
+	expect(await client.listSessions("p2")).toEqual([entry("p2")]);
+
+	const restored = await client.unarchiveSession("p1", "/s.jsonl");
+	expect(restored.archivedAt).toBeNull();
+	expect(restored.pinned).toBe(false);
+	expect(await client.listSessions("p1")).toEqual([restored]);
+	await expect(client.archiveSession("empty", "/s.jsonl")).rejects.toThrow(
+		"not indexed",
+	);
+	expect(events).toEqual([
+		{ type: "sessions_indexed", projectId: "p1", sequence: 1 },
+		{ type: "sessions_indexed", projectId: "p1", sequence: 2 },
+	]);
+	disconnect();
 });

@@ -22,6 +22,7 @@ export type SidebarSession = {
 	sessionPath: string;
 	projectId: string;
 	latestMessageAt: Date;
+	archivedAt?: number | null;
 	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
 	/** Agent 运行完成但用户尚未打开该会话时显示未读标记，点进去即清除。 */

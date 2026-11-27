@@ -350,6 +350,19 @@ test("session search, title and deletion pass their arguments and return the nat
 	]);
 });
 
+test("archive and restore send a scoped UI state patch without replacing the title", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const archived = await client.archiveSession("p1", "/s.jsonl");
+	const restored = await client.unarchiveSession("p1", "/s.jsonl");
+	expect(archived.titleOverride).toBe("Renamed");
+	expect(restored.titleOverride).toBe("Renamed");
+	expect(calls).toEqual([
+		["updateSessionUiState", "/s.jsonl", { archived: true }, "p1"],
+		["updateSessionUiState", "/s.jsonl", { archived: false }, "p1"],
+	]);
+});
+
 test("no matches, no naming model and a rejected deletion reach the caller as they are", async () => {
 	const failure = new Error("Session '/s.jsonl' is not indexed");
 	const { pilo } = fakeNative({

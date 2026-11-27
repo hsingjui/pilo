@@ -350,11 +350,12 @@ fn update(
     let transaction = db
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
-    let current = storage::get_session(&transaction, &entry.session_path, Some(&entry.project_id))?
+    storage::get_session(&transaction, &entry.session_path, Some(&entry.project_id))?
         .ok_or("session is no longer indexed")?;
     let update = SessionUiStateUpdate {
-        pinned: patch.pinned.unwrap_or(current.pinned),
-        title_override: patch.title.or(current.title_override),
+        pinned: patch.pinned,
+        title_override: patch.title.map(Some),
+        ..Default::default()
     };
     let updated = storage::update_session_ui_state(
         &transaction,
@@ -408,11 +409,14 @@ async fn call(
         max_bytes: 2 * 1024 * 1024,
     });
     let write = if require_idle {
-        runtime.chat_sessions.send_when_idle(key, command).await
+        runtime
+            .chat_sessions
+            .send_when_idle(&runtime.paths, key, command)
+            .await
     } else {
         runtime
             .chat_sessions
-            .send(key, command)
+            .send(&runtime.paths, key, command)
             .await
             .map_err(PiCommandError::OutcomeUnknown)
     };

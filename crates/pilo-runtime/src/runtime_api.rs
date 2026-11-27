@@ -142,7 +142,10 @@ pub async fn chat_session_send_rpc(
     command: Value,
 ) -> Result<(), String> {
     let _policy = runtime.pi_resource_policy.read().await;
-    runtime.chat_sessions.send(&session_key, command).await
+    runtime
+        .chat_sessions
+        .send(&runtime.paths, &session_key, command)
+        .await
 }
 
 pub async fn chat_session_stop(

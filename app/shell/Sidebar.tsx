@@ -29,6 +29,7 @@ import {
 } from "../ui/motion";
 import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
+import { type ArchiveView, useArchivedSessions } from "./archived-sessions";
 import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
 import { createHover } from "../ui/hover";
@@ -62,6 +63,8 @@ export interface SidebarProps {
 	/** The project whose every session the list shows instead of the tree. */
 	viewedProject: Accessor<Project | null>;
 	onViewProject: (projectId: string) => void;
+	archiveView: Accessor<ArchiveView | null>;
+	onViewArchived: (projectId: string) => void;
 	onSelectChat?: (projectId: string) => void;
 	/** The connections whose default workspace the tree shows. */
 	defaultWorkspaceShown: Accessor<Record<string, boolean>>;
@@ -106,6 +109,15 @@ export function Sidebar(props: SidebarProps) {
 	return (
 		<View class="mt-2 min-h-0 min-w-0 flex-1">
 			{() => {
+				if (props.archiveView()) {
+					return (
+						<ArchivedSessions
+							store={props.store}
+							view={props.archiveView}
+							onSelectChat={props.onSelectChat}
+						/>
+					);
+				}
 				const recent = view() === "recent";
 				const projectId = viewedProjectId();
 				if (!recent && projectId !== null) {
@@ -380,6 +392,74 @@ function RecentSection(
 	);
 }
 
+function ArchivedSessions(props: {
+	store: AppStore;
+	view: Accessor<ArchiveView | null>;
+	onSelectChat?: (projectId: string) => void;
+}) {
+	const archive = useArchivedSessions(props.store, props.view);
+	return (
+		<Scroll
+			testID="sidebar-archived-sessions"
+			class="min-h-0 min-w-0 flex-1"
+			bounces={false}
+			scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
+		>
+			<View class="gap-3 pt-1 pr-2.5 pb-3 pl-1.5">
+				<Each of={archive.groups()} key={({ project }) => project.id}>
+					{(group) => (
+						<View class="gap-(--pilo-sidebar-session-gap)">
+							{() =>
+								props.view()?.projectId === undefined && (
+									<View class="ml-px px-2">
+										<Text
+											testID={`sidebar-archived-project:${group().project.id}`}
+											class="truncate font-sans font-medium text-sidebar-foreground-muted"
+											style={sidebarText("xs")}
+										>
+											{sidebarProjectName(group().project)}
+										</Text>
+									</View>
+								)
+							}
+							<SessionGlide>
+								<Each of={group().sessions} key={sessionRowKey}>
+									{(session) => (
+										<SessionRow
+											store={props.store}
+											session={session}
+											onSelectChat={props.onSelectChat}
+										/>
+									)}
+								</Each>
+							</SessionGlide>
+						</View>
+					)}
+				</Each>
+				{() => {
+					const failed = archive.failed();
+					const loading = archive.loading();
+					if (!failed && !loading && archive.groups().length > 0) return null;
+					return (
+						<Text
+							class="px-3 py-8 text-center font-sans text-sidebar-foreground-muted"
+							style={sidebarText("xs")}
+						>
+							{t(
+								loading
+									? "sidebar.refreshingSessions"
+									: failed
+										? "sidebar.loadArchivedFailed"
+										: "sidebar.noArchivedSessions",
+							)}
+						</Text>
+					);
+				}}
+			</View>
+		</Scroll>
+	);
+}
+
 function NoSessions(props: { testID: string }) {
 	return (
 		<Text
@@ -515,6 +595,7 @@ function ConnectionSection(
 									onSelectChat={props.onSelectChat}
 									settings={props.settings}
 									onViewProject={props.onViewProject}
+									onViewArchived={props.onViewArchived}
 									project={project}
 								/>
 							)}

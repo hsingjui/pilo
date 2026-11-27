@@ -50,6 +50,23 @@ test("the palette filters sessions and projects and opens the chosen one", async
 	await app.waitFor("id:workspace-title");
 });
 
+test("session results open active and archived chats for a project ID containing colons", async () => {
+	const app = await openPalette();
+	await app.waitFor("id:sidebar-search");
+	for (const [query, title, reply] of [
+		["resize", "Resize the sidebar", "The sidebar now takes a width."],
+		["dialog", "Dialog test", "The dialog test is fixed."],
+	]) {
+		await app.keyboard.press("mod+k");
+		await app.waitFor(FIELD);
+		await app.type(FIELD, query);
+		await app.waitFor(`text:${title}`);
+		await app.keyboard.press("enter");
+		await app.waitFor(FIELD, { state: "gone" });
+		await app.waitFor(`text:${reply}`);
+	}
+});
+
 test("a message match opens its session even under a collapsed project", async () => {
 	const app = await openPalette();
 	await app.waitFor("id:sidebar-search");

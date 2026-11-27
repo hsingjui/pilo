@@ -182,6 +182,8 @@ mod tests {
     #[tokio::test]
     async fn failed_prompt_and_compaction_do_not_pin_idle_processes() {
         let sessions = ChatSessions::default();
+        let paths =
+            crate::host_paths::HostPaths::new(std::env::temp_dir(), std::env::temp_dir()).unwrap();
         sessions
             .registry
             .lock()
@@ -191,7 +193,7 @@ mod tests {
         for command in ["prompt", "compact"] {
             assert!(
                 sessions
-                    .send("idle", serde_json::json!({ "type": command }))
+                    .send(&paths, "idle", serde_json::json!({ "type": command }))
                     .await
                     .is_err()
             );

@@ -26,6 +26,7 @@ import { MenuItem } from "../ui/menu-item";
 import { createHover } from "../ui/hover";
 import { MOTION, tactileTransition } from "../ui/motion";
 import { AppToaster, showToast } from "./app-toasts";
+import { setSessionArchivedWithToast } from "./archive-session";
 import { deleteSessionWithToast } from "./delete-session";
 import { t } from "./i18n";
 import { sessionRowKey } from "./sidebar-projects";
@@ -171,6 +172,20 @@ export function SessionRow(props: {
 	// A new chat Pi has not saved yet has no file to rename, refresh or delete.
 	// A list cell is reused for other sessions, so this follows the session.
 	const saved = computed(() => session().sessionPath !== "");
+	const archived = computed(() => session().archivedAt != null);
+	const archiveLabel = () =>
+		session().active ? t("sidebar.archiveRunning") : t("sidebar.archive");
+	const toggleArchive = () => {
+		const current = session();
+		if (current.active && !archived()) return;
+		void setSessionArchivedWithToast(
+			store,
+			toasts,
+			current.projectId,
+			current.sessionPath,
+			!archived(),
+		);
+	};
 	// What the row was doing for one session never shows on another: a
 	// recycled cell starts over (a row with its menu open or its title being
 	// edited holds the focus or an overlay, so the list keeps it bound).
@@ -261,6 +276,15 @@ export function SessionRow(props: {
 				<Text class="font-sans">{() => t("chat.refreshSession")}</Text>
 			</MenuItem>
 			<MenuItem
+				testID={`session:${session().id}:archive`}
+				indicatorClass="hidden"
+				icon={<Icon name="Archive" size={14} />}
+				disabled={session().active}
+				onSelect={toggleArchive}
+			>
+				<Text class="font-sans">{archiveLabel}</Text>
+			</MenuItem>
+			<MenuItem
 				testID={`session:${session().id}:delete`}
 				indicatorClass="hidden"
 				icon={<Icon name="Trash2" size={14} />}
@@ -314,6 +338,7 @@ export function SessionRow(props: {
 	const title = () => (
 		<View class="min-h-6 min-w-0 flex-row items-center">
 			<Text
+				testID={`session:${session().id}:title`}
 				class={`min-w-0 flex-1 truncate font-sans ${
 					selected()
 						? "text-sidebar-selection-foreground"
@@ -352,7 +377,7 @@ export function SessionRow(props: {
 				projectContext() ? "items-start" : "items-center"
 			}`}
 		>
-			{leading()}
+			{() => (archived() ? null : leading())}
 			<View class="min-w-0 flex-1">
 				{() =>
 					renaming() ? (
@@ -389,21 +414,22 @@ export function SessionRow(props: {
 		</View>
 	);
 
+	const unreadMarker = () =>
+		!session().active &&
+		session().unread &&
+		!store.isViewingSession(session().projectId, session().sessionPath) ? (
+			<View
+				testID={`session:${session().id}:unread`}
+				class={`size-1.5 -translate-y-px rounded-full bg-sidebar-primary transition-opacity duration-100 ${shownWhileMenu(
+					"group-hover:opacity-0",
+					"opacity-0",
+				)}`}
+			/>
+		) : null;
+
 	const leading = () => (
 		<View class="relative h-6 w-4 shrink-0 items-center justify-center">
-			{() =>
-				!session().active &&
-				session().unread &&
-				!store.isViewingSession(session().projectId, session().sessionPath) ? (
-					<View
-						testID={`session:${session().id}:unread`}
-						class={`size-1.5 -translate-y-px rounded-full bg-sidebar-primary transition-opacity duration-100 ${shownWhileMenu(
-							"group-hover:opacity-0",
-							"opacity-0",
-						)}`}
-					/>
-				) : null
-			}
+			{unreadMarker}
 			{() =>
 				saved() ? (
 					<Menu
@@ -446,35 +472,92 @@ export function SessionRow(props: {
 			}
 		</View>
 	);
-	const trailing = () => (
-		<View class="relative size-6 shrink-0 items-center justify-center">
-			{() =>
-				session().active ? (
-					<View
-						testID={`session:${session().id}:running`}
-						class={`size-1.5 -translate-y-px animate-pulse rounded-full bg-sidebar-primary transition-opacity duration-100 ${shownWhileMenu(
-							"group-hover:opacity-0",
-							"opacity-0",
-						)}`}
+	const trailing = () =>
+		archived() && saved() ? (
+			<View class="shrink-0 flex-row items-center gap-1">
+				{unreadMarker}
+				<Button
+					testID={`session:${session().id}:unarchive-button`}
+					class={`size-6 items-center justify-center rounded-sm hover:bg-sidebar-foreground/15 ${HOVER_ACTION}`}
+					focusVisibleStyle={sidebarFocusRing()}
+					accessibilityLabel={t("sidebar.unarchive")}
+					onPress={toggleArchive}
+				>
+					<Icon
+						name="ArchiveRestore"
+						size={14}
+						color={token("sidebar-foreground-muted")}
 					/>
-				) : null
-			}
-			{() =>
-				saved() ? (
-					<ConfirmDeleteButton
-						testID={`session:${session().id}:delete-button`}
-						resetOn={rowKey}
-						running={() => Boolean(session().active)}
-						class={`absolute top-0 right-0 z-20 ${shownWhileMenu(
-							HOVER_ACTION,
-							"opacity-100",
-						)}`}
-						onConfirm={deleteSession}
-					/>
-				) : null
-			}
-		</View>
-	);
+				</Button>
+				<ConfirmDeleteButton
+					testID={`session:${session().id}:delete-button`}
+					class={HOVER_ACTION}
+					resetOn={rowKey}
+					running={() => Boolean(session().active)}
+					onConfirm={deleteSession}
+				/>
+			</View>
+		) : (
+			<View class="relative size-6 shrink-0 items-center justify-center">
+				{() =>
+					session().active ? (
+						<View
+							testID={`session:${session().id}:running`}
+							class={`size-1.5 -translate-y-px animate-pulse rounded-full bg-sidebar-primary transition-opacity duration-100 ${shownWhileMenu(
+								"group-hover:opacity-0",
+								"opacity-0",
+							)}`}
+						/>
+					) : null
+				}
+				{() =>
+					saved() ? (
+						<Button
+							testID={`session:${session().id}:archive-button`}
+							class={`absolute top-0 right-0 z-20 size-6 items-center justify-center rounded-sm hover:bg-sidebar-foreground/15 ${shownWhileMenu(
+								HOVER_ACTION,
+								"opacity-100",
+							)}`}
+							focusVisibleStyle={sidebarFocusRing()}
+							accessibilityLabel={archiveLabel()}
+							disabled={session().active}
+							onPress={toggleArchive}
+						>
+							<Icon
+								name="Archive"
+								size={14}
+								color={token("sidebar-foreground-muted")}
+							/>
+						</Button>
+					) : null
+				}
+			</View>
+		);
+
+	const rowTrigger = () =>
+		renaming() ? (
+			<View class={rowClass()} style={rowStyle()}>
+				{content()}
+			</View>
+		) : (
+			<Button
+				testID={`session:${session().id}`}
+				class={rowClass()}
+				style={rowStyle()}
+				focusVisibleStyle={sidebarFocusRing()}
+				selected={selected()}
+				accessibilityLabel={session().title}
+				onPress={() => {
+					glide?.dismiss();
+					const { projectId, sessionPath, id } = session();
+					props.onSelectChat?.(projectId);
+					if (sessionPath) store.selectSession(projectId, sessionPath);
+					else store.selectDraft(projectId, id);
+				}}
+			>
+				{content()}
+			</Button>
+		);
 
 	return (
 		<View
@@ -490,45 +573,27 @@ export function SessionRow(props: {
 					: undefined
 			}
 		>
-			<ContextMenu
-				testID={`session:${session().id}:context`}
-				disabled={!saved()}
-				open={contextOpen()}
-				onOpenChange={(event) => {
-					contextOpen.set(event.open);
-					resetDelete(event);
-				}}
-				onClose={startRenameAfterMenuClose}
-				popupClass={menuPopupClass}
-				popupStyle={{ ...menuPopupStyle(), minWidth: 0 }}
-				trigger={
-					renaming() ? (
-						<View class={rowClass()} style={rowStyle()}>
-							{content()}
-						</View>
-					) : (
-						<Button
-							testID={`session:${session().id}`}
-							class={rowClass()}
-							style={rowStyle()}
-							focusVisibleStyle={sidebarFocusRing()}
-							selected={selected()}
-							accessibilityLabel={session().title}
-							onPress={() => {
-								glide?.dismiss();
-								const { projectId, sessionPath, id } = session();
-								props.onSelectChat?.(projectId);
-								if (sessionPath) store.selectSession(projectId, sessionPath);
-								else store.selectDraft(projectId, id);
-							}}
-						>
-							{content()}
-						</Button>
-					)
-				}
-			>
-				{menuItems}
-			</ContextMenu>
+			{() =>
+				archived() ? (
+					rowTrigger()
+				) : (
+					<ContextMenu
+						testID={`session:${session().id}:context`}
+						disabled={!saved()}
+						open={contextOpen()}
+						onOpenChange={(event) => {
+							contextOpen.set(event.open);
+							resetDelete(event);
+						}}
+						onClose={startRenameAfterMenuClose}
+						popupClass={menuPopupClass}
+						popupStyle={{ ...menuPopupStyle(), minWidth: 0 }}
+						trigger={rowTrigger()}
+					>
+						{menuItems}
+					</ContextMenu>
+				)
+			}
 		</View>
 	);
 }

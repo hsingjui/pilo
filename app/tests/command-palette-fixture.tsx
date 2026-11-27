@@ -26,12 +26,13 @@ import { scriptedClient } from "./scripted-app-client";
  */
 const local = { id: "local", name: "Local", kind: { type: "local" } };
 const remote = { id: "c-build", name: "build-box", kind: { type: "ssh" } };
+const piloProjectId = "project:local:/code/pilo";
 
-function project(id: string, connection: object): Project {
+function project(name: string, connection: object, id = name): Project {
 	return {
 		id,
-		name: id,
-		path: `/code/${id}`,
+		name,
+		path: `/code/${name}`,
 		connection: connection as Connection,
 	} as Project;
 }
@@ -45,7 +46,7 @@ function session(
 	const at = `2026-11-${String(day).padStart(2, "0")}T09:00:00Z`;
 	return {
 		connectionId: projectId === "api" ? remote.id : local.id,
-		projectId,
+		projectId: projectId === "pilo" ? piloProjectId : projectId,
 		piSessionId: `s${day}`,
 		sessionPath: `/${projectId}/s${day}.jsonl`,
 		name: null,
@@ -65,9 +66,13 @@ function session(
 }
 
 const sessions: Record<string, SessionIndexEntry[]> = {
-	pilo: [
+	[piloProjectId]: [
 		session("pilo", 1, "Port the settings page"),
-		{ ...session("pilo", 2, "Fix the flaky dialog test"), name: "Dialog test" },
+		{
+			...session("pilo", 2, "Fix the flaky dialog test"),
+			name: "Dialog test",
+			archivedAt: Date.UTC(2026, 10, 4),
+		},
 		session("pilo", 3, "Resize the sidebar"),
 	],
 	api: [session("api", 4, "Deploy the build box")],
@@ -94,18 +99,26 @@ async function run() {
 		themeFamily: await fixtureThemeFamily(),
 	} as ThemeSettings;
 	const runtime = scriptedClient({
-		projects: [project("api", remote), project("pilo", local)],
+		projects: [project("api", remote), project("pilo", local, piloProjectId)],
 		themeSettings,
 		sessions: (projectId) => Promise.resolve(sessions[projectId] ?? []),
-		history: (sessionPath) =>
-			sessionPath === "/pilo/s3.jsonl"
-				? Promise.resolve(
-						turn("Resize the sidebar", "The sidebar now takes a width."),
-					)
-				: Promise.resolve([]),
+		history: (sessionPath) => {
+			if (sessionPath === "/pilo/s3.jsonl") {
+				return Promise.resolve(
+					turn("Resize the sidebar", "The sidebar now takes a width."),
+				);
+			}
+			if (sessionPath === "/pilo/s2.jsonl") {
+				return Promise.resolve(
+					turn("Fix the flaky dialog test", "The dialog test is fixed."),
+				);
+			}
+			return Promise.resolve([]);
+		},
 		onSearchSessions: (projectId, query) => {
-			searches.update((list) => [...list, `${projectId}:${query}`]);
-			if (projectId !== "pilo" || query !== "resize") return [];
+			const name = projectId === piloProjectId ? "pilo" : projectId;
+			searches.update((list) => [...list, `${name}:${query}`]);
+			if (projectId !== piloProjectId || query !== "resize") return [];
 			return [
 				{
 					sessionPath: "/pilo/s3.jsonl",

@@ -159,6 +159,11 @@ export type AppAction =
 	| { type: "draft_sent"; sessionKey: string; text: string }
 	| { type: "session_selected"; projectId: string; sessionPath: string }
 	| {
+			type: "session_archive_changed";
+			session: SessionIndexEntry;
+			close: boolean;
+	  }
+	| {
 			type: "session_deleted";
 			projectId: string;
 			sessionPath: string;
@@ -242,6 +247,17 @@ function withSessionIndex(
 			[projectId]: update(state.sessionIndexes[projectId]),
 		},
 	};
+}
+
+function closeSelectedSession(
+	state: AppState,
+	projectId: string,
+	sessionPath: string,
+) {
+	const open = state.navigation.session;
+	if (open?.projectId !== projectId || open.sessionPath !== sessionPath)
+		return state;
+	return { ...state, navigation: { ...state.navigation, session: null } };
 }
 
 /** Replies, snapshots and events can arrive out of order; revisions only grow. */
@@ -662,6 +678,25 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				navigation: { projectId, session: { projectId, sessionPath } },
 			};
 		}
+		case "session_archive_changed": {
+			const { session, close } = action;
+			const current = state.sessionIndexes[session.projectId];
+			const sessions = current?.sessions ?? [];
+			const next = withSessionIndex(state, session.projectId, () => ({
+				...current,
+				status: current?.status ?? "loaded",
+				sessions: sessions.some(
+					(entry) => entry.sessionPath === session.sessionPath,
+				)
+					? sessions.map((entry) =>
+							entry.sessionPath === session.sessionPath ? session : entry,
+						)
+					: [...sessions, session],
+			}));
+			return close
+				? closeSelectedSession(next, session.projectId, session.sessionPath)
+				: next;
+		}
 		case "session_deleted": {
 			const next = withSessionIndex(state, action.projectId, (current) => ({
 				status: current?.status ?? "loaded",
@@ -669,16 +704,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 					(entry) => entry.sessionPath !== action.sessionPath,
 				),
 			}));
-			const open = next.navigation.session;
-			if (
-				open?.projectId !== action.projectId ||
-				open.sessionPath !== action.sessionPath
-			)
-				return next;
-			return {
-				...next,
-				navigation: { ...next.navigation, session: null },
-			};
+			return closeSelectedSession(next, action.projectId, action.sessionPath);
 		}
 		case "chat_session_loaded": {
 			const chatSessions = withChatSession(

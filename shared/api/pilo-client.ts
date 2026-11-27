@@ -115,6 +115,14 @@ export interface PiloClient {
 		projectId: string,
 		sessionPath: string,
 	): Promise<SessionDeleteResult>;
+	archiveSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionIndexEntry>;
+	unarchiveSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionIndexEntry>;
 	/** Fresh Pi user catalog for this connection, independent of project caches. */
 	loadConnectionModels(connectionId: string): Promise<PiModel[]>;
 	/** Host-cached Pi model catalog snapshot; null when the project has none. */

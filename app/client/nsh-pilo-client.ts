@@ -530,7 +530,7 @@ export class NshPiloClient implements PiloClient {
 	}
 
 	/**
-	 * Updates an indexed session's pin state or title override; the index
+	 * Updates an indexed session's pin, title, or archive state; the index
 	 * reports the new entry through `sessions_indexed`.
 	 */
 	async updateSessionUiState(
@@ -543,6 +543,28 @@ export class NshPiloClient implements PiloClient {
 			update,
 			projectId,
 		)) as SessionIndexEntry;
+	}
+
+	archiveSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionIndexEntry> {
+		return this.updateSessionUiState(
+			sessionPath,
+			{ archived: true },
+			projectId,
+		);
+	}
+
+	unarchiveSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionIndexEntry> {
+		return this.updateSessionUiState(
+			sessionPath,
+			{ archived: false },
+			projectId,
+		);
 	}
 
 	/**

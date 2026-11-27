@@ -203,6 +203,10 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     ensure_session_project_keys(db)?;
+    if !column_exists(db, "session_ui_state", "archived_at_ms")? {
+        db.execute_batch("ALTER TABLE session_ui_state ADD COLUMN archived_at_ms INTEGER;")
+            .map_err(|error| error.to_string())?;
+    }
     db.execute_batch("CREATE INDEX IF NOT EXISTS idx_sessions_path ON sessions(session_path);")
         .map_err(|error| format!("failed to ensure Pilo SQLite session index: {error}"))?;
     ensure_session_columns(db)?;

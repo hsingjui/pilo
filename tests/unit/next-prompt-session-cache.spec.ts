@@ -104,6 +104,8 @@ function setup(t: TestContext) {
 		readProjectImage: unexpectedCall,
 		generateSessionTitle: unexpectedCall,
 		deleteSession: unexpectedCall,
+		archiveSession: unexpectedCall,
+		unarchiveSession: unexpectedCall,
 		loadModels: unexpectedCall,
 		loadModelScope: unexpectedCall,
 		saveModelScope: unexpectedCall,

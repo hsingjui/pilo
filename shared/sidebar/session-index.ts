@@ -20,7 +20,8 @@ export function sameSessionIndexEntry(
 		a.fileMtimeNs === b.fileMtimeNs &&
 		a.lastOffset === b.lastOffset &&
 		a.pinned === b.pinned &&
-		a.titleOverride === b.titleOverride
+		a.titleOverride === b.titleOverride &&
+		(a.archivedAt ?? null) === (b.archivedAt ?? null)
 	);
 }
 

@@ -61,6 +61,8 @@ export type AppStoreClient = Partial<
 		| "loadThemeSettings"
 		| "markSessionRead"
 		| "updateSessionUiState"
+		| "archiveSession"
+		| "unarchiveSession"
 		| "deleteSession"
 		| "connectEvents"
 		| "closed"
@@ -448,6 +450,22 @@ export class AppStore {
 				projectId,
 			)
 			.then(() => undefined);
+	}
+
+	loadCachedSessions(projectId: string) {
+		return this.refreshSessionIndex(projectId, "cache");
+	}
+
+	async archiveSession(projectId: string, sessionPath: string) {
+		const session = await this.client.archiveSession(projectId, sessionPath);
+		this.apply({ type: "session_archive_changed", session, close: true });
+		return session;
+	}
+
+	async unarchiveSession(projectId: string, sessionPath: string) {
+		const session = await this.client.unarchiveSession(projectId, sessionPath);
+		this.apply({ type: "session_archive_changed", session, close: false });
+		return session;
 	}
 
 	/** Deletes a saved session; the one open in the chat pane closes. */

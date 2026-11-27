@@ -23,6 +23,7 @@ import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import type { DesktopUpdate } from "./desktop-update";
+import type { ArchiveView } from "./archived-sessions";
 import { t } from "./i18n";
 import { Sidebar, type SidebarProps } from "./Sidebar";
 import type { SidebarLayout } from "./sidebar-layout";
@@ -43,7 +44,7 @@ import {
 
 export interface SidebarPanelProps extends Omit<
 	SidebarProps,
-	"viewedProject" | "onViewProject"
+	"viewedProject" | "onViewProject" | "archiveView" | "onViewArchived"
 > {
 	layout: SidebarLayout;
 	/** The list shows once the app and the sidebar's settings are ready. */
@@ -229,6 +230,17 @@ export function sidebarTitleBarMarginTop(
 export function SidebarPanel(props: SidebarPanelProps) {
 	const { layout } = props;
 	const projectView = signal<string | null>(null);
+	const archived = signal<ArchiveView | null>(null);
+	const archiveProject = computed(() => {
+		const id = archived()?.projectId;
+		return id === undefined
+			? undefined
+			: props.store.state().projects.find((project) => project.id === id);
+	});
+	const archiveView = computed(() => {
+		const view = archived();
+		return view?.projectId !== undefined && !archiveProject() ? null : view;
+	});
 	const card = computed(sidebarSurface);
 	// Center the visible Latin glyphs vertically against the title-bar icons.
 	const titleTextStyle = {
@@ -315,6 +327,21 @@ export function SidebarPanel(props: SidebarPanelProps) {
 				</View>
 				<View class="-mt-1 shrink-0 gap-1 px-1.5">
 					{() => {
+						if (archiveView()) {
+							const project = archiveProject();
+							return (
+								<SidebarToolbarRow
+									testID="sidebar-archived-back"
+									icon="ArrowLeft"
+									label={() =>
+										project
+											? `${t("sidebar.archivedSessions")} · ${sidebarProjectName(project)}`
+											: t("sidebar.archivedSessions")
+									}
+									onPress={() => archived.set(null)}
+								/>
+							);
+						}
 						const project = viewedProject();
 						return project ? (
 							<ProjectSessionsToolbar
@@ -348,6 +375,8 @@ export function SidebarPanel(props: SidebarPanelProps) {
 										onSelectChat={props.onSelectChat}
 										viewedProject={viewedProject}
 										onViewProject={(id) => projectView.set(id)}
+										archiveView={archiveView}
+										onViewArchived={(projectId) => archived.set({ projectId })}
 										defaultWorkspaceShown={props.defaultWorkspaceShown}
 										onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
 										onAddProject={props.onAddProject}
@@ -377,6 +406,20 @@ export function SidebarPanel(props: SidebarPanelProps) {
 								<Icon name="Settings" />
 							</Button>
 						) : null}
+						{() =>
+							props.listState() === "ready" && (
+								<Button
+									testID="sidebar-archived"
+									variant="ghost"
+									size="sm"
+									accessibilityLabel={t("sidebar.archived")}
+									onPress={() => archived.set({})}
+								>
+									<Icon name="Archive" size={14} />
+									<Text class="font-sans">{() => t("sidebar.archived")}</Text>
+								</Button>
+							)
+						}
 						{() =>
 							props.update?.hasUpdate() ? (
 								<UpdateButton update={props.update} />

@@ -87,6 +87,7 @@ import { MOTION } from "../app/ui/motion";
 import { Spinner } from "../app/ui/spinner";
 import { ErrorState } from "../app/ui/state-view";
 import { MobileDrawer, mobileDrawerWidth } from "./mobile-drawer";
+import { setSessionArchivedWithToast } from "../app/shell/archive-session";
 import { menuListSpacing } from "../app/ui/menu";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
 import type { RemoteChatQueue } from "./remote-chat-queue";
@@ -835,6 +836,51 @@ export function MobileAppShell(props: MobileAppShellProps) {
 									</Text>
 								</MobileDropdownItem>
 								<View class="mx-1.5 my-1 h-px bg-(--pilo-menu-edge)" />
+								<MobileDropdownItem
+									testID="mobile-header-archive"
+									icon={
+										<Icon
+											name={
+												openSessionEntry()?.archivedAt != null
+													? "ArchiveRestore"
+													: "Archive"
+											}
+											size={14}
+										/>
+									}
+									disabled={
+										!openSessionPath() ||
+										!project() ||
+										(openSessionEntry()?.archivedAt == null &&
+											composer.running())
+									}
+									onSelect={() => {
+										const current = project();
+										const path = openSessionPath();
+										const archived = openSessionEntry()?.archivedAt != null;
+										if (current && path && (archived || !composer.running())) {
+											void setSessionArchivedWithToast(
+												store,
+												toasts,
+												current.id,
+												path,
+												!archived,
+											);
+										}
+									}}
+								>
+									<Text class="font-sans">
+										{() =>
+											t(
+												openSessionEntry()?.archivedAt != null
+													? "sidebar.unarchive"
+													: composer.running()
+														? "sidebar.archiveRunning"
+														: "sidebar.archive",
+											)
+										}
+									</Text>
+								</MobileDropdownItem>
 								<MobileDropdownItem
 									testID="mobile-session-delete"
 									variant="destructive"

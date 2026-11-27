@@ -12,7 +12,7 @@ pub fn list_sessions(
 ) -> Result<Vec<SessionIndexEntry>, String> {
     let mut statement = db.prepare(
         "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,
-                COALESCE(u.pinned,0),u.title_override
+                COALESCE(u.pinned,0),u.title_override,u.archived_at_ms
          FROM sessions s LEFT JOIN session_ui_state u ON u.project_id=s.project_id AND u.session_path=s.session_path
          WHERE s.project_id=?1 ORDER BY s.file_mtime_ns DESC"
     ).map_err(|error| error.to_string())?;
@@ -36,6 +36,7 @@ pub fn list_sessions(
                 indexed_at_ms: row.get::<_, i64>(14)? as u64,
                 pinned: row.get::<_, i64>(15)? != 0,
                 title_override: row.get(16)?,
+                archived_at: row.get(17)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -67,10 +68,10 @@ pub fn get_session(
         return Ok(None);
     };
     db.query_row(
-        "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),u.title_override
+        "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),u.title_override,u.archived_at_ms
          FROM sessions s LEFT JOIN session_ui_state u ON u.project_id=s.project_id AND u.session_path=s.session_path WHERE s.project_id=?2 AND s.session_path=?1",
         params![session_path, project_id],
-        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, project_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, title_override: row.get(16)? })
+        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, project_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, title_override: row.get(16)?, archived_at: row.get(17)? })
     ).optional().map_err(|error| error.to_string())
 }
 
@@ -83,22 +84,49 @@ pub fn update_session_ui_state(
     let session = get_session(db, session_path, project_id)?
         .ok_or_else(|| format!("session '{session_path}' is not indexed"))?;
 
+    let now = now_ms() as i64;
+    let pinned = if update.archived == Some(true) {
+        Some(false)
+    } else {
+        update.pinned
+    };
     db.execute(
-        "INSERT INTO session_ui_state(session_path,pinned,title_override,updated_at_ms,project_id)
-         VALUES(?1,?2,?3,?4,?5)
-         ON CONFLICT(project_id,session_path) DO UPDATE SET pinned=excluded.pinned,title_override=excluded.title_override,updated_at_ms=excluded.updated_at_ms",
+        "INSERT INTO session_ui_state(session_path,pinned,title_override,updated_at_ms,project_id,archived_at_ms)
+         VALUES(?1,COALESCE(?2,0),?3,?4,?5,?6)
+         ON CONFLICT(project_id,session_path) DO UPDATE SET
+           pinned=COALESCE(?2,pinned),
+           title_override=CASE WHEN ?7 THEN excluded.title_override ELSE title_override END,
+           updated_at_ms=excluded.updated_at_ms,
+           archived_at_ms=CASE WHEN ?8 THEN excluded.archived_at_ms ELSE archived_at_ms END",
         params![
             session_path,
-            i64::from(update.pinned),
-            update.title_override,
-            now_ms() as i64,
+            pinned,
+            update.title_override.as_ref().and_then(|title| title.as_deref()),
+            now,
             session.project_id,
+            update.archived.filter(|archived| *archived).map(|_| now),
+            update.title_override.is_some(),
+            update.archived.is_some(),
         ],
     )
     .map_err(|error| error.to_string())?;
 
     get_session(db, session_path, Some(&session.project_id))?
         .ok_or_else(|| format!("session '{session_path}' disappeared"))
+}
+
+pub(crate) fn unarchive_session_if_archived(
+    db: &SqliteConnection,
+    project_id: &str,
+    session_path: &str,
+) -> Result<bool, String> {
+    db.execute(
+        "UPDATE session_ui_state SET archived_at_ms=NULL,updated_at_ms=?3
+         WHERE project_id=?1 AND session_path=?2 AND archived_at_ms IS NOT NULL",
+        params![project_id, session_path, now_ms() as i64],
+    )
+    .map(|changed| changed > 0)
+    .map_err(|error| error.to_string())
 }
 
 pub fn upsert_session(db: &SqliteConnection, session: &SessionIndexEntry) -> Result<(), String> {
@@ -207,4 +235,89 @@ pub fn remove_missing_sessions(
         }
     }
     Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_archive_preserves_title_and_is_scoped_to_project() {
+        let db = SqliteConnection::open_in_memory().unwrap();
+        super::super::schema::initialize_schema(&db).unwrap();
+        db.execute_batch(
+            "ALTER TABLE session_ui_state DROP COLUMN archived_at_ms;
+             INSERT INTO connections(id,name,kind_json,updated_at_ms)
+               VALUES('local','Local','{\"type\":\"local\"}',0);
+             INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms)
+               VALUES('first','local','First','/first','{}',0,0),
+                     ('second','local','Second','/second','{}',0,0);
+             INSERT INTO sessions(session_path,connection_id,project_id,pi_session_id,cwd,created_at,updated_at,message_count,file_size,file_mtime_ns,last_offset,indexed_at_ms)
+               VALUES('/s.jsonl','local','first','s','/first','','',0,0,0,0,0),
+                     ('/s.jsonl','local','second','s','/second','','',0,0,0,0,0),
+                     ('/empty.jsonl','local','first','empty','/first','','',0,0,0,0,0);
+             INSERT INTO session_ui_state(project_id,session_path,pinned,title_override,updated_at_ms)
+               VALUES('first','/s.jsonl',1,'Title',0),('second','/s.jsonl',1,'Other title',0);",
+        )
+        .unwrap();
+        for _ in 0..2 {
+            super::super::schema::initialize_schema(&db).unwrap();
+        }
+        let read = |project| {
+            get_session(&db, "/s.jsonl", Some(project))
+                .unwrap()
+                .unwrap()
+        };
+        let write = |archived| {
+            update_session_ui_state(
+                &db,
+                "/s.jsonl",
+                &SessionUiStateUpdate {
+                    archived: Some(archived),
+                    ..Default::default()
+                },
+                Some("first"),
+            )
+            .unwrap()
+        };
+        let initial = read("first");
+        assert_eq!(initial.archived_at, None);
+        assert!(initial.pinned);
+        assert_eq!(initial.title_override.as_deref(), Some("Title"));
+
+        let archived = write(true);
+        assert!(archived.archived_at.is_some_and(|time| time > 0));
+        assert!(!archived.pinned);
+        assert_eq!(archived.title_override, initial.title_override);
+        assert!(read("second").pinned);
+        assert_eq!(read("second").archived_at, None);
+        assert_eq!(
+            list_sessions(&db, "first")
+                .unwrap()
+                .into_iter()
+                .find(|entry| entry.session_path == "/s.jsonl"),
+            Some(archived.clone())
+        );
+
+        let renamed = update_session_ui_state(
+            &db,
+            "/s.jsonl",
+            &serde_json::from_value(serde_json::json!({ "titleOverride": null })).unwrap(),
+            Some("first"),
+        )
+        .unwrap();
+        assert_eq!(renamed.archived_at, archived.archived_at);
+        assert_eq!(renamed.title_override, None);
+
+        let restored = write(false);
+        assert_eq!(restored.archived_at, None);
+        assert!(!restored.pinned);
+        assert_eq!(restored, read("first"));
+        let archive = serde_json::from_value(serde_json::json!({ "archived": true })).unwrap();
+        let no_preferences =
+            update_session_ui_state(&db, "/empty.jsonl", &archive, Some("first")).unwrap();
+        assert!(no_preferences.archived_at.is_some());
+        assert_eq!(no_preferences.title_override, None);
+        assert!(update_session_ui_state(&db, "/invalid.jsonl", &archive, Some("first")).is_err());
+    }
 }

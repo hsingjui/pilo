@@ -157,10 +157,15 @@ async function run() {
 			entry = {
 				...entry,
 				sessionPath,
-				pinned: update.pinned,
-				titleOverride: update.titleOverride,
+				pinned: update.pinned ?? entry.pinned,
+				titleOverride:
+					update.titleOverride === undefined
+						? entry.titleOverride
+						: update.titleOverride,
 			};
-			runtime.emit({ type: "sessions_indexed", projectId: "pilo" });
+			if (update.archived === undefined) {
+				runtime.emit({ type: "sessions_indexed", projectId: "pilo" });
+			}
 			return entry;
 		},
 		history: () =>
