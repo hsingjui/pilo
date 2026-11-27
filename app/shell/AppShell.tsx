@@ -993,6 +993,7 @@ export function AppShell(props: AppShellProps) {
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
 										<ChatMessageList
+											lastSubmission={composer.lastSubmission}
 											assistantText={(text, textKey, streaming) => (
 												<ChatMarkdown
 													text={text}
