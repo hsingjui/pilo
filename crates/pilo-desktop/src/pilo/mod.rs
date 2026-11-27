@@ -254,6 +254,61 @@ impl Pilo {
             .map_err(|error| format!("Pilo event stream task failed: {error}"))?
     }
 
+    /// Calls a Host API JSON method on the embedded local runtime.
+    pub async fn call(
+        this: Instance<Self>,
+        method: String,
+        params: JsonValue,
+    ) -> Result<JsonValue, String> {
+        if method == "host.shutdown" {
+            Self::shutdown(this).await?;
+            return Ok(JsonValue::Null);
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            host_api::call(&runtime, &Principal::Local, &method, params)
+                .await
+                .map_err(|err| err.message)
+        })
+        .await
+    }
+
+    /// Calls a Host API binary-input method on the embedded local runtime.
+    pub async fn upload(
+        this: Instance<Self>,
+        method: String,
+        params: JsonValue,
+        data: Vec<u8>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            match host_api::call_binary(&runtime, &Principal::Local, &method, params, Some(&data))
+                .await
+                .map_err(|err| err.message)?
+            {
+                BinaryOutput::Json(value) => Ok(value),
+                BinaryOutput::Bytes(_) => Err("expected a Host API JSON upload result".into()),
+            }
+        })
+        .await
+    }
+
+    /// Calls a Host API binary-output method on the embedded local runtime.
+    pub async fn download(
+        this: Instance<Self>,
+        method: String,
+        params: JsonValue,
+    ) -> Result<Vec<u8>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            match host_api::call_binary(&runtime, &Principal::Local, &method, params, None)
+                .await
+                .map_err(|err| err.message)?
+            {
+                BinaryOutput::Bytes(bytes) => Ok(bytes),
+                BinaryOutput::Json(_) => Err("expected a Host API binary result".into()),
+            }
+        })
+        .await
+    }
+
     /// Reads the saved project catalog without loading live chat snapshots.
     pub async fn list_projects(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
         Self::host_call(this, "project.list", json!({})).await
