@@ -24,7 +24,7 @@ import { Icon, type IconName } from "../ui/icon";
 import { Menu, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { MenuSeparator } from "../ui/menu-separator";
-import { springTransition } from "../ui/motion";
+import { springTransition, tactileTransition } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import {
 	composerActionsGap,
@@ -94,6 +94,8 @@ export function ComposerActions(props: {
 		showSendMode() && props.sendMode() === "send_now";
 	const primaryIsStop = () =>
 		props.sending() || (showSendMode() && !props.hasContent());
+	const primaryDisabled = () =>
+		!primaryIsStop() && (!props.hasContent() || props.blocked());
 	const showDedicatedStop = computed(
 		() => showSendMode() && !props.sending() && props.hasContent(),
 	);
@@ -115,15 +117,13 @@ export function ComposerActions(props: {
 					paddingVertical: 0,
 				}
 			: composerSendModeStyle();
-	const sendButtonSize = () =>
-		props.touch ? { width: 32, height: 32 } : composerSendSize();
 	const dedicatedStopButton = () => (
 		<Button
 			testID="chat-composer-stop"
 			variant="outline"
 			size="icon"
 			class="rounded-full border-border/80 bg-muted hover:border-destructive/40 hover:bg-destructive/10"
-			style={sendButtonSize()}
+			style={props.touch ? { width: 32, height: 32 } : composerSendSize()}
 			accessibilityLabel={t("chat.stop")}
 			tooltip={
 				props.touch ? undefined : (
@@ -142,13 +142,16 @@ export function ComposerActions(props: {
 			/>
 		</Button>
 	);
-	const sendButtonAppearance = () => {
-		if (!primaryIsStop() && isInterruptMode())
-			return "bg-destructive hover:bg-destructive/90";
-		if (!props.touch) return "bg-foreground hover:bg-foreground/85";
-		return primaryIsStop()
-			? "bg-muted hover:bg-hover"
-			: "bg-primary hover:bg-button-hover";
+	const sendButtonAppearance = () =>
+		!primaryIsStop() && isInterruptMode()
+			? "bg-destructive hover:bg-destructive/90"
+			: "bg-foreground hover:bg-foreground/85";
+	const touchSendCircleAppearance = () => {
+		if (primaryDisabled()) return "bg-muted-foreground";
+		if (primaryIsStop()) return "bg-muted group-hover:bg-hover";
+		return isInterruptMode()
+			? "bg-destructive group-hover:bg-destructive/90"
+			: "bg-primary group-hover:bg-button-hover";
 	};
 	const sendButton = (
 		<Button
@@ -156,14 +159,14 @@ export function ComposerActions(props: {
 			variant="ghost"
 			size="icon"
 			class={classNames(
-				"rounded-full disabled:bg-muted-foreground disabled:opacity-100",
-				sendButtonAppearance(),
+				"rounded-full disabled:opacity-100",
+				props.touch
+					? "group shrink-0 hover:bg-transparent"
+					: classNames("disabled:bg-muted-foreground", sendButtonAppearance()),
 			)}
-			style={sendButtonSize()}
+			style={props.touch ? { width: 44, height: 44 } : composerSendSize()}
 			accessibilityLabel={actionLabel()}
-			disabled={
-				primaryIsStop() ? false : !props.hasContent() || props.blocked()
-			}
+			disabled={primaryDisabled()}
 			tooltip={
 				props.touch ? undefined : (
 					<Tooltip>
@@ -175,7 +178,15 @@ export function ComposerActions(props: {
 			}
 			onPress={() => (primaryIsStop() ? props.onStop() : props.onSend())}
 		>
-			<View class="relative size-4 items-center justify-center">
+			<View
+				class={classNames(
+					"relative items-center justify-center",
+					props.touch
+						? classNames("size-8 rounded-full", touchSendCircleAppearance())
+						: "size-4",
+				)}
+				style={props.touch ? tactileTransition("background-color") : undefined}
+			>
 				<View
 					class="absolute inset-0 items-center justify-center"
 					style={[
@@ -433,25 +444,17 @@ export function ComposerActions(props: {
 		>
 			{props.beforeSendMode}
 			{() => (showSendMode() ? untracked(sendModePicker) : null)}
-			{touch ? (
-				<>
-					{() =>
-						showDedicatedStop() ? (
-							<View class="size-10 shrink-0 items-center justify-center">
-								{untracked(dedicatedStopButton)}
-							</View>
-						) : null
-					}
+			{() => {
+				if (!showDedicatedStop()) return null;
+				return touch ? (
 					<View class="size-10 shrink-0 items-center justify-center">
-						{sendButton}
+						{untracked(dedicatedStopButton)}
 					</View>
-				</>
-			) : (
-				<>
-					{() => (showDedicatedStop() ? untracked(dedicatedStopButton) : null)}
-					{sendButton}
-				</>
-			)}
+				) : (
+					untracked(dedicatedStopButton)
+				);
+			}}
+			{sendButton}
 		</View>
 	);
 }

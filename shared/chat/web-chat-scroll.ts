@@ -50,6 +50,7 @@ export interface WebChatScrollFollower {
 	onViewportShrinkIntent(
 		metrics: WebChatScrollMetrics,
 		nowMs: number,
+		visualViewportShrank?: boolean,
 	): WebChatScrollCommand;
 	syncRestoredPosition(metrics: WebChatScrollMetrics): void;
 	pauseForDisclosure(metrics: WebChatScrollMetrics): void;
@@ -328,10 +329,13 @@ export function createWebChatScrollFollower(
 			const viewportShrank =
 				prevViewportHeight > 0 && metrics.clientHeight < prevViewportHeight - 1;
 
+			// A finished reply can fold its live work and clamp the list to the
+			// new end without a user scroll. Restore following before the next resize.
 			if (
-				pausedForDisclosure &&
 				metrics.contentHeight < contentHeight &&
-				nextEnd - metrics.scrollTop <= threshold
+				!isInteracting() &&
+				!scrollingUp &&
+				isNearEnd(metrics)
 			) {
 				updateFollowing(true);
 			}
@@ -377,15 +381,29 @@ export function createWebChatScrollFollower(
 		onViewportShrinkIntent(
 			metrics: WebChatScrollMetrics,
 			nowMs: number,
+			visualViewportShrank = false,
 		): WebChatScrollCommand {
-			if (isInteracting() || scrollingUp || pausedForDisclosure) {
+			if (isInteracting() || scrollingUp) return { scrollTop: null };
+			const maxOffset = getChatScrollMaxOffset(metrics);
+			// A browser can report the keyboard resize before the list's observer.
+			// In that case the last scroll offset still belongs to the old viewport.
+			const wasNearEndBeforeShrink =
+				metrics.clientHeight < viewportHeight - 1 &&
+				metrics.contentHeight <= contentHeight &&
+				end - lastOffset <= threshold;
+			// Focus alone does not override an explicit disclosure pause.
+			if (
+				pausedForDisclosure &&
+				!visualViewportShrank &&
+				!wasNearEndBeforeShrink
+			) {
 				return { scrollTop: null };
 			}
-			const maxOffset = getChatScrollMaxOffset(metrics);
 			const wasAtEnd =
-				following ||
 				maxOffset - metrics.scrollTop <= threshold ||
-				end - metrics.scrollTop <= threshold;
+				wasNearEndBeforeShrink ||
+				(!pausedForDisclosure &&
+					(following || end - metrics.scrollTop <= threshold));
 			if (!wasAtEnd) return { scrollTop: null };
 
 			updateFollowing(true);

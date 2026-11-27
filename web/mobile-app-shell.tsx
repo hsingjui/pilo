@@ -478,7 +478,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 			managed: viewport.managed(),
 			keyboardOpen: viewport.keyboardOpen(),
 			keyboardHeight: viewport.managed() ? 0 : keyboardFrame().height,
-			safeAreaBottom: safeArea().bottom,
+			safeAreaBottom: viewport.safeAreaBottom(),
 		}),
 	);
 

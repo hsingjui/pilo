@@ -14,10 +14,15 @@ import {
 
 import {
 	computeMobileViewportLayout,
+	KEYBOARD_MIN_SHRINK_PX,
+	resolveKeyboardBaselineHeight,
+	resolveMobileSafeAreaBottom,
 	resolveMobileSafeAreaTop,
 	VIEWPORT_EPSILON_PX,
 	type MobileViewportLayout,
 } from "@shared/mobile-viewport";
+
+const BLUR_SHRINK_HOLD_MS = 400;
 
 export interface MobileViewportState {
 	/** True when browser visualViewport sync owns `#app` geometry. */
@@ -35,6 +40,12 @@ export interface MobileViewportState {
 	 * `visualViewport.offsetTop` down while `#app` follows the visual viewport.
 	 */
 	safeAreaTop: Accessor<number>;
+	/**
+	 * Bottom safe-area inset guarded against transient `rect.bottom > innerHeight`
+	 * overshoots when Android WebView or iOS Safari resizes layout and visual
+	 * viewports on separate frames.
+	 */
+	safeAreaBottom: Accessor<number>;
 }
 
 const defaultMobileViewport: MobileViewportState = {
@@ -45,6 +56,7 @@ const defaultMobileViewport: MobileViewportState = {
 	keyboardOpen: () => false,
 	offsetTop: () => 0,
 	safeAreaTop: () => safeArea().top,
+	safeAreaBottom: () => safeArea().bottom,
 };
 
 export const MobileViewport = context<MobileViewportState>(
@@ -81,6 +93,7 @@ type HostAppElement = {
 		bottom: string;
 		height: string;
 	};
+	getBoundingClientRect?(): { bottom: number };
 	addEventListener(
 		type: HostTouchPressEvent["type"],
 		listener: (event: HostTouchPressEvent) => void,
@@ -95,6 +108,7 @@ type HostAppElement = {
 
 type HostWindow = {
 	parent?: HostWindow;
+	innerWidth?: number;
 	innerHeight?: number;
 	scrollY?: number;
 	visualViewport?: HostVisualViewport | null;
@@ -163,19 +177,48 @@ export function installMobileViewportSync(): MobileViewportState {
 	const keyboardOpen = signal(false);
 	const offsetTop = signal(0);
 	const baselineSafeAreaTop = signal(safeArea().top);
+	const baselineSafeAreaBottom = signal(
+		safeArea().bottom < KEYBOARD_MIN_SHRINK_PX ? safeArea().bottom : 0,
+	);
 	let lastBaselineWidth = windowSize().width;
+
+	const measureBottomOvershoot = () => {
+		const innerHeight = host.innerHeight ?? 0;
+		const rectBottom = app.getBoundingClientRect?.().bottom;
+		if (innerHeight <= 0 || rectBottom === undefined) return 0;
+		return Math.max(0, Math.round(rectBottom - innerHeight));
+	};
 
 	effect(() => {
 		const width = windowSize().width;
-		const top = safeArea().top;
+		const { top, bottom } = safeArea();
 		const currentOffsetTop = offsetTop();
+		const isKeyboardOpen = keyboardOpen();
 		if (width !== lastBaselineWidth) {
 			lastBaselineWidth = width;
-			untracked(() => baselineSafeAreaTop.set(top));
+			untracked(() => {
+				baselineSafeAreaTop.set(top);
+				const overshoot = bottom > 0 ? measureBottomOvershoot() : 0;
+				const cleanBottom = Math.max(0, bottom - overshoot);
+				if (cleanBottom < KEYBOARD_MIN_SHRINK_PX) {
+					baselineSafeAreaBottom.set(cleanBottom);
+				}
+			});
 			return;
 		}
 		if (currentOffsetTop <= VIEWPORT_EPSILON_PX) {
 			untracked(() => baselineSafeAreaTop.set(top));
+		}
+		if (!isKeyboardOpen) {
+			const prevBottom = untracked(baselineSafeAreaBottom);
+			const overshoot = bottom > prevBottom ? measureBottomOvershoot() : 0;
+			const cleanBottom = Math.max(0, bottom - overshoot);
+			if (
+				overshoot <= VIEWPORT_EPSILON_PX &&
+				cleanBottom < KEYBOARD_MIN_SHRINK_PX
+			) {
+				untracked(() => baselineSafeAreaBottom.set(cleanBottom));
+			}
 		}
 	});
 
@@ -187,11 +230,44 @@ export function installMobileViewportSync(): MobileViewportState {
 		}),
 	);
 
+	const safeAreaBottom = computed(() => {
+		const current = safeArea().bottom;
+		const baseline = baselineSafeAreaBottom();
+		const overshoot = current > baseline ? measureBottomOvershoot() : 0;
+		return resolveMobileSafeAreaBottom({
+			safeAreaBottom: current,
+			baselineBottom: baseline,
+			bottomOvershoot: overshoot,
+			keyboardOpen: keyboardOpen(),
+		});
+	});
+
 	let appliedKey = "default";
+	let appliedLayout: MobileViewportLayout | undefined;
 	let pendingFrame: number | null = null;
+	let blurShrinkHoldUntil: number | null = null;
+	let blurShrinkTimer: ReturnType<typeof setTimeout> | null = null;
 	let disposed = false;
+	let lastViewportWidth = host.innerWidth;
+	let keyboardBaselineHeight = 0;
+
+	const clearBlurShrinkHold = () => {
+		blurShrinkHoldUntil = null;
+		if (blurShrinkTimer !== null) {
+			clearTimeout(blurShrinkTimer);
+			blurShrinkTimer = null;
+		}
+	};
+
+	const isEditableFocused = () =>
+		Boolean(
+			host.document?.activeElement?.closest?.(
+				"textarea, input, [contenteditable]",
+			),
+		);
 
 	const applyLayout = (layout: MobileViewportLayout) => {
+		appliedLayout = layout;
 		const nextKey = layout.override
 			? `${layout.top}:${layout.height}`
 			: "default";
@@ -221,14 +297,85 @@ export function installMobileViewportSync(): MobileViewportState {
 		});
 	};
 
-	const sync = () => {
+	const sync = (): void => {
+		const { innerWidth, innerHeight = 0, scrollY = 0 } = host;
+		const widthChanged = innerWidth !== lastViewportWidth;
+		if (widthChanged) {
+			lastViewportWidth = innerWidth;
+			clearBlurShrinkHold();
+		}
+		const editableFocused = isEditableFocused();
+		if (editableFocused) clearBlurShrinkHold();
+
+		keyboardBaselineHeight = resolveKeyboardBaselineHeight({
+			previousBaseline: keyboardBaselineHeight,
+			innerHeight,
+			viewportHeight: viewport.height,
+			widthChanged,
+			editableFocused,
+			keyboardWasOpen: Boolean(appliedLayout?.keyboardOpen),
+		});
+
 		const layout = computeMobileViewportLayout({
-			innerHeight: host.innerHeight ?? 0,
+			innerHeight,
+			keyboardBaselineHeight,
 			viewportHeight: viewport.height,
 			offsetTop: viewport.offsetTop,
 			scale: viewport.scale,
-			scrollY: host.scrollY ?? 0,
+			scrollY,
 		});
+
+		// While dismissing the keyboard after blur, ignore transient further
+		// shrinks (e.g. Android WebView IME animation glitches) for a bounded
+		// window so `#app` never collapses to a thin strip at the top.
+		if (
+			!widthChanged &&
+			!editableFocused &&
+			appliedLayout?.keyboardOpen &&
+			layout.height > 0 &&
+			layout.height + VIEWPORT_EPSILON_PX < appliedLayout.height
+		) {
+			const now = Date.now();
+			if (blurShrinkHoldUntil === null) {
+				blurShrinkHoldUntil = now + BLUR_SHRINK_HOLD_MS;
+				blurShrinkTimer = setTimeout(() => {
+					blurShrinkTimer = null;
+					if (!disposed) sync();
+				}, BLUR_SHRINK_HOLD_MS);
+			}
+			if (now < blurShrinkHoldUntil) {
+				const roundedInner = Math.max(0, Math.round(innerHeight));
+				const heldHeight =
+					roundedInner > 0
+						? Math.min(appliedLayout.height, roundedInner)
+						: appliedLayout.height;
+				const heldTop =
+					roundedInner > 0
+						? Math.min(
+								appliedLayout.top,
+								Math.max(0, roundedInner - heldHeight),
+							)
+						: appliedLayout.top;
+				const heldOverride =
+					roundedInner <= 0 ||
+					roundedInner - heldHeight > VIEWPORT_EPSILON_PX ||
+					heldTop > VIEWPORT_EPSILON_PX;
+				applyLayout({
+					...appliedLayout,
+					override: heldOverride,
+					top: heldOverride ? heldTop : 0,
+					height: heldOverride ? heldHeight : roundedInner,
+					offsetTop: heldOverride ? heldTop : 0,
+					shouldResetScroll: false,
+				});
+				return;
+			}
+		}
+
+		clearBlurShrinkHold();
+		if (!layout.keyboardOpen && !editableFocused && !layout.override) {
+			keyboardBaselineHeight = layout.height;
+		}
 		applyLayout(layout);
 	};
 
@@ -248,7 +395,9 @@ export function installMobileViewportSync(): MobileViewportState {
 		if (!event.cancelable) return;
 		if (event.type === "pointerdown" && event.pointerType === "mouse") return;
 		if (
-			event.target?.closest?.('[data-testid="chat-scroll-latest"]') &&
+			event.target?.closest?.(
+				'[data-testid="chat-scroll-latest"], [data-testid="chat-composer-send"]',
+			) &&
 			host.document?.activeElement?.closest?.(
 				'[data-testid="mobile-textarea-input"]',
 			)
@@ -269,10 +418,12 @@ export function installMobileViewportSync(): MobileViewportState {
 	viewport.addEventListener("scroll", sync, true);
 	host.addEventListener?.("resize", sync, true);
 	host.addEventListener?.("orientationchange", scheduleSync);
+	host.document?.addEventListener("focusin", scheduleSync);
 	host.document?.addEventListener("focusout", scheduleSync);
 
 	cleanup(() => {
 		disposed = true;
+		clearBlurShrinkHold();
 		if (pendingFrame !== null) {
 			host.cancelAnimationFrame?.(pendingFrame);
 			pendingFrame = null;
@@ -281,6 +432,7 @@ export function installMobileViewportSync(): MobileViewportState {
 		viewport.removeEventListener("scroll", sync, true);
 		host.removeEventListener?.("resize", sync, true);
 		host.removeEventListener?.("orientationchange", scheduleSync);
+		host.document?.removeEventListener("focusin", scheduleSync);
 		host.document?.removeEventListener("focusout", scheduleSync);
 		app.removeEventListener("pointerdown", keepComposerFocus, true);
 		app.removeEventListener("touchend", keepComposerFocus, true);
@@ -296,5 +448,6 @@ export function installMobileViewportSync(): MobileViewportState {
 		keyboardOpen,
 		offsetTop,
 		safeAreaTop,
+		safeAreaBottom,
 	};
 }

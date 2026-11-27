@@ -274,7 +274,9 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 			lastVisualViewportHeight > 0 && nextHeight < lastVisualViewportHeight - 1;
 		lastVisualViewportHeight = nextHeight;
 		if (shrank) {
-			applyCommand(follower.onViewportShrinkIntent(readMetrics(), nowMs()));
+			applyCommand(
+				follower.onViewportShrinkIntent(readMetrics(), nowMs(), true),
+			);
 		}
 	};
 	const readFocusIn = (event: WebChatFocusEvent) => {

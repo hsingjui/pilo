@@ -118,7 +118,7 @@ export function MobileComposerSkeleton(props: { showModel?: boolean }) {
 						<Skeleton class="size-3.5" />
 						<Skeleton class="size-3" />
 					</View>
-					<View class="size-10 shrink-0 items-center justify-center">
+					<View class="size-11 shrink-0 items-center justify-center">
 						<Skeleton strong class="size-8 rounded-full" />
 					</View>
 				</View>
