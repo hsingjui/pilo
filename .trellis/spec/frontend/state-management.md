@@ -283,7 +283,7 @@ consumed pending item's ID so the reducer and transport confirm the same message
 - `AppearanceSettings` is desktop-only and writes through `ThemeProvider`.
   WebUI has no theme settings entry, dialog or switching controls in either its
   wide sidebar or mobile navigation. `useRemoteTheme` only loads the Host theme
-  through authenticated `GET /api/v1/theme` and consumes `theme_settings_changed`
+  through authenticated `POST /api/v2/call/theme.get` and consumes `theme_settings_changed`
   on its existing socket, including applied custom CSS. Refresh on initialization,
   reconnect/resync and foreground.
 - Apply only newer Host revisions so HTTP replies and event replay cannot

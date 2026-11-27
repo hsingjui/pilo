@@ -25,6 +25,7 @@ import type {
 	HostCapabilities,
 	HostEventStream,
 	HostTransport,
+	TerminalSubscriptionAck,
 } from "@shared/api/host-transport";
 import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type {
@@ -75,6 +76,7 @@ import type {
 	PromptEnhancementSettings,
 } from "@shared/prompt-enhancement-types";
 import type { SessionReadState } from "@shared/session-read-state";
+import { randomId } from "@shared/random-id";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
@@ -89,6 +91,7 @@ export class HostClient implements PiloClient {
 	private readonly transport: HostTransport;
 	private readonly noSessionStarts = new Map<string, Set<Promise<unknown>>>();
 	private isShutdown = false;
+	readonly rpcIdPrefix = `nsh-rpc-${randomId()}`;
 
 	constructor(transport: HostTransport) {
 		this.transport = transport;
@@ -100,6 +103,10 @@ export class HostClient implements PiloClient {
 
 	get capabilities(): HostCapabilities | null {
 		return this.transport.capabilities ?? null;
+	}
+
+	get reconnectsEvents(): boolean {
+		return this.transport.reconnectsEvents ?? false;
 	}
 
 	hasMethod(name: HostApiMethodName): boolean {
@@ -722,8 +729,11 @@ export class HostClient implements PiloClient {
 	subscribeTerminal(
 		terminalId: string,
 		listener: (event: TerminalEvent) => void,
+		onSubscribed?: (ack: TerminalSubscriptionAck) => void,
 	): () => void {
-		return this.transport.events().subscribeTerminal(terminalId, listener);
+		return this.transport
+			.events()
+			.subscribeTerminal(terminalId, listener, onSubscribed);
 	}
 
 	nextTerminalEvents(max: number): Promise<TerminalEvent[]> {

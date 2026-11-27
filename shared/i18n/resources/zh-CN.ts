@@ -191,6 +191,11 @@ const zhCN = {
 		remoteNotRunning: "已启用 · 未运行",
 		remoteStopped: "已关闭",
 		remoteConnected: "远程已连接",
+		remoteProtocolIncompatible:
+			"Host 协议不兼容，请升级此设备或 Host 上的 Pilo。",
+		remoteWorkspaceActions: "工作区操作",
+		remoteRemoveProjectDescription:
+			"将从 Pilo 移除 {{name}}，不会删除项目文件。",
 		remoteConnectionLost: "与电脑端连接已断开",
 		remoteSignOut: "退出登录",
 		remoteSignOutConfirm: "确认退出",

@@ -11,8 +11,9 @@ chat status notices. Owners: `runtime/cache_keep_alive.rs`,
 
 - Desktop native (`desktop/src/pilo/mod.rs`) `loadCacheKeepAliveSettings(connectionId)` and
   `saveCacheKeepAliveSettings(settings)`.
-- Authenticated HTTP `GET /api/v1/cache-keep-alive/settings?connectionId=...`
-  and `POST` to that path with the settings directly.
+- Authenticated `POST /api/v2/call/cacheKeepAlive.settings.list` with
+  `{ connectionId }`, and `POST /api/v2/call/cacheKeepAlive.settings.set`
+  with `{ settings }`.
 - Settings: `{ connectionId, provider, modelId, enabled, cacheTtlSeconds,
   idleKeepAliveSeconds, updatedAtMs }`.
 - SQLite `model_cache_keep_alive_settings`: primary key

@@ -21,9 +21,10 @@ are not a source for Connection-owned choices.
 - Desktop native (`desktop/src/pilo/mod.rs`) `loadNextPromptSettings(connectionId) -> NextPromptSettings`;
   `saveNextPromptSettings(connectionId, enabled, model) -> NextPromptSettings`;
   `requestNextPrompt(request: NextPromptRequest) -> ()`.
-- Authenticated HTTP `GET /api/v1/next-prompt/settings?connectionId=...`;
-  `POST /api/v1/next-prompt/settings` with `{ connectionId, enabled, model }`;
-  `POST /api/v1/next-prompt/request` with the request directly, returning `{ ok: true }`.
+- Authenticated `POST /api/v2/call/nextPrompt.settings.get` with
+  `{ connectionId }`; `POST /api/v2/call/nextPrompt.settings.set` with
+  `{ connectionId, enabled, model }`; `POST /api/v2/call/nextPrompt.request`
+  with `{ request }`, returning a null result on success.
 - `PiloClient.loadNextPromptSettings(connectionId)`,
   `saveNextPromptSettings(connectionId, enabled, model)`, and
   `requestNextPrompt(request)` use those same Host services.

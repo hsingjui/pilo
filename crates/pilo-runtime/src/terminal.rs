@@ -64,24 +64,28 @@ impl TerminalAccessError {
 #[derive(Default)]
 struct OutputRingBuffer {
     bytes: VecDeque<u8>,
+    end_offset: u64,
 }
 
 impl OutputRingBuffer {
-    fn push(&mut self, data: &[u8]) {
+    fn push(&mut self, data: &[u8]) -> u64 {
+        let start_offset = self.end_offset;
+        self.end_offset += data.len() as u64;
         if data.is_empty() {
-            return;
+            return start_offset;
         }
         if data.len() >= TERMINAL_SNAPSHOT_MAX_BYTES {
             self.bytes.clear();
             let start = data.len() - TERMINAL_SNAPSHOT_MAX_BYTES;
             self.bytes.extend(&data[start..]);
-            return;
+            return start_offset;
         }
         let overflow = (self.bytes.len() + data.len()).saturating_sub(TERMINAL_SNAPSHOT_MAX_BYTES);
         if overflow > 0 {
             self.bytes.drain(..overflow);
         }
         self.bytes.extend(data);
+        start_offset
     }
 
     fn snapshot(&self) -> Vec<u8> {
@@ -98,6 +102,7 @@ impl OutputRingBuffer {
 pub struct TerminalSnapshot {
     pub terminal_id: String,
     pub data: String,
+    pub end_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,6 +110,7 @@ pub enum TerminalEvent {
     Output {
         terminal_id: String,
         data: Vec<u8>,
+        start_offset: u64,
     },
     Exit {
         terminal_id: String,
@@ -118,7 +124,9 @@ pub enum TerminalEvent {
 impl TerminalEvent {
     fn approx_bytes(&self) -> usize {
         match self {
-            Self::Output { terminal_id, data } => 64 + terminal_id.len() + data.len(),
+            Self::Output {
+                terminal_id, data, ..
+            } => 64 + terminal_id.len() + data.len(),
             Self::Exit { terminal_id } => 64 + terminal_id.len(),
             Self::Error {
                 terminal_id,
@@ -438,13 +446,14 @@ impl TerminalManager {
                 match event.event.as_str() {
                     "terminal.output" => {
                         let data = event.binary.into_iter().next().unwrap_or_default();
-                        event_buffer
+                        let start_offset = event_buffer
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
                             .push(&data);
                         terminal_events.publish(TerminalEvent::Output {
                             terminal_id: event_terminal_id.clone(),
                             data,
+                            start_offset,
                         });
                     }
                     "terminal.exit" => {
@@ -669,7 +678,7 @@ impl TerminalManager {
         &self,
         owner: &TerminalOwner,
         terminal_id: &str,
-    ) -> Result<TerminalInfo, TerminalAccessError> {
+    ) -> Result<u64, TerminalAccessError> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let session = state.sessions.get_mut(terminal_id).ok_or_else(|| {
             TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
@@ -683,7 +692,11 @@ impl TerminalManager {
         if let Some(timer) = session.disconnect_timer.take() {
             timer.abort();
         }
-        Ok(session.info())
+        Ok(session
+            .output_buffer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .end_offset)
     }
 
     pub(crate) fn unsubscribe_ws(&self, owner: &TerminalOwner, terminal_id: &str) {
@@ -736,13 +749,14 @@ impl TerminalManager {
             }
             Arc::clone(&session.output_buffer)
         };
-        let bytes = buffer
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .snapshot();
+        let (bytes, end_offset) = {
+            let buffer = buffer.lock().unwrap_or_else(PoisonError::into_inner);
+            (buffer.snapshot(), buffer.end_offset)
+        };
         Ok(TerminalSnapshot {
             terminal_id: terminal_id.to_owned(),
             data: BASE64.encode(bytes),
+            end_offset,
         })
     }
 
@@ -933,10 +947,12 @@ mod tests {
             TerminalEvent::Output {
                 terminal_id: "t".into(),
                 data: vec![0, 255, 10],
+                start_offset: 0,
             },
             TerminalEvent::Output {
                 terminal_id: "t".into(),
                 data: vec![],
+                start_offset: 3,
             },
             TerminalEvent::Exit {
                 terminal_id: "t".into(),
@@ -962,16 +978,19 @@ mod tests {
         bus.publish(TerminalEvent::Output {
             terminal_id: "t".into(),
             data: vec![1; 100],
+            start_offset: 0,
         });
         bus.publish(TerminalEvent::Output {
             terminal_id: "t".into(),
             data: vec![2; 100],
+            start_offset: 100,
         });
         assert_eq!(
             stream.next_batch(10).await,
             vec![TerminalEvent::Output {
                 terminal_id: "t".into(),
                 data: vec![2; 100],
+                start_offset: 100,
             }]
         );
     }

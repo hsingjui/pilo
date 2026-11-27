@@ -22,18 +22,14 @@ use tower_http::timeout::TimeoutLayer;
 use crate::{
     Runtime,
     connection_diagnostics::request_failure_reason,
-    host_api::{self, ErrorCode, GATEWAY_TIMEOUT, HostApiError, MAX_JSON_REQUEST_BYTES, Principal},
+    host_api::{self, GATEWAY_TIMEOUT, HostApiError, MAX_JSON_REQUEST_BYTES, Principal},
     web_assets::{WebAsset, WebAssets},
 };
 use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
 use super::pairing::PairingSession;
 
-mod chat;
-mod host;
 mod middleware;
-mod model_settings;
-mod sessions;
 pub(crate) mod v2;
 mod ws;
 
@@ -184,24 +180,6 @@ impl FromRequestParts<RemoteRouterState> for HostRequest {
 }
 
 impl HostRequest {
-    async fn call(&self, method: &str, params: Value) -> Result<Value, HostApiError> {
-        host_api::call(&self.runtime, &self.principal, method, params).await
-    }
-
-    async fn json(&self, method: &str, params: Value) -> Response {
-        match self.call(method, params).await {
-            Ok(value) => Json(value).into_response(),
-            Err(error) => host_error(error),
-        }
-    }
-
-    async fn no_content(&self, method: &str, params: Value) -> Response {
-        match self.call(method, params).await {
-            Ok(_) => StatusCode::NO_CONTENT.into_response(),
-            Err(error) => host_error(error),
-        }
-    }
-
     async fn binary(
         &self,
         method: &str,
@@ -210,19 +188,6 @@ impl HostRequest {
     ) -> Result<host_api::BinaryOutput, HostApiError> {
         host_api::call_binary(&self.runtime, &self.principal, method, params, bytes).await
     }
-}
-
-fn host_error(error: HostApiError) -> Response {
-    let status = match error.code {
-        ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-        ErrorCode::Forbidden => StatusCode::FORBIDDEN,
-        ErrorCode::NotFound => StatusCode::NOT_FOUND,
-        ErrorCode::InvalidParams => StatusCode::BAD_REQUEST,
-        ErrorCode::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
-        ErrorCode::Timeout => StatusCode::REQUEST_TIMEOUT,
-        ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    api_error(status, &error.message)
 }
 
 pub(crate) fn router(
@@ -241,93 +206,8 @@ pub(crate) fn router(
     };
 
     let protected = Router::new()
-        .route("/api/v1/bootstrap", get(host::bootstrap))
         .route("/api/v1/auth/device", get(middleware::device_auth))
         .route("/api/v1/auth/device/renew", post(middleware::device_renew))
-        .route(
-            "/api/v1/connections/local-pi-resources",
-            post(host::local_pi_resources_set),
-        )
-        .route(
-            "/api/v1/preferences",
-            get(host::preferences_get).post(host::preferences_patch),
-        )
-        .route(
-            "/api/v1/theme",
-            get(host::theme_settings).post(host::theme_settings_set),
-        )
-        .route("/api/v1/sessions", get(sessions::sessions))
-        .route(
-            "/api/v1/sessions/read-state",
-            get(sessions::session_read_states).post(sessions::session_mark_read),
-        )
-        .route("/api/v1/sessions/search", get(sessions::sessions_search))
-        .route(
-            "/api/v1/sessions/external-activity",
-            get(sessions::sessions_external_activity),
-        )
-        .route("/api/v1/history", get(sessions::history))
-        .route("/api/v1/history/image", get(sessions::history_image))
-        .route("/api/v1/sessions/title", post(sessions::session_title))
-        .route("/api/v1/sessions/delete", post(sessions::session_delete))
-        .route(
-            "/api/v1/sessions/ui-state",
-            post(sessions::session_ui_state),
-        )
-        .route(
-            "/api/v1/models",
-            get(model_settings::models).post(model_settings::models_set),
-        )
-        .route(
-            "/api/v1/connections/models",
-            get(model_settings::connection_models),
-        )
-        .route(
-            "/api/v1/models/scope",
-            get(model_settings::model_scope_get).post(model_settings::model_scope_set),
-        )
-        .route(
-            "/api/v1/next-prompt/settings",
-            get(model_settings::next_prompt_settings_get)
-                .post(model_settings::next_prompt_settings_set),
-        )
-        .route(
-            "/api/v1/next-prompt/request",
-            post(model_settings::next_prompt_request),
-        )
-        .route(
-            "/api/v1/prompt-enhancement/settings",
-            get(model_settings::prompt_enhancement_settings_get)
-                .post(model_settings::prompt_enhancement_settings_set),
-        )
-        .route(
-            "/api/v1/prompt-enhancement/enhance",
-            post(model_settings::prompt_enhance),
-        )
-        .route(
-            "/api/v1/cache-keep-alive/settings",
-            get(model_settings::cache_keep_alive_settings_list)
-                .post(model_settings::cache_keep_alive_settings_set),
-        )
-        .route(
-            "/api/v1/cache-keep-alive/pause",
-            post(model_settings::cache_keep_alive_pause),
-        )
-        .route("/api/v1/chat/start", post(chat::chat_start))
-        .route("/api/v1/chat/stop", post(chat::chat_stop))
-        .route("/api/v1/chat/state", get(chat::chat_state))
-        .route("/api/v1/chat/transcript", get(chat::chat_transcript))
-        .route("/api/v1/chat/rpc", post(chat::chat_rpc))
-        .route("/api/v1/chat/mcp-approve", post(chat::chat_mcp_approve))
-        .route("/api/v1/files/search", get(chat::files_search))
-        .route("/api/v1/files/image", get(chat::project_image))
-        .route(
-            "/api/v1/chat/files",
-            post(chat::chat_file_upload)
-                .delete(chat::chat_file_remove)
-                .layer(DefaultBodyLimit::max(crate::remote_fs::MAX_CHAT_FILE_BYTES)),
-        )
-        .route("/api/v1/events", get(ws::events))
         .route("/api/v2/call/{method}", post(v2::call))
         .route(
             "/api/v2/upload/{method}",
@@ -345,7 +225,7 @@ pub(crate) fn router(
         .route_layer(from_fn(middleware::pairing_no_store));
 
     Router::new()
-        .route("/api/v1/health", get(health))
+        .route("/api/v2/health", get(health))
         .merge(pairing)
         .merge(protected)
         .fallback(asset)

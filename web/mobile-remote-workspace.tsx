@@ -1,7 +1,9 @@
-import { cleanup, computed, effect, untracked } from "nsh";
+import { cleanup, computed, effect, signal, Text, untracked, View } from "nsh";
 
+import { HostClient } from "@shared/api/host-client";
+import type { HostApiMethodName } from "@shared/api/host-methods";
+import type { HostHelloMessage } from "@shared/api/host-transport";
 import { userErrorMessage } from "@shared/app-error";
-import { LOCAL_HOST_ID } from "@shared/host-id";
 import { AppToasts, showToast } from "../app/shell/app-toasts";
 import { t } from "../app/shell/i18n";
 import {
@@ -24,22 +26,115 @@ import { RemoteChatQueue } from "./remote-chat-queue";
 import { RemoteExtensionUi } from "./remote-extension-ui";
 import { webDesktopShell } from "./web-desktop-shell";
 import { browserSessionStorage } from "./web-remote-browser";
-import { WebRemotePiloClient } from "./web-remote-client";
+import {
+	canUseWebWorkspace,
+	createWebHostTransport,
+	type WebRemoteConnectionState,
+	type WebRemoteRecoveryState,
+} from "./web-host-transport";
 import { createWebWorkspaceStorage } from "./web-workspace-storage";
+import { Button } from "../app/ui/button";
 
 export interface MobileRemoteWorkspaceProps {
 	token: string;
-	hostId?: string;
 	onAuthExpired: () => void;
 	onSignOut?: () => void;
 }
 
 export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
-	const hostId = props.hostId ?? LOCAL_HOST_ID;
-	const client = new WebRemotePiloClient(props.token, {
-		hostId,
-		onAuthExpired: props.onAuthExpired,
+	const transport = createWebHostTransport(props.token, props.onAuthExpired);
+	const client = new HostClient(transport);
+	const stream = client.eventStream();
+	const hello = signal<HostHelloMessage | null>(null);
+	const connectionState = signal<WebRemoteConnectionState>(
+		transport.currentState,
+	);
+	const recoveryState = signal<WebRemoteRecoveryState>("idle");
+	let connected = false;
+	let recoveredTimer: ReturnType<typeof setTimeout> | undefined;
+	const disconnectState = stream.onConnectionState?.((state) => {
+		connectionState.set(state);
+		clearTimeout(recoveredTimer);
+		if (state === "connected") {
+			recoveryState.set(connected ? "recovered" : "idle");
+			if (connected) {
+				recoveredTimer = setTimeout(() => recoveryState.set("idle"), 2_500);
+			}
+			connected = true;
+		} else if (connected) {
+			recoveryState.set("reconnecting");
+		}
 	});
+	const disconnectHello = stream.onHello?.((message) => hello.set(message));
+	const disconnect = stream.subscribeEvents({
+		onStatus: () => {},
+		onMessage: () => {},
+	});
+	const hostId = computed(() => hello()?.hostId ?? null);
+	cleanup(() => {
+		clearTimeout(recoveredTimer);
+		disconnectHello?.();
+		disconnectState?.();
+		disconnect();
+		client.dispose();
+	});
+	const reconnect = () => transport.reconnectNow();
+	return (
+		<View class="min-h-0 flex-1">
+			{() => {
+				const id = hostId();
+				return id ? (
+					<ConnectedWorkspace
+						client={client}
+						hostId={id}
+						connectionState={connectionState}
+						recoveryState={recoveryState}
+						canUseWorkspace={(...methods) =>
+							canUseWebWorkspace(hello()?.scopes, client, ...methods)
+						}
+						onReconnect={reconnect}
+						onSignOut={props.onSignOut}
+					/>
+				) : (
+					<View class="flex-1 items-center justify-center gap-3 p-6">
+						<Text class="text-center font-sans text-foreground">
+							{() =>
+								t(
+									connectionState() === "incompatible"
+										? "settings.remoteProtocolIncompatible"
+										: connectionState() === "offline"
+											? "settings.remoteOffline"
+											: "settings.remoteReconnecting",
+								)
+							}
+						</Text>
+						{() =>
+							connectionState() === "incompatible" ? null : (
+								<Button class="min-h-11" onPress={reconnect}>
+									<Text>{() => t("common.retry")}</Text>
+								</Button>
+							)
+						}
+						<Button class="min-h-11" variant="ghost" onPress={props.onSignOut}>
+							<Text>{() => t("settings.remoteSignOut")}</Text>
+						</Button>
+					</View>
+				);
+			}}
+		</View>
+	);
+}
+
+function ConnectedWorkspace(props: {
+	client: HostClient;
+	hostId: string;
+	connectionState: () => WebRemoteConnectionState;
+	recoveryState: () => WebRemoteRecoveryState;
+	canUseWorkspace: (...methods: HostApiMethodName[]) => boolean;
+	onReconnect: () => void;
+	onSignOut?: () => void;
+}) {
+	const { client, hostId } = props;
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
 	const catalog = new ModelCatalogStore(client);
@@ -128,7 +223,8 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 
 	let alive = true;
 	const forkDisabled = () =>
-		client.connectionState() !== "connected" ||
+		props.connectionState() !== "connected" ||
+		!client.hasMethod("chat.rpc") ||
 		chat.state().status !== "ready" ||
 		composer.state().sending ||
 		composer.running() ||
@@ -181,7 +277,6 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 		extensionUi.dispose();
 		void liveEvents.then((disconnect) => disconnect());
 		store.stop();
-		client.dispose();
 	});
 
 	void store.preloadThemeSettings().catch(() => undefined);
@@ -201,10 +296,12 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 			runConfig={runConfig}
 			catalog={catalog}
 			searchSessions={client}
-			connectionState={client.connectionState}
-			recoveryState={client.recoveryState}
-			onReconnect={() => client.reconnectNow()}
+			connectionState={props.connectionState}
+			recoveryState={props.recoveryState}
+			onReconnect={props.onReconnect}
 			onSignOut={props.onSignOut}
+			workspaceClient={client}
+			canUseWorkspace={props.canUseWorkspace}
 			onPauseCacheKeepAlive={(sessionKey) =>
 				void client.pauseCacheKeepAlive(sessionKey).catch((error: unknown) => {
 					showToast(toasts, {

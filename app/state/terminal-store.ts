@@ -1,8 +1,7 @@
 import { type Accessor, signal } from "nsh";
 
 import type { HostClient } from "@shared/api/host-client";
-import { bytesToBase64 } from "@shared/base64";
-import type { TerminalEvent } from "../client/host-api";
+import { HostApiError, type TerminalEvent } from "@shared/api/host-methods";
 
 export type TerminalClient = Pick<
 	HostClient,
@@ -15,12 +14,14 @@ export type TerminalClient = Pick<
 	Partial<
 		Pick<
 			HostClient,
-			"subscribeTerminal" | "attachTerminal" | "snapshotTerminal"
+			| "reconnectsEvents"
+			| "eventStream"
+			| "hasMethod"
+			| "subscribeTerminal"
+			| "attachTerminal"
+			| "snapshotTerminal"
 		>
 	>;
-
-/** Clears the screen and scrollback (`ESC c`) before a snapshot repaints it. */
-const RESET_SCREEN = bytesToBase64(new Uint8Array([0x1b, 0x63]));
 
 /** A terminal open in a workspace tab beside its project's chat. */
 export type TerminalTab = {
@@ -38,6 +39,7 @@ export type TerminalTab = {
 export type TerminalSink = {
 	/** Output bytes, base64. */
 	output(data: string): void;
+	reset?(): void;
 	outputTruncated?(): void;
 	exit(): void;
 	error(message: string): void;
@@ -57,6 +59,12 @@ type PendingTerminal = {
 	end?: Exclude<TerminalEvent, { type: "output" }>;
 };
 
+type RemoteTerminal = {
+	unsubscribe: () => void;
+	offset: number;
+	recovery?: { events: TerminalEvent[]; bytes: number };
+};
+
 /**
  * The project terminals the app holds: their tabs, which one is in front of
  * the chat, and the events the runtime reports for them, kept for a page
@@ -74,27 +82,25 @@ export class TerminalStore {
 	private readonly pending = new Map<string, PendingTerminal>();
 	private readonly writes = new Map<string, Promise<void>>();
 	private polling = false;
-	private readonly streams = new Map<string, () => void>();
-	/** Terminals waiting for their first snapshot; their events until then are in it. */
-	private readonly restoring = new Set<string>();
-	private disposed = false;
+	private readonly remote = new Map<string, RemoteTerminal>();
+	private readonly disconnectRemote?: () => void;
 
 	readonly tabs: Accessor<TerminalTab[]> = this.tabsSignal;
 	/** The terminal shown in place of the chat; `null` shows the chat. */
 	readonly activeId: Accessor<string | null> = this.activeSignal;
 	readonly opening: Accessor<boolean> = () => this.openingSignal() !== null;
 
-	/**
-	 * `streaming`: the Host pushes each terminal's events on its own stream
-	 * (a remote Host), instead of the embedded Host's one polled queue.
-	 */
-	constructor(
-		private readonly client: TerminalClient,
-		private readonly options: { streaming?: boolean } = {},
-	) {}
-
-	private get streaming() {
-		return Boolean(this.options.streaming && this.client.subscribeTerminal);
+	constructor(private readonly client: TerminalClient) {
+		if (client.reconnectsEvents) {
+			this.disconnectRemote = client
+				.eventStream?.()
+				.onConnectionState?.((state) => {
+					if (state !== "connected") {
+						for (const terminal of this.remote.values())
+							terminal.recovery = undefined;
+					}
+				});
+		}
 	}
 
 	/** The project's terminal tabs, in the order they were opened. */
@@ -112,6 +118,12 @@ export class TerminalStore {
 		);
 	}
 
+	async selectOrOpen(projectId: string): Promise<void> {
+		const existing = this.projectTabs(projectId).find((tab) => !tab.exited);
+		if (existing) this.select(existing.id);
+		else await this.open(projectId);
+	}
+
 	/** Opens a shell in the project in a new tab and shows it. */
 	async open(projectId: string): Promise<void> {
 		if (this.openingSignal()) return;
@@ -121,7 +133,7 @@ export class TerminalStore {
 			events: new Map<string, PendingTerminal>(),
 		};
 		this.openingSignal.set(opening);
-		if (!this.streaming) void this.poll();
+		if (!this.client.reconnectsEvents) void this.poll();
 		try {
 			const info = await this.client.openTerminal(
 				projectId,
@@ -145,7 +157,7 @@ export class TerminalStore {
 				},
 			]);
 			this.activeSignal.set(info.id);
-			if (this.streaming) this.follow(info.id);
+			this.subscribeRemote(info.id);
 		} finally {
 			this.openingSignal.set(null);
 		}
@@ -158,9 +170,9 @@ export class TerminalStore {
 		const tabs = this.tabsSignal();
 		const remaining = tabs.filter((tab) => {
 			if (projectIds.has(tab.projectId)) return true;
-			this.unfollow(tab.id);
 			this.sinks.delete(tab.id);
 			this.pending.delete(tab.id);
+			this.removeRemote(tab.id);
 			if (this.activeSignal() === tab.id) this.activeSignal.set(null);
 			return false;
 		});
@@ -180,9 +192,9 @@ export class TerminalStore {
 		void this.client.closeTerminal(terminalId).catch((error: unknown) => {
 			console.warn("Failed to close the terminal", error);
 		});
-		this.unfollow(terminalId);
 		this.sinks.delete(terminalId);
 		this.pending.delete(terminalId);
+		this.removeRemote(terminalId);
 		if (this.activeSignal() === terminalId) {
 			const siblings = this.projectTabs(tab.projectId);
 			const index = siblings.findIndex(({ id }) => id === terminalId);
@@ -190,6 +202,116 @@ export class TerminalStore {
 			this.activeSignal.set(next?.id ?? null);
 		}
 		this.tabsSignal.set(tabs.filter(({ id }) => id !== terminalId));
+	}
+
+	dispose() {
+		this.disconnectRemote?.();
+		for (const id of this.remote.keys()) this.removeRemote(id);
+	}
+
+	private removeRemote(id: string) {
+		this.remote.get(id)?.unsubscribe();
+		this.remote.delete(id);
+	}
+
+	private subscribeRemote(id: string) {
+		if (!this.client.reconnectsEvents || !this.client.subscribeTerminal) return;
+		const terminal: RemoteTerminal = {
+			offset: 0,
+			unsubscribe: () => {},
+		};
+		this.remote.set(id, terminal);
+		terminal.unsubscribe = this.client.subscribeTerminal(
+			id,
+			(event) => {
+				const current = this.remote.get(id);
+				if (!current) return;
+				const pending = current.recovery;
+				if (!pending) {
+					this.deliverRemote(current, event);
+					return;
+				}
+				if (
+					event.type !== "output" ||
+					pending.bytes < MAX_PENDING_OUTPUT_BYTES
+				) {
+					pending.events.push(event);
+					if (event.type === "output") pending.bytes += outputBytes(event.data);
+				}
+			},
+			(ack) => {
+				if (this.remote.get(id) !== terminal) return;
+				if (ack instanceof HostApiError) this.handleRecoveryError(id, ack);
+				else void this.recover(id, terminal);
+			},
+		);
+	}
+
+	private handleRecoveryError(id: string, error: unknown) {
+		if (
+			error instanceof HostApiError &&
+			(error.code === "not_found" || error.code === "forbidden")
+		) {
+			this.dispatch({ type: "error", terminalId: id, message: error.message });
+		}
+	}
+
+	private async recover(id: string, terminal: RemoteTerminal) {
+		if (
+			terminal.recovery ||
+			!this.client.attachTerminal ||
+			!this.client.snapshotTerminal ||
+			this.client.hasMethod?.("terminal.attach") === false ||
+			this.client.hasMethod?.("terminal.snapshot") === false ||
+			this.tabsSignal().find((tab) => tab.id === id)?.exited
+		)
+			return;
+		const recovery = { events: [] as TerminalEvent[], bytes: 0 };
+		terminal.recovery = recovery;
+		const current = () =>
+			this.remote.get(id) === terminal && terminal.recovery === recovery;
+		try {
+			await this.client.attachTerminal(id);
+			if (!current()) return;
+			const snapshot = await this.client.snapshotTerminal(id);
+			if (!current()) return;
+			if (snapshot.endOffset !== undefined) {
+				this.deliverRemote(terminal, {
+					type: "output",
+					terminalId: id,
+					data: snapshot.data,
+					startOffset: snapshot.endOffset - base64Length(snapshot.data),
+				});
+			} else {
+				this.pending.delete(id);
+				this.sinks.get(id)?.reset?.();
+				this.dispatch({ type: "output", terminalId: id, data: snapshot.data });
+			}
+		} catch (error) {
+			if (current()) this.handleRecoveryError(id, error);
+		} finally {
+			if (current()) {
+				terminal.recovery = undefined;
+				for (const event of recovery.events)
+					this.deliverRemote(terminal, event);
+			}
+		}
+	}
+
+	private deliverRemote(terminal: RemoteTerminal, event: TerminalEvent) {
+		if (event.type === "output" && event.startOffset !== undefined) {
+			const end = event.startOffset + base64Length(event.data);
+			if (end <= terminal.offset) return;
+			if (event.startOffset > terminal.offset) {
+				this.sinks.get(event.terminalId)?.outputTruncated?.();
+			}
+			const alreadyShown = terminal.offset - event.startOffset;
+			terminal.offset = end;
+			if (alreadyShown > 0) {
+				event = { ...event, data: btoa(atob(event.data).slice(alreadyShown)) };
+			}
+		}
+		this.dispatch(event);
 	}
 
 	/** Routes the terminal's events to its page, those kept for it first. */
@@ -233,69 +355,6 @@ export class TerminalStore {
 			.catch((error: unknown) => {
 				console.warn("Failed to resize the terminal", error);
 			});
-	}
-
-	/**
-	 * Takes the shells back after the Host connection dropped: reattaches each
-	 * open terminal the Host kept and repaints it from its recent output.
-	 */
-	resync() {
-		if (!this.streaming) return;
-		for (const tab of this.tabsSignal()) {
-			if (tab.exited) continue;
-			void this.restore(tab.id, true);
-		}
-	}
-
-	/** Stops every terminal stream; the Host keeps or closes the shells. */
-	dispose() {
-		this.disposed = true;
-		for (const stop of this.streams.values()) stop();
-		this.streams.clear();
-		this.restoring.clear();
-	}
-
-	private follow(terminalId: string) {
-		const subscribe = this.client.subscribeTerminal;
-		if (!subscribe || this.streams.has(terminalId) || this.disposed) return;
-		this.streams.set(
-			terminalId,
-			subscribe.call(this.client, terminalId, (event) => {
-				if (this.restoring.has(terminalId)) return;
-				this.dispatch(event);
-			}),
-		);
-		void this.restore(terminalId, false);
-	}
-
-	private unfollow(terminalId: string) {
-		this.streams.get(terminalId)?.();
-		this.streams.delete(terminalId);
-		this.restoring.delete(terminalId);
-	}
-
-	private async restore(terminalId: string, attach: boolean) {
-		const snapshot = this.client.snapshotTerminal;
-		if (!snapshot) return;
-		this.restoring.add(terminalId);
-		try {
-			if (attach) await this.client.attachTerminal?.(terminalId);
-			const { data } = await snapshot.call(this.client, terminalId);
-			if (this.disposed || !this.streams.has(terminalId)) return;
-			this.restoring.delete(terminalId);
-			this.dispatch({ type: "output", terminalId, data: RESET_SCREEN });
-			if (data) this.dispatch({ type: "output", terminalId, data });
-		} catch (error) {
-			if (!this.streams.has(terminalId)) return;
-			this.restoring.delete(terminalId);
-			if (attach) {
-				this.dispatch({
-					type: "error",
-					terminalId,
-					message: error instanceof Error ? error.message : String(error),
-				});
-			}
-		}
 	}
 
 	/** Keeps one native wait for terminal events in flight. */
@@ -368,6 +427,13 @@ export class TerminalStore {
 function outputBytes(data: string) {
 	// Charge the retained base64 string (up to two bytes per code unit) and queue overhead.
 	return data.length * 2 + 64;
+}
+
+function base64Length(data: string) {
+	return (
+		Math.floor((data.length * 3) / 4) -
+		(data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0)
+	);
 }
 
 function deliver(sink: TerminalSink, event: TerminalEvent) {

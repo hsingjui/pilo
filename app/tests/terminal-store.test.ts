@@ -1,6 +1,14 @@
 import { expect, test } from "nsh/test";
 
-import type { TerminalEvent } from "../client/host-api";
+import {
+	HostApiError,
+	type TerminalEvent,
+	type TerminalSnapshot,
+} from "@shared/api/host-methods";
+import type {
+	HostTransportConnectionState,
+	TerminalSubscriptionAck,
+} from "@shared/api/host-transport";
 import { type TerminalClient, TerminalStore } from "../state/terminal-store";
 
 function deferred<T>() {
@@ -132,4 +140,101 @@ test("terminal store marks errored tabs exited, switches active tab on close, an
 	expect(store.tabs().map((t) => t.id)).toEqual(["t-3"]);
 	expect(store.activeId()).toBeNull();
 	fake.closeStream();
+});
+
+test("remote terminals reattach after reconnect and merge the snapshot with live output once", async () => {
+	const fake = fakeTerminalClient();
+	let status: (state: HostTransportConnectionState) => void = () => {};
+	let receive: (event: TerminalEvent) => void = () => {};
+	let subscribed: (offset: number) => void = () => {};
+	const calls: string[] = [];
+	const reconnect = deferred<TerminalSnapshot>();
+	const store = new TerminalStore({
+		...fake.client,
+		reconnectsEvents: true,
+		eventStream: () => ({
+			subscribeEvents: () => () => {},
+			subscribeTerminal: () => () => {},
+			onConnectionState: (listener) => {
+				status = listener;
+				return () => {};
+			},
+		}),
+		subscribeTerminal: (_id, listener, onSubscribed) => {
+			receive = listener;
+			subscribed = (offset) => onSubscribed?.(offset);
+			return () => {};
+		},
+		attachTerminal: async (id) => {
+			calls.push(`attach:${id}`);
+			return { id, projectId: "p1", title: "P1" };
+		},
+		snapshotTerminal: async (id) => {
+			calls.push(`snapshot:${id}`);
+			if (calls.length === 2)
+				return { terminalId: id, data: "YQ==", endOffset: 1 };
+			return reconnect.promise;
+		},
+	});
+	await store.open("p1");
+	expect(calls).toEqual([]);
+	subscribed(1);
+	await flush();
+	const output: string[] = [];
+	store.attach("t-1", {
+		output: (data) => output.push(atob(data)),
+		exit: () => {},
+		error: () => {},
+	});
+	status("reconnecting");
+	status("connected");
+	await flush();
+	expect(calls).toEqual(["attach:t-1", "snapshot:t-1"]);
+	// HTTP could answer immediately while the WS subscription is still in flight.
+	reconnect.resolve({ terminalId: "t-1", data: "YWJj", endOffset: 3 });
+	await flush();
+	expect(output.join("")).toBe("a");
+	subscribed(3);
+	receive({ type: "output", terminalId: "t-1", data: "Y2Q=", startOffset: 2 });
+	await flush();
+	expect(calls).toEqual([
+		"attach:t-1",
+		"snapshot:t-1",
+		"attach:t-1",
+		"snapshot:t-1",
+	]);
+	expect(output.join("")).toBe("abcd");
+	store.dispose();
+});
+
+test("a workspace can open a new terminal instead of selecting an expired one", async () => {
+	const fake = fakeTerminalClient();
+	let subscribed: (ack: TerminalSubscriptionAck) => void = () => {};
+	const store = new TerminalStore({
+		...fake.client,
+		reconnectsEvents: true,
+		subscribeTerminal: (_id, _listener, onSubscribed) => {
+			subscribed = (ack) => onSubscribed?.(ack);
+			return () => {};
+		},
+		attachTerminal: async () => {
+			throw new HostApiError("not_found", "Terminal expired", false);
+		},
+		snapshotTerminal: async () => {
+			throw new Error("unexpected snapshot");
+		},
+	});
+
+	await store.open("p1");
+	subscribed(0);
+	await flush();
+	expect(store.projectTabs("p1")[0]?.exited).toBe(true);
+	await store.selectOrOpen("p1");
+	expect(store.activeId()).toBe("t-2");
+
+	subscribed(new HostApiError("forbidden", "Scope changed", false));
+	expect(store.projectTabs("p1")[1]?.exited).toBe(true);
+	await store.selectOrOpen("p1");
+	expect(store.activeId()).toBe("t-3");
+	store.dispose();
 });

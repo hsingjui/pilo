@@ -5,8 +5,8 @@ import type { ComposerTarget } from "../composer/composer-store";
 import { browserGlobal } from "../../web/web-remote-browser";
 import {
 	REMOTE_SEQUENCE_KEY,
-	WebRemotePiloClient,
-} from "../../web/web-remote-client";
+	webCursorStore,
+} from "../../web/web-host-transport";
 import { createWebWorkspaceStorage } from "../../web/web-workspace-storage";
 
 function tabStorage(initial: Record<string, string> = {}) {
@@ -34,17 +34,15 @@ test("remote client loads and flushes the event cursor for its Host", () => {
 		value: storage,
 	});
 	try {
-		new WebRemotePiloClient("test-token", {
-			origin: "http://localhost",
-			hostId: "other",
-		}).dispose();
+		expect(webCursorStore.getCursor("other")).toBe(81);
 		expect(storage.getItem(REMOTE_SEQUENCE_KEY)).toBe("42");
 		expect(storage.getItem(`${REMOTE_SEQUENCE_KEY}@other`)).toBe("81");
-		new WebRemotePiloClient("test-token", {
-			origin: "http://localhost",
-		}).dispose();
+		expect(webCursorStore.getCursor("local")).toBe(42);
 		expect(storage.getItem(REMOTE_SEQUENCE_KEY)).toBe(null);
 		expect(storage.getItem(`${REMOTE_SEQUENCE_KEY}@local`)).toBe("42");
+		webCursorStore.setCursor("other", 82);
+		expect(webCursorStore.getCursor("other")).toBe(82);
+		expect(webCursorStore.getCursor("local")).toBe(42);
 	} finally {
 		if (original) Object.defineProperty(global, "localStorage", original);
 		else delete global.localStorage;

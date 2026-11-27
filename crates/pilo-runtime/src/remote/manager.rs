@@ -730,13 +730,13 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(request("/api/v1/health", "").await, 200);
+        assert_eq!(request("/api/v2/health", "").await, 200);
         for headers in [
             "Origin: https://remote.example.com\r\n",
             "Origin: HTTPS://REMOTE.EXAMPLE.COM\r\n",
             "Origin: https://remote.example.com:443\r\n",
         ] {
-            assert_eq!(request("/api/v1/health", headers).await, 200);
+            assert_eq!(request("/api/v2/health", headers).await, 200);
         }
         for headers in [
             "Origin: https://remote.example.com:8080\r\n",
@@ -747,7 +747,7 @@ mod tests {
             "Origin: null\r\n",
             "Origin: https://remote.example.com\r\nOrigin: https://evil.test\r\n",
         ] {
-            assert_eq!(request("/api/v1/health", headers).await, 403);
+            assert_eq!(request("/api/v2/health", headers).await, 403);
         }
         for _ in 0..8 {
             assert_eq!(request("/api/v1/auth/device", "").await, 401);
@@ -948,43 +948,50 @@ mod tests {
         )
         .unwrap();
 
-        let mut socket = BufReader::new(
-            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
-                .await
-                .unwrap(),
-        );
         let upgrade = format!(
-            "GET /api/v1/events HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
+            "GET /api/v2/events HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
              Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
              Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
              Sec-WebSocket-Protocol: pilo, pilo-token.{}\r\n\r\n",
             paired.token
         );
-        socket.write_all(upgrade.as_bytes()).await.unwrap();
         let timeout = Duration::from_secs(3);
-        tokio::time::timeout(timeout, async {
-            let mut line = String::new();
-            socket.read_line(&mut line).await.unwrap();
-            assert_eq!(line.trim(), "HTTP/1.1 101 Switching Protocols");
-            loop {
-                line.clear();
-                assert_ne!(socket.read_line(&mut line).await.unwrap(), 0);
-                if line == "\r\n" {
-                    break;
+        let connect = || async {
+            let mut socket = BufReader::new(
+                tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                    .await
+                    .unwrap(),
+            );
+            socket.write_all(upgrade.as_bytes()).await.unwrap();
+            let hello = tokio::time::timeout(timeout, async {
+                let mut line = String::new();
+                socket.read_line(&mut line).await.unwrap();
+                assert_eq!(line.trim(), "HTTP/1.1 101 Switching Protocols");
+                loop {
+                    line.clear();
+                    assert_ne!(socket.read_line(&mut line).await.unwrap(), 0);
+                    if line == "\r\n" {
+                        break;
+                    }
                 }
-            }
-            let mut header = [0; 2];
-            socket.read_exact(&mut header).await.unwrap();
-            assert_eq!(header[0], 0x81);
-            assert!(header[1] <= 125);
-            let mut payload = vec![0; usize::from(header[1])];
-            socket.read_exact(&mut payload).await.unwrap();
-            let hello: serde_json::Value = serde_json::from_slice(&payload).unwrap();
-            assert_eq!(hello["type"], "hello");
-            assert_eq!(hello["deviceId"], paired.device.id);
-        })
-        .await
-        .unwrap();
+                let mut header = [0; 2];
+                socket.read_exact(&mut header).await.unwrap();
+                assert_eq!(header[0], 0x81);
+                assert_eq!(header[1], 126);
+                let length = socket.read_u16().await.unwrap();
+                let mut payload = vec![0; usize::from(length)];
+                socket.read_exact(&mut payload).await.unwrap();
+                let hello: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+                assert_eq!(hello["type"], "hello");
+                assert_eq!(hello["deviceId"], paired.device.id);
+                hello
+            })
+            .await
+            .unwrap();
+            (socket, hello)
+        };
+        let (mut socket, hello) = connect().await;
+        assert_eq!(hello["scopes"], "chat,workspace");
 
         // Only socket reauthentication can touch this timestamp before the 15 s auth tick.
         db.execute(
@@ -1010,9 +1017,16 @@ mod tests {
         .await
         .expect("scope update did not trigger WebSocket reauthentication");
 
-        // An empty masked Ping must still get a Pong after the scope change.
-        socket.write_all(&[0x89, 0x80, 1, 2, 3, 4]).await.unwrap();
         let mut frame = [0; 2];
+        tokio::time::timeout(timeout, socket.read_exact(&mut frame))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame, [0x88, 0]);
+        let (mut socket, hello) = connect().await;
+        assert_eq!(hello["scopes"], "chat");
+        // An empty masked Ping must get a Pong on the renegotiated stream.
+        socket.write_all(&[0x89, 0x80, 1, 2, 3, 4]).await.unwrap();
         tokio::time::timeout(timeout, socket.read_exact(&mut frame))
             .await
             .unwrap()

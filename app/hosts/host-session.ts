@@ -79,9 +79,7 @@ export class HostSession {
 		this.kind = kind;
 		this.client = client;
 		this.chat = new ChatTranscriptStore(client, conversationContext());
-		this.terminals = new TerminalStore(client, {
-			streaming: kind === "remote",
-		});
+		this.terminals = new TerminalStore(client);
 		const workspace = this.workspace;
 		const terminals = this.terminals;
 		this.store = new AppStore(

@@ -33,11 +33,6 @@ import {
 } from "./host-session";
 import { SessionScopedTransport } from "./session-scoped-transport";
 
-/** A remote Host's client: its transport reconnects the event stream itself. */
-class RemoteHostClient extends HostClient {
-	readonly reconnectsEvents = true;
-}
-
 /** The native calls for remote Host credentials. */
 export type RemoteHostCredentials = {
 	remoteHostToken(hostId: string): Promise<string | null>;
@@ -395,7 +390,7 @@ export class HostRegistry {
 		const session = new HostSession({
 			hostId,
 			kind: "remote",
-			client: new RemoteHostClient(transport),
+			client: new HostClient(transport),
 			shell: this.options.shell,
 		});
 		const hello = signal<HostHelloMessage | null>(null);
@@ -404,7 +399,6 @@ export class HostRegistry {
 			scopedAccess(hello(), this.record(hostId) ?? record),
 		);
 		const stream = transport.events();
-		let wasConnected = false;
 		let offlineTimer: ReturnType<typeof setTimeout> | undefined;
 		const stops = [
 			stream.onHello?.((message) => {
@@ -428,8 +422,6 @@ export class HostRegistry {
 				if (next === "connected") {
 					this.disconnectedSince.delete(hostId);
 					if (offlineTimer !== undefined) clearTimeout(offlineTimer);
-					if (wasConnected) session.terminals.resync();
-					wasConnected = true;
 				} else if (!this.disconnectedSince.has(hostId)) {
 					this.disconnectedSince.set(hostId, Date.now());
 					offlineTimer = setTimeout(

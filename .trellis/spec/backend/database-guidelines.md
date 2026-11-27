@@ -395,8 +395,9 @@ contract when changing unread tracking, completion events or read-state APIs.
 
 - `session_read_states() -> SessionReadState[]`
 - `session_mark_read(projectId, sessionPath, revision) -> SessionReadState`
-- Authenticated `GET /api/v1/sessions/read-state` returns the same list; `POST`
-  accepts `{ projectId, sessionPath, revision }` and returns one state.
+- Authenticated `POST /api/v2/call/session.readStates` returns the same list;
+  `POST /api/v2/call/session.markRead` accepts `{ projectId, sessionPath, revision }`
+  and returns one state.
 - State: `{ projectId, sessionPath, completedRevision, readRevision }`.
 - `session_read_state`: composite key `(project_id, session_path)`, project FK
   with cascading deletion, completed/read revisions. It does not require an
@@ -480,8 +481,9 @@ Host-owned appearance shared by desktop windows and authenticated WebUI.
 - SQLite `theme_settings(id INTEGER PRIMARY KEY CHECK(id = 1), settings_json TEXT)`.
 - `theme_settings_get(initial?: ThemeSettings) -> ThemeSettings` (desktop IPC).
 - `theme_settings_set(update: ThemeSettingsUpdate) -> ThemeSettings` (desktop IPC).
-- Authenticated `GET /api/v1/theme -> ThemeSettings` and `POST /api/v1/theme`
-  with a `ThemeSettingsUpdate` body -> committed `ThemeSettings`.
+- Authenticated `POST /api/v2/call/theme.get` returns `ThemeSettings`;
+  `POST /api/v2/call/theme.set` accepts `{ update: ThemeSettingsUpdate }`
+  and returns the committed `ThemeSettings`.
 - `PiloClient.loadThemeSettings()` / `saveThemeSettings(update)` expose the same
   snapshot and patch transport contracts. The authenticated HTTP write endpoint
   remains available, but WebUI has no theme editing UI and does not call it.

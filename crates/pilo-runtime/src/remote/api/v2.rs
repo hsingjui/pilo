@@ -26,7 +26,7 @@ use crate::{
     events::LIVE_IMAGE_PREFIX,
     host_api::{self, BinaryOutput, ErrorCode, HostApiError},
     storage,
-    terminal::{TerminalManager, TerminalOwner},
+    terminal::{TerminalAccessError, TerminalManager, TerminalOwner},
 };
 
 use super::{
@@ -299,27 +299,22 @@ impl DeviceWsGuard {
         }
     }
 
-    fn subscribe(&mut self, terminal_id: &str) {
+    fn subscribe(&mut self, terminal_id: &str) -> Option<Result<u64, TerminalAccessError>> {
         if self.subscribed.contains(terminal_id) {
-            return;
+            return None;
         }
         let owner = TerminalOwner::Device(self.device_id.clone());
-        if self.terminals.subscribe_ws(&owner, terminal_id).is_ok() {
+        let result = self.terminals.subscribe_ws(&owner, terminal_id);
+        if result.is_ok() {
             self.subscribed.insert(terminal_id.to_owned());
         }
+        Some(result)
     }
 
     fn unsubscribe(&mut self, terminal_id: &str) {
         if self.subscribed.remove(terminal_id) {
             let owner = TerminalOwner::Device(self.device_id.clone());
             self.terminals.unsubscribe_ws(&owner, terminal_id);
-        }
-    }
-
-    fn clear_subscriptions(&mut self) {
-        let owner = TerminalOwner::Device(self.device_id.clone());
-        for terminal_id in self.subscribed.drain() {
-            self.terminals.unsubscribe_ws(&owner, &terminal_id);
         }
     }
 
@@ -391,6 +386,7 @@ async fn event_socket_v2(
 
     let mut receiver = events.subscribe_web();
     let snapshot_sequence = events.latest_sequence();
+    let scopes = auth_session.device.scopes;
     log::info!(
         target: "remote-v2",
         "v2 event socket opened deviceId={} after={after:?} latestSequence={snapshot_sequence}",
@@ -405,7 +401,7 @@ async fn event_socket_v2(
             "hostName": host_name(),
             "deviceId": auth_session.device.id,
             "protocolVersion": PROTOCOL_VERSION,
-            "scopes": auth_session.device.scopes.as_str(),
+            "scopes": scopes.as_str(),
             "latestSequence": snapshot_sequence,
             "capabilities": host_capabilities(),
         }),
@@ -470,8 +466,9 @@ async fn event_socket_v2(
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication expired";
                 }
-                if auth_session.device.scopes != RemoteScopes::ChatWorkspace {
-                    ws_guard.clear_subscriptions();
+                if auth_session.device.scopes != scopes {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break "device scopes changed";
                 }
             }
             changed = auth_generation.changed() => {
@@ -482,8 +479,9 @@ async fn event_socket_v2(
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication changed";
                 }
-                if auth_session.device.scopes != RemoteScopes::ChatWorkspace {
-                    ws_guard.clear_subscriptions();
+                if auth_session.device.scopes != scopes {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break "device scopes changed";
                 }
             }
             incoming = socket.recv() => {
@@ -509,10 +507,29 @@ async fn event_socket_v2(
                                 }
                             }
                             Some("terminal.subscribe") => {
-                                if auth_session.device.scopes == RemoteScopes::ChatWorkspace
-                                    && let Some(terminal_id) = message.get("terminalId").and_then(Value::as_str)
-                                {
-                                    ws_guard.subscribe(terminal_id);
+                                if let Some(terminal_id) = message.get("terminalId").and_then(Value::as_str) {
+                                    let result = if auth_session.device.scopes == RemoteScopes::ChatWorkspace {
+                                        ws_guard.subscribe(terminal_id)
+                                    } else {
+                                        Some(Err(TerminalAccessError::Forbidden("workspace scope is required".into())))
+                                    };
+                                    if message["ack"] == true && let Some(result) = result {
+                                        let mut ack = json!({ "type": "terminal.subscribed", "terminalId": terminal_id });
+                                        match result {
+                                            Ok(offset) => ack["offset"] = json!(offset),
+                                            Err(error) => {
+                                                let code = match error {
+                                                    TerminalAccessError::NotFound(_) => ErrorCode::NotFound,
+                                                    TerminalAccessError::Forbidden(_) => ErrorCode::Forbidden,
+                                                    TerminalAccessError::Internal(_) => ErrorCode::Internal,
+                                                };
+                                                ack["error"] = json!(HostApiError::new(code, error.into_message()));
+                                            }
+                                        }
+                                        if send_ws_json(&mut socket, &ack).await.is_err() {
+                                            break "terminal subscription acknowledgement failed";
+                                        }
+                                    }
                                 }
                             }
                             Some("terminal.unsubscribe") => {
@@ -534,7 +551,7 @@ async fn event_socket_v2(
                 let mut send_failed = false;
                 for event in term_batch {
                     let (terminal_id, payload, finished) = match event {
-                        TerminalEvent::Output { terminal_id, data } => {
+                        TerminalEvent::Output { terminal_id, data, start_offset } => {
                             let encoded = BASE64.encode(data);
                             (
                                 terminal_id.clone(),
@@ -543,6 +560,7 @@ async fn event_socket_v2(
                                     "event": "output",
                                     "terminalId": terminal_id,
                                     "data": encoded,
+                                    "startOffset": start_offset,
                                 }),
                                 false,
                             )
@@ -646,7 +664,9 @@ mod tests {
     use super::*;
     use crate::{
         Runtime,
-        events::{PiProcessState, RuntimeEvent, RuntimeEventEnvelope},
+        events::{
+            EventBatch, EventQueueLimits, PiProcessState, RuntimeEvent, RuntimeEventEnvelope,
+        },
         host_paths::HostPaths,
         initialize_local_server_binary,
     };
@@ -986,6 +1006,49 @@ mod tests {
         );
         assert_eq!(hello_b["capabilities"]["methodsHash"], methods_hash());
 
+        for (method, path) in [
+            ("GET", "/api/v1/bootstrap"),
+            ("GET", "/api/v1/sessions"),
+            ("POST", "/api/v1/chat/rpc"),
+            ("GET", "/api/v1/models"),
+            ("GET", "/api/v1/files/image"),
+            ("GET", "/api/v1/events"),
+        ] {
+            let response = http_raw(
+                host_b.port,
+                method,
+                path,
+                Some(&token_b_chat),
+                None,
+                None,
+                &[],
+            )
+            .await;
+            assert_eq!(response.0, 404, "{method} {path}");
+        }
+        let (status, device) = http_json(
+            host_b.port,
+            "GET",
+            "/api/v1/auth/device",
+            Some(&token_b_chat),
+            None,
+            &json!({}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(device["expiresAtMs"].as_u64().is_some());
+        let (status, renewed) = http_json(
+            host_b.port,
+            "POST",
+            "/api/v1/auth/device/renew",
+            Some(&token_b_chat),
+            None,
+            &json!({}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(renewed["expiresAtMs"].as_u64().is_some());
+
         // Ping -> Pong.
         ws_b.send_text(&json!({ "type": "ping" })).await;
         assert_eq!(ws_b.recv_json().await["type"], "pong");
@@ -1114,6 +1177,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn project_mutations_notify_native_and_web_clients() {
+        let Some(server_bin) = locate_pilo_server_binary() else {
+            panic!("pilo-server binary not found; run `cargo build -p pilo-server` first");
+        };
+        initialize_local_server_binary(server_bin);
+
+        let host = TestHost::start_ephemeral("project-events").await;
+        let (token, _) = host.pair(RemoteScopes::ChatWorkspace, "Workspace").await;
+        let mut web = WsClient::connect(host.port, "/api/v2/events", &token).await;
+        assert_eq!(web.recv_json().await["type"], "hello");
+        let mut native = host.runtime.subscribe_events(EventQueueLimits {
+            max_events: 32,
+            max_bytes: 64 * 1024,
+        });
+
+        let dir = host.root.join("project");
+        std::fs::create_dir_all(&dir).unwrap();
+        let add = json!({ "connectionId": "local", "path": dir });
+
+        for local in [true, false] {
+            let mut remove = Value::Null;
+            for method in ["project.add", "project.remove"] {
+                let params = if method == "project.add" {
+                    add.clone()
+                } else {
+                    remove.clone()
+                };
+                let result = if local {
+                    host_api::call(&host.runtime, &host_api::Principal::Local, method, params)
+                        .await
+                        .unwrap()
+                } else {
+                    let (status, body) = http_json(
+                        host.port,
+                        "POST",
+                        &format!("/api/v2/call/{method}"),
+                        Some(&token),
+                        None,
+                        &params,
+                    )
+                    .await;
+                    assert_eq!(status, 200, "{method} failed: {body}");
+                    body["result"].clone()
+                };
+                if method == "project.add" {
+                    remove = json!({ "projectId": result["id"].as_str().unwrap() });
+                }
+
+                let Some(EventBatch::Events(events)) = native.try_next_batch(32) else {
+                    panic!("{method} did not publish a native event (local={local})");
+                };
+                let sequence = events
+                    .iter()
+                    .find(|event| event.event.event == RuntimeEvent::ConfigurationChanged)
+                    .expect("native configuration_changed event")
+                    .sequence;
+                let batch = web.recv_json().await;
+                assert_eq!(batch["type"], "events");
+                assert!(
+                    batch["events"].as_array().unwrap().iter().any(|event| {
+                        event["type"] == "configuration_changed" && event["sequence"] == sequence
+                    }),
+                    "{method} did not publish the same event over WebSocket (local={local}): {batch}"
+                );
+
+                let projects = crate::project_api::project_list(&host.runtime).unwrap();
+                let id = remove["projectId"].as_str().unwrap();
+                assert_eq!(
+                    projects.iter().any(|project| project.id == id),
+                    method == "project.add",
+                );
+            }
+        }
+
+        drop(web);
+        host.cleanup().await;
+    }
+
+    #[tokio::test]
     async fn v2_terminal_ownership_disconnect_retention_snapshot_toggle_and_revoke() {
         let Some(server_bin) = locate_pilo_server_binary() else {
             panic!("pilo-server binary not found; run `cargo build -p pilo-server` first");
@@ -1225,9 +1367,14 @@ mod tests {
         let mut ws1_reconnected = WsClient::connect(host.port, "/api/v2/events", &token_dev1).await;
         let _hello = ws1_reconnected.recv_json().await;
         ws1_reconnected
-            .send_text(&json!({ "type": "terminal.subscribe", "terminalId": terminal_id }))
+            .send_text(
+                &json!({ "type": "terminal.subscribe", "terminalId": terminal_id, "ack": true }),
+            )
             .await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        let ack = ws1_reconnected.recv_json().await;
+        assert_eq!(ack["type"], "terminal.subscribed");
+        assert_eq!(ack["terminalId"], terminal_id);
+        let subscribed_offset = ack["offset"].as_u64().unwrap();
         let (status, attached) = http_json(
             host.port,
             "POST",
@@ -1251,6 +1398,7 @@ mod tests {
                 )
                 .await;
                 assert_eq!(status, 200);
+                assert!(snap["result"]["endOffset"].as_u64().unwrap() >= subscribed_offset);
                 let bytes = BASE64
                     .decode(snap["result"]["data"].as_str().unwrap())
                     .unwrap();

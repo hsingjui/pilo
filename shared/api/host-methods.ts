@@ -113,7 +113,7 @@ export type TerminalInfo = { id: string; projectId: string; title: string };
 
 /** What a terminal reports; `output` carries base64 bytes. */
 export type TerminalEvent =
-	| { type: "output"; terminalId: string; data: string }
+	| { type: "output"; terminalId: string; data: string; startOffset?: number }
 	| { type: "exit"; terminalId: string }
 	| { type: "error"; terminalId: string; message: string };
 
@@ -121,6 +121,7 @@ export type TerminalEvent =
 export type TerminalSnapshot = {
 	terminalId: string;
 	data: string;
+	endOffset?: number;
 };
 
 export type HostBootstrapWire = {

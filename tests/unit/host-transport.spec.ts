@@ -134,7 +134,7 @@ function makeHello(overrides: Record<string, unknown> = {}) {
 		hostName: "Host A",
 		deviceId: "dev-1",
 		protocolVersion: "2.0",
-		scopes: "chat+workspace",
+		scopes: "chat,workspace",
 		latestSequence: 10,
 		capabilities: {
 			platform: "macos",
@@ -156,9 +156,14 @@ function jsonResponse(status: number, payload: unknown): FetchResponseLike {
 	};
 }
 
+function timesOut(error: unknown): boolean {
+	return error instanceof HostApiError && error.code === "timeout";
+}
+
 describe("HttpTransport & HostClient", () => {
 	it("routes call, upload, and download to /api/v2 endpoints and surfaces HostApiError", async () => {
 		const calls: { url: string; init?: FetchRequestInitLike }[] = [];
+		const sockets: FakeSocket[] = [];
 		let unauthorizedCalls = 0;
 		const fetchFn: FetchLike = (url, init) => {
 			calls.push({ url, init });
@@ -208,33 +213,58 @@ describe("HttpTransport & HostClient", () => {
 			origin: "http://127.0.0.1:7891/",
 			tokens: { getToken: () => "tok-123" },
 			fetch: fetchFn,
-			createWebSocket: (url, protocols) => new FakeSocket(url, protocols),
+			createWebSocket: (url, protocols) => {
+				const socket = new FakeSocket(url, protocols);
+				sockets.push(socket);
+				return socket;
+			},
 			onUnauthorized: () => {
 				unauthorizedCalls += 1;
 			},
 		});
 		const client = new HostClient(transport);
 
-		assert.deepEqual(await client.listProjects(), []);
-		assert.equal(
-			calls[0]!.url,
-			"http://127.0.0.1:7891/api/v2/call/project.list",
-		);
-		assert.equal(calls[0]!.init?.headers?.authorization, "Bearer tok-123");
-
-		await assert.rejects(
+		const projects = client.listProjects();
+		const denied = assert.rejects(
 			() => client.addProject("local", "/tmp"),
 			(err: unknown) =>
 				err instanceof HostApiError &&
 				err.code === "forbidden" &&
 				err.retryable === false,
 		);
-
-		const uploaded = await client.uploadChatFile(
+		const upload = client.uploadChatFile(
 			"p1",
 			"a.txt",
 			new Uint8Array([65, 66]),
 		);
+		const image = client.readProjectImage("p1", "pic.png");
+		assert.equal(calls.length, 0);
+		assert.equal(sockets.length, 1);
+		sockets[0]!.emitMessage(
+			makeHello({
+				protocolVersion: "2.4",
+				scopes: "chat",
+				capabilities: {
+					methods: [
+						"project.list",
+						"project.add",
+						"chat.files.upload",
+						"files.image",
+						"preferences.get",
+					],
+				},
+			}),
+		);
+		assert.deepEqual(await projects, []);
+		assert.equal(
+			calls[0]!.url,
+			"http://127.0.0.1:7891/api/v2/call/project.list",
+		);
+		assert.equal(calls[0]!.init?.headers?.authorization, "Bearer tok-123");
+
+		await denied;
+
+		const uploaded = await upload;
 		assert.equal(uploaded, "uploads/a.txt");
 		assert.ok(
 			calls[2]!.url.includes(
@@ -242,13 +272,20 @@ describe("HttpTransport & HostClient", () => {
 			),
 		);
 
-		const bytes = await client.readProjectImage("p1", "pic.png");
+		const bytes = await image;
 		assert.deepEqual([...bytes], [1, 2, 3]);
 		assert.ok(
 			calls[3]!.url.includes(
 				"/api/v2/blob/files.image?projectId=p1&path=pic.png",
 			),
 		);
+		assert.equal(client.hasMethod("project.list"), true);
+		assert.equal(client.hasMethod("terminal.open"), false);
+		await assert.rejects(
+			client.openTerminal("p1", 80, 24),
+			/does not support terminal.open/,
+		);
+		assert.equal(calls.length, 4);
 
 		await assert.rejects(
 			() => client.loadPreferences(),
@@ -257,6 +294,133 @@ describe("HttpTransport & HostClient", () => {
 		);
 		assert.equal(unauthorizedCalls, 1);
 
+		transport.dispose();
+	});
+
+	it("waits for a new hello after a disconnect and cancels queued requests immediately", async () => {
+		const scheduler = new FakeScheduler();
+		const sockets: FakeSocket[] = [];
+		const calls: string[] = [];
+		const transport = new HttpTransport({
+			origin: "https://host.example",
+			hostId: "host-a",
+			tokens: { getToken: () => "token" },
+			scheduler,
+			fetch: async (url) => {
+				if (!url.includes("/auth/")) calls.push(url);
+				return jsonResponse(200, { ok: true, result: [] });
+			},
+			createWebSocket: (url, protocols) => {
+				const socket = new FakeSocket(url, protocols);
+				sockets.push(socket);
+				return socket;
+			},
+		});
+		const first = transport.call("project.list", {});
+		sockets[0]!.emitMessage(makeHello());
+		await first;
+		sockets[0]!.emitClose();
+
+		const controller = new AbortController();
+		const cancelled = assert.rejects(
+			transport.call("project.list", {}, { signal: controller.signal }),
+			{ name: "AbortError" },
+		);
+		controller.abort();
+		await cancelled;
+
+		const expired = assert.rejects(
+			transport.upload("chat.files.upload", {}, new Uint8Array()),
+			timesOut,
+		);
+		scheduler.advance(14_999);
+		assert.equal(calls.length, 1);
+		scheduler.advance(1);
+		await expired;
+
+		const queued = transport.download("files.image", {});
+		await Promise.resolve();
+		assert.equal(calls.length, 1);
+		sockets.at(-1)!.emitMessage(
+			makeHello({
+				capabilities: { methods: ["files.image"] },
+			}),
+		);
+		await queued;
+		assert.equal(calls.length, 2);
+		transport.dispose();
+	});
+
+	it("aborts finite HTTP requests at their kind deadline including response bodies", async () => {
+		const scheduler = new FakeScheduler();
+		const socket = new FakeSocket("wss://host.example", []);
+		const business: FetchRequestInitLike[] = [];
+		let finishLong!: (value: FetchResponseLike) => void;
+		const long = new Promise<FetchResponseLike>((resolve) => {
+			finishLong = resolve;
+		});
+		const transport = new HttpTransport({
+			origin: "https://host.example",
+			hostId: "host-a",
+			tokens: { getToken: () => "token" },
+			scheduler,
+			createWebSocket: () => socket,
+			fetch: async (url, init) => {
+				business.push(init!);
+				if (url.endsWith("/chat.start")) return long;
+				return {
+					...jsonResponse(200, {}),
+					json: () => new Promise(() => {}),
+					arrayBuffer: () => new Promise(() => {}),
+				};
+			},
+		});
+		const json = assert.rejects(transport.call("project.list", {}), timesOut);
+		const upload = assert.rejects(
+			transport.upload("chat.files.upload", {}, new Uint8Array()),
+			timesOut,
+		);
+		const download = assert.rejects(
+			transport.download("files.image", {}),
+			timesOut,
+		);
+		const startup = transport.call("chat.start", {});
+		socket.emitMessage(
+			makeHello({
+				capabilities: {
+					methods: [
+						"project.list",
+						"chat.files.upload",
+						"files.image",
+						"chat.start",
+					],
+				},
+			}),
+		);
+		await Promise.resolve();
+		assert.equal(business.length, 4);
+		scheduler.advance(50_000);
+		await json;
+		assert.equal(business[0]!.signal?.aborted, true);
+		assert.equal(business[1]!.signal?.aborted, false);
+		assert.equal(business[2]!.signal?.aborted, false);
+		scheduler.advance(10_000);
+		await Promise.all([upload, download]);
+		assert.equal(business[1]!.signal?.aborted, true);
+		assert.equal(business[2]!.signal?.aborted, true);
+		finishLong(jsonResponse(200, { ok: true, result: "started" }));
+		await assert.doesNotReject(async () =>
+			assert.equal(await startup, "started"),
+		);
+
+		const controller = new AbortController();
+		const cancelled = assert.rejects(
+			transport.call("project.list", {}, { signal: controller.signal }),
+			{ name: "AbortError" },
+		);
+		controller.abort();
+		await cancelled;
+		assert.equal(business[4]!.signal?.aborted, true);
 		transport.dispose();
 	});
 
@@ -332,7 +496,7 @@ describe("HttpTransport & HostClient", () => {
 		transport.dispose();
 	});
 
-	it("rejects incompatible protocol major version and stops reconnecting", () => {
+	it("rejects incompatible protocol major version and stops reconnecting", async () => {
 		const scheduler = new FakeScheduler();
 		const sockets: FakeSocket[] = [];
 		const states: HostTransportConnectionState[] = [];
@@ -342,7 +506,9 @@ describe("HttpTransport & HostClient", () => {
 			origin: "https://host-b.example",
 			tokens: { getToken: () => "tok-b" },
 			scheduler,
-			fetch: () => Promise.resolve(jsonResponse(200, { ok: true, result: {} })),
+			fetch: () => {
+				assert.fail("Incompatible Host must not receive a business request");
+			},
 			createWebSocket: (url, protocols) => {
 				const sock = new FakeSocket(url, protocols);
 				sockets.push(sock);
@@ -361,8 +527,27 @@ describe("HttpTransport & HostClient", () => {
 
 		assert.equal(sockets.length, 1);
 		assert.ok(sockets[0]!.url.startsWith("wss://host-b.example/api/v2/events"));
+		const rejected = Promise.all([
+			assert.rejects(
+				transport.call("project.list", {}),
+				/Incompatible Host protocol version 3.0/,
+			),
+			assert.rejects(
+				transport.upload("chat.files.upload", {}, new Uint8Array()),
+				/Incompatible Host protocol/,
+			),
+			assert.rejects(
+				transport.download("files.image", {}),
+				/Incompatible Host protocol/,
+			),
+		]);
 
 		sockets[0]!.emitMessage(makeHello({ protocolVersion: "3.0" }));
+		await rejected;
+		await assert.rejects(
+			transport.call("project.list", {}),
+			/Incompatible Host protocol/,
+		);
 		assert.deepEqual(incompatible, ["3.0", "2.0"]);
 		assert.equal(transport.currentState, "incompatible");
 		assert.equal(sockets[0]!.readyState, 3);
@@ -407,16 +592,26 @@ describe("HttpTransport & HostClient", () => {
 			},
 		});
 
-		const unsubTerm = transport
-			.events()
-			.subscribeTerminal("term-1", (ev) => terminalEvents.push(ev));
+		const terminalAcks: unknown[] = [];
+		const unsubTerm = transport.events().subscribeTerminal(
+			"term-1",
+			(ev) => terminalEvents.push(ev),
+			(ack) => terminalAcks.push(ack),
+		);
 
 		assert.equal(sockets.length, 1);
 		sockets[0]!.emitMessage(makeHello());
 		assert.deepEqual(
 			sockets[0]!.sent.map((s) => JSON.parse(s)),
-			[{ type: "terminal.subscribe", terminalId: "term-1" }],
+			[{ type: "terminal.subscribe", terminalId: "term-1", ack: true }],
 		);
+		assert.deepEqual(terminalAcks, []);
+		sockets[0]!.emitMessage({
+			type: "terminal.subscribed",
+			terminalId: "term-1",
+			offset: 17,
+		});
+		assert.deepEqual(terminalAcks, [17]);
 
 		sockets[0]!.emitMessage({
 			type: "terminal",
@@ -439,8 +634,14 @@ describe("HttpTransport & HostClient", () => {
 		sockets[1]!.emitMessage(makeHello());
 		assert.deepEqual(
 			sockets[1]!.sent.map((s) => JSON.parse(s)),
-			[{ type: "terminal.subscribe", terminalId: "term-1" }],
+			[{ type: "terminal.subscribe", terminalId: "term-1", ack: true }],
 		);
+		sockets[1]!.emitMessage({
+			type: "terminal.subscribed",
+			terminalId: "term-1",
+			offset: 25,
+		});
+		assert.deepEqual(terminalAcks, [17, 25]);
 
 		unsubTerm();
 		assert.deepEqual(JSON.parse(sockets[1]!.sent.at(-1)!), {

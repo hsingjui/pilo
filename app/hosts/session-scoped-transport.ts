@@ -5,6 +5,7 @@ import type {
 	HostHelloMessage,
 	HostTransport,
 	HostTransportConnectionState,
+	TerminalSubscriptionAck,
 } from "@shared/api/host-transport";
 import type { PiloClientEventOptions } from "@shared/api/pilo-client";
 
@@ -30,6 +31,10 @@ export class SessionScopedTransport implements HostTransport {
 
 	get capabilities() {
 		return this.inner.capabilities ?? null;
+	}
+
+	get reconnectsEvents() {
+		return this.inner.reconnectsEvents;
 	}
 
 	private guard<T>(promise: Promise<T>): Promise<T> {
@@ -102,7 +107,15 @@ export class SessionScopedTransport implements HostTransport {
 			subscribeTerminal: (
 				terminalId: string,
 				listener: (event: TerminalEvent) => void,
-			) => this.track(inner.subscribeTerminal(terminalId, this.live(listener))),
+				onSubscribed?: (ack: TerminalSubscriptionAck) => void,
+			) =>
+				this.track(
+					inner.subscribeTerminal(
+						terminalId,
+						this.live(listener),
+						onSubscribed && this.live(onSubscribed),
+					),
+				),
 		};
 		if (inner.subscribeAllTerminals) {
 			const subscribeAll = inner.subscribeAllTerminals.bind(inner);

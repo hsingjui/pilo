@@ -16,7 +16,7 @@ use super::{
     Runtime,
     events::{RuntimeEvent, RuntimeEventEnvelope},
     handle::WeakRuntime,
-    project,
+    project, project_api,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient},
     storage,
 };
@@ -278,10 +278,7 @@ async fn execute(
         "projects.add" => {
             let connection = required(command.connection_id.as_deref(), "--connection")?;
             let path = required(command.key.as_deref(), "project path")?;
-            let added = project::add(runtime, &runtime.servers, connection, path).await?;
-            runtime.chat_sessions.open_project(&added.id).await?;
-            changed(runtime);
-            encode(added)
+            encode(project_api::project_add(runtime, connection, path).await?)
         }
         _ => Err("unknown Pilo control command".to_owned()),
     }

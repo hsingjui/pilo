@@ -1323,7 +1323,7 @@ export function AppShell(props: AppShellProps) {
 										? undefined
 										: props.shell?.pickLocalProjectDirectory
 								}
-								browseHostDirectories={props.browseHostDirectories}
+								browseHostLocal={props.browseHostDirectories}
 								connectionId={addProjectConnection}
 								projects={() => store.state().projects}
 								onAdd={async (connectionId, path) => {

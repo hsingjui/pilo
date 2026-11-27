@@ -14,7 +14,7 @@ import type { SessionDeleteResult } from "@shared/api/sessions-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 import type { HostClient } from "@shared/api/host-client";
-import type { DesktopHostBootstrap } from "../client/host-api";
+import type { HostBootstrap as DesktopHostBootstrap } from "@shared/api/host-methods";
 import { t } from "../shell/i18n";
 import {
 	type AppAction,
@@ -126,6 +126,7 @@ export class AppStore {
 	private readonly pending: PiloClientEvent[] = [];
 	/** Counts project reads, so a reload superseded by a newer read is dropped. */
 	private projectReads = 0;
+	private projectReloadQueuedFor: object | undefined;
 	private readonly sessionReads = new Map<string, number>();
 	private readonly sessionScans = new Map<string, Promise<void>>();
 	private readonly sessionRefreshes = new Map<
@@ -621,7 +622,7 @@ export class AppStore {
 			void this.refreshChatSession(event.sessionKey);
 		}
 		if (event.type === "configuration_changed") {
-			void this.reloadProjects();
+			this.queueProjectReload();
 		} else if (
 			event.type === "sessions_indexed" ||
 			event.type === "assistant_message_start" ||
@@ -737,6 +738,19 @@ export class AppStore {
 			// Unknown activity is not proof that external turns ended.
 			console.debug("Reading external Pi activity failed", error);
 		}
+	}
+
+	private queueProjectReload() {
+		const connection = this.connection;
+		if (!connection || this.projectReloadQueuedFor === connection) return;
+		this.projectReloadQueuedFor = connection;
+		const read = this.projectReads;
+		void Promise.resolve().then(() => {
+			if (this.projectReloadQueuedFor !== connection) return;
+			this.projectReloadQueuedFor = undefined;
+			if (this.connection === connection && this.projectReads === read)
+				void this.reloadProjects();
+		});
 	}
 
 	private async reloadProjects() {
