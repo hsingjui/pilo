@@ -87,6 +87,7 @@ import type {
  */
 export class HostClient implements PiloClient {
 	private readonly transport: HostTransport;
+	private readonly noSessionStarts = new Map<string, Set<Promise<unknown>>>();
 	private isShutdown = false;
 
 	constructor(transport: HostTransport) {
@@ -295,7 +296,7 @@ export class HostClient implements PiloClient {
 	searchSessions(
 		projectId: string,
 		query: string,
-		limit = 20,
+		limit = 24,
 	): Promise<SessionSearchMatch[]> {
 		return this.call("session.search", { projectId, query, limit });
 	}
@@ -567,12 +568,33 @@ export class HostClient implements PiloClient {
 		return this.call("theme.set", { update });
 	}
 
-	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
-		return this.call("chat.start", input);
+	async startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
+		const start = this.call("chat.start", input);
+		if (!input.noSession) return await start;
+
+		const key = input.sessionKey;
+		let pending = this.noSessionStarts.get(key);
+		if (!pending) {
+			pending = new Set();
+			this.noSessionStarts.set(key, pending);
+		}
+		pending.add(start);
+		try {
+			return await start;
+		} finally {
+			pending.delete(start);
+			if (pending.size === 0) {
+				this.noSessionStarts.delete(key);
+			}
+		}
 	}
 
-	stopChat(sessionKey: string, reason?: string): Promise<void> {
-		return this.call("chat.stop", { sessionKey, reason });
+	async stopChat(sessionKey: string, reason?: string): Promise<void> {
+		const pending = this.noSessionStarts.get(sessionKey);
+		if (reason === "temporary_chat_left" && pending) {
+			await Promise.allSettled(pending);
+		}
+		await this.call("chat.stop", { sessionKey, reason });
 	}
 
 	chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null> {

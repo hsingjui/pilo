@@ -201,6 +201,133 @@ test("the Host previews file links while the desktop shell only opens them", asy
 	]);
 });
 
+test("temporary_chat_left waits for an in-flight noSession start before calling chat.stop", async () => {
+	const order: string[] = [];
+	let releaseStart!: () => void;
+	const startReady = new Promise<void>((resolve) => {
+		releaseStart = resolve;
+	});
+	const { pilo } = fakeNative({
+		call: (async (method: string, params: unknown) => {
+			order.push(`start:${method}`);
+			if (method === "chat.start") {
+				await startReady;
+				order.push(`done:${method}`);
+				return {
+					sessionKey: (params as { sessionKey: string }).sessionKey,
+					projectId: "p1",
+					status: "idle",
+				};
+			}
+			order.push(`done:${method}`);
+			return undefined;
+		}) as NativeHostBackend["call"],
+	});
+	const client = createNativeHostClient(pilo);
+
+	const starting = client.startChat({
+		projectId: "p1",
+		sessionKey: "temp-1",
+		noSession: true,
+	});
+	const stopping = client.stopChat("temp-1", "temporary_chat_left");
+	await settle();
+	expect(order).toEqual(["start:chat.start"]);
+
+	releaseStart();
+	await Promise.all([starting, stopping]);
+	expect(order).toEqual([
+		"start:chat.start",
+		"done:chat.start",
+		"start:chat.stop",
+		"done:chat.stop",
+	]);
+});
+
+test("searchSessions defaults limit to 24 and forwards explicit limits", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = createNativeHostClient(pilo);
+	await client.searchSessions("p1", "hello");
+	await client.searchSessions("p1", "hello", 50);
+	expect(calls).toEqual([
+		["session.search", { projectId: "p1", query: "hello", limit: 24 }],
+		["session.search", { projectId: "p1", query: "hello", limit: 50 }],
+	]);
+});
+
+test("archive, unarchive, markSessionRead validation, and error propagation behave consistently", async () => {
+	const { pilo, calls } = fakeNative({
+		call: (async (method: string, params: unknown) => {
+			calls.push([method, params]);
+			if (method === "session.delete") {
+				throw new Error("cannot delete active session");
+			}
+			return {};
+		}) as NativeHostBackend["call"],
+	});
+	const client = createNativeHostClient(pilo);
+	await client.archiveSession("p1", "/s.jsonl");
+	await client.unarchiveSession("p1", "/s.jsonl");
+	await client.saveModelScope("p1", []);
+	await client.saveModelScope("p1", null);
+	await client.chatTranscriptSnapshot("k1", {
+		startMessage: 10,
+		messageLimit: 25,
+	});
+	await client.loadHistory("p1", "/s.jsonl", {
+		fingerprint: { fileSize: 128, fileMtimeNs: "999" },
+		startMessage: 5,
+		messageLimit: 20,
+	});
+
+	let readErr: unknown;
+	try {
+		await client.markSessionRead("p1", "/s.jsonl", 0);
+	} catch (error) {
+		readErr = error;
+	}
+	expect((readErr as Error).message).toBe(
+		"session read revision must be a positive safe integer",
+	);
+
+	let delErr: unknown;
+	try {
+		await client.deleteSession("p1", "/s.jsonl");
+	} catch (error) {
+		delErr = error;
+	}
+	expect((delErr as Error).message).toBe("cannot delete active session");
+
+	expect(calls).toEqual([
+		[
+			"session.uiState.set",
+			{ projectId: "p1", sessionPath: "/s.jsonl", update: { archived: true } },
+		],
+		[
+			"session.uiState.set",
+			{ projectId: "p1", sessionPath: "/s.jsonl", update: { archived: false } },
+		],
+		["models.scope.set", { projectId: "p1", models: [] }],
+		["models.scope.set", { projectId: "p1", models: null }],
+		[
+			"chat.transcriptSnapshot",
+			{ sessionKey: "k1", startMessage: 10, messageLimit: 25 },
+		],
+		[
+			"session.history",
+			{
+				projectId: "p1",
+				sessionPath: "/s.jsonl",
+				expectedFileSize: 128,
+				expectedFileMtimeNs: "999",
+				startMessage: 5,
+				messageLimit: 20,
+			},
+		],
+		["session.delete", { projectId: "p1", sessionPath: "/s.jsonl" }],
+	]);
+});
+
 function fakeEventStream() {
 	const polls: {
 		max: number;
@@ -318,6 +445,43 @@ test("a closed event stream disconnects listeners and marks the client closed", 
 	await client.connectEvents(late.options);
 	expect(late.statuses).toEqual([false]);
 	expect(polls.length).toBe(1);
+});
+
+test("a failed poll disconnects listeners and reconnecting resumes polling", async () => {
+	const { client, polls } = fakeEventStream();
+	const first = listener();
+	await client.connectEvents(first.options);
+	await settle();
+
+	polls[0]?.reject(new Error("native poll failed"));
+	await settle();
+	expect(first.statuses).toEqual([true, false]);
+	expect(client.closed).toBe(false);
+
+	const second = listener();
+	await client.connectEvents(second.options);
+	await settle();
+	expect(polls.length).toBe(2);
+	polls[1]?.resolve(events(9));
+	await settle();
+	expect(second.messages).toEqual([events(9)]);
+});
+
+test("a listener that throws does not stop delivery to the others", async () => {
+	const { client, polls } = fakeEventStream();
+	const healthy = listener();
+	await client.connectEvents({
+		onMessage: () => {
+			throw new Error("boom");
+		},
+		onStatus: () => undefined,
+	});
+	await client.connectEvents(healthy.options);
+	await settle();
+
+	polls[0]?.resolve(events(7));
+	await settle();
+	expect(healthy.messages).toEqual([events(7)]);
 });
 
 test("the client reads and updates Host data through the native module", async () => {
