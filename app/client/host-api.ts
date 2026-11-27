@@ -36,6 +36,7 @@ import type {
 	PreferencePatch,
 	PreferencesSnapshot,
 } from "@shared/host-preferences-types";
+import type { WorkspaceFile } from "@shared/project-workspace";
 
 /** A shell the runtime runs in a project's environment. */
 export type TerminalInfo = { id: string; projectId: string; title: string };
@@ -136,6 +137,10 @@ export interface DesktopHostClient extends PiloClient {
 		unwatchedOnly?: boolean,
 	): Promise<SessionIndexEntry[]>;
 	searchProjectFiles(projectId: string, query: string): Promise<string[]>;
+	previewFileLink(
+		projectId: string,
+		url: string,
+	): Promise<WorkspaceFile | null>;
 	uploadChatFile(
 		projectId: string,
 		name: string,

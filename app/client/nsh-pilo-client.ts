@@ -41,6 +41,7 @@ import type {
 	ProjectModelScope,
 	ProjectScopedModel,
 } from "@shared/project-model-scope";
+import type { WorkspaceFile } from "@shared/project-workspace";
 import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
 import type {
 	NextPromptModel,
@@ -162,6 +163,7 @@ export type PiloNative = Pick<
 			| "closeTerminal"
 			| "nextTerminalEvents"
 			| "pauseCacheKeepAlive"
+			| "openFileLink"
 		>
 	>;
 
@@ -531,6 +533,15 @@ export class NshPiloClient implements DesktopHostClient {
 	/** The bytes of an image at a path relative to the project. */
 	async readProjectImage(projectId: string, path: string) {
 		return (await this.pilo.readProjectImage(projectId, path)) as ImageBytes;
+	}
+
+	async previewFileLink(projectId: string, url: string) {
+		if (!this.pilo.openFileLink) throw unavailable("openFileLink");
+		return (await this.pilo.openFileLink(
+			projectId,
+			url,
+			true,
+		)) as WorkspaceFile | null;
 	}
 
 	/** Pi's current user-level model catalog for the connection. */

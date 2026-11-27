@@ -109,20 +109,13 @@ async function run() {
 	const previewImage = signal<ChatImagePreview | null>(null);
 	const openCalls = signal<string[]>([]);
 
-	const openFileLink = async (
+	const previewFileLink = async (
 		_projectId: string,
 		url: string,
-		preview: boolean,
 	): Promise<WorkspaceFile | null> => {
-		openCalls.update((calls) => [
-			...calls,
-			`${preview ? "preview" : "sys"}:${url}`,
-		]);
+		openCalls.update((calls) => [...calls, `preview:${url}`]);
 		if (url.endsWith("/missing.ts")) {
 			throw new Error("ENOENT: missing.ts");
-		}
-		if (!preview) {
-			return null;
 		}
 		if (url.endsWith("/src/main.ts")) {
 			return { path: "/work/demo/src/main.ts", content: mainTsContent };
@@ -132,12 +125,16 @@ async function run() {
 		}
 		return null;
 	};
+	const openFileLink = async (_projectId: string, url: string) => {
+		openCalls.update((calls) => [...calls, `sys:${url}`]);
+	};
 
 	const readProjectImage = async () => pngBytes();
 
 	const fileContext = {
 		project,
 		workspace,
+		previewFileLink,
 		openFileLink,
 		readProjectImage,
 		openImage: (image: ChatImagePreview) => previewImage.set(image),

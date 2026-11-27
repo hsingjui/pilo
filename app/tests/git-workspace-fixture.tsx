@@ -278,12 +278,10 @@ async function run() {
 		},
 	};
 
-	const openFileLink = async (
+	const previewFileLink = async (
 		_projectId: string,
 		url: string,
-		preview: boolean,
 	): Promise<WorkspaceFile | null> => {
-		if (!preview) return null;
 		if (url.endsWith("/src/app.ts")) {
 			return {
 				path: "/work/demo/src/app.ts",
@@ -296,7 +294,7 @@ async function run() {
 	const fileContext = {
 		project,
 		workspace,
-		openFileLink,
+		previewFileLink,
 		toasts,
 	};
 

@@ -3,7 +3,6 @@ import { openUrl } from "nsh";
 import process from "process";
 
 import type { SystemFontFamily } from "@shared/font-settings";
-import type { WorkspaceFile } from "@shared/project-workspace";
 import { defaultDesktopNotifications } from "./desktop-notifications";
 import type { DesktopShell } from "./desktop-shell";
 import { createDesktopUpdate } from "./desktop-update";
@@ -54,13 +53,9 @@ export function createNativeDesktopShell(
 			if (!pilo.projectOpenInApp) throw unavailable("projectOpenInApp");
 			await pilo.projectOpenInApp(projectId, app, path);
 		},
-		async openFileLink(projectId, url, preview) {
+		async openFileLink(projectId, url) {
 			if (!pilo.openFileLink) throw unavailable("openFileLink");
-			return (await pilo.openFileLink(
-				projectId,
-				url,
-				preview,
-			)) as WorkspaceFile | null;
+			await pilo.openFileLink(projectId, url, false);
 		},
 		createUpdate: createDesktopUpdate,
 		notifications: options.notifications ?? defaultDesktopNotifications(),

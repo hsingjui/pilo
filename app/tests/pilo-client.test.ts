@@ -236,6 +236,38 @@ test("the desktop shell preserves picker cancellation and missing native capabil
 	);
 });
 
+test("the Host previews file links while the desktop shell only opens them", async () => {
+	const calls: Call[] = [];
+	const file = { path: "/code/empty.md", content: "" };
+	const { pilo } = fakeNative({
+		async openFileLink(projectId, url, preview) {
+			calls.push(["openFileLink", projectId, url, preview]);
+			if (url.endsWith("missing.md")) throw new Error("file not found");
+			return preview ? file : null;
+		},
+	});
+	const host = new NshPiloClient(pilo);
+	const shell = createNativeDesktopShell(pilo);
+	expect(await host.previewFileLink("p1", "file:///code/empty.md")).toEqual(
+		file,
+	);
+	expect(await shell.openFileLink("p1", "file:///code/report.html")).toBe(
+		undefined,
+	);
+	let caught: unknown;
+	try {
+		await host.previewFileLink("p1", "file:///code/missing.md");
+	} catch (error) {
+		caught = error;
+	}
+	expect((caught as Error).message).toBe("file not found");
+	expect(calls).toEqual([
+		["openFileLink", "p1", "file:///code/empty.md", true],
+		["openFileLink", "p1", "file:///code/report.html", false],
+		["openFileLink", "p1", "file:///code/missing.md", true],
+	]);
+});
+
 test("data calls pass their arguments to the native module and return its answers", async () => {
 	const { pilo, calls, preferences, readState } = fakeNative();
 	const client = new NshPiloClient(pilo);

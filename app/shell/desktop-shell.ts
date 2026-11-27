@@ -2,7 +2,6 @@ import { effect, keymap, platform, signal } from "nsh";
 import { Application, GlobalShortcut, Tray, type WindowRef } from "nsh/desktop";
 
 import type { SystemFontFamily } from "@shared/font-settings";
-import type { WorkspaceFile } from "@shared/project-workspace";
 import macTrayIcon from "../assets/tray-template.svg";
 // nsh renders SVG tray icons as monochrome templates on Windows too; use the
 // pre-rendered RGBA PNG (from assets/branding/tray.svg) to preserve colors.
@@ -32,11 +31,7 @@ export interface DesktopShell {
 		app: ProjectNativeApp,
 		path?: string,
 	): Promise<void>;
-	openFileLink?(
-		projectId: string,
-		url: string,
-		preview: boolean,
-	): Promise<WorkspaceFile | null>;
+	openFileLink?(projectId: string, url: string): Promise<void>;
 	notifications?: DesktopNotificationsApi;
 	dock?: DesktopDockApi;
 	settings?: DesktopSettingsClient;

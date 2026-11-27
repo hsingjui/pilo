@@ -85,7 +85,7 @@ import {
 	canOpenToolFilePath,
 	openMarkdownFileLink,
 	openToolFilePath,
-	type OpenFileLinkClient,
+	type FileLinkOpenContext,
 } from "./open-file-link";
 import { HeaderActions } from "./header-actions";
 import { SessionHeader } from "./session-header";
@@ -136,11 +136,11 @@ export interface AppShellProps {
 	) => Promise<Uint8Array>;
 	/** Prompts the user to save an image from the preview lightbox. */
 	saveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
-	/** Opens a file link via the runtime (returns preview text or launches the system app). */
-	openFileLink?: OpenFileLinkClient;
+	previewFileLink?: FileLinkOpenContext["previewFileLink"];
+	openFileLink?: FileLinkOpenContext["openFileLink"];
 	/** Native Git status/diff reader for the desktop-only Git workspace tab. */
 	git?: GitWorkspaceClient;
-	/** Per-project open file preview and Git tabs; created automatically when `openFileLink` or `git` is given. */
+	/** Per-project open file preview and Git tabs. */
 	workspace?: WorkspaceStore;
 	/** What a project file link in a reply does when pressed (overrides default workspace handling). */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
@@ -214,12 +214,15 @@ export function AppShell(props: AppShellProps) {
 	const toasts = props.toasts ?? new AppToasts();
 	const workspace =
 		props.workspace ??
-		(props.openFileLink || props.git ? new WorkspaceStore() : undefined);
+		(props.previewFileLink || props.openFileLink || props.git
+			? new WorkspaceStore()
+			: undefined);
 	const previewImage = signal<ChatImagePreview | null>(null);
 	const fileOpenContext = workspace
 		? {
 				project,
 				workspace,
+				previewFileLink: props.previewFileLink,
 				openFileLink: props.openFileLink,
 				readProjectImage: props.readProjectImage,
 				openImage: (image: ChatImagePreview) => previewImage.set(image),

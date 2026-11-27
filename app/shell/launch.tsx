@@ -222,6 +222,7 @@ export async function launch(pilo: PiloNative, shell: DesktopShell) {
 		workspace,
 		terminals,
 		openProjectInApp: shell.openProjectInApp,
+		previewFileLink: (projectId, url) => client.previewFileLink(projectId, url),
 		openFileLink: shell.openFileLink,
 		git: client,
 		onRenameSession: (projectId, sessionPath, title) =>
