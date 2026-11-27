@@ -62,25 +62,23 @@ function shadow(variant: ButtonProps["variant"]): string | undefined {
 	);
 }
 
-function disabledStyle(variant: ButtonProps["variant"]) {
-	const color = token("muted-foreground");
-	if (
+/** Filled buttons swap to a muted surface; the rest dim with opacity. */
+function isFilled(variant: ButtonProps["variant"]) {
+	return (
 		variant === undefined ||
 		variant === "default" ||
 		variant === "destructive" ||
 		variant === "secondary"
-	) {
-		return {
-			backgroundColor: token("muted"),
-			color,
-			boxShadow: "none",
-			opacity: 1,
-		};
-	}
+	);
+}
+
+function disabledStyle(variant: ButtonProps["variant"]) {
+	if (!isFilled(variant)) return undefined;
 	return {
-		color,
+		backgroundColor: token("muted"),
+		color: token("muted-foreground"),
 		boxShadow: "none",
-		opacity: variant === "outline" ? 0.7 : 0.6,
+		opacity: 1,
 	};
 }
 
@@ -99,7 +97,7 @@ export function Button(props: ButtonProps) {
 	const pointerBlur = blurOnPointerPress(local);
 	const foreground = () =>
 		token(
-			local.disabled
+			local.disabled && isFilled(local.variant)
 				? "muted-foreground"
 				: foregrounds[local.variant ?? "default"],
 		);
