@@ -96,6 +96,7 @@ export class NativeTransport implements HostTransport {
 	}
 
 	dispose(): void {
+		this.streamClosed = true;
 		this.disconnect();
 		this.terminalListeners.clear();
 		this.allTerminalListeners.clear();

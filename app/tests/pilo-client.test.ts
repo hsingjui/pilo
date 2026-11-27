@@ -310,8 +310,8 @@ test("archive, unarchive, markSessionRead validation, and error propagation beha
 		["models.scope.set", { projectId: "p1", models: [] }],
 		["models.scope.set", { projectId: "p1", models: null }],
 		[
-			"chat.transcriptSnapshot",
-			{ sessionKey: "k1", startMessage: 10, messageLimit: 25 },
+			"chat.transcript",
+			{ sessionKey: "k1", window: { startMessage: 10, messageLimit: 25 } },
 		],
 		[
 			"session.history",
@@ -322,6 +322,7 @@ test("archive, unarchive, markSessionRead validation, and error propagation beha
 				expectedFileMtimeNs: "999",
 				startMessage: 5,
 				messageLimit: 20,
+				includeMessageIndex: undefined,
 			},
 		],
 		["session.delete", { projectId: "p1", sessionPath: "/s.jsonl" }],
