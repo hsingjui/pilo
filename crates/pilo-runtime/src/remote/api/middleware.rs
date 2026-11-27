@@ -14,7 +14,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use crate::remote::{auth, pairing::PairingError};
+use crate::remote::{Principal, auth, pairing::PairingError};
 use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
 use super::{ApiFailureDiagnostic, AuthKind, AuthSession, RemoteHttpState, api_error};
@@ -279,6 +279,10 @@ pub(super) async fn require_auth(
     match result {
         Ok(Ok(Some(device))) => {
             state.rate_limiter.clear(AuthKind::Device, ip);
+            request.extensions_mut().insert(Principal::Device {
+                id: device.id.clone(),
+                scopes: device.scopes,
+            });
             request
                 .extensions_mut()
                 .insert(AuthSession { device, token });

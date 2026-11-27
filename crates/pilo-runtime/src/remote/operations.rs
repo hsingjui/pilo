@@ -1,4 +1,4 @@
-use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig};
+use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteScopes};
 
 use super::RemoteHostState;
 use crate::Runtime;
@@ -39,8 +39,11 @@ pub async fn remote_set_addresses(
         .await
 }
 
-pub async fn remote_pairing_regenerate(runtime: &Runtime) -> Result<RemoteHostState, String> {
-    runtime.remote.regenerate_pairing(runtime).await
+pub async fn remote_pairing_regenerate(
+    runtime: &Runtime,
+    scopes: RemoteScopes,
+) -> Result<RemoteHostState, String> {
+    runtime.remote.regenerate_pairing(runtime, scopes).await
 }
 
 pub async fn remote_device_revoke(
@@ -59,6 +62,21 @@ pub async fn remote_device_rename(
         .remote
         .rename_device(runtime, &device_id, &name)
         .await
+}
+
+pub async fn remote_device_set_scopes(
+    runtime: &Runtime,
+    device_id: String,
+    scopes: RemoteScopes,
+) -> Result<RemoteHostState, String> {
+    runtime
+        .remote
+        .set_device_scopes(runtime, &device_id, scopes)
+        .await
+}
+
+pub async fn remote_devices_revoke_all(runtime: &Runtime) -> Result<RemoteHostState, String> {
+    runtime.remote.revoke_all_devices(runtime).await
 }
 
 #[cfg(test)]
@@ -84,7 +102,11 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(remote_pairing_regenerate(&runtime).await.is_err());
+        assert!(
+            remote_pairing_regenerate(&runtime, RemoteScopes::Chat)
+                .await
+                .is_err()
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

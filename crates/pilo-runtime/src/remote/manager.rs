@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use crate::{Runtime, RuntimeEventBus, host_paths::HostPaths, storage};
-use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice};
+use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteScopes};
 
 use super::{access, api, pairing::PairingSession};
 
@@ -33,6 +33,7 @@ pub struct RemoteHostState {
     pub pairing_expires_at_ms: Option<u64>,
     pub pairing_remaining_uses: usize,
     pub pairing_total_uses: usize,
+    pub pairing_scopes: Option<RemoteScopes>,
     pub last_error: Option<String>,
     pub devices: Vec<RemoteDevice>,
 }
@@ -206,6 +207,7 @@ impl RemoteServerManager {
     pub(crate) async fn regenerate_pairing(
         &self,
         runtime: &Runtime,
+        scopes: RemoteScopes,
     ) -> Result<RemoteHostState, String> {
         let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
@@ -217,7 +219,7 @@ impl RemoteServerManager {
         let lan_base_url = running.lan_base_url.clone();
         tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths, &lan_base_url)?;
-            pairing.regenerate(&paths, access::pairing_addresses(&config))
+            pairing.regenerate(&paths, access::pairing_addresses(&config), scopes)
         })
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
@@ -272,7 +274,7 @@ impl RemoteServerManager {
                 origins.send_replace(config.addresses.clone());
             }
             if changed && let Some(pairing) = &pairing {
-                pairing.regenerate(&paths, config.addresses)?;
+                pairing.regenerate(&paths, config.addresses, RemoteScopes::Chat)?;
             }
             Ok::<_, String>(())
         })
@@ -361,6 +363,56 @@ impl RemoteServerManager {
         self.snapshot(runtime).await
     }
 
+    pub(crate) async fn set_device_scopes(
+        &self,
+        runtime: &Runtime,
+        device_id: &str,
+        scopes: RemoteScopes,
+    ) -> Result<RemoteHostState, String> {
+        let inner = self.inner.lock().await;
+        let db = storage::open_with_paths(&runtime.paths)?;
+        if !storage::set_remote_device_scopes(&db, device_id, scopes)? {
+            return Err(format!(
+                "Remote device '{device_id}' was not found or already revoked"
+            ));
+        }
+        if let Some(running) = inner.running.as_ref() {
+            running.auth_generation.send_replace(next_auth_generation());
+        }
+        drop(inner);
+        self.snapshot(runtime).await
+    }
+
+    pub(crate) async fn revoke_all_devices(
+        &self,
+        runtime: &Runtime,
+    ) -> Result<RemoteHostState, String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let inner = self.inner.lock().await;
+        let pairing = inner
+            .running
+            .as_ref()
+            .map(|running| running.pairing.clone());
+        let paths = runtime.paths.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(pairing) = pairing {
+                pairing.invalidate();
+            }
+            let mut db = storage::open_with_paths(&paths)?;
+            let transaction = db.transaction().map_err(|error| error.to_string())?;
+            storage::clear_remote_pairing(&transaction)?;
+            storage::revoke_all_remote_devices(&transaction, storage::now_ms())?;
+            transaction.commit().map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|_| "Remote WebUI revoke task failed".to_owned())??;
+        if let Some(running) = inner.running.as_ref() {
+            running.auth_generation.send_replace(next_auth_generation());
+        }
+        drop(inner);
+        self.snapshot(runtime).await
+    }
+
     pub(crate) async fn snapshot(&self, runtime: &Runtime) -> Result<RemoteHostState, String> {
         let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
@@ -433,6 +485,7 @@ impl RemoteServerManager {
                 base_url,
                 public_base_url: host.public_base_url,
                 pairing_expires_at_ms: pairing.as_ref().map(|(_, info)| info.expires_at_ms),
+                pairing_scopes: pairing.as_ref().map(|(_, info)| info.scopes),
                 pairing_remaining_uses: pairing.as_ref().map_or(0, |(_, info)| info.remaining_uses),
                 pairing_total_uses: pairing.as_ref().map_or_else(
                     || access::pairing_addresses(&config).len(),
@@ -500,7 +553,7 @@ impl RemoteServerManager {
         let addresses = tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths_for_init, &lan_for_init)?;
             let addresses = access::pairing_addresses(&config);
-            pairing_for_init.regenerate(&paths_for_init, addresses.clone())?;
+            pairing_for_init.regenerate(&paths_for_init, addresses.clone(), RemoteScopes::Chat)?;
             Ok::<_, String>(addresses)
         })
         .await
@@ -748,6 +801,84 @@ mod tests {
                 .await
                 .is_ok()
         );
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn pair_scope_is_cached_until_runtime_scope_update_and_revocation() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-scopes-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        runtime
+            .remote
+            .regenerate_pairing(&runtime, RemoteScopes::ChatWorkspace)
+            .await
+            .unwrap();
+        let (pairing, generation) = {
+            let inner = runtime.remote.inner.lock().await;
+            let running = inner.running.as_ref().unwrap();
+            (running.pairing.clone(), running.auth_generation.subscribe())
+        };
+        let (secret, info) = pairing.snapshot().unwrap();
+        assert_eq!(info.scopes, RemoteScopes::ChatWorkspace);
+        let paired = pairing
+            .exchange(
+                &runtime.paths,
+                &secret,
+                &info.addresses[0].address.id,
+                &"a".repeat(64),
+                None,
+                "127.0.0.1",
+            )
+            .ok()
+            .unwrap();
+        let authenticate = || {
+            super::super::auth::authenticate_cached(
+                &runtime.paths,
+                &paired.token,
+                *generation.borrow(),
+            )
+            .unwrap()
+        };
+        assert_eq!(authenticate().unwrap().scopes, RemoteScopes::ChatWorkspace);
+        let snapshot = runtime
+            .remote
+            .set_device_scopes(&runtime, &paired.device.id, RemoteScopes::Chat)
+            .await
+            .unwrap();
+        assert!(generation.has_changed().unwrap());
+        assert_eq!(snapshot.devices[0].scopes, RemoteScopes::Chat);
+        assert_eq!(authenticate().unwrap().scopes, RemoteScopes::Chat);
+        runtime.remote.set_enabled(&runtime, false).await.unwrap();
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let current_generation = {
+            let inner = runtime.remote.inner.lock().await;
+            inner.running.as_ref().unwrap().auth_generation.subscribe()
+        };
+        let check_current = || {
+            super::super::auth::authenticate_cached(
+                &runtime.paths,
+                &paired.token,
+                *current_generation.borrow(),
+            )
+            .unwrap()
+        };
+        assert_eq!(check_current().unwrap().scopes, RemoteScopes::Chat);
+        let cleared = runtime.remote.revoke_all_devices(&runtime).await.unwrap();
+        assert!(cleared.running);
+        assert!(cleared.pairing_url.is_none());
+        assert!(
+            cleared
+                .devices
+                .iter()
+                .all(|device| device.revoked_at_ms.is_some())
+        );
+        assert!(check_current().is_none());
         runtime.remote.stop().await;
         std::fs::remove_dir_all(root).unwrap();
     }

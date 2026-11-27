@@ -38,6 +38,36 @@ pub struct RemoteAccessConfig {
     pub entry_address_id: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RemoteScopes {
+    #[default]
+    #[serde(rename = "chat")]
+    Chat,
+    #[serde(rename = "chat,workspace")]
+    ChatWorkspace,
+}
+
+impl RemoteScopes {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::ChatWorkspace => "chat,workspace",
+        }
+    }
+}
+
+impl std::str::FromStr for RemoteScopes {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "chat" => Ok(Self::Chat),
+            "chat,workspace" => Ok(Self::ChatWorkspace),
+            _ => Err("invalid remote device scopes"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteDevice {
@@ -45,6 +75,8 @@ pub struct RemoteDevice {
     pub name: String,
     /// 配对请求的来源 IP;旧记录为空字符串。
     pub pair_ip: String,
+    #[serde(default)]
+    pub scopes: RemoteScopes,
     pub created_at_ms: u64,
     pub last_seen_at_ms: u64,
     pub expires_at_ms: u64,
