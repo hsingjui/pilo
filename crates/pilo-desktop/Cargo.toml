@@ -10,7 +10,7 @@ publish = false
 base64 = "0.22"
 log = "0.4"
 mime_guess = "2"
-nsh-core = "0.7.1"
+nsh-core = "0.7.2"
 pilo-domain = { path = "../pilo-domain" }
 pilo-runtime = { path = "../pilo-runtime" }
 serde = "1"

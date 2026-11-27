@@ -24,7 +24,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  NSH_VERSION: "0.7.1"
+  NSH_VERSION: "0.7.2"
 
 jobs:
   frontend:

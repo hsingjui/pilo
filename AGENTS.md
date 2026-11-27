@@ -49,7 +49,7 @@ resources/              pilo-server 各平台产物（不入库）
 
 ### UI (Desktop & Remote WebUI)
 
-- nsh 0.7.1（TSX 界面，Desktop 走原生宿主，Remote WebUI 走 `nsh package --target web`）
+- nsh 0.7.2（TSX 界面，Desktop 走原生宿主，Remote WebUI 走 `nsh package --target web`）
 - TypeScript / oxfmt / oxlint
 
 ### Backend
