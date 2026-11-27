@@ -1,11 +1,19 @@
 import { expect, open, test } from "nsh/test";
 
-const SECTIONS = "pilo.collapsedSections";
+const LEGACY_SECTIONS = "pilo.collapsedSections";
+const LEGACY_ORDER = "pilo.sidebarProjectOrder";
+const SECTIONS = "pilo.collapsedSections@local";
+const ORDER = "pilo.sidebarProjectOrder@local";
 const VIEW = "pilo.sidebarOrganizeMode";
 const SHOW_PROJECTS = "pilo.sidebarShowProjectsInRecents";
 
-async function openSettings(storage: Record<string, string> = {}) {
-	const app = await open("./sidebar-settings-fixture.tsx", { storage });
+async function openSettings(
+	storage: Record<string, string> = {},
+	hostId?: string,
+) {
+	const app = await open("./sidebar-settings-fixture.tsx", {
+		storage: hostId ? { ...storage, "fixture.hostId": hostId } : storage,
+	});
 	await app.waitFor("text:loaded: true");
 	return app;
 }
@@ -18,15 +26,42 @@ test("the sidebar starts in the projects view with nothing stored", async () => 
 	expect(app.storage()).toEqual({});
 });
 
-test("the sidebar reads the settings stored under the WebUI's keys", async () => {
+test("the sidebar migrates its old order and collapse state and keeps global preferences", async () => {
+	const sections = '{"ws:p1":true,"env:local":false}';
+	const order = '{"local":["notes","pilo"]}';
 	const app = await openSettings({
-		[SECTIONS]: '{"ws:p1":true,"env:local":false}',
+		[LEGACY_SECTIONS]: sections,
+		[LEGACY_ORDER]: order,
 		[VIEW]: "recent",
 		[SHOW_PROJECTS]: "1",
 	});
 	expect(app.texts()).toContain("view: recent");
 	expect(app.texts()).toContain("show projects: true");
 	expect(app.texts()).toContain('sections: {"ws:p1":true,"env:local":false}');
+	expect(app.texts()).toContain(`order: ${order}`);
+	expect(app.storage()).toEqual({
+		[SECTIONS]: sections,
+		[ORDER]: order,
+		[VIEW]: "recent",
+		[SHOW_PROJECTS]: "1",
+	});
+	const reopened = await openSettings(app.storage());
+	expect(reopened.texts()).toContain(`sections: ${sections}`);
+	expect(reopened.texts()).toContain(`order: ${order}`);
+});
+
+test("another Host reads only its own sidebar settings", async () => {
+	const legacy = '{"ws:p1":true}';
+	const app = await openSettings(
+		{
+			[LEGACY_SECTIONS]: legacy,
+			[SECTIONS]: legacy,
+			[`${LEGACY_SECTIONS}@other`]: '{"ws:p2":false}',
+		},
+		"other",
+	);
+	expect(app.texts()).toContain('sections: {"ws:p2":false}');
+	expect(app.storage()[LEGACY_SECTIONS]).toBe(legacy);
 });
 
 test("stored values of the wrong shape fall back to the defaults", async () => {

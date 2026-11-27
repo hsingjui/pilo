@@ -1,7 +1,7 @@
 import { Text, token, View } from "nsh";
 
 import type { Project } from "@shared/api/projects-types";
-import type { ProjectNativeApp } from "../client/nsh-pilo-client";
+import type { ProjectNativeApp } from "./desktop-shell";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Tooltip } from "../ui/tooltip";

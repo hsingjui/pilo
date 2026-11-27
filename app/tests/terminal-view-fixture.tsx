@@ -1,7 +1,7 @@
 import { mount, signal, Text, View, type InputRef } from "nsh";
 import { Input } from "nsh/base";
 
-import type { TerminalEvent } from "../client/nsh-pilo-client";
+import type { TerminalEvent } from "../client/host-api";
 import { TerminalLayer } from "../shell/terminal-view";
 import { type TerminalClient, TerminalStore } from "../state/terminal-store";
 

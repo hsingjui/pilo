@@ -11,7 +11,7 @@ import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import type { PreferencesSnapshot } from "@shared/host-preferences-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
+import type { DesktopHostBootstrap } from "../client/host-api";
 import {
 	AppStore,
 	type AppStoreBootstrap,
@@ -38,7 +38,7 @@ const snapshot = (
 	latestSequence: number,
 	revision: number,
 	...projectIds: string[]
-): NshPiloClientBootstrap => ({
+): DesktopHostBootstrap => ({
 	projects: projectIds.map(project),
 	chatSessions: [],
 	latestSequence,

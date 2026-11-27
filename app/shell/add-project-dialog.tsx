@@ -14,7 +14,8 @@ import type { FsEntry } from "@shared/api/files-types";
 import { userErrorMessage } from "@shared/app-error";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
+import type { DesktopShell } from "./desktop-shell";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { DialogDescription } from "../ui/dialog-description";
@@ -31,8 +32,8 @@ import { t } from "./i18n";
 
 /** The client calls the dialog needs beyond adding the project. */
 export type AddProjectApi = Pick<
-	NshPiloClient,
-	"listConnections" | "readConnectionDir" | "pickLocalProjectDirectory"
+	DesktopHostClient,
+	"listConnections" | "readConnectionDir"
 >;
 
 function absoluteRemotePath(path: string) {
@@ -57,6 +58,7 @@ function parentRemotePath(path: string) {
 export function AddProjectDialog(props: {
 	open: Signal<boolean>;
 	api: AddProjectApi;
+	pickLocalProjectDirectory?: DesktopShell["pickLocalProjectDirectory"];
 	onAdd: (connectionId: string, path: string) => Promise<Project>;
 	/** The target set by the opener; null uses the local connection. */
 	connectionId: () => string | null;
@@ -193,11 +195,12 @@ export function AddProjectDialog(props: {
 		const target = connection();
 		if (!target) return;
 		if (target.kind.type === "local") {
+			if (!props.pickLocalProjectDirectory) return;
 			const version = openVersion;
 			picking.set(true);
 			error.set(null);
 			try {
-				const picked = await props.api.pickLocalProjectDirectory();
+				const picked = await props.pickLocalProjectDirectory();
 				if (picked && version === openVersion) path.set(picked);
 			} catch (caught) {
 				if (version === openVersion) error.set(userErrorMessage(caught));
@@ -303,7 +306,12 @@ export function AddProjectDialog(props: {
 						accessibilityLabel={t(
 							isLocal() ? "project.browseLocal" : "project.browseRemote",
 						)}
-						disabled={!connection() || busy() || picking()}
+						disabled={
+							!connection() ||
+							busy() ||
+							picking() ||
+							(isLocal() && !props.pickLocalProjectDirectory)
+						}
 						onPress={() => void browse()}
 					>
 						<Icon name="FolderOpen" color={token("foreground")} />

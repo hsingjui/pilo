@@ -1,5 +1,4 @@
 import type { Pilo } from "app/native";
-import process from "process";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { FsEntry } from "@shared/api/files-types";
@@ -8,13 +7,10 @@ import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type {
 	Connection,
 	PiModel,
-	PiloRuntimeEvent,
 	PiSessionSnapshot,
 	WslDistribution,
 } from "@shared/api/pi-runtime-types";
 import type {
-	PiloClient,
-	PiloClientBootstrap,
 	PiloClientEvent,
 	PiloClientEventMessage,
 	PiloClientEventOptions,
@@ -65,16 +61,21 @@ import type {
 	RemoteHostState,
 	RemoteScopes,
 } from "@shared/api/remote-types";
-import type { SystemFontFamily } from "@shared/font-settings";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
 } from "@shared/theme-settings-types";
 
-/**
- * The native calls the client makes; a test can pass a stand-in. Font
- * enumeration is optional so stand-ins without it fall back to built-ins.
- */
+import type {
+	ChatTranscriptSnapshot,
+	ChatTranscriptWindow,
+	DesktopHostBootstrap,
+	DesktopHostClient,
+	TerminalEvent,
+	TerminalInfo,
+} from "./host-api";
+
+/** The native Host calls the client makes; a test can pass a stand-in. */
 export type PiloNative = Pick<
 	Pilo,
 	| "bootstrap"
@@ -89,7 +90,6 @@ export type PiloNative = Pick<
 	| "removeProject"
 	| "listConnections"
 	| "readConnectionDir"
-	| "pickLocalProjectDirectory"
 	| "getLocalConnection"
 	| "updateConnectionSettings"
 	| "setConnectionShownInHome"
@@ -151,92 +151,24 @@ export type PiloNative = Pick<
 	| "remoteDevicesRevokeAll"
 	| "remoteDeviceSetScopes"
 	| "remoteDeviceRename"
-	| "openLogDirectory"
 	| "shutdown"
 > &
 	Partial<
 		Pick<
 			Pilo,
-			| "systemFontFamilies"
 			| "listSshConfigHosts"
 			| "listSshLocalKeys"
-			| "projectOpenInApp"
-			| "openFileLink"
 			| "projectGitStatus"
 			| "projectGitDiff"
-			| "saveImage"
-			| "readLocalFile"
 			| "openTerminal"
 			| "writeTerminal"
 			| "resizeTerminal"
 			| "closeTerminal"
 			| "nextTerminalEvents"
 			| "pauseCacheKeepAlive"
+			| "openFileLink"
 		>
 	>;
-
-/** The desktop apps the runtime opens a project in (not the editors' URLs). */
-export type ProjectNativeApp =
-	| "finder"
-	| "ghostty"
-	| "rex"
-	| "winc"
-	| "explorer"
-	| "powershell";
-
-/** A shell the runtime runs in a project's environment. */
-export type TerminalInfo = { id: string; projectId: string; title: string };
-
-export type { GitFileStatus, GitStatus } from "@shared/api/git-types";
-
-/** What a terminal reports; `output` carries base64 bytes. */
-export type TerminalEvent =
-	| { type: "output"; terminalId: string; data: string }
-	| { type: "exit"; terminalId: string }
-	| { type: "error"; terminalId: string; message: string };
-
-export type NshPiloClientBootstrap = PiloClientBootstrap & {
-	preferences: PreferencesSnapshot;
-};
-
-/** The messages of a session's saved history a transcript snapshot reads. */
-export type ChatTranscriptWindow = Omit<
-	PiloClientHistoryOptions,
-	"fingerprint"
->;
-
-/**
- * A chat's transcript at one point of the event stream. Unless `live` is
- * truncated, every event of the session up to `eventSequence` is already in
- * `history` or `live`.
- */
-export type ChatTranscriptSnapshot = {
-	eventSequence: number;
-	sessionKey: string;
-	generation: number;
-	history: SessionHistoryResult;
-	/** Host timestamp of the reply segment active at this cut. */
-	liveStartedAtMs?: number;
-	/** Monotonic duration of that segment when the Host returned the cut. */
-	liveElapsedMs?: number;
-	/** Images indexed by the zero-based ordinal of user starts in this live cut. */
-	liveUserImages?: {
-		userIndex: number;
-		images: NonNullable<
-			Extract<PiloRuntimeEvent, { type: "user_message_start" }>["images"]
-		>;
-	}[];
-	live:
-		| { type: "idle" }
-		/** The turn in progress, as its events in order up to the cut. */
-		| { type: "active"; events: PiloRuntimeEvent[] }
-		/**
-		 * The running turn cannot be rebuilt from this cut, and `history` is
-		 * empty rather than the session's. Load the transcript again once the
-		 * turn has settled.
-		 */
-		| { type: "truncated" };
-};
 
 /**
  * Image bytes as the native module returns them: over an `ArrayBuffer`, never
@@ -254,7 +186,7 @@ type NativeEventBatch =
 const EVENT_BATCH_SIZE = 256;
 
 /** Adapts the nsh native module's JSON to the shared `PiloClient` types. */
-export class NshPiloClient implements PiloClient {
+export class NshPiloClient implements DesktopHostClient {
 	private readonly pilo: PiloNative;
 	private readonly noSessionStarts = new Map<string, Set<Promise<unknown>>>();
 	private readonly listeners = new Set<PiloClientEventOptions>();
@@ -267,7 +199,7 @@ export class NshPiloClient implements PiloClient {
 		this.pilo = pilo;
 	}
 
-	async bootstrap(): Promise<NshPiloClientBootstrap> {
+	async bootstrap(): Promise<DesktopHostBootstrap> {
 		const snapshot = await this.pilo.bootstrap();
 		return {
 			projects: snapshot.projects as Project[],
@@ -305,11 +237,6 @@ export class NshPiloClient implements PiloClient {
 			connectionId,
 			path ?? "/",
 		)) as FsEntry[];
-	}
-
-	/** The host's native folder picker; `null` when dismissed. */
-	async pickLocalProjectDirectory(): Promise<string | null> {
-		return await this.pilo.pickLocalProjectDirectory();
 	}
 
 	/** The local connection row, created if the catalog does not have it yet. */
@@ -611,16 +538,13 @@ export class NshPiloClient implements PiloClient {
 		return (await this.pilo.readProjectImage(projectId, path)) as ImageBytes;
 	}
 
-	/** Prompts the user to save image bytes; returns false when canceled. */
-	async saveImage(suggestedName: string, bytes: Uint8Array): Promise<boolean> {
-		if (!this.pilo.saveImage) throw unavailable("saveImage");
-		return await this.pilo.saveImage(suggestedName, bytes);
-	}
-
-	/** The bytes of a local file the user pasted or dropped, by its `file:` URL. */
-	async readLocalFile(uri: string): Promise<Uint8Array<ArrayBuffer>> {
-		if (!this.pilo.readLocalFile) throw unavailable("readLocalFile");
-		return (await this.pilo.readLocalFile(uri)) as Uint8Array<ArrayBuffer>;
+	async previewFileLink(projectId: string, url: string) {
+		if (!this.pilo.openFileLink) throw unavailable("openFileLink");
+		return (await this.pilo.openFileLink(
+			projectId,
+			url,
+			true,
+		)) as WorkspaceFile | null;
 	}
 
 	/** Pi's current user-level model catalog for the connection. */
@@ -810,12 +734,6 @@ export class NshPiloClient implements PiloClient {
 		return (await this.pilo.saveThemeSettings(update)) as ThemeSettings;
 	}
 
-	/** The installed font families; none when the native side cannot list them. */
-	async systemFontFamilies(): Promise<SystemFontFamily[]> {
-		const families = await this.pilo.systemFontFamilies?.();
-		return (families ?? []) as SystemFontFamily[];
-	}
-
 	/** Starts or resumes Pi for the key and resolves once it is ready. */
 	async startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
 		const start = this.pilo.startChat(input);
@@ -941,35 +859,6 @@ export class NshPiloClient implements PiloClient {
 			deviceId,
 			name,
 		)) as RemoteHostState;
-	}
-
-	/** Opens the app's log directory in the file manager. */
-	openLogDirectory() {
-		return this.pilo.openLogDirectory(process.logFile);
-	}
-
-	/** Opens the project, or a path in it, in a desktop app. */
-	async openProjectInApp(
-		projectId: string,
-		app: ProjectNativeApp,
-		path?: string,
-	): Promise<void> {
-		if (!this.pilo.projectOpenInApp) throw unavailable("projectOpenInApp");
-		await this.pilo.projectOpenInApp(projectId, app, path);
-	}
-
-	/** Opens a file link: returns preview content for text files or null after opening natively. */
-	async openFileLink(
-		projectId: string,
-		url: string,
-		preview: boolean,
-	): Promise<WorkspaceFile | null> {
-		if (!this.pilo.openFileLink) throw unavailable("openFileLink");
-		return (await this.pilo.openFileLink(
-			projectId,
-			url,
-			preview,
-		)) as WorkspaceFile | null;
 	}
 
 	/** Reads the project's Git branch and changed files on its connection. */

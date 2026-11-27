@@ -258,11 +258,36 @@ test("connectSessionNotifications sends on completion and navigates on click", a
 	expect(shown.length).toBe(1);
 	expect(shown[0].waitForClick).toBe(true);
 	expect(shown[0].title).toContain("Fix notifications");
+	expect(shown[0].id).toBe(
+		`pilo-session:${JSON.stringify(["local", "p1", sessionPath])}`,
+	);
+
+	for (const id of [
+		`pilo-session:${JSON.stringify(["another", "p1", sessionPath])}`,
+		"pilo-session:not-json",
+		'pilo-session:[42,"p1","somewhere"]',
+		"other",
+	]) {
+		pressHandlers[0]?.({ id });
+	}
+	await flush();
+	expect(windowShown).toBe(0);
+	expect(store.state().navigation.session).toBe(null);
 
 	pressHandlers[0]?.({ id: shown[0].id });
 	await flush();
 	await flush();
 	expect(windowShown).toBe(1);
+	expect(store.state().navigation.session).toEqual({
+		projectId: "p1",
+		sessionPath,
+	});
+	store.selectProject("p1");
+	pressHandlers[0]?.({
+		id: `pilo-session:${JSON.stringify(["p1", sessionPath])}`,
+	});
+	await flush();
+	expect(windowShown).toBe(2);
 	expect(store.state().navigation.session).toEqual({
 		projectId: "p1",
 		sessionPath,

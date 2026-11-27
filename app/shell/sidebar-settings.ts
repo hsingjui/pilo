@@ -1,5 +1,11 @@
 import { type Accessor, signal, Storage } from "nsh";
 
+import {
+	hostStorageKey,
+	LOCAL_HOST_ID,
+	readMigratedStorage,
+} from "@shared/host-id";
+
 /** How the sidebar lists sessions: under their projects, or newest first. */
 export type SidebarView = "projects" | "recent";
 
@@ -58,10 +64,20 @@ export class SidebarSettingsStore {
 	/** False until `load` has read storage; changes before it are lost. */
 	readonly loaded: Accessor<boolean> = () => this.isLoaded();
 
+	constructor(private readonly hostId = LOCAL_HOST_ID) {}
+
+	private readHostSetting(key: string) {
+		return readMigratedStorage(
+			Storage,
+			hostStorageKey(this.hostId, key),
+			this.hostId === LOCAL_HOST_ID ? key : undefined,
+		);
+	}
+
 	async load(): Promise<void> {
 		const [sections, order, view, showProjects, width] = await Promise.all([
-			Storage.getItem(COLLAPSED_SECTIONS_KEY),
-			Storage.getItem(PROJECT_ORDER_KEY),
+			this.readHostSetting(COLLAPSED_SECTIONS_KEY),
+			this.readHostSetting(PROJECT_ORDER_KEY),
 			Storage.getItem(VIEW_KEY),
 			Storage.getItem(SHOW_PROJECTS_IN_RECENTS_KEY),
 			Storage.getItem(WIDTH_KEY),
@@ -97,7 +113,7 @@ export class SidebarSettingsStore {
 		};
 		this.current.set({ ...this.current(), collapsedSections });
 		return Storage.setItem(
-			COLLAPSED_SECTIONS_KEY,
+			hostStorageKey(this.hostId, COLLAPSED_SECTIONS_KEY),
 			JSON.stringify(collapsedSections),
 		);
 	}

@@ -65,7 +65,8 @@ import {
 	ConversationColumn,
 	ConversationColumnLayout,
 } from "../app/chat/conversation-column";
-import type { NshPiloClient } from "../app/client/nsh-pilo-client";
+import type { DesktopHostClient } from "../app/client/host-api";
+import type { DesktopShell } from "../app/shell/desktop-shell";
 import type {
 	WebRemoteConnectionState,
 	WebRemoteRecoveryState,
@@ -137,7 +138,8 @@ export interface MobileAppShellProps {
 		| "catalogReady"
 	>;
 	catalog?: Pick<ModelCatalogStore, "state" | "refresh" | "saveScope">;
-	searchSessions?: Pick<NshPiloClient, "searchSessions">;
+	searchSessions?: Pick<DesktopHostClient, "searchSessions">;
+	shell?: Pick<DesktopShell, "openExternal">;
 	connectionState: Accessor<WebRemoteConnectionState>;
 	recoveryState: Accessor<WebRemoteRecoveryState>;
 	onReconnect?: () => void;
@@ -1003,6 +1005,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 																project={project}
 																readProjectImage={props.readProjectImage}
 																onFileLink={handleFileLink}
+																openExternal={props.shell?.openExternal}
 															/>
 														)}
 														preferences={() =>
@@ -1169,6 +1172,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 							<ChatImageLightbox
 								image={previewImage}
 								onClose={() => previewImage.set(null)}
+								openExternal={props.shell?.openExternal}
 							/>
 							{() => {
 								const target = renamingSession();

@@ -25,6 +25,7 @@ import type {
 	PreferencePatch,
 	PreferencesSnapshot,
 } from "@shared/host-preferences-types";
+import { hostStorageKey, LOCAL_HOST_ID } from "@shared/host-id";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
@@ -39,7 +40,7 @@ import type {
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-} from "../app/client/nsh-pilo-client";
+} from "../app/client/host-api";
 import type { AppStoreBootstrap, AppStoreClient } from "../app/state/app-store";
 import type { ChatRunConfigClient } from "../app/state/chat-run-config";
 import type { ChatTranscriptClient } from "../app/state/chat-transcript-store";
@@ -113,6 +114,7 @@ export type WebRemoteClient = AppStoreClient &
 export class WebRemotePiloClient implements WebRemoteClient {
 	private readonly token: string;
 	private readonly origin: string;
+	private readonly replayCursorKey: string;
 	private readonly onAuthExpired: () => void;
 	private readonly listeners = new Set<PiloClientEventOptions>();
 	private readonly connectionSignal =
@@ -144,6 +146,7 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		token: string,
 		options?: {
 			origin?: string;
+			hostId?: string;
 			onAuthExpired?: () => void;
 		},
 	) {
@@ -151,8 +154,13 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		this.origin = options?.origin ?? resolvePageOrigin();
 		this.onAuthExpired = options?.onAuthExpired ?? (() => undefined);
 
+		const hostId = options?.hostId ?? LOCAL_HOST_ID;
+		this.replayCursorKey = hostStorageKey(hostId, REMOTE_SEQUENCE_KEY);
 		const savedSeq = Number(
-			readBrowserLocalStorage(REMOTE_SEQUENCE_KEY) ?? "0",
+			readBrowserLocalStorage(
+				this.replayCursorKey,
+				...(hostId === LOCAL_HOST_ID ? [REMOTE_SEQUENCE_KEY] : []),
+			) ?? "0",
 		);
 		if (Number.isSafeInteger(savedSeq) && savedSeq > 0) {
 			this.replayCursor = savedSeq;
@@ -609,7 +617,7 @@ export class WebRemotePiloClient implements WebRemoteClient {
 		}
 		if (this.persistedReplayCursor === this.replayCursor) return;
 		this.persistedReplayCursor = this.replayCursor;
-		writeBrowserLocalStorage(REMOTE_SEQUENCE_KEY, String(this.replayCursor));
+		writeBrowserLocalStorage(this.replayCursorKey, String(this.replayCursor));
 	}
 
 	private setReplayCursor(sequence: number, immediate = false): void {

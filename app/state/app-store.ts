@@ -14,9 +14,9 @@ import type { SessionDeleteResult } from "@shared/api/sessions-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 import type {
-	NshPiloClient,
-	NshPiloClientBootstrap,
-} from "../client/nsh-pilo-client";
+	DesktopHostClient,
+	DesktopHostBootstrap,
+} from "../client/host-api";
 import { t } from "../shell/i18n";
 import {
 	type AppAction,
@@ -39,7 +39,7 @@ import type {
 	ChatTranscriptTarget,
 } from "./chat-transcript-store";
 
-export type AppStoreBootstrap = NshPiloClientBootstrap & {
+export type AppStoreBootstrap = DesktopHostBootstrap & {
 	uiState?: {
 		themeSettings: ThemeSettings;
 		sessionReadStates: SessionReadState[];
@@ -48,10 +48,10 @@ export type AppStoreBootstrap = NshPiloClientBootstrap & {
 
 export type AppStoreClient = Partial<
 	// Optional: a client without the probe shows no external Pi turns.
-	Pick<NshPiloClient, "externalSessionActivity">
+	Pick<DesktopHostClient, "externalSessionActivity">
 > &
 	Pick<
-		NshPiloClient,
+		DesktopHostClient,
 		| "chatState"
 		| "listProjects"
 		| "addProject"

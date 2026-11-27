@@ -2,7 +2,7 @@ import { platform, signal, Storage } from "nsh";
 import { DesktopEditorLinks } from "app/native";
 
 import type { Project } from "@shared/api/projects-types";
-import type { ProjectNativeApp } from "../client/nsh-pilo-client";
+import type { ProjectNativeApp } from "./desktop-shell";
 
 /** The editors a project opens in through their URL schemes. */
 const PROJECT_EDITORS = [

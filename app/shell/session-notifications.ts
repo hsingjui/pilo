@@ -3,13 +3,14 @@ import { effect, lifecycle, signal, untracked } from "nsh";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { LOCAL_HOST_ID } from "@shared/host-id";
+import type { DesktopHostClient } from "../client/host-api";
 import type { AppStore } from "../state/app-store";
 import {
 	defaultDesktopNotifications,
 	type DesktopNotificationsApi,
 } from "./desktop-notifications";
-import type { DesktopShell } from "./desktop-shell";
+import type { DesktopWindowShell } from "./desktop-shell";
 import { t } from "./i18n";
 
 const SESSION_PREFIX = "pilo-session:";
@@ -30,13 +31,17 @@ function decodeTarget(id: string) {
 	if (!id.startsWith(SESSION_PREFIX)) return null;
 	try {
 		const target: unknown = JSON.parse(id.slice(SESSION_PREFIX.length));
-		if (!Array.isArray(target) || target.length !== 2) return null;
-		const [projectId, sessionPath]: unknown[] = target;
-		return typeof projectId === "string" &&
+		if (!Array.isArray(target) || (target.length !== 2 && target.length !== 3))
+			return null;
+		const [hostId, projectId, sessionPath]: unknown[] =
+			target.length === 2 ? [LOCAL_HOST_ID, ...target] : target;
+		return typeof hostId === "string" &&
+			hostId &&
+			typeof projectId === "string" &&
 			projectId &&
 			typeof sessionPath === "string" &&
 			sessionPath
-			? { projectId, sessionPath }
+			? { hostId, projectId, sessionPath }
 			: null;
 	} catch {
 		return null;
@@ -44,22 +49,24 @@ function decodeTarget(id: string) {
 }
 
 export function connectSessionNotifications(
-	client: Pick<NshPiloClient, "chatState"> &
-		Partial<Pick<NshPiloClient, "listCachedSessions" | "listSessions">>,
+	client: Pick<DesktopHostClient, "chatState"> &
+		Partial<Pick<DesktopHostClient, "listCachedSessions" | "listSessions">>,
 	store: AppStore,
-	desktop: Pick<DesktopShell, "show" | "isQuitting">,
+	desktop: Pick<DesktopWindowShell, "show" | "isQuitting">,
 	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
 	options?: {
+		hostId?: string;
 		/** 当用户前台正停留在目标会话聊天视图时返回 true，以静默抑制打扰通知。 */
 		isViewingSession?: (projectId: string, sessionPath: string) => boolean;
 		onSelectTarget?: (projectId: string) => void;
 	},
 ) {
+	const hostId = options?.hostId ?? LOCAL_HOST_ID;
 	const requested = signal<ReturnType<typeof decodeTarget>>(null);
 	let loading: ReturnType<typeof decodeTarget> = null;
 	notifications.onPress(({ id }) => {
 		const target = decodeTarget(id);
-		if (!target || desktop.isQuitting()) return;
+		if (!target || target.hostId !== hostId || desktop.isQuitting()) return;
 		desktop.show();
 		requested.set(target);
 	});
@@ -190,7 +197,8 @@ export function connectSessionNotifications(
 		const failed =
 			event.stopReason === "error" || Boolean(event.errorMessage?.trim());
 		const label = t(failed ? "notifications.error" : "notifications.completed");
-		const id = SESSION_PREFIX + JSON.stringify([projectId, sessionPath]);
+		const id =
+			SESSION_PREFIX + JSON.stringify([hostId, projectId, sessionPath]);
 		await notifications.show({
 			id,
 			title: name

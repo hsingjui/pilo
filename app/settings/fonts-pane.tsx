@@ -28,6 +28,7 @@ import {
 import type { PreferencePatch } from "@shared/host-preferences-types";
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { MAX_UI_FONT_SIZE, MIN_UI_FONT_SIZE } from "../shell/appearance";
+import type { DesktopShell } from "../shell/desktop-shell";
 import type { AppState } from "../state/app-state";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
@@ -56,9 +57,11 @@ const MONO_FONT_SIZE_ITEMS = Array.from({ length: 24 - 11 + 1 }, (_, index) => {
 /** One enumeration per app run; a failed one is retried when the pane opens again. */
 let systemFonts: Promise<SystemFontFamily[]> | undefined;
 
-function loadSystemFonts(client: SettingsClient): Promise<SystemFontFamily[]> {
-	if (!client.systemFontFamilies) return Promise.resolve([]);
-	systemFonts ??= client.systemFontFamilies().catch((error: unknown) => {
+function loadSystemFonts(
+	shell?: Pick<DesktopShell, "systemFontFamilies">,
+): Promise<SystemFontFamily[]> {
+	if (!shell?.systemFontFamilies) return Promise.resolve([]);
+	systemFonts ??= shell.systemFontFamilies().catch((error: unknown) => {
 		console.warn("system font enumeration failed", error);
 		systemFonts = undefined;
 		return [];
@@ -68,19 +71,20 @@ function loadSystemFonts(client: SettingsClient): Promise<SystemFontFamily[]> {
 
 /**
  * Fonts: page / reading / code / terminal family + size. System defaults,
- * installed families the Host lists, and a family typed into the picker's
+ * installed families the desktop shell lists, and a family typed into the picker's
  * search.
  */
 export function FontsPane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
+	shell?: Pick<DesktopShell, "systemFontFamilies">;
 }) {
 	const system = signal(systemFontOptionGroups([]));
 	let alive = true;
 	cleanup(() => {
 		alive = false;
 	});
-	void loadSystemFonts(props.client).then((families) => {
+	void loadSystemFonts(props.shell).then((families) => {
 		if (alive) system.set(systemFontOptionGroups(families));
 	});
 	// Built per read so the labels follow the current locale.

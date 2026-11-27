@@ -1,6 +1,7 @@
 import { Storage, UrlScheme } from "nsh";
 
 import { describeDevice } from "@shared/device-name";
+import { type KeyValueStorage, readMigratedStorageSync } from "@shared/host-id";
 import {
 	parseRemotePairResponse,
 	parseRemotePairingInfo,
@@ -19,15 +20,9 @@ export class RemotePairingError extends Error {
 	}
 }
 
-type BrowserStorage = {
-	getItem(key: string): string | null;
-	setItem(key: string, value: string): void;
-	removeItem(key: string): void;
-};
-
 type BrowserGlobal = {
-	localStorage?: BrowserStorage;
-	sessionStorage?: BrowserStorage & {
+	localStorage?: KeyValueStorage;
+	sessionStorage?: KeyValueStorage & {
 		readonly length: number;
 		key(index: number): string | null;
 	};
@@ -60,9 +55,15 @@ function browserPageLocation(): BrowserGlobal["location"] {
 	return browser.location;
 }
 
-export function readBrowserLocalStorage(key: string): string | null {
+export function readBrowserLocalStorage(
+	key: string,
+	...legacyKeys: string[]
+): string | null {
 	try {
-		return browserGlobal().localStorage?.getItem(key) ?? null;
+		const storage = browserGlobal().localStorage;
+		return storage
+			? readMigratedStorageSync(storage, key, ...legacyKeys)
+			: null;
 	} catch {
 		return null;
 	}

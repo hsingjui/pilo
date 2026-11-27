@@ -8,14 +8,14 @@ import type {
 } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
 import { type AppToasts, showToast } from "../shell/app-toasts";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
 import { SettingsIconButton } from "./layout";
 
 export type ConnectionCatalogClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	"getLocalConnection" | "listWslConnections" | "listSshConnections"
 >;
 
@@ -51,7 +51,7 @@ export async function paneConnectionCatalog(
  * unmount before the subscription settles and ignoring transport errors.
  */
 export function subscribeSettingsEvents(
-	client: Pick<NshPiloClient, "connectEvents">,
+	client: Pick<DesktopHostClient, "connectEvents">,
 	onEvent: (event: PiloRuntimeEvent) => void,
 ): void {
 	effect(() => {
@@ -118,7 +118,7 @@ export class ConnectionModelLists {
 	private readonly entries = new Map<string, Signal<ModelListState>>();
 
 	constructor(
-		private readonly client: Pick<NshPiloClient, "loadConnectionModels">,
+		private readonly client: Pick<DesktopHostClient, "loadConnectionModels">,
 	) {}
 
 	state(connectionId: string): Signal<ModelListState> {

@@ -2,10 +2,8 @@ import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
-import {
-	type ChatTranscriptSnapshot,
-	NshPiloClient,
-} from "../client/nsh-pilo-client";
+import type { ChatTranscriptSnapshot } from "../client/host-api";
+import { NshPiloClient } from "../client/nsh-pilo-client";
 
 const projectId = "chat-fixture";
 const sessionKey = "nsh-client-transcript-fixture";

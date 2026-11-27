@@ -4,12 +4,12 @@ import {
 	requestPiRpc,
 	requestPiRpcReply,
 } from "../client/chat-rpc";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import type { ComposerTarget } from "../composer/composer-store";
 import { isTemporarySessionKey } from "../state/app-state";
 
 export type SessionAutoTitleClient = PiCommandClient &
-	Pick<NshPiloClient, "generateSessionTitle">;
+	Pick<DesktopHostClient, "generateSessionTitle">;
 
 /**
  * How long Pi may take to answer while it streams the turn, as the run

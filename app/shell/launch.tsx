@@ -9,6 +9,7 @@ import {
 } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { LOCAL_HOST_ID } from "@shared/host-id";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
@@ -22,15 +23,7 @@ import manifest from "../../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
 import { AppToasts } from "./app-toasts";
 import { showStartupTheme } from "./appearance";
-import {
-	defaultDesktopNotifications,
-	type DesktopNotificationsApi,
-} from "./desktop-notifications";
-import {
-	connectDesktopShell,
-	type DesktopDockApi,
-	type DesktopSettingsClient,
-} from "./desktop-shell";
+import { connectDesktopShell, type DesktopShell } from "./desktop-shell";
 import { appLocale, t } from "./i18n";
 import {
 	conversationContext,
@@ -87,12 +80,8 @@ function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
  * open session's transcript read and marks its finished turns as seen.
  */
-export async function launch(
-	pilo: PiloNative,
-	desktopSettings?: DesktopSettingsClient,
-	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
-	desktopDock?: DesktopDockApi,
-) {
+export async function launch(pilo: PiloNative, shell: DesktopShell) {
+	const hostId = LOCAL_HOST_ID;
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const workspace = new WorkspaceStore();
@@ -137,6 +126,8 @@ export async function launch(
 	});
 	const composer: ComposerStore = new ComposerStore({
 		client,
+		hostId,
+		shell,
 		app: store.state,
 		activeModel: () => runConfig.state()?.model ?? null,
 		catalog,
@@ -206,7 +197,7 @@ export async function launch(
 	followRunConfig(store, runConfig, catalog, chat);
 	// The first frame takes the saved theme and sidebar width, so a launch or
 	// reload neither flashes the default theme nor resizes its outline.
-	const sidebarSettings = new SidebarSettingsStore();
+	const sidebarSettings = new SidebarSettingsStore(hostId);
 	const [startupTheme] = await Promise.all([
 		showStartupTheme(),
 		sidebarSettings.load().catch((error: unknown) => {
@@ -225,15 +216,14 @@ export async function launch(
 		searchSessions: client,
 		settings: client,
 		projectClient: client,
-		notifications,
+		shell,
 		sidebarSettings,
 		toasts,
 		workspace,
 		terminals,
-		openProjectInApp: (projectId, app, path) =>
-			client.openProjectInApp(projectId, app, path),
-		openFileLink: (projectId, url, preview) =>
-			client.openFileLink(projectId, url, preview),
+		openProjectInApp: shell.openProjectInApp,
+		previewFileLink: (projectId, url) => client.previewFileLink(projectId, url),
+		openFileLink: shell.openFileLink,
 		git: client,
 		onRenameSession: (projectId, sessionPath, title) =>
 			store.renameSession(projectId, sessionPath, title),
@@ -243,7 +233,7 @@ export async function launch(
 			client.readProjectImage(projectId, path),
 		readHistoryImage: (projectId, sessionPath, imageId) =>
 			client.readHistoryImage(projectId, sessionPath, imageId),
-		saveImage: (suggestedName, bytes) => client.saveImage(suggestedName, bytes),
+		saveImage: shell.saveImage,
 	};
 	const showShell = computed(() => {
 		const { themeSettings, status } = store.state();
@@ -259,22 +249,25 @@ export async function launch(
 			// nsh creates the implicit main window as part of mount.
 			const main = currentWindow();
 			main.set({ title: manifest.name });
-			if (desktopSettings) {
+			if (shell.settings) {
 				desktop = connectDesktopShell(
 					main,
-					desktopSettings,
+					shell.settings,
 					async () => {
 						store.stop();
 						await client.shutdown();
 					},
-					desktopDock,
+					shell.dock,
 				);
+			}
+			if (desktop && shell.notifications) {
 				notify = connectSessionNotifications(
 					client,
 					store,
 					desktop,
-					notifications,
+					shell.notifications,
 					{
+						hostId,
 						isViewingSession: (projectId, sessionPath) =>
 							store.isViewingSession(projectId, sessionPath),
 						onSelectTarget: (projectId) => {

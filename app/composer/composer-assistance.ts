@@ -9,11 +9,11 @@ import type { NextPromptSettings } from "@shared/next-prompt";
 import { promptEnhancementModel } from "@shared/prompt-enhancement";
 import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
 import { requestPiRpc } from "../client/chat-rpc";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { DesktopHostClient } from "../client/host-api";
 import type { AppStore } from "../state/app-store";
 
 export type ComposerAssistanceClient = Pick<
-	NshPiloClient,
+	DesktopHostClient,
 	| "loadNextPromptSettings"
 	| "requestNextPrompt"
 	| "loadPromptEnhancementSettings"

@@ -66,7 +66,7 @@ export interface ChatMarkdownProps {
 	 * paths resolve against (`projectMarkdownImageScope`'s baseDirectory).
 	 */
 	imageBaseDirectory?: () => string | undefined;
-	/** Reads a project-relative image's bytes (`NshPiloClient.readProjectImage`). */
+	/** Reads a project-relative image's bytes from the Host. */
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	/**
 	 * What a resolved file link does when pressed (a workspace file tab,
@@ -74,6 +74,7 @@ export interface ChatMarkdownProps {
 	 * path.
 	 */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
+	openExternal?: (url: string) => Promise<unknown>;
 	/** What a press on an image not wrapped in a link does (defaults to ChatMediaActions.openImage). */
 	onImagePress?: (image: ChatImagePreview) => void;
 	/** The text's color; the reply's foreground without it. */
@@ -322,7 +323,7 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 
 	const pressLink = ({ url }: TextViewLinkPressEvent) => {
 		if (/^(?:https?|mailto):/i.test(url)) {
-			void openUrl(url);
+			void (props.openExternal ?? openUrl)(url);
 			return;
 		}
 		const link = resolveChatFileLink(url, projectPath());

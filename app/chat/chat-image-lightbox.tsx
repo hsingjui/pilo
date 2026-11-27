@@ -83,6 +83,7 @@ export interface ChatImageLightboxProps {
 	image: () => ChatImagePreview | null;
 	onClose: () => void;
 	onSaveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
+	openExternal?: (url: string) => Promise<unknown>;
 }
 
 /**
@@ -154,7 +155,7 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 	const openExternal = () => {
 		const current = props.image();
 		if (current && /^https?:\/\//i.test(current.url)) {
-			void openUrl(current.url);
+			void (props.openExternal ?? openUrl)(current.url);
 		}
 	};
 
