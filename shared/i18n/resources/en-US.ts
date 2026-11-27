@@ -853,6 +853,8 @@ const enUS = {
 		contextUsageKnownPending:
 			"Context usage pending update (showing last known value)",
 		contextUsage: "Context usage {{percent}}",
+		contextUsageDescription:
+			"Share of the model context window currently used by this session.",
 		contextUsageUnknown:
 			"Context usage is not available yet; it will update after the first response or the next response after compaction.",
 		contextUsageAfterCompaction:

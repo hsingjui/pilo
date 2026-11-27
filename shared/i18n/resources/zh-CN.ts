@@ -808,6 +808,7 @@ const zhCN = {
 		contextUsagePending: "上下文占用待更新",
 		contextUsageKnownPending: "上下文占用待更新（显示上次已知值）",
 		contextUsage: "上下文占用 {{percent}}",
+		contextUsageDescription: "当前会话已使用的模型上下文窗口比例。",
 		contextUsageUnknown:
 			"当前占用尚不可确定；首次回复或压缩后的下一次模型响应完成后会更新。",
 		contextUsageAfterCompaction:
