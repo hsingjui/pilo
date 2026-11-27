@@ -643,7 +643,9 @@ mod tests {
     use super::*;
     use crate::{
         Runtime,
-        events::{PiProcessState, RuntimeEvent, RuntimeEventEnvelope},
+        events::{
+            EventBatch, EventQueueLimits, PiProcessState, RuntimeEvent, RuntimeEventEnvelope,
+        },
         host_paths::HostPaths,
         initialize_local_server_binary,
     };
@@ -1151,6 +1153,85 @@ mod tests {
         drop(ws_b_reconnected);
         host_a.cleanup().await;
         host_b.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn project_mutations_notify_native_and_web_clients() {
+        let Some(server_bin) = locate_pilo_server_binary() else {
+            panic!("pilo-server binary not found; run `cargo build -p pilo-server` first");
+        };
+        initialize_local_server_binary(server_bin);
+
+        let host = TestHost::start_ephemeral("project-events").await;
+        let (token, _) = host.pair(RemoteScopes::ChatWorkspace, "Workspace").await;
+        let mut web = WsClient::connect(host.port, "/api/v2/events", &token).await;
+        assert_eq!(web.recv_json().await["type"], "hello");
+        let mut native = host.runtime.subscribe_events(EventQueueLimits {
+            max_events: 32,
+            max_bytes: 64 * 1024,
+        });
+
+        let dir = host.root.join("project");
+        std::fs::create_dir_all(&dir).unwrap();
+        let add = json!({ "connectionId": "local", "path": dir });
+
+        for local in [true, false] {
+            let mut remove = Value::Null;
+            for method in ["project.add", "project.remove"] {
+                let params = if method == "project.add" {
+                    add.clone()
+                } else {
+                    remove.clone()
+                };
+                let result = if local {
+                    host_api::call(&host.runtime, &host_api::Principal::Local, method, params)
+                        .await
+                        .unwrap()
+                } else {
+                    let (status, body) = http_json(
+                        host.port,
+                        "POST",
+                        &format!("/api/v2/call/{method}"),
+                        Some(&token),
+                        None,
+                        &params,
+                    )
+                    .await;
+                    assert_eq!(status, 200, "{method} failed: {body}");
+                    body["result"].clone()
+                };
+                if method == "project.add" {
+                    remove = json!({ "projectId": result["id"].as_str().unwrap() });
+                }
+
+                let Some(EventBatch::Events(events)) = native.try_next_batch(32) else {
+                    panic!("{method} did not publish a native event (local={local})");
+                };
+                let sequence = events
+                    .iter()
+                    .find(|event| event.event.event == RuntimeEvent::ConfigurationChanged)
+                    .expect("native configuration_changed event")
+                    .sequence;
+                let batch = web.recv_json().await;
+                assert_eq!(batch["type"], "events");
+                assert!(
+                    batch["events"].as_array().unwrap().iter().any(|event| {
+                        event["type"] == "configuration_changed" && event["sequence"] == sequence
+                    }),
+                    "{method} did not publish the same event over WebSocket (local={local}): {batch}"
+                );
+
+                let projects = crate::project_api::project_list(&host.runtime).unwrap();
+                let id = remove["projectId"].as_str().unwrap();
+                assert_eq!(
+                    projects.iter().any(|project| project.id == id),
+                    method == "project.add",
+                );
+            }
+        }
+
+        drop(web);
+        host.cleanup().await;
     }
 
     #[tokio::test]

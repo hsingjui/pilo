@@ -12,6 +12,7 @@ import type { PreferencesSnapshot } from "@shared/host-preferences-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 import type { HostBootstrap as DesktopHostBootstrap } from "@shared/api/host-methods";
+import { openChatTarget } from "../shell/open-chat";
 import {
 	AppStore,
 	type AppStoreBootstrap,
@@ -356,6 +357,35 @@ test("gaps during a resync run one more bootstrap, never two at once", async () 
 	expect(bootstraps.length).toBe(3);
 	expect(store.state().latestSequence).toBe(31);
 	expect(store.state().preferences?.revision).toBe(9);
+});
+
+test("a project change from another client refreshes projects and closes a removed project's session", async () => {
+	const { store, emit, projectLists, sessionLists } = await startedStore();
+	const loaded = store.loadSessions("p1");
+	sessionLists[0]?.resolve([
+		{ ...session("p1", "open"), piSessionId: "saved" },
+	]);
+	await loaded;
+	store.selectSession("p1", "open");
+	expect(openChatTarget(store.state())?.projectId).toBe("p1");
+
+	emit(events([11, { type: "configuration_changed" }]));
+	projectLists[0]?.resolve([project("p1"), project("p2"), project("p3")]);
+	await settle();
+	expect(store.state().projects.map(({ id }) => id)).toEqual([
+		"p1",
+		"p2",
+		"p3",
+	]);
+	expect(openChatTarget(store.state())?.projectId).toBe("p1");
+
+	emit(events([12, { type: "configuration_changed" }]));
+	projectLists[1]?.resolve([project("p2"), project("p3")]);
+	await settle();
+	expect(store.state().projects.map(({ id }) => id)).toEqual(["p2", "p3"]);
+	expect(store.state().navigation).toEqual({ projectId: null, session: null });
+	expect(store.state().sessionIndexes.p1).toBeUndefined();
+	expect(openChatTarget(store.state())).toBeNull();
 });
 
 test("a project reload that a resync overtakes is dropped", async () => {

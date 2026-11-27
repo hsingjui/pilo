@@ -1,4 +1,5 @@
 use super::{
+    events::{RuntimeEvent, RuntimeEventEnvelope},
     git::{self, GitStatus},
     remote_fs::{self, FsEntry},
     terminal::TerminalInfo,
@@ -89,6 +90,9 @@ pub async fn project_add(
 ) -> Result<Project, String> {
     let project = project::add(runtime, &runtime.servers, connection_id, path).await?;
     runtime.chat_sessions.open_project(&project.id).await?;
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::ConfigurationChanged,
+    ));
     Ok(project)
 }
 
@@ -117,6 +121,9 @@ pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project
         .remove_project_and_close(&id, || project::remove(runtime, &id))
         .await?;
     crate::session_watcher::SessionWatcherManager::stop(&runtime.session_watchers, &id).await;
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::ConfigurationChanged,
+    ));
     Ok(projects)
 }
 
