@@ -12,6 +12,7 @@ import {
 	untracked,
 	View,
 } from "nsh";
+import { Collapsible } from "nsh/base";
 
 import {
 	lastThinkingLine,
@@ -38,7 +39,8 @@ import {
 
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
-import { scrollbarLook } from "../ui/scrollbar";
+import { collapsibleRevealProps, useMountedCollapsible } from "../ui/motion";
+import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import {
 	activitySummaryLabel,
@@ -394,28 +396,39 @@ export function ChatCompactActivityGroup(props: {
 		);
 	};
 
+	const showBody = useMountedCollapsible(open, groupKey);
+
 	return (
 		<View class="w-full">
 			{header}
-			{() =>
-				open() ? (
-					<Scroll
-						testID="chat-compact-activity-body"
-						class="-mx-1 mt-0.5 max-h-80"
-						bounces={false}
-						scrollbar={{ vertical: scrollbarLook() }}
-					>
-						<View class="px-1 pr-3 pb-0.5">
-							<ChatCompactActivityItems
-								activities={props.activities}
-								messageId={props.messageId}
-								expansion={expansion}
-								showDuration={() => props.preferences().showWorkDuration}
-							/>
-						</View>
-					</Scroll>
-				) : null
-			}
+			<Collapsible
+				open={open()}
+				class="-mx-1"
+				{...collapsibleRevealProps()}
+				content={
+					<>
+						{() =>
+							showBody() ? (
+								<Scroll
+									testID="chat-compact-activity-body"
+									class="mt-0.5 max-h-80"
+									bounces={false}
+									scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
+								>
+									<View class="px-1 pr-3 pb-0.5">
+										<ChatCompactActivityItems
+											activities={props.activities}
+											messageId={props.messageId}
+											expansion={expansion}
+											showDuration={() => props.preferences().showWorkDuration}
+										/>
+									</View>
+								</Scroll>
+							) : null
+						}
+					</>
+				}
+			/>
 		</View>
 	);
 }

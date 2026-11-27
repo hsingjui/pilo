@@ -273,6 +273,13 @@ test("compact output folds completed work behind one header and expands the full
 	expect(app.shows("text:The file sets x to 1.")).toBe(true);
 	expect(app.shows(EDIT)).toBe(true);
 	expect(app.shows(RUN)).toBe(true);
+
+	await app.press(toggle);
+	await app.waitFor("id:chat-compact-activity-body", { state: "gone" });
+
+	await app.press(toggle);
+	await app.waitFor("id:chat-compact-activity-body");
+	expect(app.shows(RUN)).toBe(true);
 });
 
 test("a failed compact reply keeps its last text copyable after trailing work", async () => {

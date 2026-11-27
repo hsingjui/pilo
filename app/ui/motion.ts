@@ -1,6 +1,7 @@
 import {
 	type Accessor,
 	cleanup,
+	computed,
 	createMotion,
 	effect,
 	reduceMotion,
@@ -252,6 +253,53 @@ export function useMountedDialog(open: Accessor<boolean>) {
 			if (!open()) mounted.set(false);
 		},
 	};
+}
+
+/** Settle window past `MOTION.spring.smooth` (~384ms) before unmounting closed collapsible content. */
+const COLLAPSIBLE_UNMOUNT_DELAY_MS = 420;
+
+/**
+ * Defers mounting heavy `Collapsible` content until first opened, keeps it
+ * mounted while the close reveal springs shut, and unmounts it afterward (or
+ * immediately on reduced motion or when a recycled row switches `key`).
+ */
+export function useMountedCollapsible(
+	open: Accessor<boolean>,
+	key?: Accessor<string>,
+): Accessor<boolean> {
+	const keptKey = signal<string | boolean>(
+		untracked(open) ? (key ? untracked(key) : true) : false,
+	);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	const clearTimer = () => {
+		if (timer !== undefined) {
+			clearTimeout(timer);
+			timer = undefined;
+		}
+	};
+
+	effect(() => {
+		const isOpen = open();
+		const currentKey = key ? key() : true;
+		clearTimer();
+
+		if (isOpen) {
+			keptKey.set(currentKey);
+			return;
+		}
+		if (reduceMotion() || untracked(keptKey) !== currentKey) {
+			keptKey.set(false);
+			return;
+		}
+		timer = setTimeout(() => {
+			timer = undefined;
+			if (!untracked(open)) keptKey.set(false);
+		}, COLLAPSIBLE_UNMOUNT_DELAY_MS);
+	});
+
+	cleanup(clearTimer);
+	return computed(() => open() || keptKey() === (key ? key() : true));
 }
 
 /**

@@ -9,7 +9,11 @@ import type { AssistantActivity } from "@shared/chat/chat-activity-types";
 
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
-import { chevronRotateStyle, collapsibleRevealProps } from "../ui/motion";
+import {
+	chevronRotateStyle,
+	collapsibleRevealProps,
+	useMountedCollapsible,
+} from "../ui/motion";
 import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatActivityGroup } from "./chat-activity-group";
@@ -342,6 +346,10 @@ export function ChatAssistantWork(
 				);
 			case "compactComplete": {
 				const iconAlignment = createReadingIconAlignment();
+				const showCompletedBody = useMountedCollapsible(
+					completedOpen,
+					completedKey,
+				);
 				return (
 					<View class="w-full">
 						<View testID="chat-compact-activity" class="mt-0.5 mb-1 w-full">
@@ -378,7 +386,7 @@ export function ChatAssistantWork(
 								content={
 									<>
 										{() =>
-											completedOpen() ? (
+											showCompletedBody() ? (
 												<Scroll
 													testID="chat-compact-activity-body"
 													class="mt-0.5 max-h-80"
