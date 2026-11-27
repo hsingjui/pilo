@@ -293,6 +293,7 @@ const zhCN = {
 		systemManaged: "系统管理",
 		recheckPermission: "检查权限",
 		testNotification: "测试通知",
+		testNotificationDescription: "需要先开启通知，并在系统中允许 Pilo 通知。",
 		sending: "发送中…",
 		connectionName: "名称",
 		connectionMethod: "连接方式",
@@ -452,7 +453,7 @@ const zhCN = {
 		newline: "换行",
 		resetDefault: "恢复默认",
 		resetAllDefaults: "全部重置",
-		pressNewShortcut: "按快捷键",
+		pressNewShortcut: "按快捷键，Esc 取消",
 	},
 	connection: {
 		...enUS.connection,

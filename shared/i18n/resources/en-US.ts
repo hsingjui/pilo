@@ -303,6 +303,8 @@ const enUS = {
 		systemManaged: "Managed by system",
 		recheckPermission: "Check permission again",
 		testNotification: "Test notification",
+		testNotificationDescription:
+			"Requires desktop notifications to be enabled and allowed by the system.",
 		sending: "Sending…",
 		connectionName: "Name",
 		connectionMethod: "Connection method",
@@ -475,7 +477,7 @@ const enUS = {
 		newline: "New line",
 		resetDefault: "Reset to default",
 		resetAllDefaults: "Reset all shortcuts to defaults",
-		pressNewShortcut: "Press a new shortcut…",
+		pressNewShortcut: "Press shortcut… Esc to cancel",
 	},
 	connection: {
 		shownInHome: "Show on home",

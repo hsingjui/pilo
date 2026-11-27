@@ -186,7 +186,11 @@ export function NotificationsPane(props: {
 						)}
 					</View>
 				</SettingsRow>
-				<SettingsRow label={t("settings.testNotification")} ghostEdge="both">
+				<SettingsRow
+					label={t("settings.testNotification")}
+					helper={t("settings.testNotificationDescription")}
+					ghostEdge="both"
+				>
 					{() => {
 						const perm = permission();
 						const disabled =
