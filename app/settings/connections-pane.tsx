@@ -16,6 +16,7 @@ import type {
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
+import { hostSupportsWsl } from "../hosts/host-perspective";
 import { connectionLabel } from "../shell/connection-label";
 import type { AppState } from "../state/app-state";
 import type { HostClient } from "@shared/api/host-client";
@@ -72,12 +73,13 @@ export type ConnectionsClient = Pick<
 		>
 	>;
 
-const IS_WINDOWS = platform.os === "windows";
-
 export function ConnectionsPane(props: {
 	state: Accessor<AppState>;
 	client: ConnectionsClient;
+	/** A remote Host's connections: listed without credentials, edited only on that Host. */
+	readOnly?: boolean;
 }) {
+	const editable = !props.readOnly;
 	const client = props.client;
 	const inheritedToasts = AppToaster();
 	const ownToasts = inheritedToasts ? null : new AppToasts();
@@ -248,9 +250,13 @@ export function ConnectionsPane(props: {
 				shownInHome={connection.shownInHome ?? true}
 				testing={() => testing().has(connection.id)}
 				busy={() => busy() || configureDialog.probing()}
-				onToggleShown={(shown) => void toggleShown(connection, shown)}
-				onTest={() => void testConnection(connection)}
-				onConfigure={() => configureDialog.openSettings(connection)}
+				onToggleShown={
+					editable ? (shown) => void toggleShown(connection, shown) : undefined
+				}
+				onTest={editable ? () => void testConnection(connection) : undefined}
+				onConfigure={
+					editable ? () => configureDialog.openSettings(connection) : undefined
+				}
 			/>
 		);
 	};
@@ -270,10 +276,14 @@ export function ConnectionsPane(props: {
 				shownInHome={connection.shownInHome ?? false}
 				testing={() => testing().has(connection.id)}
 				busy={() => busy() || configureDialog.probing()}
-				onToggleShown={(shown) => void toggleShown(connection, shown)}
-				onTest={() => void testConnection(connection)}
-				onConfigure={() => configureDialog.openSettings(connection)}
-				onRemove={() => removing.set(connection)}
+				onToggleShown={
+					editable ? (shown) => void toggleShown(connection, shown) : undefined
+				}
+				onTest={editable ? () => void testConnection(connection) : undefined}
+				onConfigure={
+					editable ? () => configureDialog.openSettings(connection) : undefined
+				}
+				onRemove={editable ? () => removing.set(connection) : undefined}
 			/>
 		);
 	};
@@ -314,16 +324,18 @@ export function ConnectionsPane(props: {
 				shownInHome={connection.shownInHome ?? false}
 				testing={() => testing().has(connection.id)}
 				busy={() => busy() || configureDialog.probing()}
-				onToggleShown={(shown) => void toggleShown(connection, shown)}
-				onTest={() => void testConnection(connection)}
-				onEdit={() => void sshEditor.openEdit(info)}
-				onRemove={() => removing.set(connection)}
+				onToggleShown={
+					editable ? (shown) => void toggleShown(connection, shown) : undefined
+				}
+				onTest={editable ? () => void testConnection(connection) : undefined}
+				onEdit={editable ? () => void sshEditor.openEdit(info) : undefined}
+				onRemove={editable ? () => removing.set(connection) : undefined}
 			/>
 		);
 	};
 
 	const addConnectionMenu = () =>
-		!IS_WINDOWS ? (
+		!editable ? null : !hostSupportsWsl() ? (
 			<Button
 				testID="settings-conn-add"
 				variant="outline"

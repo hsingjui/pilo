@@ -1,4 +1,4 @@
-import { platform, Scroll, signal, Text, token, View } from "nsh";
+import { Scroll, signal, Text, token, View } from "nsh";
 
 import type { WslDistribution } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
@@ -11,9 +11,8 @@ import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { useMountedDialog } from "../ui/motion";
 import { Icon } from "../ui/icon";
+import { hostSupportsWsl } from "../hosts/host-perspective";
 import type { ConnectionsClient } from "./connections-pane";
-
-const IS_WINDOWS = platform.os === "windows";
 
 /** The WSL distro picker's controller: distro list + add flow. */
 export function createWslPicker(deps: {
@@ -33,7 +32,7 @@ export function createWslPicker(deps: {
 	let loadSeq = 0;
 
 	const loadDistros = () => {
-		if (!IS_WINDOWS) return;
+		if (!hostSupportsWsl()) return;
 		const seq = ++loadSeq;
 		loading.set(true);
 		distros.set(null);
@@ -58,7 +57,7 @@ export function createWslPicker(deps: {
 		pickerRevision += 1;
 		open.set(true);
 		if (
-			IS_WINDOWS &&
+			hostSupportsWsl() &&
 			!loading() &&
 			(distros() === null || loadError() !== null)
 		) {

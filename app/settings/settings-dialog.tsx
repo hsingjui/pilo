@@ -102,6 +102,10 @@ export interface SettingsDialogProps {
 		"systemFontFamilies" | "openLogDirectory" | "openExternal" | "notifications"
 	>;
 	update?: DesktopUpdate;
+	/** A remote Host's connections, which only that Host edits. */
+	connectionsReadOnly?: boolean;
+	/** Panes the shown Host does not let this client use. */
+	hiddenTabs?: readonly SettingsTabId[];
 }
 
 export type SettingsTabId =
@@ -213,6 +217,9 @@ const CONTENT_MAX_WIDTH = 1024; // max-w-5xl
  */
 export function SettingsDialog(props: SettingsDialogProps) {
 	const active = signal<SettingsTabId>("preferences");
+	const shownTabs = SETTINGS_TABS.filter(
+		(tab) => !props.hiddenTabs?.includes(tab.id),
+	);
 	const dialog = useMountedDialog(props.open);
 	let contentScroll: ScrollRef | undefined;
 	const paneMotion = createMotion();
@@ -285,7 +292,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											scrollbar={{ mode: "always", vertical: scrollbarLook() }}
 										>
 											{SECTIONS.map((section) => {
-												const tabs = SETTINGS_TABS.filter(
+												const tabs = shownTabs.filter(
 													(tab) => tab.section === section.id,
 												);
 												return (
@@ -371,7 +378,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												testID="settings-tab-select"
 												class="w-full"
 												accessibilityLabel={t("settings.title")}
-												items={SETTINGS_TABS.map((tab) => ({
+												items={shownTabs.map((tab) => ({
 													value: tab.id,
 													title: String(t(tab.labelKey)),
 												}))}
@@ -430,6 +437,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														<ConnectionsPane
 															state={props.state}
 															client={props.client}
+															readOnly={props.connectionsReadOnly}
 														/>
 													);
 												case "next-prompt":

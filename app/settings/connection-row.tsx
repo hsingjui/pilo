@@ -56,8 +56,8 @@ export function ConnectionRow(props: {
 	shownInHome: boolean;
 	testing: Accessor<boolean>;
 	busy: Accessor<boolean>;
-	onToggleShown: (shown: boolean) => void;
-	onTest: () => void;
+	onToggleShown?: (shown: boolean) => void;
+	onTest?: () => void;
 	onConfigure?: () => void;
 	onEdit?: () => void;
 	onRemove?: () => void;
@@ -89,27 +89,31 @@ export function ConnectionRow(props: {
 					</View>
 				</View>
 				<View class="shrink-0 flex-row items-center gap-1">
-					{rowButton({
-						testID: `settings-conn-home-${connection.id}`,
-						label: t("connection.shownInHome"),
-						icon: (
-							<Icon name={props.shownInHome ? "Eye" : "EyeOff"} size={16} />
-						),
-						disabled: rowBusy(),
-						selected: props.shownInHome,
-						onPress: () => props.onToggleShown(!props.shownInHome),
-					})}
-					{rowButton({
-						testID: `settings-conn-test-${connection.id}`,
-						label: t("connection.test"),
-						icon: props.testing() ? (
-							<Spinner size={16} />
-						) : (
-							<Icon name="Wifi" size={16} />
-						),
-						disabled: rowBusy(),
-						onPress: props.onTest,
-					})}
+					{props.onToggleShown
+						? rowButton({
+								testID: `settings-conn-home-${connection.id}`,
+								label: t("connection.shownInHome"),
+								icon: (
+									<Icon name={props.shownInHome ? "Eye" : "EyeOff"} size={16} />
+								),
+								disabled: rowBusy(),
+								selected: props.shownInHome,
+								onPress: () => props.onToggleShown?.(!props.shownInHome),
+							})
+						: null}
+					{props.onTest
+						? rowButton({
+								testID: `settings-conn-test-${connection.id}`,
+								label: t("connection.test"),
+								icon: props.testing() ? (
+									<Spinner size={16} />
+								) : (
+									<Icon name="Wifi" size={16} />
+								),
+								disabled: rowBusy(),
+								onPress: props.onTest,
+							})
+						: null}
 					{props.onConfigure
 						? rowButton({
 								testID: `settings-conn-configure-${connection.id}`,

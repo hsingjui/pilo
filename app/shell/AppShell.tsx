@@ -59,6 +59,7 @@ import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
+	type SettingsTabId,
 } from "../settings/settings-dialog";
 import { createRemoteStatus, RemoteDialog } from "../settings/remote-dialog";
 import { Button } from "../ui/button";
@@ -196,6 +197,16 @@ export interface AppShellProps {
 	sidebarSettings?: SidebarSettingsStore;
 	/** Shared app toast queue; a private one is created if omitted. */
 	toasts?: AppToasts;
+	/** Whether this client manages the Host's remote access (only on its own machine). */
+	remoteAccess?: boolean;
+	/** The Host's connections are listed but edited only on that Host. */
+	connectionsReadOnly?: boolean;
+	/** Settings panes the Host does not let this client use. */
+	hiddenSettingsTabs?: readonly SettingsTabId[];
+	/** Add Project browses the Host's folders instead of this machine's picker. */
+	browseHostDirectories?: boolean;
+	/** The Hosts this window can show, above the shown Host's projects. */
+	hostSwitcher?: () => JSX.Element;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -656,7 +667,10 @@ export function AppShell(props: AppShellProps) {
 		appShortcutBindings.set(bound);
 	});
 	const client = props.settings;
-	const remoteStatus = client ? createRemoteStatus(client, remoteOpen) : null;
+	const remoteStatus =
+		client && props.remoteAccess !== false
+			? createRemoteStatus(client, remoteOpen)
+			: null;
 	const defaultWorkspaceShown = () =>
 		store.state().preferences?.values.defaultWorkspaceVisibility ?? {};
 	const expandButton = () => (
@@ -753,8 +767,9 @@ export function AppShell(props: AppShellProps) {
 						: undefined
 				}
 				onAddProject={props.projectClient ? openAddProject : undefined}
+				hostSwitcher={props.hostSwitcher}
 				onRemoveConnection={
-					client
+					client && !props.connectionsReadOnly
 						? (connection) => {
 								const removal =
 									connection.kind.type === "wsl"
@@ -1290,6 +1305,8 @@ export function AppShell(props: AppShellProps) {
 								desktop={props.desktop}
 								shell={props.shell}
 								update={update}
+								connectionsReadOnly={props.connectionsReadOnly}
+								hiddenTabs={props.hiddenSettingsTabs}
 							/>
 						) : null
 					}
@@ -1302,8 +1319,11 @@ export function AppShell(props: AppShellProps) {
 								open={addProjectOpen}
 								api={props.projectClient}
 								pickLocalProjectDirectory={
-									props.shell?.pickLocalProjectDirectory
+									props.browseHostDirectories
+										? undefined
+										: props.shell?.pickLocalProjectDirectory
 								}
+								browseHostDirectories={props.browseHostDirectories}
 								connectionId={addProjectConnection}
 								projects={() => store.state().projects}
 								onAdd={async (connectionId, path) => {

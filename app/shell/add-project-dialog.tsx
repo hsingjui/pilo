@@ -59,6 +59,8 @@ export function AddProjectDialog(props: {
 	open: Signal<boolean>;
 	api: AddProjectApi;
 	pickLocalProjectDirectory?: DesktopShell["pickLocalProjectDirectory"];
+	/** The Host is another machine: its Local folders are browsed on that Host, not picked here. */
+	browseHostDirectories?: boolean;
 	onAdd: (connectionId: string, path: string) => Promise<Project>;
 	/** The target set by the opener; null uses the local connection. */
 	connectionId: () => string | null;
@@ -77,7 +79,11 @@ export function AddProjectDialog(props: {
 	const loadingEntries = signal(false);
 	const error = signal<string | null>(null);
 
-	const isLocal = () => connection()?.kind.type === "local";
+	/** Local on this machine, chosen with its own folder picker. */
+	const isLocal = () =>
+		connection()?.kind.type === "local" && !props.browseHostDirectories;
+	const picksLocally = (target: Connection) =>
+		target.kind.type === "local" && !props.browseHostDirectories;
 	// A late response must not update a reopened dialog for another connection.
 	let openVersion = 0;
 	let browseVersion = 0;
@@ -147,7 +153,7 @@ export function AddProjectDialog(props: {
 
 	const loadDirectory = async (nextPath: string): Promise<boolean> => {
 		const target = connection();
-		if (!target || target.kind.type === "local") return false;
+		if (!target || picksLocally(target)) return false;
 		const version = openVersion;
 		const req = ++browseVersion;
 		const normalized = absoluteRemotePath(nextPath);
@@ -194,7 +200,7 @@ export function AddProjectDialog(props: {
 	const browse = async () => {
 		const target = connection();
 		if (!target) return;
-		if (target.kind.type === "local") {
+		if (picksLocally(target)) {
 			if (!props.pickLocalProjectDirectory) return;
 			const version = openVersion;
 			picking.set(true);
