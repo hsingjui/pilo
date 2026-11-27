@@ -1,11 +1,7 @@
 import { cleanup, computed, effect, untracked } from "nsh";
 
-import {
-	chatSessionKey,
-	parseChatSessionKey,
-} from "@shared/api/chat-session-key";
-import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
 import { userErrorMessage } from "@shared/app-error";
+import { LOCAL_HOST_ID } from "@shared/host-id";
 import { AppToasts, showToast } from "../app/shell/app-toasts";
 import { t } from "../app/shell/i18n";
 import {
@@ -18,15 +14,7 @@ import {
 import { followOpenSessionRead } from "../app/shell/read-open-session";
 import { createSessionAutoTitle } from "../app/shell/session-auto-title";
 import { SessionForker } from "../app/shell/session-fork";
-import {
-	ComposerStore,
-	type ComposerTarget,
-} from "../app/composer/composer-store";
-import {
-	createDraftSessionId,
-	isDraftSessionId,
-	isTemporarySessionKey,
-} from "../app/state/app-state";
+import { ComposerStore } from "../app/composer/composer-store";
 import { AppStore } from "../app/state/app-store";
 import { ChatRunConfigStore } from "../app/state/chat-run-config";
 import { ChatTranscriptStore } from "../app/state/chat-transcript-store";
@@ -37,21 +25,19 @@ import { RemoteExtensionUi } from "./remote-extension-ui";
 import { webDesktopShell } from "./web-desktop-shell";
 import { browserSessionStorage } from "./web-remote-browser";
 import { WebRemotePiloClient } from "./web-remote-client";
-
-const ACTIVE_PROJECT_KEY = "pilo.web.activeProject.v1";
-const DRAFT_TEXT_KEY_PREFIX = "pilo.web.draftText.v3:";
-const SAVED_DRAFT_TEXT_KEY_PREFIX = "pilo.web.savedDraftText.v1:";
-const LEGACY_SESSION_TEXT_PREFIX = "pilo.web.draftText.v2:";
-const LEGACY_PROJECT_TEXT_PREFIX = "pilo.web.draftText.v1:";
+import { createWebWorkspaceStorage } from "./web-workspace-storage";
 
 export interface MobileRemoteWorkspaceProps {
 	token: string;
+	hostId?: string;
 	onAuthExpired: () => void;
 	onSignOut?: () => void;
 }
 
 export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
+	const hostId = props.hostId ?? LOCAL_HOST_ID;
 	const client = new WebRemotePiloClient(props.token, {
+		hostId,
 		onAuthExpired: props.onAuthExpired,
 	});
 	const chat = new ChatTranscriptStore(client, conversationContext());
@@ -62,73 +48,16 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	const queue = new RemoteChatQueue(client);
 	const extensionUi = new RemoteExtensionUi(client, toasts);
 	const tabStorage = browserSessionStorage();
-	const readTabValue = (key: string) => {
-		try {
-			return tabStorage?.getItem(key) ?? null;
-		} catch {
-			return null;
-		}
-	};
-	const writeTabValue = (key: string, value: string) => {
-		if (!tabStorage) return false;
-		try {
-			if (value) tabStorage.setItem(key, value);
-			else tabStorage.removeItem(key);
-			return true;
-		} catch {
-			// Browser storage may be disabled or full; keep the live draft usable.
-			return false;
-		}
-	};
-	const draftStorageKey = ({
-		sessionKey,
-		projectId,
-		sessionPath,
-	}: ComposerTarget) => {
-		if (isTemporarySessionKey(sessionKey)) return null;
-		return sessionPath
-			? SAVED_DRAFT_TEXT_KEY_PREFIX +
-					chatSessionKey(projectId, runtimeSessionPathKey(sessionPath))
-			: DRAFT_TEXT_KEY_PREFIX + sessionKey;
-	};
-	try {
-		const keys = Array.from({ length: tabStorage?.length ?? 0 }, (_, index) =>
-			tabStorage?.key(index),
-		);
-		for (const key of keys) {
-			if (!key) continue;
-			if (key.startsWith(DRAFT_TEXT_KEY_PREFIX)) {
-				const text = readTabValue(key);
-				if (!text?.trim()) continue;
-				const sessionKey = key.slice(DRAFT_TEXT_KEY_PREFIX.length);
-				const parsed = parseChatSessionKey(sessionKey);
-				if (parsed && isDraftSessionId(parsed[1])) {
-					store.setUnsentDraft({ sessionKey, projectId: parsed[0] }, text);
-				}
-				continue;
-			}
-			const legacyPrefix = [
-				LEGACY_PROJECT_TEXT_PREFIX,
-				`${LEGACY_SESSION_TEXT_PREFIX}draft:`,
-			].find((prefix) => key.startsWith(prefix));
-			if (!legacyPrefix) continue;
-			const text = readTabValue(key);
-			if (!text?.trim()) continue;
-			const projectId = key.slice(legacyPrefix.length);
-			const sessionKey = chatSessionKey(projectId, createDraftSessionId());
-			if (writeTabValue(DRAFT_TEXT_KEY_PREFIX + sessionKey, text)) {
-				writeTabValue(key, "");
-				store.setUnsentDraft({ sessionKey, projectId }, text);
-			}
-		}
-	} catch {
-		// Browser storage can be unavailable even after retrieving the object.
-	}
-	const initialProjectId = readTabValue(ACTIVE_PROJECT_KEY);
+	const workspaceStorage =
+		tabStorage && createWebWorkspaceStorage(tabStorage, hostId);
+	workspaceStorage?.restoreDrafts((target, text) =>
+		store.setUnsentDraft(target, text),
+	);
+	const initialProjectId = workspaceStorage?.readActiveProject();
 	const activeProjectId = computed(() => store.state().navigation.projectId);
 	effect(() => {
 		const projectId = activeProjectId();
-		if (projectId) writeTabValue(ACTIVE_PROJECT_KEY, projectId);
+		if (projectId) workspaceStorage?.writeActiveProject(projectId);
 	});
 	const nameSession = createSessionAutoTitle(client, (target, error) => {
 		composer.setStatus(
@@ -141,27 +70,9 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	const composer = new ComposerStore({
 		client,
 		shell: webDesktopShell,
+		hostId,
 		app: store.state,
-		draftTextStorage: tabStorage && {
-			read: (target) => {
-				const key = draftStorageKey(target);
-				if (!key) return null;
-				const value = readTabValue(key);
-				return (
-					value ??
-					(target.sessionPath
-						? readTabValue(LEGACY_SESSION_TEXT_PREFIX + target.sessionKey)
-						: null)
-				);
-			},
-			write: (target, value) => {
-				const key = draftStorageKey(target);
-				if (!key || !writeTabValue(key, value)) return false;
-				if (target.sessionPath)
-					writeTabValue(LEGACY_SESSION_TEXT_PREFIX + target.sessionKey, "");
-				return true;
-			},
-		},
+		draftTextStorage: workspaceStorage?.draftText,
 		queue,
 		waitForStartupApproval: (sessionKey) =>
 			extensionUi.waitForStartupApproval(sessionKey),
