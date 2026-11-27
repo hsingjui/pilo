@@ -673,7 +673,7 @@ async fn lan_ip() -> IpAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
     #[tokio::test]
     async fn gateway_enforces_configured_origins_and_limits_device_failures_per_ip() {
@@ -916,6 +916,109 @@ mod tests {
                 .all(|device| device.revoked_at_ms.is_some())
         );
         assert!(check_current().is_none());
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn live_websocket_reauthenticates_after_scope_change_and_closes_on_revocation() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-ws-auth-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
+        let paired =
+            super::super::auth::create_device(None, "127.0.0.1", RemoteScopes::ChatWorkspace)
+                .unwrap();
+        let db = storage::open_with_paths(&runtime.paths).unwrap();
+        storage::insert_remote_device(
+            &db,
+            &paired.device,
+            &super::super::auth::hash_credential(&paired.token),
+        )
+        .unwrap();
+
+        let mut socket = BufReader::new(
+            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .unwrap(),
+        );
+        let upgrade = format!(
+            "GET /api/v1/events HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
+             Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
+             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+             Sec-WebSocket-Protocol: pilo, pilo-token.{}\r\n\r\n",
+            paired.token
+        );
+        socket.write_all(upgrade.as_bytes()).await.unwrap();
+        let timeout = Duration::from_secs(3);
+        tokio::time::timeout(timeout, async {
+            let mut line = String::new();
+            socket.read_line(&mut line).await.unwrap();
+            assert_eq!(line.trim(), "HTTP/1.1 101 Switching Protocols");
+            loop {
+                line.clear();
+                assert_ne!(socket.read_line(&mut line).await.unwrap(), 0);
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let mut header = [0; 2];
+            socket.read_exact(&mut header).await.unwrap();
+            assert_eq!(header[0], 0x81);
+            assert!(header[1] <= 125);
+            let mut payload = vec![0; usize::from(header[1])];
+            socket.read_exact(&mut payload).await.unwrap();
+            let hello: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+            assert_eq!(hello["type"], "hello");
+            assert_eq!(hello["deviceId"], paired.device.id);
+        })
+        .await
+        .unwrap();
+
+        // Only socket reauthentication can touch this timestamp before the 15 s auth tick.
+        db.execute(
+            "UPDATE remote_devices SET last_seen_at_ms = 0 WHERE id = ?1",
+            [&paired.device.id],
+        )
+        .unwrap();
+        runtime
+            .remote
+            .set_device_scopes(&runtime, &paired.device.id, RemoteScopes::Chat)
+            .await
+            .unwrap();
+        tokio::time::timeout(timeout, async {
+            loop {
+                let devices = storage::list_remote_devices(&db).unwrap();
+                assert_eq!(devices[0].scopes, RemoteScopes::Chat);
+                if devices[0].last_seen_at_ms != 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("scope update did not trigger WebSocket reauthentication");
+
+        // An empty masked Ping must still get a Pong after the scope change.
+        socket.write_all(&[0x89, 0x80, 1, 2, 3, 4]).await.unwrap();
+        let mut frame = [0; 2];
+        tokio::time::timeout(timeout, socket.read_exact(&mut frame))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame, [0x8a, 0]);
+        let revoked = runtime.remote.revoke_all_devices(&runtime).await.unwrap();
+        assert!(revoked.running);
+        tokio::time::timeout(timeout, socket.read_exact(&mut frame))
+            .await
+            .expect("revoked WebSocket did not close before the periodic auth tick")
+            .unwrap();
+        assert_eq!(frame, [0x88, 0]);
+        drop(db);
         runtime.remote.stop().await;
         std::fs::remove_dir_all(root).unwrap();
     }
