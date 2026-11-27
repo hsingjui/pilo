@@ -14,8 +14,8 @@ import type { ConversationReducerContext } from "@shared/chat/conversation-types
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-	DesktopHostBootstrap,
-} from "../client/host-api";
+	HostBootstrap as DesktopHostBootstrap,
+} from "@shared/api/host-methods";
 import { AppStore, type AppStoreClient } from "../state/app-store";
 import {
 	type ChatTranscriptClient,

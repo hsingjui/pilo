@@ -39,7 +39,7 @@ import type { HostClient } from "@shared/api/host-client";
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-} from "../client/host-api";
+} from "@shared/api/host-methods";
 import { isTemporarySessionKey } from "./app-state";
 import {
 	applyChatEvents,

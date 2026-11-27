@@ -2,7 +2,7 @@ import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
-import type { ChatTranscriptSnapshot } from "../client/host-api";
+import type { ChatTranscriptSnapshot } from "@shared/api/host-methods";
 import { createNativeHostClient } from "../client/native-transport";
 
 const projectId = "chat-fixture";

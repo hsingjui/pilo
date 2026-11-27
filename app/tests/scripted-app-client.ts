@@ -64,7 +64,7 @@ import type {
 } from "@shared/theme-settings-types";
 import type { PiCommandClient } from "../client/chat-rpc";
 import type { HostClient } from "@shared/api/host-client";
-import type { DesktopHostBootstrap } from "../client/host-api";
+import type { HostBootstrap as DesktopHostBootstrap } from "@shared/api/host-methods";
 import type { DesktopShell } from "../shell/desktop-shell";
 import type { AppStoreClient } from "../state/app-store";
 import type { ChatTranscriptClient } from "../state/chat-transcript-store";
@@ -182,7 +182,7 @@ export type AppScript = {
 	 */
 	onSnapshot?: (
 		sessionKey: string,
-	) => import("../client/host-api").ChatTranscriptSnapshot | undefined;
+	) => import("@shared/api/host-methods").ChatTranscriptSnapshot | undefined;
 	/** A project's saved model catalog; `loadModels` answers null otherwise. */
 	models?: Record<string, ProjectPiModels>;
 	/** A project's saved model scope; null inherits Pi when left out. */

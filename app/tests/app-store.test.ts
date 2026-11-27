@@ -11,7 +11,7 @@ import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import type { PreferencesSnapshot } from "@shared/host-preferences-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import type { DesktopHostBootstrap } from "../client/host-api";
+import type { HostBootstrap as DesktopHostBootstrap } from "@shared/api/host-methods";
 import {
 	AppStore,
 	type AppStoreBootstrap,

@@ -983,6 +983,49 @@ mod tests {
         );
         assert_eq!(hello_b["capabilities"]["methodsHash"], methods_hash());
 
+        for (method, path) in [
+            ("GET", "/api/v1/bootstrap"),
+            ("GET", "/api/v1/sessions"),
+            ("POST", "/api/v1/chat/rpc"),
+            ("GET", "/api/v1/models"),
+            ("GET", "/api/v1/files/image"),
+            ("GET", "/api/v1/events"),
+        ] {
+            let response = http_raw(
+                host_b.port,
+                method,
+                path,
+                Some(&token_b_chat),
+                None,
+                None,
+                &[],
+            )
+            .await;
+            assert_eq!(response.0, 404, "{method} {path}");
+        }
+        let (status, device) = http_json(
+            host_b.port,
+            "GET",
+            "/api/v1/auth/device",
+            Some(&token_b_chat),
+            None,
+            &json!({}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(device["expiresAtMs"].as_u64().is_some());
+        let (status, renewed) = http_json(
+            host_b.port,
+            "POST",
+            "/api/v1/auth/device/renew",
+            Some(&token_b_chat),
+            None,
+            &json!({}),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(renewed["expiresAtMs"].as_u64().is_some());
+
         // Ping -> Pong.
         ws_b.send_text(&json!({ "type": "ping" })).await;
         assert_eq!(ws_b.recv_json().await["type"], "pong");

@@ -8,7 +8,7 @@ import type {
 	ConversationState,
 } from "@shared/chat/conversation-types";
 import { initializeI18n, setAppLocale } from "../shell/i18n";
-import type { ChatTranscriptSnapshot } from "../client/host-api";
+import type { ChatTranscriptSnapshot } from "@shared/api/host-methods";
 import {
 	applyChatEvents,
 	conversationFromSnapshot,
