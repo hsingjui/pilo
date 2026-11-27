@@ -6,15 +6,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
-use crate::{
-    chat_service::{self, ChatSessionRequest},
-    remote_fs,
-    runtime_api::{chat_session_send_rpc, chat_session_state, chat_session_stop},
-};
+use crate::host_api::{BinaryOutput, HostApiError};
 
-use super::{RemoteHttpState, api_error};
+use super::{HostRequest, api_error, host_error};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,42 +24,16 @@ pub(super) struct ChatStartRequest {
 }
 
 pub(super) async fn chat_start(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<ChatStartRequest>,
 ) -> Response {
-    if !request.builtin_extensions.is_empty()
-        && (!request.no_session.unwrap_or(false)
-            || request.session_path.is_some()
-            || request.builtin_extensions.iter().any(|extension| {
-                !matches!(extension, pilo_protocol::BuiltinExtension::ModelCatalog)
-            }))
-    {
-        return api_error(
-            StatusCode::BAD_REQUEST,
-            "Remote catalog probes only support the model-catalog extension with noSession",
-        );
-    }
-    let runtime = state.runtime.core.clone();
-    let events = state.runtime.events.clone();
-    let probe = !request.builtin_extensions.is_empty();
-    let request = ChatSessionRequest {
-        project_id: request.project_id,
-        session_key: request.session_key,
-        session_path: request.session_path,
-        no_session: request.no_session.unwrap_or(false),
-        extensions: Vec::new(),
-        builtin_extensions: request.builtin_extensions,
-    };
-    let result = if probe {
-        // Preparing a no-session probe must not send new_session or index an empty chat.
-        chat_service::prepare(&state.runtime.paths, &runtime, events, request).await
-    } else {
-        chat_service::start(&state.runtime.paths, &runtime, events, request).await
-    };
-    match result {
-        Ok(snapshot) => Json(snapshot).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "chat.start",
+        json!({"projectId": request.project_id, "sessionKey": request.session_key,
+            "sessionPath": request.session_path, "noSession": request.no_session,
+            "builtinExtensions": request.builtin_extensions,}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -79,24 +49,17 @@ pub(super) struct ChatStopRequest {
     reason: Option<String>,
 }
 
-pub(super) async fn chat_stop(
-    state: RemoteHttpState,
-    Json(request): Json<ChatStopRequest>,
-) -> Response {
-    match chat_session_stop(&state.runtime, request.session_key, request.reason).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+pub(super) async fn chat_stop(host: HostRequest, Json(request): Json<ChatStopRequest>) -> Response {
+    host.no_content(
+        "chat.stop",
+        json!({"sessionKey": request.session_key, "reason": request.reason}),
+    )
+    .await
 }
 
-pub(super) async fn chat_state(
-    state: RemoteHttpState,
-    Query(query): Query<ChatStateQuery>,
-) -> Response {
-    match chat_session_state(&state.runtime, query.session_key).await {
-        Ok(session) => Json(session).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+pub(super) async fn chat_state(host: HostRequest, Query(query): Query<ChatStateQuery>) -> Response {
+    host.json("chat.state", json!({"sessionKey": query.session_key}))
+        .await
 }
 
 #[derive(Deserialize)]
@@ -110,22 +73,18 @@ pub(super) struct ChatTranscriptQuery {
 }
 
 pub(super) async fn chat_transcript(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<ChatTranscriptQuery>,
 ) -> Response {
-    let window = crate::TranscriptWindow {
-        start_message: query.start_message,
-        message_limit: query.message_limit,
-        include_message_index: query.include_message_index,
-    };
-    match state
-        .runtime
-        .chat_transcript_snapshot(&query.session_key, window)
-        .await
-    {
-        Ok(snapshot) => Json(snapshot).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "chat.transcript",
+        json!({"sessionKey": query.session_key, "window": {
+                "startMessage": query.start_message,
+                "messageLimit": query.message_limit,
+                "includeMessageIndex": query.include_message_index,
+            },}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -135,17 +94,12 @@ pub(super) struct ChatRpcRequest {
     command: Value,
 }
 
-pub(super) async fn chat_rpc(
-    state: RemoteHttpState,
-    Json(request): Json<ChatRpcRequest>,
-) -> Response {
-    if let Err(error) = super::validation::validate_remote_rpc(&request.command) {
-        return api_error(StatusCode::BAD_REQUEST, &error);
-    }
-    match chat_session_send_rpc(&state.runtime, request.session_key, request.command).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+pub(super) async fn chat_rpc(host: HostRequest, Json(request): Json<ChatRpcRequest>) -> Response {
+    host.no_content(
+        "chat.rpc",
+        json!({"sessionKey": request.session_key, "command": request.command}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -156,19 +110,14 @@ pub(super) struct ChatMcpApproveRequest {
 }
 
 pub(super) async fn chat_mcp_approve(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<ChatMcpApproveRequest>,
 ) -> Response {
-    match crate::runtime_api::project_mcp_server_approve(
-        &state.runtime,
-        request.project_id,
-        request.server_name,
+    host.no_content(
+        "chat.mcp.approve",
+        json!({"projectId": request.project_id, "serverName": request.server_name}),
     )
     .await
-    {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
 }
 
 #[derive(Deserialize)]
@@ -182,19 +131,14 @@ pub(super) struct FileSearchQuery {
 /// composer. It reuses the same `fs.search` host call as Desktop; no file
 /// contents are exposed.
 pub(super) async fn files_search(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<FileSearchQuery>,
 ) -> Response {
-    let runtime = state.runtime.core.clone();
-    let project =
-        match crate::project::ready(&state.runtime, &runtime.servers, &query.project_id).await {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
-    match remote_fs::search(&runtime.servers, &project, &query.query).await {
-        Ok(paths) => Json(paths).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+    host.json(
+        "files.search",
+        json!({"projectId": query.project_id, "query": query.query}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -205,17 +149,12 @@ pub(super) struct ProjectImageQuery {
 }
 
 pub(super) async fn project_image(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<ProjectImageQuery>,
 ) -> Response {
-    let runtime = state.runtime.core.clone();
-    let project =
-        match crate::project::ready(&state.runtime, &runtime.servers, &query.project_id).await {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
-    match remote_fs::read_image(&runtime.servers, &project, &query.path).await {
-        Ok(bytes) => Response::builder()
+    let params = json!({"projectId": query.project_id, "path": query.path});
+    match host.binary("files.image", params, None).await {
+        Ok(BinaryOutput::Bytes(bytes)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/octet-stream")
             .header(header::CACHE_CONTROL, "no-store")
@@ -224,7 +163,10 @@ pub(super) async fn project_image(
             .unwrap_or_else(|error| {
                 api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string())
             }),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+        Ok(BinaryOutput::Json(_)) => {
+            host_error(HostApiError::internal("expected project image bytes"))
+        }
+        Err(error) => host_error(error),
     }
 }
 
@@ -236,19 +178,17 @@ pub(super) struct ChatFileUploadQuery {
 }
 
 pub(super) async fn chat_file_upload(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<ChatFileUploadQuery>,
     data: Bytes,
 ) -> Response {
-    let runtime = state.runtime.core.clone();
-    let project =
-        match crate::project::ready(&state.runtime, &runtime.servers, &query.project_id).await {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
-    match remote_fs::upload_chat_file(&runtime.servers, &project, &query.name, &data).await {
-        Ok(path) => Json(path).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    let params = json!({"projectId": query.project_id, "name": query.name});
+    match host.binary("chat.files.upload", params, Some(&data)).await {
+        Ok(BinaryOutput::Json(path)) => Json(path).into_response(),
+        Ok(BinaryOutput::Bytes(_)) => {
+            host_error(HostApiError::internal("expected an uploaded file path"))
+        }
+        Err(error) => host_error(error),
     }
 }
 
@@ -260,17 +200,12 @@ pub(super) struct ChatFileRemoveQuery {
 }
 
 pub(super) async fn chat_file_remove(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<ChatFileRemoveQuery>,
 ) -> Response {
-    let runtime = state.runtime.core.clone();
-    let project =
-        match crate::project::ready(&state.runtime, &runtime.servers, &query.project_id).await {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
-    match remote_fs::remove_chat_file(&runtime.servers, &project, &query.path).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.no_content(
+        "chat.files.remove",
+        json!({"projectId": query.project_id, "path": query.path}),
+    )
+    .await
 }

@@ -16,7 +16,7 @@ pub struct NextPromptSettings {
     pub updated_at_ms: u64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NextPromptRequest {
     pub session_key: String,

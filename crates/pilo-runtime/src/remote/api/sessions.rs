@@ -3,19 +3,21 @@ use axum::{
     body::Body,
     extract::Query,
     http::{StatusCode, header},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use serde::Deserialize;
 
-use crate::{events::LIVE_IMAGE_PREFIX, pi_workspace, session_history};
+use serde_json::json;
 
-use super::{RemoteHttpState, api_error, get_project};
+use crate::{
+    events::LIVE_IMAGE_PREFIX,
+    host_api::{self, BinaryOutput, HostApiError},
+};
 
-pub(super) async fn session_read_states(state: RemoteHttpState) -> Response {
-    match crate::handle::session_read_states(&state.runtime).await {
-        Ok(states) => Json(states).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+use super::{HostRequest, api_error, host_error};
+
+pub(super) async fn session_read_states(host: HostRequest) -> Response {
+    host.json("session.readStates", json!({})).await
 }
 
 #[derive(Deserialize)]
@@ -27,20 +29,10 @@ pub(super) struct SessionReadRequest {
 }
 
 pub(super) async fn session_mark_read(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<SessionReadRequest>,
 ) -> Response {
-    match crate::handle::session_mark_read(
-        &state.runtime,
-        request.project_id,
-        request.session_path,
-        request.revision,
-    )
-    .await
-    {
-        Ok(read_state) => Json(read_state).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("session.markRead", json!({"projectId": request.project_id, "sessionPath": request.session_path, "revision": request.revision})).await
 }
 
 #[derive(Deserialize)]
@@ -51,24 +43,12 @@ pub(super) struct SessionsQuery {
     cached: bool,
 }
 
-pub(super) async fn sessions(
-    state: RemoteHttpState,
-    Query(query): Query<SessionsQuery>,
-) -> Response {
-    let project = match get_project(&state.runtime.paths, &query.project_id) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
-    if query.cached {
-        return match crate::session_api::session_list(&state.runtime, project.id) {
-            Ok(sessions) => Json(sessions).into_response(),
-            Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-        };
-    }
-    match crate::session_api::session_reconcile(&state.runtime, project.id).await {
-        Ok(result) => Json(result.sessions).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+pub(super) async fn sessions(host: HostRequest, Query(query): Query<SessionsQuery>) -> Response {
+    host.json(
+        "session.list",
+        json!({"projectId": query.project_id, "cached": query.cached}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -80,41 +60,26 @@ pub(super) struct SessionSearchQuery {
 }
 
 pub(super) async fn sessions_search(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<SessionSearchQuery>,
 ) -> Response {
-    match crate::session_api::session_search(
-        &state.runtime,
-        query.project_id,
-        query.query,
-        Some(query.limit.unwrap_or(24).clamp(1, 100)),
+    host.json(
+        "session.search",
+        json!({"projectId": query.project_id, "query": query.query,
+            "limit": query.limit.unwrap_or(24).clamp(1, 100),}),
     )
     .await
-    {
-        Ok(matches) => Json(matches).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
 }
 
 pub(super) async fn sessions_external_activity(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<SessionsQuery>,
 ) -> Response {
-    let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
-        pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
-    }) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
-    match state
-        .runtime
-        .events
-        .external_session_activity(&state.runtime, &project)
-        .await
-    {
-        Ok(activities) => Json(activities).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+    host.json(
+        "session.externalActivity",
+        json!({"projectId": query.project_id}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -129,33 +94,14 @@ pub(super) struct HistoryQuery {
     expected_file_mtime_ns: Option<String>,
 }
 
-pub(super) async fn history(state: RemoteHttpState, Query(query): Query<HistoryQuery>) -> Response {
-    let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
-        pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
-    }) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
-    let runtime = state.runtime.core.clone();
-    let limit = query.message_limit.unwrap_or(200).clamp(1, 400);
-    let expected_fingerprint = match expected_session_fingerprint(
-        query.expected_file_size,
-        query.expected_file_mtime_ns.as_deref(),
-    ) {
-        Ok(value) => value,
-        Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
-    };
-    match session_history::read_history_window_json(
-        &runtime.servers,
-        &runtime.session_history_cache,
-        &project,
-        &query.session_path,
-        expected_fingerprint,
-        query.start_message,
-        limit,
-        query.include_message_index.unwrap_or(true),
-    )
-    .await
+pub(super) async fn history(host: HostRequest, Query(query): Query<HistoryQuery>) -> Response {
+    let params = json!({
+        "projectId": query.project_id, "sessionPath": query.session_path,
+        "expectedFileSize": query.expected_file_size, "expectedFileMtimeNs": query.expected_file_mtime_ns,
+        "startMessage": query.start_message, "messageLimit": query.message_limit.unwrap_or(200).clamp(1, 400),
+        "includeMessageIndex": query.include_message_index,
+    });
+    match host_api::call_json_bytes(&host.runtime, &host.principal, "session.history", params).await
     {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
@@ -167,7 +113,7 @@ pub(super) async fn history(state: RemoteHttpState, Query(query): Query<HistoryQ
                     &format!("failed to build history response: {error}"),
                 )
             }),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => host_error(error),
     }
 }
 
@@ -181,62 +127,17 @@ pub(super) struct HistoryImageQuery {
     expected_file_mtime_ns: Option<String>,
 }
 
-fn expected_session_fingerprint(
-    expected_file_size: Option<u64>,
-    expected_file_mtime_ns: Option<&str>,
-) -> Result<Option<(u64, u64)>, String> {
-    let expected_file_mtime_ns = expected_file_mtime_ns
-        .map(|value| {
-            value
-                .parse::<u64>()
-                .map_err(|error| format!("invalid expected session mtime '{value}': {error}"))
-        })
-        .transpose()?;
-    Ok(expected_file_size.zip(expected_file_mtime_ns))
-}
-
 pub(super) async fn history_image(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<HistoryImageQuery>,
 ) -> Response {
     let live = query.image_id.starts_with(LIVE_IMAGE_PREFIX);
-    let project = match get_project(&state.runtime.paths, &query.project_id) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
-    let bytes = if live {
-        state
-            .runtime
-            .events
-            .read_live_image(&query.project_id, &query.session_path, &query.image_id)
-            .await
-    } else {
-        let project = match pi_workspace::resolve_session_project_with_paths(
-            &state.runtime.paths,
-            &project,
-        ) {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
-        let expected_fingerprint = match expected_session_fingerprint(
-            query.expected_file_size,
-            query.expected_file_mtime_ns.as_deref(),
-        ) {
-            Ok(value) => value,
-            Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
-        };
-        session_history::read_history_image_bytes(
-            &state.runtime.servers,
-            &state.runtime.session_history_cache,
-            &project,
-            &query.session_path,
-            &query.image_id,
-            expected_fingerprint,
-        )
-        .await
-    };
-    match bytes {
-        Ok(bytes) => Response::builder()
+    let params = json!({
+        "projectId": query.project_id, "sessionPath": query.session_path, "imageId": query.image_id,
+        "expectedFileSize": query.expected_file_size, "expectedFileMtimeNs": query.expected_file_mtime_ns,
+    });
+    match host.binary("session.historyImage", params, None).await {
+        Ok(BinaryOutput::Bytes(bytes)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/octet-stream")
             .header(
@@ -254,7 +155,10 @@ pub(super) async fn history_image(
                     &format!("failed to build history image response: {error}"),
                 )
             }),
-        Err(error) => api_error(StatusCode::NOT_FOUND, &error),
+        Ok(BinaryOutput::Json(_)) => {
+            host_error(HostApiError::internal("expected history image bytes"))
+        }
+        Err(error) => host_error(error),
     }
 }
 
@@ -266,20 +170,14 @@ pub(super) struct SessionTitleRequest {
 }
 
 pub(super) async fn session_title(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<SessionTitleRequest>,
 ) -> Response {
-    let runtime = state.runtime.clone();
-    match crate::session_naming::generate_session_title(
-        &runtime,
-        &request.project_id,
-        &request.message,
+    host.json(
+        "session.title",
+        json!({"projectId": request.project_id, "message": request.message}),
     )
     .await
-    {
-        Ok(title) => Json(title).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
 }
 
 #[derive(Deserialize)]
@@ -292,19 +190,14 @@ pub(super) struct SessionDeleteRequest {
 /// Mobile WebUI 的会话删除。复用桌面的 `session_delete` 命令，保证
 /// 索引清理与历史缓存失效走同一条路径。
 pub(super) async fn session_delete(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<SessionDeleteRequest>,
 ) -> Response {
-    match crate::session_api::session_delete(
-        &state.runtime,
-        request.project_id,
-        request.session_path,
+    host.json(
+        "session.delete",
+        json!({"projectId": request.project_id, "sessionPath": request.session_path}),
     )
     .await
-    {
-        Ok(result) => Json(result).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
 }
 
 #[derive(Deserialize)]
@@ -317,16 +210,8 @@ pub(super) struct SessionUiStateRequest {
 
 /// Mobile WebUI 的会话重命名、归档及其他 UI 状态更新。
 pub(super) async fn session_ui_state(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<SessionUiStateRequest>,
 ) -> Response {
-    match crate::session_api::session_update_ui_state(
-        &state.runtime,
-        request.session_path,
-        request.update,
-        request.project_id,
-    ) {
-        Ok(entry) => Json(entry).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("session.uiState.set", json!({"projectId": request.project_id, "sessionPath": request.session_path, "update": request.update})).await
 }

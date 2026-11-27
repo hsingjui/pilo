@@ -1,35 +1,12 @@
 use axum::{
     Json,
     extract::Query,
-    http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Value, json};
 
-use crate::{pi_workspace, storage};
-
-use super::{RemoteHttpState, api_error};
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct BootstrapResponse {
-    projects: Vec<pilo_domain::Project>,
-    chat_sessions: Vec<crate::chat_sessions::ChatSessionState>,
-    latest_sequence: u64,
-    local_pi_resources: std::collections::HashMap<String, bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    preferences: Option<crate::preferences::PreferencesSnapshot>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ui_state: Option<BootstrapUiState>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BootstrapUiState {
-    theme_settings: pilo_domain::ThemeSettings,
-    session_read_states: Vec<pilo_domain::SessionReadState>,
-}
+use super::{HostRequest, host_error};
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -38,81 +15,25 @@ pub(super) struct BootstrapQuery {
     include_ui_state: bool,
 }
 
-pub(super) async fn bootstrap(
-    state: RemoteHttpState,
-    Query(query): Query<BootstrapQuery>,
-) -> Response {
-    let latest_sequence = state.runtime.events.snapshot_sequence();
-    let runtime_for_blocking = state.runtime.clone();
-    let snapshot = tokio::task::spawn_blocking(move || {
-        let projects = crate::project::list(&runtime_for_blocking)?;
-        let db = storage::open_with_paths(&runtime_for_blocking.paths)?;
-        let local_pi_resources = local_pi_resources_snapshot(&db)?;
-        let preferences = query
-            .include_preferences
-            .then(|| storage::get_preferences(&db))
-            .transpose()?;
-        let ui_state = query
-            .include_ui_state
-            .then(|| {
-                Ok::<_, String>(BootstrapUiState {
-                    theme_settings: storage::get_theme_settings(&db)?,
-                    session_read_states: storage::list_session_read_states(&db)?,
-                })
-            })
-            .transpose()?;
-        Ok::<_, String>((projects, local_pi_resources, preferences, ui_state))
-    })
-    .await;
-    let (projects, local_pi_resources, preferences, ui_state) = match snapshot {
-        Ok(Ok(data)) => data,
-        Ok(Err(error)) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-        Err(error) => {
-            return api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("bootstrap task failed: {error}"),
-            );
+pub(super) async fn bootstrap(host: HostRequest, Query(query): Query<BootstrapQuery>) -> Response {
+    let params = json!({
+        "includePreferences": query.include_preferences,
+        "includeUiState": query.include_ui_state,
+        "includeLocalPiResources": true,
+    });
+    match host.call("host.bootstrap", params).await {
+        Ok(Value::Object(mut snapshot)) => {
+            let sequence = snapshot
+                .remove("eventSequence")
+                .expect("Host bootstrap has an event cut");
+            snapshot.insert("latestSequence".into(), sequence);
+            Json(snapshot).into_response()
         }
-    };
-    let runtime = state.runtime.core.clone();
-    Json(BootstrapResponse {
-        projects,
-        chat_sessions: runtime.chat_sessions.states().await,
-        latest_sequence,
-        local_pi_resources,
-        preferences,
-        ui_state,
-    })
-    .into_response()
-}
-
-fn local_pi_resources_snapshot(
-    db: &rusqlite::Connection,
-) -> Result<std::collections::HashMap<String, bool>, String> {
-    let mut statement = db
-        .prepare(
-            "SELECT id, kind_json, local_pi_resources FROM connections WHERE pi_runtime='local'",
-        )
-        .map_err(|error| error.to_string())?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)? != 0,
-            ))
-        })
-        .map_err(|error| error.to_string())?;
-    let mut result = std::collections::HashMap::new();
-    for row in rows {
-        let (id, kind_json, enabled) = row.map_err(|error| error.to_string())?;
-        if let Ok(pilo_domain::ConnectionKind::Ssh { .. }) =
-            serde_json::from_str::<pilo_domain::ConnectionKind>(&kind_json)
-        {
-            result.insert(id, enabled);
-        }
+        Ok(_) => host_error(crate::host_api::HostApiError::internal(
+            "invalid Host bootstrap response",
+        )),
+        Err(error) => host_error(error),
     }
-    Ok(result)
 }
 
 #[derive(Deserialize)]
@@ -123,94 +44,59 @@ pub(super) struct LocalPiResourcesUpdate {
 }
 
 pub(super) async fn local_pi_resources_set(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(update): Json<LocalPiResourcesUpdate>,
 ) -> Response {
-    match pi_workspace::set_local_pi_resources(
-        &state.runtime,
-        &update.connection_id,
-        update.enabled,
+    host.no_content(
+        "connection.localPiResources.set",
+        json!({"connectionId": update.connection_id, "enabled": update.enabled}),
     )
     .await
-    {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
 }
 
-pub(super) async fn preferences_get(state: RemoteHttpState) -> Response {
-    let paths = state.runtime.paths.clone();
-    match tokio::task::spawn_blocking(move || crate::preferences::load(&paths)).await {
-        Ok(Ok(settings)) => Json(settings).into_response(),
-        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-        Err(error) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            &format!("preferences load task failed: {error}"),
-        ),
-    }
+pub(super) async fn preferences_get(host: HostRequest) -> Response {
+    host.json("preferences.get", json!({})).await
 }
 
 pub(super) async fn preferences_patch(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(patch): Json<serde_json::Map<String, Value>>,
 ) -> Response {
-    let paths = state.runtime.paths.clone();
-    let events = state.runtime.events.clone();
-    match tokio::task::spawn_blocking(move || {
-        crate::preferences::save(&paths, &events, patch, false)
-    })
-    .await
-    {
-        Ok(Ok(settings)) => Json(settings).into_response(),
-        Ok(Err(error)) => api_error(StatusCode::BAD_REQUEST, &error),
-        Err(error) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            &format!("preferences save task failed: {error}"),
-        ),
-    }
+    host.json("preferences.patch", json!({"patch": patch}))
+        .await
 }
 
-pub(super) async fn theme_settings(state: RemoteHttpState) -> Response {
-    match crate::appearance::load(state.runtime.paths.clone()).await {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+pub(super) async fn theme_settings(host: HostRequest) -> Response {
+    host.json("theme.get", json!({})).await
 }
 
 pub(super) async fn theme_settings_set(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(update): Json<pilo_domain::ThemeSettingsUpdate>,
 ) -> Response {
-    match crate::appearance::save(
-        state.runtime.paths.clone(),
-        state.runtime.events.clone(),
-        update,
-    )
-    .await
-    {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("theme.set", json!({"update": update})).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host_api::{Principal, ScopeSet};
     use crate::{
         Runtime,
         bootstrap::tests::runtime_with_mid_snapshot_change,
         events::{EventBatch, EventQueueLimits},
         host_paths::HostPaths,
+        storage,
     };
-    use std::sync::Arc;
+    use axum::http::StatusCode;
 
-    fn state(runtime: Runtime) -> RemoteHttpState {
-        RemoteHttpState {
+    fn state(runtime: Runtime) -> HostRequest {
+        HostRequest {
             runtime,
-            pairing: Arc::new(super::super::PairingSession::default()),
-            rate_limiter: Arc::new(super::super::AuthRateLimiter::default()),
-            shutdown: tokio::sync::watch::channel(false).1,
-            auth_generation: tokio::sync::watch::channel(0).1,
+            principal: Principal::Device {
+                id: "test".into(),
+                scopes: ScopeSet::Chat,
+            },
         }
     }
 

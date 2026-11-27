@@ -7,11 +7,12 @@ use super::{
 use super::{
     pi_workspace, session_activity::SessionExternalActivity, session_watcher::SessionWatcherManager,
 };
+use crate::host_api::HostApiError;
 use pilo_domain::SessionReconcileResult;
 use pilo_domain::{SessionIndexEntry, SessionUiStateUpdate};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex as StdMutex};
-fn session_runtime_project(
+pub(crate) fn session_runtime_project(
     runtime: &Runtime,
     project_id: &str,
 ) -> Result<pilo_domain::Project, String> {
@@ -448,10 +449,36 @@ pub async fn session_history(
     message_limit: Option<usize>,
     include_message_index: Option<bool>,
 ) -> Result<Vec<u8>, String> {
-    let project = session_runtime_project(runtime, &project_id)?;
+    read_session_history(
+        runtime,
+        project_id,
+        session_path,
+        expected_file_size,
+        expected_file_mtime_ns,
+        start_message,
+        message_limit,
+        include_message_index,
+    )
+    .await
+    .map_err(|error| error.message)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn read_session_history(
+    runtime: &Runtime,
+    project_id: String,
+    session_path: String,
+    expected_file_size: Option<u64>,
+    expected_file_mtime_ns: Option<String>,
+    start_message: Option<usize>,
+    message_limit: Option<usize>,
+    include_message_index: Option<bool>,
+) -> Result<Vec<u8>, HostApiError> {
+    let project = session_runtime_project(runtime, &project_id).map_err(HostApiError::not_found)?;
     let expected_fingerprint =
-        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
-    let serialized = if let Some(message_limit) = message_limit {
+        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)
+            .map_err(HostApiError::invalid)?;
+    if let Some(message_limit) = message_limit {
         session_history::read_history_window_json(
             &runtime.servers,
             &runtime.session_history_cache,
@@ -462,7 +489,7 @@ pub async fn session_history(
             message_limit,
             include_message_index.unwrap_or(false),
         )
-        .await?
+        .await
     } else {
         session_history::read_history_json(
             &runtime.servers,
@@ -471,9 +498,9 @@ pub async fn session_history(
             &session_path,
             expected_fingerprint,
         )
-        .await?
-    };
-    Ok(serialized)
+        .await
+    }
+    .map_err(HostApiError::internal)
 }
 
 pub async fn session_history_image(
@@ -484,18 +511,40 @@ pub async fn session_history_image(
     expected_file_size: Option<u64>,
     expected_file_mtime_ns: Option<String>,
 ) -> Result<Vec<u8>, String> {
+    read_session_history_image(
+        runtime,
+        project_id,
+        session_path,
+        image_id,
+        expected_file_size,
+        expected_file_mtime_ns,
+    )
+    .await
+    .map_err(|error| error.message)
+}
+
+pub(crate) async fn read_session_history_image(
+    runtime: &Runtime,
+    project_id: String,
+    session_path: String,
+    image_id: String,
+    expected_file_size: Option<u64>,
+    expected_file_mtime_ns: Option<String>,
+) -> Result<Vec<u8>, HostApiError> {
     if image_id.starts_with(LIVE_IMAGE_PREFIX) {
         // For a live descriptor the second argument is the chat key, not a file path.
-        project::get(runtime, &project_id)?;
+        project::get(runtime, &project_id).map_err(HostApiError::not_found)?;
         return runtime
             .events
             .read_live_image(&project_id, &session_path, &image_id)
-            .await;
+            .await
+            .map_err(HostApiError::not_found);
     }
-    let project = session_runtime_project(runtime, &project_id)?;
+    let project = session_runtime_project(runtime, &project_id).map_err(HostApiError::not_found)?;
     let expected_fingerprint =
-        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
-    let bytes = session_history::read_history_image_bytes(
+        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)
+            .map_err(HostApiError::invalid)?;
+    session_history::read_history_image_bytes(
         &runtime.servers,
         &runtime.session_history_cache,
         &project,
@@ -503,8 +552,8 @@ pub async fn session_history_image(
         &image_id,
         expected_fingerprint,
     )
-    .await?;
-    Ok(bytes)
+    .await
+    .map_err(HostApiError::not_found)
 }
 
 fn expected_session_fingerprint(

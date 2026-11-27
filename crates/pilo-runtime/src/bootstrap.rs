@@ -1,10 +1,9 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use super::{
-    Runtime,
-    chat_sessions::ChatSessionState,
-    preferences::{self, PreferencesSnapshot},
-    project,
+    Runtime, chat_sessions::ChatSessionState, preferences::PreferencesSnapshot, project, storage,
 };
 
 /// State read after the event cut, not an atomic cross-service snapshot.
@@ -21,17 +20,102 @@ impl Runtime {
     /// Subscribe first so events arriving during snapshot reads remain queued.
     /// This cut is not a transcript watermark and must not suppress session deltas.
     pub async fn bootstrap_snapshot(&self) -> Result<BootstrapSnapshot, String> {
-        let event_sequence = self.events.snapshot_sequence();
-        let projects = project::list(self)?;
-        let preferences = preferences::load(&self.paths)?;
-        let chat_sessions = self.chat_sessions.states().await;
+        let snapshot = load(self, true, false, false).await?;
         Ok(BootstrapSnapshot {
-            event_sequence,
-            projects,
-            chat_sessions,
-            preferences,
+            event_sequence: snapshot.event_sequence,
+            projects: snapshot.projects,
+            chat_sessions: snapshot.chat_sessions,
+            preferences: snapshot.preferences.expect("preferences were requested"),
         })
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HostBootstrap {
+    event_sequence: u64,
+    projects: Vec<pilo_domain::Project>,
+    chat_sessions: Vec<ChatSessionState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferences: Option<PreferencesSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    local_pi_resources: Option<HashMap<String, bool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ui_state: Option<BootstrapUiState>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BootstrapUiState {
+    theme_settings: pilo_domain::ThemeSettings,
+    session_read_states: Vec<pilo_domain::SessionReadState>,
+}
+
+pub(crate) async fn load(
+    runtime: &Runtime,
+    include_preferences: bool,
+    include_ui_state: bool,
+    include_local_pi_resources: bool,
+) -> Result<HostBootstrap, String> {
+    let event_sequence = runtime.events.snapshot_sequence();
+    let rt = runtime.clone();
+    let (projects, preferences, ui_state, local_pi_resources) =
+        tokio::task::spawn_blocking(move || {
+            let projects = project::list(&rt)?;
+            let db = storage::open(&rt.paths)?;
+            let preferences = include_preferences
+                .then(|| storage::get_preferences(&db))
+                .transpose()?;
+            let ui_state = include_ui_state
+                .then(|| {
+                    Ok::<_, String>(BootstrapUiState {
+                        theme_settings: storage::get_theme_settings(&db)?,
+                        session_read_states: storage::list_session_read_states(&db)?,
+                    })
+                })
+                .transpose()?;
+            let local_pi_resources = include_local_pi_resources
+                .then(|| local_pi_resources_snapshot(&db))
+                .transpose()?;
+            Ok::<_, String>((projects, preferences, ui_state, local_pi_resources))
+        })
+        .await
+        .map_err(|error| format!("bootstrap task failed: {error}"))??;
+    Ok(HostBootstrap {
+        event_sequence,
+        projects,
+        chat_sessions: runtime.chat_sessions.states().await,
+        preferences,
+        local_pi_resources,
+        ui_state,
+    })
+}
+
+fn local_pi_resources_snapshot(db: &rusqlite::Connection) -> Result<HashMap<String, bool>, String> {
+    let mut statement = db
+        .prepare(
+            "SELECT id, kind_json, local_pi_resources FROM connections WHERE pi_runtime='local'",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? != 0,
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+    let mut result = HashMap::new();
+    for row in rows {
+        let (id, kind_json, enabled) = row.map_err(|error| error.to_string())?;
+        if let Ok(pilo_domain::ConnectionKind::Ssh { .. }) =
+            serde_json::from_str::<pilo_domain::ConnectionKind>(&kind_json)
+        {
+            result.insert(id, enabled);
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -42,7 +126,6 @@ pub(crate) mod tests {
             EventBatch, EventQueueLimits, RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope,
         },
         host_paths::HostPaths,
-        storage,
     };
     use std::{
         path::PathBuf,

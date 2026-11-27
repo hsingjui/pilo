@@ -22,11 +22,12 @@ use tower_http::timeout::TimeoutLayer;
 use crate::{
     Runtime,
     connection_diagnostics::request_failure_reason,
-    host_paths::HostPaths,
-    storage,
+    host_api::{
+        self, ErrorCode, GATEWAY_TIMEOUT, HostApiError, MAX_JSON_REQUEST_BYTES, Principal, ScopeSet,
+    },
     web_assets::{WebAsset, WebAssets},
 };
-use pilo_domain::{Project, RemoteDevice};
+use pilo_domain::RemoteDevice;
 
 use super::pairing::PairingSession;
 
@@ -35,10 +36,8 @@ mod host;
 mod middleware;
 mod model_settings;
 mod sessions;
-mod validation;
 mod ws;
 
-const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const AUTH_FAILURE_WINDOW: Duration = Duration::from_secs(60);
 const AUTH_FAILURE_LIMIT: usize = 5;
 
@@ -127,6 +126,78 @@ impl AuthRateLimiter {
 struct AuthSession {
     device: RemoteDevice,
     token: String,
+}
+
+/// Business handlers get the authenticated identity without handling the token.
+pub(super) struct HostRequest {
+    runtime: Runtime,
+    principal: Principal,
+}
+
+impl FromRequestParts<RemoteRouterState> for HostRequest {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &RemoteRouterState,
+    ) -> Result<Self, Self::Rejection> {
+        let session = parts
+            .extensions
+            .get::<AuthSession>()
+            .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "authentication required"))?;
+        Ok(Self {
+            runtime: state
+                .runtime
+                .upgrade()
+                .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, &error))?,
+            principal: Principal::Device {
+                id: session.device.id.clone(),
+                scopes: ScopeSet::Chat,
+            },
+        })
+    }
+}
+
+impl HostRequest {
+    async fn call(&self, method: &str, params: Value) -> Result<Value, HostApiError> {
+        host_api::call(&self.runtime, &self.principal, method, params).await
+    }
+
+    async fn json(&self, method: &str, params: Value) -> Response {
+        match self.call(method, params).await {
+            Ok(value) => Json(value).into_response(),
+            Err(error) => host_error(error),
+        }
+    }
+
+    async fn no_content(&self, method: &str, params: Value) -> Response {
+        match self.call(method, params).await {
+            Ok(_) => StatusCode::NO_CONTENT.into_response(),
+            Err(error) => host_error(error),
+        }
+    }
+
+    async fn binary(
+        &self,
+        method: &str,
+        params: Value,
+        bytes: Option<&[u8]>,
+    ) -> Result<host_api::BinaryOutput, HostApiError> {
+        host_api::call_binary(&self.runtime, &self.principal, method, params, bytes).await
+    }
+}
+
+fn host_error(error: HostApiError) -> Response {
+    let status = match error.code {
+        ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+        ErrorCode::Forbidden => StatusCode::FORBIDDEN,
+        ErrorCode::NotFound => StatusCode::NOT_FOUND,
+        ErrorCode::InvalidParams => StatusCode::BAD_REQUEST,
+        ErrorCode::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        ErrorCode::Timeout => StatusCode::REQUEST_TIMEOUT,
+        ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    api_error(status, &error.message)
 }
 
 pub(crate) fn router(
@@ -243,10 +314,10 @@ pub(crate) fn router(
         .merge(pairing)
         .merge(protected)
         .fallback(asset)
-        .layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES))
+        .layer(DefaultBodyLimit::max(MAX_JSON_REQUEST_BYTES))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(45),
+            GATEWAY_TIMEOUT,
         ))
         .layer(from_fn(middleware::log_request_failure))
         .with_state(state)
@@ -254,11 +325,6 @@ pub(crate) fn router(
 
 async fn health() -> Json<Value> {
     Json(json!({ "ok": true, "service": "pilo-remote" }))
-}
-
-fn get_project(paths: &HostPaths, project_id: &str) -> Result<Project, String> {
-    storage::get_project(&storage::open_with_paths(paths)?, project_id)?
-        .ok_or_else(|| format!("Project '{project_id}' was not found"))
 }
 
 fn allows_spa_fallback(path: &str) -> bool {
@@ -468,7 +534,9 @@ mod tests {
 
     #[tokio::test]
     async fn request_state_upgrades_only_while_runtime_is_alive() {
-        let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
+        let runtime = Runtime::new(crate::host_paths::HostPaths::for_test(
+            std::path::PathBuf::new(),
+        ));
         let state = RemoteRouterState {
             runtime: runtime.downgrade(),
             pairing: Arc::new(PairingSession::default()),

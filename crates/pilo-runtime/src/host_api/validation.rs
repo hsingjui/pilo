@@ -1,10 +1,17 @@
 use serde_json::Value;
 
+use super::{ByteBudget, HostApiError, Principal};
+
 const MAX_CHAT_IMAGES: usize = 8;
 const MAX_CHAT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_CHAT_IMAGE_TOTAL_BYTES: usize = 20 * 1024 * 1024;
 
-pub(super) fn validate_remote_rpc(command: &Value) -> Result<(), String> {
+pub(super) fn check_json_size(params: &Value, limit: usize) -> Result<(), HostApiError> {
+    serde_json::to_writer(ByteBudget(limit), params)
+        .map_err(|_| HostApiError::invalid(format!("Host API parameters exceed {limit} bytes")))
+}
+
+pub(super) fn validate_rpc(who: &Principal, command: &Value) -> Result<(), String> {
     let command_type = command
         .get("type")
         .and_then(Value::as_str)
@@ -32,18 +39,18 @@ pub(super) fn validate_remote_rpc(command: &Value) -> Result<(), String> {
         "clear_queue",
         "extension_ui_response",
     ];
-    if !ALLOWED.contains(&command_type) {
+    if matches!(who, Principal::Device { .. }) && !ALLOWED.contains(&command_type) {
         return Err(format!(
             "chat command '{command_type}' is not available over Remote WebUI"
         ));
     }
-    if matches!(command_type, "prompt" | "steer" | "follow_up") {
-        validate_remote_images(command)?;
+    if matches!(command_type, "prompt" | "steer" | "follow_up") || matches!(who, Principal::Local) {
+        validate_images(who, command)?;
     }
     Ok(())
 }
 
-fn validate_remote_images(command: &Value) -> Result<(), String> {
+fn validate_images(who: &Principal, command: &Value) -> Result<(), String> {
     let Some(images) = command.get("images") else {
         return Ok(());
     };
@@ -58,7 +65,11 @@ fn validate_remote_images(command: &Value) -> Result<(), String> {
     let mut total = 0_usize;
     for image in images {
         if image.get("type").and_then(Value::as_str) != Some("image") {
-            return Err("Remote WebUI accepts image attachments only".to_owned());
+            return Err(match who {
+                Principal::Device { .. } => "Remote WebUI accepts image attachments only",
+                Principal::Local => "Chat accepts image attachments only",
+            }
+            .to_owned());
         }
         let mime = image
             .get("mimeType")
@@ -91,11 +102,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn device() -> Principal {
+        Principal::Device {
+            id: "test".into(),
+            scopes: super::super::ScopeSet::Chat,
+        }
+    }
+
     #[test]
     fn remote_rpc_rejects_non_chat_commands() {
-        assert!(validate_remote_rpc(&json!({"type":"prompt","message":"hello"})).is_ok());
-        assert!(validate_remote_rpc(&json!({"type":"terminal_write","data":"whoami"})).is_err());
-        assert!(validate_remote_rpc(&json!({"type":"fs_read_file","path":"/tmp/a"})).is_err());
+        assert!(validate_rpc(&device(), &json!({"type":"prompt","message":"hello"})).is_ok());
+        assert!(validate_rpc(&device(), &json!({"type":"custom_command"})).is_err());
+        assert!(validate_rpc(&Principal::Local, &json!({"type":"custom_command"})).is_ok());
     }
 
     #[test]
@@ -109,6 +127,6 @@ mod tests {
                 "data": "aGVsbG8="
             }]
         });
-        assert!(validate_remote_rpc(&command).is_err());
+        assert!(validate_rpc(&device(), &command).is_err());
     }
 }

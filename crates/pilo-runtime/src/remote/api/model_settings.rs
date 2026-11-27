@@ -1,14 +1,13 @@
 use axum::{
     Json,
     extract::Query,
-    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
 
-use crate::storage;
+use serde_json::json;
 
-use super::{RemoteHttpState, api_error, get_project};
+use super::{HostRequest, host_error};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,49 +16,24 @@ pub(super) struct ModelsQuery {
 }
 
 /// Project model and command catalog shared by Desktop and WebUI.
-pub(super) async fn models(state: RemoteHttpState, Query(query): Query<ModelsQuery>) -> Response {
-    let paths = state.runtime.paths.clone();
-    let project_id = query.project_id;
-    match tokio::task::spawn_blocking(move || {
-        let db = storage::open_with_paths(&paths)?;
-        storage::get_project_model_cache(&db, &project_id)
-    })
-    .await
-    {
-        Ok(Ok(cache)) => Json(cache).into_response(),
-        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-        Err(error) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            &format!("failed to load project models: {error}"),
-        ),
-    }
+pub(super) async fn models(host: HostRequest, Query(query): Query<ModelsQuery>) -> Response {
+    host.json("models.get", json!({"projectId": query.project_id}))
+        .await
 }
 
 pub(super) async fn models_set(
-    state: RemoteHttpState,
-    Json(mut cache): Json<pilo_domain::ProjectModelCache>,
+    host: HostRequest,
+    Json(cache): Json<pilo_domain::ProjectModelCache>,
 ) -> Response {
-    if let Err(error) = get_project(&state.runtime.paths, &cache.project_id) {
-        return api_error(StatusCode::NOT_FOUND, &error);
-    }
-    // Mobile and desktop clocks can differ; the Host owns cache ordering.
-    cache.refreshed_at_ms = storage::now_ms();
-    match storage::open_with_paths(&state.runtime.paths)
-        .and_then(|db| storage::upsert_project_model_cache(&db, &cache))
-    {
-        Ok(()) => Json(cache).into_response(),
-        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    }
+    host.json("models.set", json!({"cache": cache})).await
 }
 
 pub(super) async fn model_scope_get(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<ModelsQuery>,
 ) -> Response {
-    match crate::project::load_model_scope(&state.runtime, &query.project_id) {
-        Ok(scope) => Json(scope).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("models.scope.get", json!({"projectId": query.project_id}))
+        .await
 }
 
 #[derive(Deserialize)]
@@ -70,18 +44,14 @@ pub(super) struct ModelScopeRequest {
 }
 
 pub(super) async fn model_scope_set(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<ModelScopeRequest>,
 ) -> Response {
-    match crate::project::save_model_scope(
-        &state.runtime,
-        &state.runtime.events,
-        &request.project_id,
-        request.models,
-    ) {
-        Ok(scope) => Json(scope).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "models.scope.set",
+        json!({"projectId": request.project_id, "models": request.models}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -91,23 +61,25 @@ pub(super) struct NextPromptSettingsQuery {
 }
 
 pub(super) async fn connection_models(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::connections::connection_models_get(&state.runtime, query.connection_id).await {
-        Ok(models) => Json(models).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "connection.models",
+        json!({"connectionId": query.connection_id}),
+    )
+    .await
 }
 
 pub(super) async fn next_prompt_settings_get(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::next_prompt::load(&state.runtime.paths, &query.connection_id) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "nextPrompt.settings.get",
+        json!({"connectionId": query.connection_id}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -119,28 +91,22 @@ pub(super) struct NextPromptSettingsInput {
 }
 
 pub(super) async fn next_prompt_settings_set(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(input): Json<NextPromptSettingsInput>,
 ) -> Response {
-    match crate::next_prompt::save(
-        &state.runtime.paths,
-        &state.runtime.events,
-        &input.connection_id,
-        input.enabled,
-        input.model,
-    ) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("nextPrompt.settings.set", json!({"connectionId": input.connection_id, "enabled": input.enabled, "model": input.model})).await
 }
 
 pub(super) async fn next_prompt_request(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(request): Json<pilo_domain::NextPromptRequest>,
 ) -> Response {
-    match crate::next_prompt::request(&state.runtime.paths, &state.runtime.core, request).await {
-        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    match host
+        .call("nextPrompt.request", json!({"request": request}))
+        .await
+    {
+        Ok(_) => Json(json!({ "ok": true })).into_response(),
+        Err(error) => host_error(error),
     }
 }
 
@@ -151,13 +117,14 @@ pub(super) struct PromptEnhancementSettingsQuery {
 }
 
 pub(super) async fn prompt_enhancement_settings_get(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<PromptEnhancementSettingsQuery>,
 ) -> Response {
-    match crate::prompt_enhancement::load(&state.runtime.paths, &query.connection_id) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "promptEnhancement.settings.get",
+        json!({"connectionId": query.connection_id}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -169,19 +136,10 @@ pub(super) struct PromptEnhancementSettingsInput {
 }
 
 pub(super) async fn prompt_enhancement_settings_set(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(input): Json<PromptEnhancementSettingsInput>,
 ) -> Response {
-    match crate::prompt_enhancement::save(
-        &state.runtime.paths,
-        &state.runtime.events,
-        &input.connection_id,
-        input.enabled,
-        input.model,
-    ) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("promptEnhancement.settings.set", json!({"connectionId": input.connection_id, "enabled": input.enabled, "model": input.model})).await
 }
 
 #[derive(Deserialize)]
@@ -195,48 +153,33 @@ pub(super) struct PromptEnhanceInput {
 /// The Host's budget covers process start, the RPC, generation and cleanup, so
 /// it returns a real reason instead of the Router's generic 408.
 pub(super) async fn prompt_enhance(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(input): Json<PromptEnhanceInput>,
 ) -> Response {
-    match crate::prompt_enhancement::enhance(
-        &state.runtime,
-        &state.runtime.paths,
-        &input.project_id,
-        &input.draft,
-        input.model,
+    host.json(
+        "promptEnhancement.enhance",
+        json!({"projectId": input.project_id, "draft": input.draft, "model": input.model}),
     )
     .await
-    {
-        Ok(text) => Json(text).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
 }
 
 pub(super) async fn cache_keep_alive_settings_list(
-    state: RemoteHttpState,
+    host: HostRequest,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::cache_keep_alive::load(&state.runtime.paths, &query.connection_id) {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json(
+        "cacheKeepAlive.settings.list",
+        json!({"connectionId": query.connection_id}),
+    )
+    .await
 }
 
 pub(super) async fn cache_keep_alive_settings_set(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(settings): Json<pilo_domain::CacheKeepAliveSettings>,
 ) -> Response {
-    match crate::cache_keep_alive::save(
-        &state.runtime.paths,
-        &state.runtime.core,
-        &state.runtime.events,
-        settings,
-    )
-    .await
-    {
-        Ok(settings) => Json(settings).into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.json("cacheKeepAlive.settings.set", json!({"settings": settings}))
+        .await
 }
 
 #[derive(Deserialize)]
@@ -246,11 +189,12 @@ pub(super) struct PauseCacheKeepAliveRequest {
 }
 
 pub(super) async fn cache_keep_alive_pause(
-    state: RemoteHttpState,
+    host: HostRequest,
     Json(body): Json<PauseCacheKeepAliveRequest>,
 ) -> Response {
-    match crate::cache_keep_alive::cache_keep_alive_pause(&state.runtime, body.session_key).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
-    }
+    host.no_content(
+        "cacheKeepAlive.pause",
+        json!({"sessionKey": body.session_key}),
+    )
+    .await
 }
