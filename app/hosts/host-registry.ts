@@ -18,7 +18,7 @@ import {
 	parseRemoteHostRecords,
 	REMOTE_HOST_OFFLINE_AFTER_MS,
 	REMOTE_HOSTS_STORAGE_KEY,
-	remoteHostAddressOrder,
+	remoteHostConnectOrder,
 	resolveRemoteHostStatus,
 	serializeRemoteHostRecords,
 	upsertRemoteHostRecord,
@@ -58,14 +58,26 @@ export type HostEntry = {
 
 type RemoteConnection = {
 	session: HostSession;
+	addressId: string;
 	access: Accessor<HostAccess>;
 	state: Accessor<HostTransportConnectionState>;
 	stop: () => void;
 };
 
+type TokenCheck = "ok" | "unauthorized" | "rateLimited" | "unreachable";
+
+type AddressSearch =
+	| { kind: "found"; address: RemoteAccessAddress }
+	| { kind: "unauthorized" }
+	| { kind: "incompatible" }
+	| { kind: "unreachable"; rateLimited: boolean }
+	/** A newer connect, disconnect or remove superseded the search. */
+	| { kind: "stale" };
+
 const CURSOR_KEY = "pilo.eventCursor";
 const PROBE_TIMEOUT_MS = 3_000;
 const RETRY_PROBE_MS = 10_000;
+const MAX_RETRY_MS = 5 * 60_000;
 const HELLO_TIMEOUT_MS = 10_000;
 /** How often an idle event socket is pinged so a silently dropped link is noticed. */
 const HEARTBEAT_MS = 15_000;
@@ -77,6 +89,8 @@ export type HostRegistryOptions = {
 	storage: AsyncStorage;
 	fetch?: typeof fetch;
 	createWebSocket?: (url: string, protocols?: string[]) => WebSocketLike;
+	/** The event socket's reconnect delays, for tests. */
+	reconnectDelaysMs?: readonly number[];
 };
 
 function defaultWebSocket(url: string, protocols?: string[]): WebSocketLike {
@@ -122,11 +136,27 @@ class StorageCursorStore implements CursorStore {
 function scopedAccess(
 	hello: HostHelloMessage | null,
 	record: RemoteHostRecord,
-) {
+): HostAccess {
 	return {
 		scopes: hello?.scopes ?? record.scopes,
 		methods: hello?.capabilities?.methods ?? null,
 	};
+}
+
+/** A reconnect's hello with the same scopes and methods keeps the shell mounted. */
+function sameAccess(previous: HostAccess, next: HostAccess) {
+	return (
+		previous.scopes === next.scopes &&
+		(previous.methods === null) === (next.methods === null) &&
+		(previous.methods ?? []).join("\n") === (next.methods ?? []).join("\n")
+	);
+}
+
+function retryDelay(attempts: number) {
+	return Math.min(
+		RETRY_PROBE_MS * 2 ** Math.max(0, attempts - 1),
+		MAX_RETRY_MS,
+	);
 }
 
 /**
@@ -150,6 +180,10 @@ export class HostRegistry {
 		string,
 		ReturnType<typeof setTimeout>
 	>();
+	private readonly retryAttempts = new Map<string, number>();
+	/** Bumped by every connect, disconnect and remove; older async results are dropped. */
+	private readonly generations = new Map<string, number>();
+	private readonly rateLimited = signal<ReadonlySet<string>>(new Set());
 	private readonly cursors: StorageCursorStore;
 	private readonly fetchFn: typeof fetch;
 	private readonly createWebSocket: (
@@ -173,6 +207,7 @@ export class HostRegistry {
 		const connections = this.connections();
 		const pending = this.pendingStatus();
 		const disconnected = this.disconnected();
+		const rateLimited = this.rateLimited();
 		return [
 			{
 				hostId: LOCAL_HOST_ID,
@@ -189,6 +224,8 @@ export class HostRegistry {
 						connection.state(),
 						this.disconnectedFor(record.hostId),
 					);
+					if (status !== "connected" && rateLimited.has(record.hostId))
+						status = "rateLimited";
 				} else if (disconnected.has(record.hostId)) {
 					status = "disconnected";
 				} else {
@@ -271,59 +308,103 @@ export class HostRegistry {
 		this.pendingStatus.set(next);
 	}
 
-	/** The first address that answers with this device's token, preferred first. */
-	private async probe(
+	private bump(hostId: string): number {
+		const generation = (this.generations.get(hostId) ?? 0) + 1;
+		this.generations.set(hostId, generation);
+		return generation;
+	}
+
+	private isCurrent(hostId: string, generation: number): boolean {
+		return !this.closed && this.generations.get(hostId) === generation;
+	}
+
+	private setRateLimited(hostId: string, limited: boolean) {
+		if (this.rateLimited().has(hostId) === limited) return;
+		const next = new Set(this.rateLimited());
+		if (limited) next.add(hostId);
+		else next.delete(hostId);
+		this.rateLimited.set(next);
+	}
+
+	/** Whether the address takes this device's token: 401 means revoked, 429 only "not now". */
+	private async checkToken(
+		address: RemoteAccessAddress,
+		token: string,
+	): Promise<TokenCheck> {
+		try {
+			const response = await this.fetchFn(
+				`${address.baseUrl}/api/v2/call/preferences.get`,
+				{
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${token}`,
+						"content-type": "application/json",
+					},
+					body: "{}",
+					signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+				},
+			);
+			if (response.ok) return "ok";
+			if (response.status === 401) return "unauthorized";
+			if (response.status === 429) return "rateLimited";
+			return "unreachable";
+		} catch {
+			return "unreachable";
+		}
+	}
+
+	/**
+	 * The first address, preferred first, where the paired Host itself answers:
+	 * the token is taken and the hello names the expected Host.
+	 */
+	private async findAddress(
 		record: RemoteHostRecord,
 		token: string,
-	): Promise<RemoteAccessAddress | "unauthorized" | null> {
-		for (const address of remoteHostAddressOrder(record)) {
+		generation: number,
+	): Promise<AddressSearch> {
+		const { hostId } = record;
+		let rateLimited = false;
+		for (const address of remoteHostConnectOrder(record)) {
+			// oxlint-disable-next-line no-await-in-loop -- Addresses are tried in order.
+			const check = await this.checkToken(address, token);
+			if (!this.isCurrent(hostId, generation)) return { kind: "stale" };
+			if (check === "unauthorized") return { kind: "unauthorized" };
+			if (check === "rateLimited") rateLimited = true;
+			if (check !== "ok") continue;
+			let hello: HostHelloMessage | null = null;
 			try {
 				// oxlint-disable-next-line no-await-in-loop -- Addresses are tried in order.
-				const response = await this.fetchFn(
-					`${address.baseUrl}/api/v2/call/preferences.get`,
-					{
-						method: "POST",
-						headers: {
-							authorization: `Bearer ${token}`,
-							"content-type": "application/json",
-						},
-						body: "{}",
-						signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-					},
-				);
-				if (response.ok) return address;
-				// The Host only rate-limits rejected tokens, so 429 means the same.
-				if (response.status === 401 || response.status === 429) {
-					return "unauthorized";
-				}
-			} catch {
-				// Unreachable: try the next address.
+				hello = await this.greet(address, token);
+			} catch (error) {
+				if (!this.isCurrent(hostId, generation)) return { kind: "stale" };
+				const code = error instanceof Error ? error.message : "";
+				if (code === "REMOTE_HOST_UNAUTHORIZED")
+					return { kind: "unauthorized" };
+				if (code === "REMOTE_HOST_INCOMPATIBLE")
+					return { kind: "incompatible" };
+				continue;
 			}
+			if (!this.isCurrent(hostId, generation)) return { kind: "stale" };
+			if (hello.hostId === hostId) return { kind: "found", address };
 		}
-		return null;
+		return { kind: "unreachable", rateLimited };
 	}
 
-	private async checkRevoked(hostId: string) {
-		const record = this.record(hostId);
-		const token = await this.options.credentials
-			.remoteHostToken(hostId)
-			.catch(() => null);
-		if (!record || !token || !this.connections().has(hostId)) return;
-		if ((await this.probe(record, token)) !== "unauthorized") return;
-		if (!this.connections().has(hostId)) return;
-		this.close(hostId);
-		this.setPending(hostId, "unauthorized");
-	}
-
-	private scheduleRetry(hostId: string) {
+	private scheduleRetry(hostId: string, backoff: boolean) {
 		this.clearRetry(hostId);
 		if (this.closed) return;
+		const attempts = backoff ? (this.retryAttempts.get(hostId) ?? 0) + 1 : 0;
+		if (backoff) this.retryAttempts.set(hostId, attempts);
+		else this.retryAttempts.delete(hostId);
 		this.retryTimers.set(
 			hostId,
-			setTimeout(() => {
-				this.retryTimers.delete(hostId);
-				if (!this.disconnected().has(hostId)) void this.connect(hostId);
-			}, RETRY_PROBE_MS),
+			setTimeout(
+				() => {
+					this.retryTimers.delete(hostId);
+					if (!this.disconnected().has(hostId)) void this.connect(hostId);
+				},
+				backoff ? retryDelay(attempts) : RETRY_PROBE_MS,
+			),
 		);
 	}
 
@@ -333,10 +414,11 @@ export class HostRegistry {
 		this.retryTimers.delete(hostId);
 	}
 
-	/** Connects to a paired Host: tries its addresses, then opens its session. */
+	/** Connects to a paired Host: finds an address that answers, then opens its session. */
 	async connect(hostId: string): Promise<void> {
 		const record = this.record(hostId);
 		if (!record || this.connections().has(hostId) || this.closed) return;
+		const generation = this.bump(hostId);
 		this.clearRetry(hostId);
 		if (this.disconnected().has(hostId)) {
 			const next = new Set(this.disconnected());
@@ -348,31 +430,78 @@ export class HostRegistry {
 		const token = await this.options.credentials
 			.remoteHostToken(hostId)
 			.catch(() => null);
+		if (!this.isCurrent(hostId, generation)) return;
 		if (!token) {
 			this.setPending(hostId, "unauthorized");
 			return;
 		}
-		const address = await this.probe(record, token);
-		if (this.connections().has(hostId) || this.disconnected().has(hostId))
+		const found = await this.findAddress(record, token, generation);
+		if (
+			found.kind === "stale" ||
+			!this.isCurrent(hostId, generation) ||
+			!this.record(hostId) ||
+			this.connections().has(hostId)
+		)
 			return;
-		if (!this.record(hostId)) return;
-		if (address === "unauthorized") {
-			this.setPending(hostId, "unauthorized");
+		if (found.kind === "unauthorized" || found.kind === "incompatible") {
+			this.setPending(hostId, found.kind);
 			return;
 		}
-		if (!address) {
-			this.setPending(hostId, "offline");
-			this.scheduleRetry(hostId);
+		if (found.kind === "unreachable") {
+			this.setPending(hostId, found.rateLimited ? "rateLimited" : "offline");
+			this.scheduleRetry(hostId, found.rateLimited);
 			return;
 		}
 		await this.cursors.preload(hostId);
-		this.open(record, address, token);
+		if (!this.isCurrent(hostId, generation) || this.connections().has(hostId))
+			return;
+		const current = this.record(hostId);
+		if (!current) return;
+		this.retryAttempts.delete(hostId);
+		this.setRateLimited(hostId, false);
+		this.open(current, found.address, token, generation);
+	}
+
+	/**
+	 * While the event socket is down: a revoked token closes the session, and
+	 * another address that answers for the Host takes over from this one.
+	 */
+	private async recheck(
+		hostId: string,
+		connection: RemoteConnection,
+		generation: number,
+	) {
+		const live = () =>
+			this.isCurrent(hostId, generation) &&
+			this.connections().get(hostId) === connection &&
+			connection.state() !== "connected";
+		const record = this.record(hostId);
+		const token = await this.options.credentials
+			.remoteHostToken(hostId)
+			.catch(() => null);
+		if (!record || !token || !live()) return;
+		const found = await this.findAddress(record, token, generation);
+		if (found.kind === "stale" || !live()) return;
+		if (found.kind === "unauthorized") {
+			this.close(hostId);
+			this.setPending(hostId, "unauthorized");
+			return;
+		}
+		this.setRateLimited(
+			hostId,
+			found.kind === "unreachable" && found.rateLimited,
+		);
+		if (found.kind === "found" && found.address.id !== connection.addressId) {
+			this.close(hostId);
+			void this.connect(hostId);
+		}
 	}
 
 	private open(
 		record: RemoteHostRecord,
 		address: RemoteAccessAddress,
 		token: string,
+		generation: number,
 	) {
 		const { hostId } = record;
 		const heartbeat = heartbeatSignals(HEARTBEAT_MS);
@@ -385,6 +514,9 @@ export class HostRegistry {
 			cursors: this.cursors,
 			fetch: this.fetchFn as never,
 			createWebSocket: this.createWebSocket,
+			...(this.options.reconnectDelaysMs
+				? { reconnectDelaysMs: this.options.reconnectDelaysMs }
+				: {}),
 		});
 		const transport = new SessionScopedTransport(http);
 		const session = new HostSession({
@@ -395,13 +527,56 @@ export class HostRegistry {
 		});
 		const hello = signal<HostHelloMessage | null>(null);
 		const state = signal<HostTransportConnectionState>("connecting");
-		const access = computed(() =>
-			scopedAccess(hello(), this.record(hostId) ?? record),
+		const access = computed(
+			() => scopedAccess(hello(), this.record(hostId) ?? record),
+			{ equals: sameAccess },
 		);
-		const stream = transport.events();
 		let offlineTimer: ReturnType<typeof setTimeout> | undefined;
-		const stops = [
+		let recheckTimer: ReturnType<typeof setTimeout> | undefined;
+		let recheckAttempts = 0;
+		let stops: Array<(() => void) | undefined> = [];
+		const connection: RemoteConnection = {
+			session,
+			addressId: address.id,
+			access,
+			state,
+			stop: () => {
+				heartbeat.stop();
+				if (offlineTimer !== undefined) clearTimeout(offlineTimer);
+				if (recheckTimer !== undefined) clearTimeout(recheckTimer);
+				for (const unsubscribe of stops) unsubscribe?.();
+				this.disconnectedSince.delete(hostId);
+			},
+		};
+		const owns = () => this.connections().get(hostId) === connection;
+		const scheduleRecheck = (delay: number) => {
+			if (recheckTimer !== undefined) return;
+			recheckTimer = setTimeout(() => {
+				recheckTimer = undefined;
+				void this.recheck(hostId, connection, generation).finally(() => {
+					if (!owns() || state() === "connected") return;
+					recheckAttempts += 1;
+					scheduleRecheck(
+						this.rateLimited().has(hostId)
+							? retryDelay(recheckAttempts)
+							: RETRY_PROBE_MS,
+					);
+				});
+			}, delay);
+		};
+		const stream = transport.events();
+		stops = [
 			stream.onHello?.((message) => {
+				if (!owns()) return;
+				if (message.hostId !== hostId) {
+					// Another Host answers at this address now: look for this one again.
+					queueMicrotask(() => {
+						if (!owns()) return;
+						this.close(hostId);
+						void this.connect(hostId);
+					});
+					return;
+				}
 				hello.set(message);
 				const current = this.record(hostId);
 				if (!current) return;
@@ -418,35 +593,36 @@ export class HostRegistry {
 				}
 			}),
 			stream.onConnectionState?.((next) => {
+				if (!owns()) return;
 				state.set(next);
 				if (next === "connected") {
 					this.disconnectedSince.delete(hostId);
 					if (offlineTimer !== undefined) clearTimeout(offlineTimer);
+					if (recheckTimer !== undefined) clearTimeout(recheckTimer);
+					recheckTimer = undefined;
+					recheckAttempts = 0;
+					this.setRateLimited(hostId, false);
 				} else if (!this.disconnectedSince.has(hostId)) {
 					this.disconnectedSince.set(hostId, Date.now());
 					offlineTimer = setTimeout(
 						() => this.tick.set(this.tick() + 1),
 						REMOTE_HOST_OFFLINE_AFTER_MS,
 					);
-					// A rejected event socket looks like a network drop; ask over HTTP.
-					if (next !== "unauthorized") void this.checkRevoked(hostId);
 				}
 				if (next === "unauthorized") {
 					queueMicrotask(() => {
+						if (!owns()) return;
 						this.close(hostId);
 						this.setPending(hostId, "unauthorized");
 					});
+				} else if (next !== "connected" && next !== "incompatible") {
+					// A rejected event socket looks like a network drop; ask over HTTP.
+					scheduleRecheck(0);
 				}
 			}),
 		];
-		const stop = () => {
-			heartbeat.stop();
-			if (offlineTimer !== undefined) clearTimeout(offlineTimer);
-			for (const unsubscribe of stops) unsubscribe?.();
-			this.disconnectedSince.delete(hostId);
-		};
 		const next = new Map(this.connections());
-		next.set(hostId, { session, access, state, stop });
+		next.set(hostId, connection);
 		this.connections.set(next);
 		this.setPending(hostId, null);
 		void session.start().catch((error: unknown) => {
@@ -463,11 +639,13 @@ export class HostRegistry {
 		this.connections.set(next);
 		connection.stop();
 		connection.session.dispose();
+		this.setRateLimited(hostId, false);
 		if (this.active() === hostId) this.active.set(LOCAL_HOST_ID);
 	}
 
 	/** Disconnects this window from the Host, keeping its token for later. */
 	disconnect(hostId: string) {
+		this.bump(hostId);
 		this.clearRetry(hostId);
 		this.close(hostId);
 		this.setPending(hostId, null);
@@ -479,11 +657,14 @@ export class HostRegistry {
 
 	/**
 	 * Unpairs the Host: asks it to revoke this device, then forgets its token
-	 * and record. Resolves `false` when the Host could not be told (offline).
+	 * and record. Resolves `false` when the Host could not be told (offline or
+	 * rate-limiting this device).
 	 */
 	async remove(hostId: string): Promise<boolean> {
 		const record = this.record(hostId);
 		if (!record) return true;
+		this.bump(hostId);
+		this.clearRetry(hostId);
 		let revoked = false;
 		const connection = this.connections().get(hostId);
 		if (connection) {
@@ -496,7 +677,7 @@ export class HostRegistry {
 			.remoteHostToken(hostId)
 			.catch(() => null);
 		if (!revoked && token) {
-			for (const address of remoteHostAddressOrder(record)) {
+			for (const address of remoteHostConnectOrder(record)) {
 				try {
 					// oxlint-disable-next-line no-await-in-loop -- Addresses are tried in order.
 					const response = await this.fetchFn(
@@ -511,16 +692,17 @@ export class HostRegistry {
 							signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
 						},
 					);
-					// A device revoked already counts: the Host no longer lists it.
-					revoked =
-						response.ok || response.status === 401 || response.status === 429;
-					if (revoked) break;
+					// A rejected token was revoked already; 429 says nothing about it.
+					revoked = response.ok || response.status === 401;
+					if (revoked || response.status === 429) break;
 				} catch {
 					// Try the next address.
 				}
 			}
 		}
+		this.bump(hostId);
 		this.clearRetry(hostId);
+		this.retryAttempts.delete(hostId);
 		this.close(hostId);
 		this.setPending(hostId, null);
 		await this.options.credentials.deleteRemoteHostToken(hostId);
@@ -578,6 +760,8 @@ export class HostRegistry {
 		token: string;
 		deviceId: string;
 		scopes: RemoteScopes;
+		/** Plain-http addresses outside private networks the user agreed to. */
+		plaintextAddressIds?: string[];
 	}): Promise<RemoteHostRecord> {
 		const preferred =
 			input.addresses.find(({ id }) => id === input.preferredAddressId) ??
@@ -595,7 +779,9 @@ export class HostRegistry {
 			deviceId: hello.deviceId ?? input.deviceId,
 			scopes: hello.scopes ?? input.scopes,
 			platform: hello.capabilities?.platform,
+			plaintextAddressIds: input.plaintextAddressIds ?? [],
 		};
+		this.bump(record.hostId);
 		this.close(record.hostId);
 		await this.options.credentials.saveRemoteHostToken(
 			record.hostId,

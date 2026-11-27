@@ -9,6 +9,7 @@ import {
 } from "@shared/remote-hosts";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { Dialog } from "../ui/dialog";
 import { DialogDescription } from "../ui/dialog-description";
 import { DialogFooter } from "../ui/dialog-footer";
@@ -36,6 +37,10 @@ export function AddRemoteHostDialog(props: {
 	const addressId = signal<string | null>(null);
 	const busy = signal(false);
 	const error = signal<string | null>(null);
+	/** A plain-http entry outside private networks waits for consent before the secret is sent. */
+	const entryWarning = signal<string | null>(null);
+	const confirmedEntry = signal<string | null>(null);
+	const allowFallbacks = signal(false);
 	let version = 0;
 
 	const reset = () => {
@@ -46,9 +51,19 @@ export function AddRemoteHostDialog(props: {
 		addressId.set(null);
 		busy.set(false);
 		error.set(null);
+		entryWarning.set(null);
+		confirmedEntry.set(null);
+		allowFallbacks.set(false);
 	};
 	const selected = () =>
 		info()?.addresses.find((address) => address.id === addressId()) ?? null;
+	const plaintextFallbacks = () => {
+		const target = selected();
+		return (info()?.addresses ?? []).filter(
+			(address) =>
+				address.id !== target?.id && isPlaintextRemoteAddress(address.baseUrl),
+		);
+	};
 
 	const read = async () => {
 		let next: DesktopPairingLink;
@@ -56,6 +71,13 @@ export function AddRemoteHostDialog(props: {
 			next = parseDesktopPairingLink(link());
 		} catch {
 			error.set(t("hosts.invalidLink"));
+			return;
+		}
+		if (
+			isPlaintextRemoteAddress(next.entryOrigin) &&
+			confirmedEntry() !== next.entryOrigin
+		) {
+			entryWarning.set(next.entryOrigin);
 			return;
 		}
 		const current = ++version;
@@ -99,6 +121,10 @@ export function AddRemoteHostDialog(props: {
 				token: paired.token,
 				deviceId: paired.deviceId,
 				scopes: paired.scopes,
+				plaintextAddressIds: [
+					...(isPlaintextRemoteAddress(target.baseUrl) ? [target.id] : []),
+					...(allowFallbacks() ? plaintextFallbacks().map(({ id }) => id) : []),
+				],
 			});
 			if (current !== version) return;
 			props.onPaired(record.name);
@@ -142,10 +168,22 @@ export function AddRemoteHostDialog(props: {
 						parsed.set(null);
 						info.set(null);
 						error.set(null);
+						entryWarning.set(null);
+						confirmedEntry.set(null);
 					}}
 					onSubmit={() => void read()}
 				/>
 			</View>
+			{() =>
+				entryWarning() && !info() ? (
+					<Text
+						testID="add-remote-host-plaintext-entry"
+						class="font-sans text-xs text-status-danger"
+					>
+						{() => t("hosts.plaintextEntryWarning")}
+					</Text>
+				) : null
+			}
 			{() => {
 				const offered = info();
 				if (!offered) return null;
@@ -194,6 +232,38 @@ export function AddRemoteHostDialog(props: {
 								{() => t("hosts.plaintextWarning")}
 							</Text>
 						) : null}
+						{() => {
+							const fallbacks = plaintextFallbacks();
+							if (!fallbacks.length) return null;
+							return (
+								<View class="gap-1.5">
+									<Text
+										testID="add-remote-host-plaintext-fallbacks"
+										class="font-sans text-xs text-status-warning"
+									>
+										{() =>
+											t("hosts.plaintextFallbacks", {
+												addresses: fallbacks
+													.map(({ baseUrl }) => baseUrl)
+													.join(", "),
+											})
+										}
+									</Text>
+									<View class="flex-row items-center gap-2">
+										<Checkbox
+											testID="add-remote-host-allow-fallbacks"
+											accessibilityLabel={t("hosts.allowPlaintextFallbacks")}
+											checked={allowFallbacks()}
+											disabled={busy()}
+											onChange={(event) => allowFallbacks.set(event.checked)}
+										/>
+										<Text class="flex-1 font-sans text-xs">
+											{() => t("hosts.allowPlaintextFallbacks")}
+										</Text>
+									</View>
+								</View>
+							);
+						}}
 					</View>
 				);
 			}}
@@ -232,10 +302,20 @@ export function AddRemoteHostDialog(props: {
 						<Button
 							testID="add-remote-host-read"
 							disabled={busy() || !link().trim()}
-							onPress={() => void read()}
+							onPress={() => {
+								const pending = entryWarning();
+								if (pending) confirmedEntry.set(pending);
+								void read();
+							}}
 						>
 							<Text class="font-sans">
-								{() => (busy() ? t("hosts.reading") : t("hosts.readLink"))}
+								{() =>
+									busy()
+										? t("hosts.reading")
+										: entryWarning()
+											? t("hosts.continuePlaintext")
+											: t("hosts.readLink")
+								}
 							</Text>
 						</Button>
 					)
