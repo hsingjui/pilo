@@ -57,6 +57,7 @@ type Row = {
 	snippet?: string;
 	role?: "user" | "assistant";
 	running?: boolean;
+	archived?: boolean;
 };
 
 /** How long after the last keystroke the message search runs, as in the WebUI. */
@@ -136,7 +137,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 		return state.projects
 			.flatMap((project) =>
 				// New chats Pi has not saved yet are not sessions to open by file.
-				sidebarSessions(state, project.id, t("app.newChat")).filter(
+				sidebarSessions(state, project.id, t("app.newChat"), "all").filter(
 					(session) => session.sessionPath !== "",
 				),
 			)
@@ -144,7 +145,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 			.map((session) => ({
 				session,
 				haystack:
-					`${session.title}\n${session.preview ?? ""}\n${session.sessionPath}\n${byId.get(session.projectId)?.name ?? ""}`.toLowerCase(),
+					`${session.title}\n${session.preview ?? ""}\n${session.sessionPath}\n${byId.get(session.projectId)?.name ?? ""}\n${session.archivedAt != null ? t("sidebar.archived") : ""}`.toLowerCase(),
 			}));
 	});
 	const normalized = () => query().trim().toLowerCase();
@@ -297,11 +298,17 @@ export function CommandPalette(props: CommandPaletteProps) {
 					metaAlign: "end",
 					detail: session.preview || undefined,
 					running: session.active,
+					archived: session.archivedAt != null,
 				},
 			);
 		}
 		content().forEach((match, index) => {
 			const projectName = projectById().get(match.projectId)?.name;
+			const entry = store
+				.state()
+				.sessionIndexes[match.projectId]?.sessions.find(
+					(session) => session.sessionPath === match.sessionPath,
+				);
 			add(
 				{
 					id: `content:${index}`,
@@ -314,6 +321,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 					metaAlign: "end",
 					snippet: match.snippet,
 					role: match.role,
+					archived: entry?.archivedAt != null,
 				},
 			);
 		});
@@ -486,6 +494,13 @@ export function CommandPalette(props: CommandPaletteProps) {
 											</Text>
 											{row.running ? (
 												<View class="size-1.5 shrink-0 rounded-full bg-status-success" />
+											) : null}
+											{row.archived ? (
+												<View class="shrink-0 rounded-sm bg-muted/80 px-1.5 py-0.5">
+													<Text class="font-sans text-[10px] leading-3 font-medium text-muted-foreground">
+														{() => t("sidebar.archived")}
+													</Text>
+												</View>
 											) : null}
 											{row.role ? (
 												<View class="shrink-0 rounded-sm bg-muted/80 px-1.5 py-0.5">

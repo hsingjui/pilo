@@ -76,6 +76,7 @@ export function sidebarSessions(
 	state: AppState,
 	projectId: string,
 	untitled: string,
+	scope: "active" | "archived" | "all" = "active",
 ): SidebarSession[] {
 	// Since when each saved session runs, by `runtimeSessionPathKey` of its file.
 	const running = new Map<string, number>();
@@ -98,7 +99,13 @@ export function sidebarSessions(
 		if (!running.has(path)) running.set(path, since);
 	}
 	const entries = state.sessionIndexes[projectId]?.sessions ?? [];
-	const saved = entries.map((entry) =>
+	const visible =
+		scope === "all"
+			? entries
+			: entries.filter(
+					(entry) => (entry.archivedAt != null) === (scope === "archived"),
+				);
+	const saved = visible.map((entry) =>
 		savedSession(
 			entry,
 			projectId,
@@ -107,6 +114,7 @@ export function sidebarSessions(
 			isSessionUnread(state, projectId, entry.sessionPath),
 		),
 	);
+	if (scope === "archived") return saved;
 	const unsaved = unsavedSessions(state, projectId, untitled);
 	return unsaved.length > 0 ? [...unsaved, ...saved] : saved;
 }
@@ -195,6 +203,7 @@ function savedSession(
 		sessionPath: entry.sessionPath,
 		projectId,
 		latestMessageAt: latestMessageAt(entry),
+		archivedAt: entry.archivedAt,
 		active,
 		runningSince:
 			runningSince !== undefined ? new Date(runningSince) : undefined,

@@ -140,6 +140,8 @@ async function run() {
 	} as ThemeSettings;
 	/** `pilo`'s index entries, for `updateSessionUiState` to answer with. */
 	const piloIndex = await sessions.pilo();
+	const seedArchive =
+		(await Storage.getItem("pilo.test.seedArchive")) === "true";
 	/** The calls the app made on the client, for the test to read via storage. */
 	const clientCalls: Record<string, unknown>[] = [];
 	const record = (call: Record<string, unknown>) => {
@@ -155,19 +157,28 @@ async function run() {
 			project("slow", local),
 		],
 		themeSettings,
-		sessions: (projectId) => {
+		sessions: async (projectId) => {
 			record({ call: "listSessions", projectId });
-			return sessions[projectId]?.() ?? Promise.resolve([]);
+			const entries = (await sessions[projectId]?.()) ?? [];
+			return seedArchive && (projectId === "api" || projectId === "pilo")
+				? entries.map((entry) =>
+						entry.piSessionId === "s8" || entry.piSessionId === "s4"
+							? { ...entry, archivedAt: entry.piSessionId === "s8" ? 200 : 100 }
+							: entry,
+					)
+				: entries;
 		},
 		onUpdateSessionUiState(sessionPath, update, projectId) {
 			record({ call: "updateSessionUiState", sessionPath, update, projectId });
 			const entry = piloIndex.find(
 				(known) => known.sessionPath === sessionPath,
 			);
-			runtime.emit({
-				type: "sessions_indexed",
-				projectId: projectId ?? "pilo",
-			});
+			if (update.archived === undefined) {
+				runtime.emit({
+					type: "sessions_indexed",
+					projectId: projectId ?? "pilo",
+				});
+			}
 			return { ...entry, ...update } as SessionIndexEntry;
 		},
 		onDeleteSession(projectId, sessionPath) {

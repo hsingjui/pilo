@@ -62,6 +62,7 @@ export function ProjectSection(props: {
 	store: AppStore;
 	settings: SidebarSettingsStore;
 	onViewProject: (projectId: string) => void;
+	onViewArchived: (projectId: string) => void;
 	onSelectChat?: (projectId: string) => void;
 	project: Accessor<Project>;
 }) {
@@ -240,6 +241,7 @@ export function ProjectSection(props: {
 								removable={!isDefaultWorkspace(props.project())}
 								confirmingRemove={confirmingRemove}
 								onRefresh={() => void store.loadSessions(id())}
+								onViewArchived={() => props.onViewArchived(id())}
 								onRemove={() =>
 									void store.removeProject(id()).catch((error: unknown) => {
 										console.error("Removing the project failed", error);
@@ -327,7 +329,6 @@ export function ProjectSection(props: {
 	);
 }
 
-/** The ⋯ menu on a project row: refresh and remove. */
 function ProjectMenu(props: {
 	section: Accessor<string>;
 	actionClass: Accessor<string>;
@@ -337,6 +338,7 @@ function ProjectMenu(props: {
 	removable: boolean;
 	confirmingRemove: Signal<boolean>;
 	onRefresh: () => void;
+	onViewArchived: () => void;
 	onRemove: () => void;
 }) {
 	const section = props.section;
@@ -368,6 +370,14 @@ function ProjectMenu(props: {
 					onSelect={props.onRefresh}
 				>
 					<Text class="font-sans">{() => t("sidebar.refreshSessions")}</Text>
+				</MenuItem>
+				<MenuItem
+					testID={`${section()}:menu:archived`}
+					indicatorClass="hidden"
+					icon={<Icon name="Archive" size={14} />}
+					onSelect={props.onViewArchived}
+				>
+					<Text class="font-sans">{() => t("sidebar.archivedSessions")}</Text>
 				</MenuItem>
 				{props.removable ? (
 					<MenuItem

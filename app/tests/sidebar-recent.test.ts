@@ -26,11 +26,11 @@ type App = Awaited<ReturnType<typeof openSidebar>>;
 
 /**
  * The sidebar list's texts: after the title bar and the 「新会话」 row, before
- * the landing's hero and picker.
+ * the archive footer.
  */
 function sidebar(app: App) {
 	const texts = app.texts();
-	const end = texts.indexOf("What would you like to work on today?");
+	const end = texts.indexOf("Archived");
 	return texts.slice(
 		texts.indexOf("New session") + 1,
 		end < 0 ? undefined : end,

@@ -210,6 +210,74 @@ test("a session row's menu renames it inline and refreshes the list", async () =
 	await becomes(app, reads, before + 1);
 });
 
+test("the hover archive closes the open session and Undo restores it", async () => {
+	const app = await openSidebar({
+		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+	});
+	await app.waitFor("id:session:s4");
+	await app.press("id:session:s4");
+	await app.waitFor("id:session-header");
+	await app.hover("id:session:s4");
+	await app.press("id:session:s4:archive-button");
+	await app.waitFor("text:Session archived");
+	await app.waitFor("id:session:s4", { state: "gone" });
+	await app.waitFor("id:session-header", { state: "gone" });
+	await app.press("text:Undo");
+	await app.waitFor("id:session:s4");
+});
+
+test("archive views load collapsed projects and support scoped restore and confirmed delete", async () => {
+	const app = await openSidebar({ "pilo.test.seedArchive": "true" });
+	await app.waitFor("id:sidebar-archived");
+	await app.press("id:sidebar-archived");
+	await app.waitFor("id:session:s8");
+	await app.waitFor("id:session:s4");
+	const archivedProject = app.layout("id:sidebar-archived-project:pilo");
+	expect(archivedProject?.x).toBeGreaterThan(0);
+	expect(app.layout("id:session:s4:title")?.x).toBe(archivedProject?.x);
+	expect(app.texts().indexOf("Deploy the build box")).toBeLessThan(
+		app.texts().indexOf("Resize the sidebar"),
+	);
+	await app.press("id:sidebar-archived-back");
+	await app.hover("id:ws:pilo:select");
+	await app.press("id:ws:pilo:menu");
+	await app.press("id:ws:pilo:menu:archived");
+	await app.waitFor("id:session:s4");
+	expect(app.shows("id:session:s8")).toBe(false);
+	await app.press("id:session:s4");
+	await app.waitFor("id:session-header");
+	await app.hover("id:session:s4");
+	await app.press("id:session:s4:unarchive-button");
+	await app.waitFor("text:No archived sessions");
+	expect(app.shows("id:session-header")).toBe(true);
+	await app.press("id:sidebar-archived");
+	await app.waitFor("id:session:s8");
+	await app.hover("id:session:s8");
+	expect(app.shows("id:session:s8:menu")).toBe(false);
+	await app.waitFor("id:session:s8:unarchive-button");
+	await app.press("id:session:s8:delete-button");
+	await app.waitFor("text:Confirm delete");
+	expect(app.shows("id:session:s8")).toBe(true);
+	await app.hover("id:sidebar-archived-back");
+	await app.waitFor("text:Confirm delete", { state: "gone" });
+	await app.hover("id:session:s8");
+	await app.press("id:session:s8:delete-button");
+	await app.waitFor("text:Confirm delete");
+	await app.press("id:session:s8:delete-button");
+	await app.waitFor("id:session:s8", { state: "gone" });
+	await app.waitFor("text:Session moved to trash");
+});
+
+test("an unavailable archive shows a load error instead of looking empty", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:broken:select");
+	await app.hover("id:ws:broken:select");
+	await app.press("id:ws:broken:menu");
+	await app.press("id:ws:broken:menu:archived");
+	await app.waitFor("text:Couldn't load archived sessions");
+	expect(app.shows("text:No archived sessions")).toBe(false);
+});
+
 test("a session row's delete asks again, then removes and closes it", async () => {
 	const app = await openSidebar({
 		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
