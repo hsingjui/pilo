@@ -1446,6 +1446,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "keyring",
  "libc",
  "log",
  "mac-notification-sys",

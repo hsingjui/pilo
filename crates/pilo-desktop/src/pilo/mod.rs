@@ -21,6 +21,7 @@ use pilo_runtime::{
 };
 use tokio::{runtime::Runtime as Executor, sync::Mutex};
 
+mod credentials;
 mod encode;
 mod host;
 mod objects;
@@ -378,6 +379,51 @@ impl Pilo {
             Ok(())
         })
         .await
+    }
+
+    /// Reads the saved device token for a paired remote Host; `null` when none is saved.
+    pub async fn remote_host_token(
+        this: Instance<Self>,
+        host_id: String,
+    ) -> Result<Option<String>, String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn_blocking(move || credentials::get_remote_host_token(&host_id))
+        });
+        task.await
+            .map_err(|error| format!("failed to read the remote Host token: {error}"))?
+    }
+
+    /// Saves the device token for a paired remote Host in the system credential store.
+    pub async fn save_remote_host_token(
+        this: Instance<Self>,
+        host_id: String,
+        token: String,
+    ) -> Result<(), String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn_blocking(move || credentials::set_remote_host_token(&host_id, &token))
+        });
+        task.await
+            .map_err(|error| format!("failed to save the remote Host token: {error}"))?
+    }
+
+    /// Deletes the saved device token for a remote Host; deleting an absent one succeeds.
+    pub async fn delete_remote_host_token(
+        this: Instance<Self>,
+        host_id: String,
+    ) -> Result<(), String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn_blocking(move || credentials::delete_remote_host_token(&host_id))
+        });
+        task.await
+            .map_err(|error| format!("failed to delete the remote Host token: {error}"))?
+    }
+
+    /// The machine's host name, used to name this desktop when pairing with a remote Host.
+    pub fn machine_name(&self) -> Option<String> {
+        credentials::machine_name()
     }
 
     /// Waits for terminal events and returns up to `max` in order:
