@@ -30,6 +30,7 @@ import {
 	type HostAccess,
 	HostSession,
 	LOCAL_HOST_ACCESS,
+	sameHostAccess,
 } from "./host-session";
 import { SessionScopedTransport } from "./session-scoped-transport";
 
@@ -141,15 +142,6 @@ function scopedAccess(
 		scopes: hello?.scopes ?? record.scopes,
 		methods: hello?.capabilities?.methods ?? null,
 	};
-}
-
-/** A reconnect's hello with the same scopes and methods keeps the shell mounted. */
-function sameAccess(previous: HostAccess, next: HostAccess) {
-	return (
-		previous.scopes === next.scopes &&
-		(previous.methods === null) === (next.methods === null) &&
-		(previous.methods ?? []).join("\n") === (next.methods ?? []).join("\n")
-	);
 }
 
 function retryDelay(attempts: number) {
@@ -529,7 +521,7 @@ export class HostRegistry {
 		const state = signal<HostTransportConnectionState>("connecting");
 		const access = computed(
 			() => scopedAccess(hello(), this.record(hostId) ?? record),
-			{ equals: sameAccess },
+			{ equals: sameHostAccess },
 		);
 		let offlineTimer: ReturnType<typeof setTimeout> | undefined;
 		let recheckTimer: ReturnType<typeof setTimeout> | undefined;

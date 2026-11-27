@@ -44,6 +44,15 @@ export type HostAccess = {
 
 export const LOCAL_HOST_ACCESS: HostAccess = { scopes: null, methods: null };
 
+/** Equal access keeps the shell mounted: a reconnect's hello with the same scopes and methods. */
+export function sameHostAccess(previous: HostAccess, next: HostAccess) {
+	return (
+		previous.scopes === next.scopes &&
+		(previous.methods === null) === (next.methods === null) &&
+		(previous.methods ?? []).join("\n") === (next.methods ?? []).join("\n")
+	);
+}
+
 export type HostSessionOptions = {
 	hostId: string;
 	kind: "local" | "remote";

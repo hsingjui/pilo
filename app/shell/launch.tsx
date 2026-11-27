@@ -21,7 +21,11 @@ import {
 	type HostEntry,
 	type RemoteHostCredentials,
 } from "../hosts/host-registry";
-import { HostSession, LOCAL_HOST_ACCESS } from "../hosts/host-session";
+import {
+	HostSession,
+	LOCAL_HOST_ACCESS,
+	sameHostAccess,
+} from "../hosts/host-session";
 import manifest from "../../nsh.json";
 import { AppShell, StartupFrame } from "./AppShell";
 import { showStartupTheme } from "./appearance";
@@ -239,6 +243,18 @@ export async function launch(
 				}
 			}
 		});
+		// Only another shown Host or other access remounts the shell: pairing,
+		// reconnecting or dropping another Host leaves its tabs as they are.
+		const shownSession = computed(() => registry.activeSession());
+		const shownAccess = computed(
+			() => {
+				const session = shownSession();
+				return session.kind === "local"
+					? LOCAL_HOST_ACCESS
+					: registry.access(session.hostId);
+			},
+			{ equals: sameHostAccess },
+		);
 		return () => (
 			<>
 				<Each
@@ -250,7 +266,7 @@ export async function launch(
 					)}
 				</Each>
 				{() => {
-					const session = registry.activeSession();
+					const session = shownSession();
 					if (!showShell()) {
 						return (
 							<StartupFrame
@@ -259,10 +275,7 @@ export async function launch(
 							/>
 						);
 					}
-					const access =
-						session.kind === "local"
-							? LOCAL_HOST_ACCESS
-							: registry.access(session.hostId);
+					const access = shownAccess();
 					return (
 						<AppShell
 							{...session.shellProps(access, shell)}
