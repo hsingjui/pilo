@@ -20,6 +20,7 @@ function Fixture() {
 	const workspace = new WorkspaceStore();
 	const terminals = signal<TerminalTab[]>([]);
 	const activeTerminalId = signal<string | null>(null);
+	let nextTerminalNumber = 2;
 
 	const activeLabel = computed(() => {
 		const termId = activeTerminalId();
@@ -91,6 +92,37 @@ function Fixture() {
 							terminals.update((list) => list.filter((item) => item.id !== id));
 							if (activeTerminalId() === id) activeTerminalId.set(null);
 						},
+						onNew: () => {
+							const id = `t${nextTerminalNumber++}`;
+							terminals.update((list) => [
+								...list,
+								{
+									id,
+									projectId: PROJECT_ID,
+									title: "zsh",
+									number: 2,
+									exited: false,
+								},
+							]);
+							workspace.selectChat(PROJECT_ID);
+							activeTerminalId.set(id);
+						},
+						onRestart: () => {
+							const id = activeTerminalId();
+							if (!id) return;
+							const restarted = `${id}-restarted`;
+							terminals.update((list) => [
+								...list.filter((item) => item.id !== id),
+								{
+									id: restarted,
+									projectId: PROJECT_ID,
+									title: "zsh",
+									number: 2,
+									exited: false,
+								},
+							]);
+							activeTerminalId.set(restarted);
+						},
 					}}
 					onSelectChat={() => {
 						activeTerminalId.set(null);
@@ -105,6 +137,20 @@ function Fixture() {
 				<View class="flex-row gap-2">
 					<Button testID="open-many" onPress={openMany}>
 						<Text class="font-sans">Open many tabs</Text>
+					</Button>
+					<Button
+						testID="exit-active-terminal"
+						onPress={() => {
+							const id = activeTerminalId();
+							if (!id) return;
+							terminals.update((list) =>
+								list.map((item) =>
+									item.id === id ? { ...item, exited: true } : item,
+								),
+							);
+						}}
+					>
+						<Text class="font-sans">Exit active terminal</Text>
 					</Button>
 				</View>
 			</View>

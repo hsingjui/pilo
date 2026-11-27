@@ -884,6 +884,18 @@ export function AppShell(props: AppShellProps) {
 													props.terminals?.select(id);
 												},
 												onClose: (id) => props.terminals?.close(id),
+												onNew: () => {
+													const current = project();
+													if (current) openTerminal(current.id);
+												},
+												onRestart: () => {
+													const current = project();
+													const terminal = shownTerminal();
+													if (!current || !terminal?.exited) return;
+													props.terminals?.close(terminal.id);
+													openTerminal(current.id);
+												},
+												disabled: () => props.terminals?.opening() ?? false,
 											}
 										: undefined
 								}

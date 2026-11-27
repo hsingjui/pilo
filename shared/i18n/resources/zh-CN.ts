@@ -1057,6 +1057,7 @@ const zhCN = {
 		partialCloseFailed: "部分终端未能正常关闭",
 		resize: "调整终端高度",
 		rename: "重命名终端",
+		restart: "重启终端",
 		close: "关闭终端",
 		new: "新建终端",
 		hide: "隐藏终端",

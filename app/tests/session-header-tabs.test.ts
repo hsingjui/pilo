@@ -31,3 +31,21 @@ test("collapses overflowing auxiliary tabs into +N menu and promotes selected ov
 	await app.waitUntil(() => !app.shows("id:terminal-tab:t1"));
 	expect(app.shows("text:active:chat")).toBe(true);
 });
+
+test("shows explicit terminal new and restart controls", async () => {
+	const app = await open("./session-header-tabs-fixture.tsx", compactDesktop);
+	await app.waitFor("id:session-header");
+	expect(app.shows("id:terminal-new-tab")).toBe(false);
+
+	await app.press("id:open-many");
+	await app.waitFor("id:terminal-new-tab");
+	await app.press("id:terminal-new-tab");
+	await app.waitFor("text:active:terminal:t2");
+	expect(app.shows("id:terminal-restart-tab")).toBe(false);
+
+	await app.press("id:exit-active-terminal");
+	await app.waitFor("id:terminal-restart-tab");
+	await app.press("id:terminal-restart-tab");
+	await app.waitFor("text:active:terminal:t2-restarted");
+	expect(app.shows("id:terminal-tab:t2")).toBe(false);
+});

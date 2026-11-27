@@ -1100,6 +1100,7 @@ const enUS = {
 		partialCloseFailed: "Some Terminals could not be closed normally",
 		resize: "Adjust terminal height",
 		rename: "Rename Terminal",
+		restart: "Restart Terminal",
 		close: "Close Terminal",
 		new: "New Terminal",
 		hide: "Hide terminal",
