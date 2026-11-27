@@ -203,7 +203,7 @@ const SECTIONS = [
 
 // Tailwind's md:, measured on the window as the WebUI's viewport.
 const MD_WIDTH = 768;
-const NAV_WIDTH = 192; // w-48
+const NAV_WIDTH = 216;
 const DIALOG_MAX_WIDTH = 1100; // max-w-[1100px]
 const DIALOG_MAX_HEIGHT = 950; // min(90dvh, 950px)
 const CONTENT_MAX_WIDTH = 1024; // max-w-5xl

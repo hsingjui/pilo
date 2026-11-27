@@ -1,4 +1,4 @@
-import { mount, signal, Text, View } from "nsh";
+import { mount, signal, Text, View, type InputRef } from "nsh";
 import { Input } from "nsh/base";
 
 import type { TerminalEvent } from "../client/nsh-pilo-client";
@@ -78,6 +78,7 @@ function App() {
 	const { store, writes, resizes, emitOutput } = createFixtureStore();
 	const externalValue = signal("outside");
 	const started = signal(false);
+	let externalInput: InputRef | undefined;
 
 	const openInitial = async () => {
 		await store.open("p1");
@@ -121,8 +122,18 @@ function App() {
 					testID="external-input"
 					value={externalValue()}
 					onChange={({ value }) => externalValue.set(value)}
+					ref={(ref) => {
+						externalInput = ref;
+					}}
 					class="w-40 border border-border px-2 py-1"
 				/>
+				<View
+					testID="focus-external"
+					class="px-2 py-1 bg-muted rounded"
+					onPress={() => externalInput?.focus()}
+				>
+					<Text>Focus input</Text>
+				</View>
 			</View>
 			<Text testID="ready">{started() ? "ready:yes" : "ready:no"}</Text>
 			<Text testID="resizes">{`resizes:${resizes().join(",")}`}</Text>

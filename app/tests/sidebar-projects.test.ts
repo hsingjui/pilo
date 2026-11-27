@@ -141,17 +141,18 @@ async function expandAndRead(app: App, projectId: string) {
 	);
 }
 
-test("a project lists nothing without sessions, spins while reading them, and says when that failed", async () => {
+test("a project explains having no sessions, spins while reading them, and says when that failed", async () => {
 	const app = await openSidebar();
 	await app.waitFor("id:ws:notes:toggle");
 
-	// As React's tree: an expanded project without sessions adds no row.
+	// An expanded project without sessions explains the empty space.
 	await expandAndRead(app, "notes");
 	const texts = treeTexts(app);
 	expect(texts.slice(texts.indexOf("notes"), texts.indexOf("broken"))).toEqual([
 		"notes",
+		"No sessions",
 	]);
-	expect(app.shows("text:No sessions")).toBe(false);
+	expect(app.shows("text:No sessions")).toBe(true);
 
 	await app.press("id:ws:broken:toggle");
 	await app.waitFor("id:ws:broken:failed");
@@ -160,7 +161,7 @@ test("a project lists nothing without sessions, spins while reading them, and sa
 	// A read that has not answered spins on the project's row.
 	await app.press("id:ws:slow:toggle");
 	await app.waitFor("id:ws:slow:loading");
-	expect(app.shows("text:No sessions")).toBe(false);
+	expect(app.texts().filter((text) => text === "No sessions")).toHaveLength(1);
 });
 
 type ClientCall = Record<string, unknown> & { call: string };

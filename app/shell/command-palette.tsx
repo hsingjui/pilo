@@ -28,6 +28,8 @@ import { sidebarSessions } from "./sidebar-projects";
 export interface CommandPaletteProps {
 	/** When supplied, keeps the dialog mounted so its close fade can complete. */
 	open?: Accessor<boolean>;
+	/** Touch-first rows and no keyboard-only footer hints. */
+	touch?: boolean;
 	store: AppStore;
 	shortcuts: Accessor<Partial<KeyboardShortcutMap>>;
 	/** Searches saved message text; the message group is absent without it. */
@@ -442,7 +444,9 @@ export function CommandPalette(props: CommandPaletteProps) {
 						}
 						listClass="min-h-0 flex-1 mx-2 mt-0.5 mb-2"
 						groupClass="px-2.5 pt-2.5 pb-1 text-[11px] leading-4 font-medium text-muted-foreground"
-						itemClass="group flex-col items-stretch justify-center rounded-(--pilo-radius-md) px-2.5 py-2 text-[13px] leading-[18px] text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50"
+						itemClass={`group flex-col items-stretch justify-center rounded-(--pilo-radius-md) px-2.5 text-[13px] leading-[18px] text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50 ${
+							props.touch ? "min-h-11 py-2.5" : "py-2"
+						}`}
 						itemStyle={[
 							tactileTransition("background-color, color"),
 							{ marginBottom: 2 },
@@ -541,22 +545,29 @@ export function CommandPalette(props: CommandPaletteProps) {
 							</View>
 						}
 						footer={
-							<View class="shrink-0 flex-row items-center justify-between gap-2 border-t border-border/80 bg-muted/35 px-3.5 py-2">
-								{searching() ? (
-									<View class="flex-row items-center gap-1.5">
-										<Spinner size={12} color={token("muted-foreground")} />
-										<Text class="font-sans text-[11px] text-muted-foreground">
-											{t("commandPalette.searchingHistory")}
-										</Text>
-									</View>
-								) : (
-									<View class="flex-row items-center gap-3.5">
-										<Hint keys="↑↓" label={() => t("commandPalette.toggle")} />
-										<Hint keys="↵" label={() => t("commandPalette.select")} />
-									</View>
-								)}
-								<Hint keys="esc" label={() => t("commandPalette.close")} />
-							</View>
+							props.touch && !searching() ? undefined : (
+								<View class="shrink-0 flex-row items-center justify-between gap-2 border-t border-border/80 bg-muted/35 px-3.5 py-2">
+									{searching() ? (
+										<View class="flex-row items-center gap-1.5">
+											<Spinner size={12} color={token("muted-foreground")} />
+											<Text class="font-sans text-[11px] text-muted-foreground">
+												{t("commandPalette.searchingHistory")}
+											</Text>
+										</View>
+									) : (
+										<View class="flex-row items-center gap-3.5">
+											<Hint
+												keys="↑↓"
+												label={() => t("commandPalette.toggle")}
+											/>
+											<Hint keys="↵" label={() => t("commandPalette.select")} />
+										</View>
+									)}
+									{props.touch ? null : (
+										<Hint keys="esc" label={() => t("commandPalette.close")} />
+									)}
+								</View>
+							)
 						}
 					/>
 				) : null

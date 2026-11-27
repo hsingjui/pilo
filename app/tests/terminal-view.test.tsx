@@ -69,8 +69,7 @@ test("terminal supports ctrl+c/ctrl+shift+c copy and ctrl+v/ctrl+shift+v paste w
 	await app.waitFor("text:ready:yes");
 	await app.waitFor("text:Code\\reverse\\idm via v3.12.14");
 
-	// Focus terminal and press Ctrl+C with no selection -> sends SIGINT.
-	await app.press("id:terminal:t-1");
+	// A newly opened terminal owns the keyboard; Ctrl+C with no selection sends SIGINT.
 	await app.keyboard.press("ctrl+c");
 	await app.waitFor("text:writes:t-1:<CTRL-C>");
 
@@ -89,7 +88,8 @@ test("terminal supports ctrl+c/ctrl+shift+c copy and ctrl+v/ctrl+shift+v paste w
 
 	// Enable bracketed paste mode -> Ctrl+V wraps with DECSET 2004 markers.
 	await app.press("id:enable-bracketed");
-	await app.press("id:terminal:t-1");
+	await app.press("id:show-chat");
+	await app.press("id:show-t1");
 	await app.keyboard.press("ctrl+v");
 	await app.waitFor(
 		"text:writes:t-1:<CTRL-C>|t-1:echo 1<CR>echo 2|t-1:echo 1<CR>echo 2|t-1:<ESC>[200~echo 1<CR>echo 2<ESC>[201~",
@@ -97,7 +97,7 @@ test("terminal supports ctrl+c/ctrl+shift+c copy and ctrl+v/ctrl+shift+v paste w
 
 	// Focusing another input must keep Ctrl+V out of the terminal.
 	const writesBefore = readLine("writes:");
-	await app.press("id:external-input");
+	await app.press("id:focus-external");
 	await app.keyboard.press("ctrl+v");
 	await app.wait(40);
 	expect(readLine("writes:")).toBe(writesBefore);

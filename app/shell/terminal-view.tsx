@@ -70,6 +70,8 @@ function TerminalView(props: {
 		});
 		return true;
 	};
+	// A terminal shown before its first layout cannot take focus yet.
+	let focusOnLayout = false;
 	const pasteFromClipboard = async () => {
 		try {
 			const text = await Clipboard.readText();
@@ -90,19 +92,21 @@ function TerminalView(props: {
 			},
 			exit: () => {
 				flush();
-				show("\r\n[process exited]\r\n");
+				show(`\r\n[${t("terminal.processExited")}]\r\n`);
 			},
 			error: (message) => {
 				flush();
-				show(`\r\n[terminal error] ${message}\r\n`);
+				show(`\r\n[${t("terminal.terminalError", { message })}]\r\n`);
 			},
 		}),
 	);
 	effect(() => {
 		if (props.visible()) {
+			focusOnLayout = true;
 			untracked(() => ref?.focus());
 			return;
 		}
+		focusOnLayout = false;
 		untracked(() => {
 			selectedText.set("");
 			containerRef?.clearSelection();
@@ -150,7 +154,10 @@ function TerminalView(props: {
 			onSelectionChange={({ text }) => {
 				selectedText.set(text);
 			}}
-			onFocusIn={() => focused.set(true)}
+			onFocusIn={() => {
+				focusOnLayout = false;
+				focused.set(true);
+			}}
 			onFocusOut={() => focused.set(false)}
 			class="absolute inset-0 bg-background pt-1.5 pr-1 pb-1.5 pl-3"
 			style={[
@@ -179,6 +186,11 @@ function TerminalView(props: {
 				cursorClass="bg-foreground/60"
 				accessibilityLabel={t("terminal.show")}
 				onData={({ data }) => props.store.write(id, encoder.encode(data))}
+				onLayout={() => {
+					if (!focusOnLayout) return;
+					focusOnLayout = false;
+					ref?.focus();
+				}}
 				onResize={({ cols, rows }) => {
 					if (cols > 0 && rows > 0) props.store.resize(id, cols, rows);
 				}}

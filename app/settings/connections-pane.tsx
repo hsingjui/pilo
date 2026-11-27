@@ -87,6 +87,8 @@ export function ConnectionsPane(props: {
 	const sshItems = signal<SshConnectionInfo[]>([]);
 	const loading = signal(true);
 	const testing = signal<Set<string>>(new Set());
+	const localLoadFailed = signal(false);
+	const wslLoadFailed = signal(false);
 	const sshLoadFailed = signal(false);
 	const removing = signal<Connection | null>(null);
 	const busy = signal(false);
@@ -120,9 +122,11 @@ export function ConnectionsPane(props: {
 		]);
 		if (!alive || revision !== refreshRevision) return;
 		if (localResult.status === "fulfilled") local.set(localResult.value);
+		localLoadFailed.set(localResult.status === "rejected");
 		if (sshResult.status === "fulfilled") sshItems.set(sshResult.value);
 		sshLoadFailed.set(sshResult.status === "rejected");
 		if (wslResult.status === "fulfilled") wslItems.set(wslResult.value);
+		wslLoadFailed.set(wslResult.status === "rejected");
 		loading.set(false);
 	};
 
@@ -420,6 +424,20 @@ export function ConnectionsPane(props: {
 						<>
 							{wslItems().map(wslRow)}
 							{sshItems().map(sshRow)}
+							{() =>
+								localLoadFailed() ? (
+									<SettingsSectionMessage tone="error" size="2xs">
+										{t("connection.localLoadFailed")}
+									</SettingsSectionMessage>
+								) : null
+							}
+							{() =>
+								wslLoadFailed() ? (
+									<SettingsSectionMessage tone="error" size="2xs">
+										{t("connection.wslLoadFailed")}
+									</SettingsSectionMessage>
+								) : null
+							}
 							{() =>
 								sshLoadFailed() ? (
 									<SettingsSectionMessage tone="error" size="2xs">

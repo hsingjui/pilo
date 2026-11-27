@@ -1079,6 +1079,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 
 							<CommandPalette
 								open={searchOpen}
+								touch
 								store={store}
 								shortcuts={() => ({})}
 								searchSessions={props.searchSessions}

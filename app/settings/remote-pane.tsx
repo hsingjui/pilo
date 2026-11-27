@@ -188,7 +188,6 @@ export function RemotePane(props: {
 				variant: "error",
 				title: t("settings.remotePortInvalid"),
 			});
-			portDraft.set(null);
 			return;
 		}
 		if (activeDevices().length > 0) {

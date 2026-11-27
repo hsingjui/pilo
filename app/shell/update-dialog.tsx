@@ -334,7 +334,7 @@ export function UpdateDialog(props: { update: DesktopUpdate }) {
 											/>
 										)
 									}
-									<Text class="font-sans text-xs text-primary-foreground">
+									<Text class="font-sans text-xs">
 										{() =>
 											busy()
 												? t(
