@@ -14,7 +14,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use crate::remote::{Principal, auth, pairing::PairingError};
+use crate::remote::{Principal, access, auth, pairing::PairingError};
 use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
 use super::{ApiFailureDiagnostic, AuthKind, AuthSession, RemoteHttpState, api_error};
@@ -24,6 +24,8 @@ pub(super) async fn cancel_on_shutdown(
     request: Request,
     next: Next,
 ) -> Response {
+    // Cancellation drops the gateway request; operations already dispatched to the runtime
+    // may complete and are not rolled back.
     tokio::select! {
         biased;
         _ = shutdown.wait_for(|stopped| *stopped) => {
@@ -41,10 +43,12 @@ pub(super) async fn enforce_origin(
     let mut origins = request.headers().get_all(header::ORIGIN).iter();
     if let Some(origin) = origins.next()
         && (origins.next().is_some()
-            || !addresses
-                .borrow()
-                .iter()
-                .any(|address| origin == address.base_url.as_str()))
+            || normalized_origin(origin).is_none_or(|origin| {
+                !addresses
+                    .borrow()
+                    .iter()
+                    .any(|address| origin == address.base_url)
+            }))
     {
         return api_error(
             StatusCode::FORBIDDEN,
@@ -52,6 +56,17 @@ pub(super) async fn enforce_origin(
         );
     }
     next.run(request).await
+}
+
+fn normalized_origin(origin: &axum::http::HeaderValue) -> Option<String> {
+    let origin = origin.to_str().ok()?;
+    let (_, authority) = origin.split_once("://")?;
+    if authority.contains(['/', '\\', '?', '#', '@', ','])
+        || origin.bytes().any(|byte| byte.is_ascii_whitespace())
+    {
+        return None;
+    }
+    access::normalize_base_url(origin).ok()
 }
 
 pub(super) async fn log_request_failure(request: Request, next: Next) -> Response {

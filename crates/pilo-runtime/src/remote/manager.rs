@@ -724,13 +724,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(request("/api/v1/health", "").await, 200);
-        assert_eq!(
-            request("/api/v1/health", "Origin: https://remote.example.com\r\n").await,
-            200
-        );
+        for headers in [
+            "Origin: https://remote.example.com\r\n",
+            "Origin: HTTPS://REMOTE.EXAMPLE.COM\r\n",
+            "Origin: https://remote.example.com:443\r\n",
+        ] {
+            assert_eq!(request("/api/v1/health", headers).await, 200);
+        }
         for headers in [
             "Origin: https://remote.example.com:8080\r\n",
             "Origin: https://remote.example.com.evil.test\r\n",
+            "Origin: https://remote.example.com/\r\n",
+            "Origin: https://user@remote.example.com\r\n",
+            "Origin: https://remote.example.com, https://evil.test\r\n",
             "Origin: null\r\n",
             "Origin: https://remote.example.com\r\nOrigin: https://evil.test\r\n",
         ] {
