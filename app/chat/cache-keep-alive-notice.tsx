@@ -47,11 +47,11 @@ export function CacheKeepAliveNotice(props: {
 		return () => clearTimeout(timer);
 	});
 
-	return () => {
-		const status = props.status();
-		if (!status || dismissed() || !visible()) return null;
-		const activeKeepAlive =
-			status.status === "scheduled" || status.status === "warming";
+	const renderNotice = (status: () => CacheKeepAliveStatus) => {
+		const activeKeepAlive = () => {
+			const phase = status().status;
+			return phase === "scheduled" || phase === "warming";
+		};
 		const enter = createMotion({
 			enter: reduceMotion()
 				? {
@@ -77,7 +77,7 @@ export function CacheKeepAliveNotice(props: {
 					name="Timer"
 					size={14}
 					color={token(
-						status.status === "unavailable"
+						status().status === "unavailable"
 							? "status-warning"
 							: "muted-foreground",
 					)}
@@ -90,22 +90,25 @@ export function CacheKeepAliveNotice(props: {
 					}
 				>
 					<Text class={noticeText}>
-						{t(cacheKeepAliveStatusMessage(status), {
-							time: status.nextWarmAtMs
-								? new Date(status.nextWarmAtMs).toLocaleTimeString()
-								: "—",
-						})}
+						{() => {
+							const current = status();
+							return t(cacheKeepAliveStatusMessage(current), {
+								time: current.nextWarmAtMs
+									? new Date(current.nextWarmAtMs).toLocaleTimeString()
+									: "—",
+							});
+						}}
 					</Text>
-					{status.requestCount > 0 ? (
+					{status().requestCount > 0 ? (
 						<Text class={noticeText}>
 							{t(
 								"settings.cacheKeepAliveUsage",
-								cacheKeepAliveUsage(status, appLocale()),
+								cacheKeepAliveUsage(status(), appLocale()),
 							)}
 						</Text>
 					) : null}
 				</View>
-				{activeKeepAlive && props.onPause ? (
+				{activeKeepAlive() && props.onPause ? (
 					<Button
 						testID="chat-cache-keep-alive-pause"
 						variant="ghost"
@@ -128,12 +131,12 @@ export function CacheKeepAliveNotice(props: {
 						props.touch ? "-my-1 size-10 shrink-0" : "-my-1 size-7 shrink-0"
 					}
 					accessibilityLabel={
-						activeKeepAlive
+						activeKeepAlive()
 							? t("settings.cacheKeepAliveHideHint")
 							: t("common.close")
 					}
 					tooltip={
-						activeKeepAlive
+						activeKeepAlive()
 							? textTooltip(() => t("settings.cacheKeepAliveHideHint"))
 							: undefined
 					}
@@ -144,4 +147,10 @@ export function CacheKeepAliveNotice(props: {
 			</View>
 		);
 	};
+
+	return (
+		<If when={visible() && !dismissed() ? props.status() : null}>
+			{(status) => renderNotice(status)}
+		</If>
+	);
 }
