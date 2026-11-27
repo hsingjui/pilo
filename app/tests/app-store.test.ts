@@ -272,6 +272,7 @@ test("events move the state and reload what they name", async () => {
 			[16, { type: "sessions_indexed", projectId: "p2" }],
 		),
 	);
+	await Promise.resolve();
 	const state = store.state();
 	expect(state.preferences?.revision).toBe(4);
 	expect(state.themeSettings?.revision).toBe(2);
@@ -370,6 +371,7 @@ test("a project change from another client refreshes projects and closes a remov
 	expect(openChatTarget(store.state())?.projectId).toBe("p1");
 
 	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
 	projectLists[0]?.resolve([project("p1"), project("p2"), project("p3")]);
 	await settle();
 	expect(store.state().projects.map(({ id }) => id)).toEqual([
@@ -380,6 +382,7 @@ test("a project change from another client refreshes projects and closes a remov
 	expect(openChatTarget(store.state())?.projectId).toBe("p1");
 
 	emit(events([12, { type: "configuration_changed" }]));
+	await Promise.resolve();
 	projectLists[1]?.resolve([project("p2"), project("p3")]);
 	await settle();
 	expect(store.state().projects.map(({ id }) => id)).toEqual(["p2", "p3"]);
@@ -388,9 +391,28 @@ test("a project change from another client refreshes projects and closes a remov
 	expect(openChatTarget(store.state())).toBeNull();
 });
 
+test("project change events in the same tick share one catalog reload", async () => {
+	const { emit, projectLists } = await startedStore();
+	emit(events([11, { type: "configuration_changed" }]));
+	emit(
+		events(
+			[12, { type: "configuration_changed" }],
+			[13, { type: "configuration_changed" }],
+		),
+	);
+	expect(projectLists.length).toBe(0);
+	await Promise.resolve();
+	expect(projectLists.length).toBe(1);
+
+	emit(events([14, { type: "configuration_changed" }]));
+	await Promise.resolve();
+	expect(projectLists.length).toBe(2);
+});
+
 test("a project reload that a resync overtakes is dropped", async () => {
 	const { store, emit, bootstraps, projectLists } = await startedStore();
 	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
 	emit({ type: "resyncRequired", latestSequence: 12 });
 	await settle();
 	bootstraps[1]?.resolve(snapshot(13, 3, "p1", "p4"));
@@ -403,6 +425,7 @@ test("a project reload that a resync overtakes is dropped", async () => {
 test("a failed project reload is reported and retry recovers", async () => {
 	const { store, emit, bootstraps, projectLists } = await startedStore();
 	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
 	projectLists[0]?.reject(new Error("database is locked"));
 	await settle();
 	expect(store.state().status).toEqual({
