@@ -75,9 +75,18 @@ function TerminalView(props: {
 	const focusSoon = () => {
 		if (!focusArmed) return;
 		const version = ++focusVersion;
-		setTimeout(() => {
-			if (version === focusVersion && props.visible()) ref?.focus();
-		}, 0);
+		const attemptFocus = (attempt: number) => {
+			setTimeout(
+				() => {
+					if (version !== focusVersion || !focusArmed || !props.visible())
+						return;
+					ref?.focus();
+					if (attempt < 8) attemptFocus(attempt + 1);
+				},
+				attempt === 0 ? 0 : 50,
+			);
+		};
+		attemptFocus(0);
 	};
 	cleanup(() => {
 		focusVersion += 1;
@@ -198,7 +207,7 @@ function TerminalView(props: {
 				cursorClass="bg-foreground/60"
 				accessibilityLabel={t("terminal.show")}
 				onData={({ data }) => props.store.write(id, encoder.encode(data))}
-				onLayout={focusSoon}
+				onLayout={() => focusSoon()}
 				onResize={({ cols, rows }) => {
 					if (cols > 0 && rows > 0) props.store.resize(id, cols, rows);
 				}}
