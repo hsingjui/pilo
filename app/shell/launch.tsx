@@ -9,6 +9,7 @@ import {
 } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { LOCAL_HOST_ID } from "@shared/host-id";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
@@ -80,6 +81,7 @@ function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
  * open session's transcript read and marks its finished turns as seen.
  */
 export async function launch(pilo: PiloNative, shell: DesktopShell) {
+	const hostId = LOCAL_HOST_ID;
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const workspace = new WorkspaceStore();
@@ -124,6 +126,7 @@ export async function launch(pilo: PiloNative, shell: DesktopShell) {
 	});
 	const composer: ComposerStore = new ComposerStore({
 		client,
+		hostId,
 		shell,
 		app: store.state,
 		activeModel: () => runConfig.state()?.model ?? null,
@@ -194,7 +197,7 @@ export async function launch(pilo: PiloNative, shell: DesktopShell) {
 	followRunConfig(store, runConfig, catalog, chat);
 	// The first frame takes the saved theme and sidebar width, so a launch or
 	// reload neither flashes the default theme nor resizes its outline.
-	const sidebarSettings = new SidebarSettingsStore();
+	const sidebarSettings = new SidebarSettingsStore(hostId);
 	const [startupTheme] = await Promise.all([
 		showStartupTheme(),
 		sidebarSettings.load().catch((error: unknown) => {
@@ -263,6 +266,7 @@ export async function launch(pilo: PiloNative, shell: DesktopShell) {
 					desktop,
 					shell.notifications,
 					{
+						hostId,
 						isViewingSession: (projectId, sessionPath) =>
 							store.isViewingSession(projectId, sessionPath),
 						onSelectTarget: (projectId) => {
