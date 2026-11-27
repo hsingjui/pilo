@@ -10,8 +10,8 @@ or session JSONL. Both transports use the Host's database.
 
 - Desktop native (`desktop/src/pilo/mod.rs`): `loadModelScope(projectId) -> ProjectModelScope` and
   `saveModelScope(projectId, models) -> ProjectModelScope`.
-- Authenticated HTTP: `GET /api/v1/models/scope?projectId=...` and
-  `POST /api/v1/models/scope` with `{ projectId, models }`.
+- Authenticated `POST /api/v2/call/models.scope.get` with `{ projectId }`
+  and `POST /api/v2/call/models.scope.set` with `{ projectId, models }`.
 - `PiloClient.loadModelScope(projectId)` / `saveModelScope(projectId, models)`.
 - Storage: `project_model_scopes(project_id TEXT PRIMARY KEY,
   models_json TEXT NULL, updated_at_ms INTEGER NOT NULL)`. No project foreign key:
@@ -267,8 +267,9 @@ not mean its Pi process is still running when reopened.
 - `project_model_cache.commands_json TEXT NULL`; additive migration preserves
   old caches. `null` means unknown; `[]` means successfully discovered empty.
 - `project_model_cache_set` accepts optional commands alongside model fields.
-- Authenticated `GET /api/v1/models?projectId=...` reads the shared snapshot;
-  `POST /api/v1/models` saves it and assigns the Host timestamp.
+- Authenticated `POST /api/v2/call/models.get` with `{ projectId }` reads the
+  shared snapshot; `POST /api/v2/call/models.set` with `{ cache }` saves it and
+  assigns the Host timestamp.
 - `loadModels(projectId)` reads the saved snapshot on both transports.
   The shared `ModelCatalogStore.open(projectId, connectionId)` starts a project
   probe when the snapshot is missing or lacks Scope metadata. The connection's

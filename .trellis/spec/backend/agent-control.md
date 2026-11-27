@@ -180,8 +180,8 @@ from malicious processes running as the same OS user.
   shortcuts are unbound instead of overriding an initialized Host binding.
   WebUI never imports local browser settings into Host.
 - `preferences_get` / `preferences_patch` and authenticated
-  `GET/POST /api/v1/preferences` share the same validation/storage implementation.
-  HTTP cannot request desktop migration. Theme keeps its existing storage and
+  `POST /api/v2/call/preferences.get` / `POST /api/v2/call/preferences.patch`
+  share the same validation/storage implementation. Theme keeps its existing storage and
   revision rather than being duplicated in this table.
 - Committed preference changes publish `preferences_changed { settings }`.
   Connections/projects/native mutations publish `configuration_changed`; existing

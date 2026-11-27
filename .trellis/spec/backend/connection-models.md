@@ -10,7 +10,8 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
 ## 2. Signatures
 
 - Desktop native (`desktop/src/pilo/mod.rs`) `loadConnectionModels(connectionId) -> PiModel[]`.
-- Authenticated HTTP `GET /api/v1/connections/models?connectionId=... -> PiModel[]`.
+- Authenticated `POST /api/v2/call/connection.models` with
+  `{ connectionId }` returns `PiModel[]` in the result envelope.
 - `PiloClient.loadConnectionModels(connectionId)` uses the same Host service on
   desktop and WebUI. No database catalog, Project ID, or cache-write endpoint.
 - Internal `pi.start` accepts `userScope: boolean` (default false). True requires

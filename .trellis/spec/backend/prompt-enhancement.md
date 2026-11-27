@@ -18,10 +18,10 @@ settings fields and `ChatComposer`.
 - Desktop native (`desktop/src/pilo/mod.rs`) `loadPromptEnhancementSettings(connectionId) -> PromptEnhancementSettings`;
   `savePromptEnhancementSettings(connectionId, enabled, model) -> PromptEnhancementSettings`;
   `enhancePrompt(projectId, draft, model) -> String`.
-- Authenticated HTTP `GET /api/v1/prompt-enhancement/settings?connectionId=...`;
-  `POST /api/v1/prompt-enhancement/settings` with `{ connectionId, enabled, model }`;
-  `POST /api/v1/prompt-enhancement/enhance` with `{ projectId, draft, model }`,
-  returning the rewritten text as a JSON string.
+- Authenticated `POST /api/v2/call/promptEnhancement.settings.get` with
+  `{ connectionId }`; `POST /api/v2/call/promptEnhancement.settings.set` with
+  `{ connectionId, enabled, model }`; `POST /api/v2/call/promptEnhancement.enhance`
+  with `{ projectId, draft, model }`, returning the rewritten text in the result envelope.
 - `PiloClient.loadPromptEnhancementSettings(connectionId)`,
   `savePromptEnhancementSettings(connectionId, enabled, model)` and
   `enhancePrompt(projectId, draft, model)` use those same Host services.
