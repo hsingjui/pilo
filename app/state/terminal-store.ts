@@ -1,6 +1,7 @@
 import { type Accessor, signal } from "nsh";
 
 import type { HostClient } from "@shared/api/host-client";
+import { bytesToBase64 } from "@shared/base64";
 import type { TerminalEvent } from "../client/host-api";
 
 export type TerminalClient = Pick<
@@ -10,7 +11,16 @@ export type TerminalClient = Pick<
 	| "resizeTerminal"
 	| "closeTerminal"
 	| "nextTerminalEvents"
->;
+> &
+	Partial<
+		Pick<
+			HostClient,
+			"subscribeTerminal" | "attachTerminal" | "snapshotTerminal"
+		>
+	>;
+
+/** Clears the screen and scrollback (`ESC c`) before a snapshot repaints it. */
+const RESET_SCREEN = bytesToBase64(new Uint8Array([0x1b, 0x63]));
 
 /** A terminal open in a workspace tab beside its project's chat. */
 export type TerminalTab = {
@@ -63,13 +73,28 @@ export class TerminalStore {
 	private readonly sinks = new Map<string, TerminalSink>();
 	private readonly pending = new Map<string, PendingTerminal>();
 	private polling = false;
+	private readonly streams = new Map<string, () => void>();
+	/** Terminals waiting for their first snapshot; their events until then are in it. */
+	private readonly restoring = new Set<string>();
+	private disposed = false;
 
 	readonly tabs: Accessor<TerminalTab[]> = this.tabsSignal;
 	/** The terminal shown in place of the chat; `null` shows the chat. */
 	readonly activeId: Accessor<string | null> = this.activeSignal;
 	readonly opening: Accessor<boolean> = () => this.openingSignal() !== null;
 
-	constructor(private readonly client: TerminalClient) {}
+	/**
+	 * `streaming`: the Host pushes each terminal's events on its own stream
+	 * (a remote Host), instead of the embedded Host's one polled queue.
+	 */
+	constructor(
+		private readonly client: TerminalClient,
+		private readonly options: { streaming?: boolean } = {},
+	) {}
+
+	private get streaming() {
+		return Boolean(this.options.streaming && this.client.subscribeTerminal);
+	}
 
 	/** The project's terminal tabs, in the order they were opened. */
 	projectTabs(projectId: string | null | undefined) {
@@ -95,7 +120,7 @@ export class TerminalStore {
 			events: new Map<string, PendingTerminal>(),
 		};
 		this.openingSignal.set(opening);
-		void this.poll();
+		if (!this.streaming) void this.poll();
 		try {
 			const info = await this.client.openTerminal(
 				projectId,
@@ -119,6 +144,7 @@ export class TerminalStore {
 				},
 			]);
 			this.activeSignal.set(info.id);
+			if (this.streaming) this.follow(info.id);
 		} finally {
 			this.openingSignal.set(null);
 		}
@@ -131,6 +157,7 @@ export class TerminalStore {
 		const tabs = this.tabsSignal();
 		const remaining = tabs.filter((tab) => {
 			if (projectIds.has(tab.projectId)) return true;
+			this.unfollow(tab.id);
 			this.sinks.delete(tab.id);
 			this.pending.delete(tab.id);
 			if (this.activeSignal() === tab.id) this.activeSignal.set(null);
@@ -152,6 +179,7 @@ export class TerminalStore {
 		void this.client.closeTerminal(terminalId).catch((error: unknown) => {
 			console.warn("Failed to close the terminal", error);
 		});
+		this.unfollow(terminalId);
 		this.sinks.delete(terminalId);
 		this.pending.delete(terminalId);
 		if (this.activeSignal() === terminalId) {
@@ -194,6 +222,69 @@ export class TerminalStore {
 			.catch((error: unknown) => {
 				console.warn("Failed to resize the terminal", error);
 			});
+	}
+
+	/**
+	 * Takes the shells back after the Host connection dropped: reattaches each
+	 * open terminal the Host kept and repaints it from its recent output.
+	 */
+	resync() {
+		if (!this.streaming) return;
+		for (const tab of this.tabsSignal()) {
+			if (tab.exited) continue;
+			void this.restore(tab.id, true);
+		}
+	}
+
+	/** Stops every terminal stream; the Host keeps or closes the shells. */
+	dispose() {
+		this.disposed = true;
+		for (const stop of this.streams.values()) stop();
+		this.streams.clear();
+		this.restoring.clear();
+	}
+
+	private follow(terminalId: string) {
+		const subscribe = this.client.subscribeTerminal;
+		if (!subscribe || this.streams.has(terminalId) || this.disposed) return;
+		this.streams.set(
+			terminalId,
+			subscribe.call(this.client, terminalId, (event) => {
+				if (this.restoring.has(terminalId)) return;
+				this.dispatch(event);
+			}),
+		);
+		void this.restore(terminalId, false);
+	}
+
+	private unfollow(terminalId: string) {
+		this.streams.get(terminalId)?.();
+		this.streams.delete(terminalId);
+		this.restoring.delete(terminalId);
+	}
+
+	private async restore(terminalId: string, attach: boolean) {
+		const snapshot = this.client.snapshotTerminal;
+		if (!snapshot) return;
+		this.restoring.add(terminalId);
+		try {
+			if (attach) await this.client.attachTerminal?.(terminalId);
+			const { data } = await snapshot.call(this.client, terminalId);
+			if (this.disposed || !this.streams.has(terminalId)) return;
+			this.restoring.delete(terminalId);
+			this.dispatch({ type: "output", terminalId, data: RESET_SCREEN });
+			if (data) this.dispatch({ type: "output", terminalId, data });
+		} catch (error) {
+			if (!this.streams.has(terminalId)) return;
+			this.restoring.delete(terminalId);
+			if (attach) {
+				this.dispatch({
+					type: "error",
+					terminalId,
+					message: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
 	}
 
 	/** Keeps one native wait for terminal events in flight. */
