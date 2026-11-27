@@ -285,7 +285,7 @@ export function AppToastStack(props: AppToastStackProps) {
 														accessibilityLabel={toast.actionLabel}
 														onPress={() => toasts.performAction(entry().id)}
 													>
-														<Text class="font-sans font-medium text-xs text-(length:--pilo-ui-text-xs) text-primary-foreground">
+														<Text class="font-sans font-medium text-xs text-(length:--pilo-ui-text-xs)">
 															{toast.actionLabel}
 														</Text>
 													</Button>

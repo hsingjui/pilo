@@ -39,7 +39,10 @@ test("Button fires onPress and disabled buttons reject presses without firing", 
 	await app.press("id:press");
 	await app.waitFor("text:Pressed: 1");
 	expect(app.enabled("id:disabled")).toBe(false);
-	expect(app.viewStyle("id:disabled")?.opacity).toBe(0.5);
+	expect(app.viewStyle("id:disabled")?.opacity).toBe(1);
+	expect(app.viewStyle("id:disabled")?.backgroundColor).not.toBe(
+		app.viewStyle("id:default-default")?.backgroundColor,
+	);
 	await expect(app.press("id:disabled")).rejects.toMatchObject({
 		code: "ERR_NSH_TEST_DISABLED",
 	});
