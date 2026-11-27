@@ -62,6 +62,11 @@ test("an edit opens to its diff, a command to how it ended and its output", asyn
 	await app.waitFor("text:Exit code 0");
 	expect(app.shows("text:1.5 s")).toBe(true);
 	expect(app.shows("text:all passed")).toBe(true);
+
+	// Collapsing the tool row again unmounts its detail subtree immediately.
+	await app.press(RUN);
+	expect(app.shows("text:Exit code 0")).toBe(false);
+	expect(app.shows("text:all passed")).toBe(false);
 });
 
 test("a thinking row says how long it thought and opens to its whole text", async () => {

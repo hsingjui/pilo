@@ -1,4 +1,4 @@
-import { computed, cleanup, effect, signal, Text, token, View } from "nsh";
+import { computed, Text, token, View } from "nsh";
 import { Button as BaseButton, Collapsible } from "nsh/base";
 
 import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
@@ -112,23 +112,14 @@ export function ChatToolActivity(props: {
 			(result !== undefined && result !== null)
 		);
 	});
+	/**
+	 * The call a shown detail is mounted for: a recycled row must not carry
+	 * its scroll into another call, and collapsing unmounts the detail right
+	 * away so a long output is not laid out again while it shrinks.
+	 */
 	const detailKey = computed(() =>
 		hasDetails() && open() ? props.expansionKey() : null,
 	);
-	/**
-	 * The call a shown detail is mounted for: a recycled row must not carry
-	 * its scroll into another call. It clears as the detail starts to fold
-	 * away, so a long output is not laid out again while it shrinks.
-	 */
-	const shownDetailKey = signal<string | null>(null);
-	effect(() => {
-		const key = detailKey();
-		if (key !== null) {
-			shownDetailKey.set(key);
-			return;
-		}
-		cleanup(() => shownDetailKey.set(null));
-	});
 	const status = computed(() =>
 		failed() ? "failed" : running() ? "running" : null,
 	);
@@ -323,22 +314,20 @@ export function ChatToolActivity(props: {
 			<Collapsible
 				open={detailKey() !== null}
 				{...collapsibleRevealProps()}
-				content={() => {
-					const detailFor = shownDetailKey();
-					return (
-						<>
-							{() =>
-								detailFor === null ? null : (
-									<ChatToolDetail
-										activity={activity}
-										writeContent={writeContent}
-										todos={todos}
-									/>
-								)
-							}
-						</>
-					);
-				}}
+				content={
+					<>
+						{() => {
+							const detailFor = detailKey();
+							return detailFor === null ? null : (
+								<ChatToolDetail
+									activity={activity}
+									writeContent={writeContent}
+									todos={todos}
+								/>
+							);
+						}}
+					</>
+				}
 			/>
 		</View>
 	);
