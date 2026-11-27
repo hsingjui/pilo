@@ -1,6 +1,8 @@
 use super::*;
 use pilo_domain::{Project, ProjectMetadata};
-use pilo_runtime::storage;
+use pilo_runtime::{preferences::preferences_patch, storage};
+
+mod host_api;
 
 #[test]
 fn bootstrap_reads_existing_projects_and_shutdown_closes_the_handle() {

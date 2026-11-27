@@ -9,59 +9,18 @@ use nsh_core::{
     file_dialog::{OpenDialog, SaveDialog},
     prelude::*,
 };
-use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
-    Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream, TranscriptWindow,
-    appearance::{system_font_families, theme_settings_get, theme_settings_set},
-    cache_keep_alive::{
-        cache_keep_alive_pause, cache_keep_alive_settings_list, cache_keep_alive_settings_set,
-    },
-    connections::{
-        connection_health_get, connection_models_get, connection_naming_model_list,
-        connection_naming_model_set, connection_pi_probe, connection_settings_update,
-        connection_shown_in_home_set, local_connection_get, local_connection_test,
-        ssh::{
-            SaveSshConnectionRequest, ssh_agent_identities_list, ssh_config_hosts_list,
-            ssh_connection_list, ssh_connection_password_get, ssh_connection_remove,
-            ssh_connection_save, ssh_connection_test, ssh_connection_test_draft,
-            ssh_local_keys_list,
-        },
-        wsl::{
-            wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
-            wsl_list_distributions,
-        },
-    },
+    Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream,
+    appearance::system_font_families,
     events::{EventQueueLimits, EventStream},
-    handle::{session_mark_read, session_read_states},
+    host_api::{self, BinaryOutput, Principal},
     host_paths::HostPaths,
-    initialize_local_server_binary, initialize_server_resource_dir,
-    next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
-    preferences::{preferences_get, preferences_patch},
-    project_api::{
-        self, connection_fs_read_dir, project_add, project_chat_file_remove,
-        project_chat_file_upload, project_fs_read_image, project_fs_search,
-        project_model_cache_get, project_model_cache_set, project_model_scope_get,
-        project_model_scope_set, project_remove,
-    },
+    initialize_local_server_binary, initialize_server_resource_dir, project_api,
     project_opener::ProjectApp,
-    prompt_enhancement::{
-        prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
-    },
-    remote::{
-        remote_device_rename, remote_device_revoke, remote_host_state, remote_lan_addresses,
-        remote_pairing_regenerate, remote_set_addresses, remote_set_enabled, remote_set_port,
-    },
-    runtime_api::{
-        chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
-    },
-    session_api::{
-        session_delete, session_external_activity, session_history, session_history_image,
-        session_list, session_reconcile, session_refresh_unwatched, session_search,
-        session_update_ui_state,
-    },
-    session_naming::session_generate_title,
     storage,
 };
+use serde::de::DeserializeOwned;
+use serde_json::json;
 use tokio::{runtime::Runtime as Executor, sync::Mutex};
 
 mod encode;
@@ -70,10 +29,12 @@ mod objects;
 mod shell;
 
 use encode::{
-    encode_event_batch, encode_list, encode_terminal_events, history_fingerprint_args,
-    load_projects, positive_count, terminal_size,
+    encode_event_batch, encode_terminal_events, history_fingerprint_args, positive_count,
+    terminal_size,
 };
-use host::{CLOSED, Host, run_with_runtime, stop_host};
+#[cfg(test)]
+use host::CLOSED;
+use host::{Host, call_local, decode_host_response, run_with_runtime, stop_host};
 use objects::{
     Bootstrap, NativeDesktopSettings, NativeHistoryFingerprint, NativeHistoryOptions,
     NativePreferencesSnapshot, NativeSessionReadState, NativeStartChatInput,
@@ -101,18 +62,38 @@ pub struct Pilo {
 
 impl Pilo {
     async fn load_bootstrap(host: Host) -> Result<Bootstrap, String> {
-        let runtime = { host.lock().await.as_ref().ok_or(CLOSED)?.clone() };
-        let executor = tokio::runtime::Handle::current();
-        let snapshot =
-            tokio::task::spawn_blocking(move || executor.block_on(runtime.bootstrap_snapshot()))
-                .await
-                .map_err(|error| format!("failed to load bootstrap snapshot: {error}"))??;
-        Ok(Bootstrap {
-            event_sequence: snapshot.event_sequence,
-            projects: encode_list(snapshot.projects)?,
-            chat_sessions: encode_list(snapshot.chat_sessions)?,
-            preferences: snapshot.preferences.into(),
+        run_with_runtime(host, |runtime| async move {
+            call_local(&runtime, "host.bootstrap", json!({})).await
         })
+        .await
+    }
+
+    async fn host_call<T: DeserializeOwned + Send + 'static>(
+        this: Instance<Self>,
+        method: &'static str,
+        params: JsonValue,
+    ) -> Result<T, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            call_local(&runtime, method, params).await
+        })
+        .await
+    }
+
+    async fn host_download(
+        this: Instance<Self>,
+        method: &'static str,
+        params: JsonValue,
+    ) -> Result<Vec<u8>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            match host_api::call_binary(&runtime, &Principal::Local, method, params, None)
+                .await
+                .map_err(|err| err.message)?
+            {
+                BinaryOutput::Bytes(bytes) => Ok(bytes),
+                BinaryOutput::Json(_) => Err("expected a Host API binary result".into()),
+            }
+        })
+        .await
     }
 
     async fn with_runtime<T, F>(
@@ -275,34 +256,17 @@ impl Pilo {
 
     /// Reads the saved project catalog without loading live chat snapshots.
     pub async fn list_projects(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, load_projects).await
+        Self::host_call(this, "project.list", json!({})).await
     }
 
     /// The connections a project can live on (local, WSL, SSH).
     pub async fn list_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| {
-            let mut connections = vec![local_connection_get(runtime)?];
-            connections.extend(
-                wsl_connection_list(runtime)?
-                    .into_iter()
-                    .map(|info| info.connection),
-            );
-            connections.extend(
-                ssh_connection_list(runtime)?
-                    .into_iter()
-                    .map(|info| info.connection),
-            );
-            encode_list(connections)
-        })
-        .await
+        Self::host_call(this, "connection.list", json!({})).await
     }
 
     /// The local connection row, created if the catalog does not have it yet.
     pub async fn get_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, |runtime| {
-            serde_json::to_value(local_connection_get(runtime)?).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.local.get", json!({})).await
     }
 
     /// Renames a connection and sets its custom Pi executable path.
@@ -312,10 +276,11 @@ impl Pilo {
         name: String,
         pi_executable: Option<String>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let connection = connection_settings_update(runtime, id, name, pi_executable)?;
-            serde_json::to_value(connection).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "connection.settings.update",
+            json!({"id": id, "name": name, "piExecutable": pi_executable}),
+        )
         .await
     }
 
@@ -325,10 +290,11 @@ impl Pilo {
         id: String,
         shown: bool,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let connection = connection_shown_in_home_set(runtime, id, shown)?;
-            serde_json::to_value(connection).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "connection.shownInHome.set",
+            json!({"id": id, "shown": shown}),
+        )
         .await
     }
 
@@ -337,11 +303,7 @@ impl Pilo {
         this: Instance<Self>,
         id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let health = connection_health_get(&runtime, id).await?;
-            serde_json::to_value(health).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.health", json!({"id": id})).await
     }
 
     /// Probes a Pi executable path on a connection without saving it.
@@ -350,46 +312,37 @@ impl Pilo {
         id: String,
         executable: Option<String>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let info = connection_pi_probe(&runtime, id, executable).await?;
-            serde_json::to_value(info).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "connection.pi.probe",
+            json!({"id": id, "executable": executable}),
+        )
         .await
     }
 
     /// Pings the local pilo-server connection.
     pub async fn test_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let result = local_connection_test(&runtime).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.local.test", json!({})).await
     }
 
     /// The SSH connections in the catalog, with project counts and secret flags.
     pub async fn list_ssh_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_connection_list(runtime)?))
-            .await
+        Self::host_call(this, "connection.ssh.list", json!({})).await
     }
 
     /// The SSH agent's public identities, for the connection editor.
     pub async fn list_ssh_agent_identities(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(ssh_agent_identities_list(&runtime).await?)
-        })
-        .await
+        Self::host_call(this, "connection.ssh.agentIdentities", json!({})).await
     }
 
     /// Host aliases parsed from `~/.ssh/config` (and its `Include` files).
     pub async fn list_ssh_config_hosts(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_config_hosts_list(runtime)?))
-            .await
+        Self::host_call(this, "connection.ssh.configHosts", json!({})).await
     }
 
     /// Private key files discovered under `~/.ssh/`.
     pub async fn list_ssh_local_keys(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_local_keys_list(runtime)?))
-            .await
+        Self::host_call(this, "connection.ssh.localKeys", json!({})).await
     }
 
     /// Saves an SSH connection draft; `password` replaces its stored secret.
@@ -397,13 +350,7 @@ impl Pilo {
         this: Instance<Self>,
         request: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let request: SaveSshConnectionRequest =
-                serde_json::from_value(request).map_err(|error| error.to_string())?;
-            let info = ssh_connection_save(&runtime, request).await?;
-            serde_json::to_value(info).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.ssh.save", json!({"request": request})).await
     }
 
     /// The stored password of an SSH connection, or null when it has none.
@@ -411,11 +358,7 @@ impl Pilo {
         this: Instance<Self>,
         id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            serde_json::to_value(ssh_connection_password_get(runtime, id)?)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.ssh.password", json!({"id": id})).await
     }
 
     /// Removes an SSH connection, stopping its projects first.
@@ -423,11 +366,7 @@ impl Pilo {
         this: Instance<Self>,
         id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            ssh_connection_remove(&runtime, id).await?;
-            Ok(JsonValue::Null)
-        })
-        .await
+        Self::host_call(this, "connection.ssh.remove", json!({"id": id})).await
     }
 
     /// Pings a saved SSH connection.
@@ -435,11 +374,7 @@ impl Pilo {
         this: Instance<Self>,
         id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let result = ssh_connection_test(&runtime, id).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.ssh.test", json!({"id": id})).await
     }
 
     /// Pings an SSH draft before it is saved.
@@ -448,31 +383,22 @@ impl Pilo {
         connection: JsonValue,
         password: Option<String>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let connection: Connection =
-                serde_json::from_value(connection).map_err(|error| error.to_string())?;
-            let result = ssh_connection_test_draft(&runtime, connection, password).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "connection.ssh.testDraft",
+            json!({"connection": connection, "password": password}),
+        )
         .await
     }
 
     /// The WSL distributions on the host; errors when WSL is unavailable.
     pub async fn list_wsl_distributions(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(
-                wsl_list_distributions(&runtime)
-                    .await
-                    .map_err(|error| error.to_string())?,
-            )
-        })
-        .await
+        Self::host_call(this, "connection.wsl.distributions", json!({})).await
     }
 
     /// The WSL connections in the catalog, with project counts.
     pub async fn list_wsl_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(wsl_connection_list(runtime)?))
-            .await
+        Self::host_call(this, "connection.wsl.list", json!({})).await
     }
 
     /// Saves a WSL connection row.
@@ -480,12 +406,11 @@ impl Pilo {
         this: Instance<Self>,
         connection: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let connection: Connection =
-                serde_json::from_value(connection).map_err(|error| error.to_string())?;
-            let info = wsl_connection_save(runtime, connection)?;
-            serde_json::to_value(info).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "connection.wsl.save",
+            json!({"connection": connection}),
+        )
         .await
     }
 
@@ -494,11 +419,7 @@ impl Pilo {
         this: Instance<Self>,
         id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            wsl_connection_remove(&runtime, id).await?;
-            Ok(JsonValue::Null)
-        })
-        .await
+        Self::host_call(this, "connection.wsl.remove", json!({"id": id})).await
     }
 
     /// Pings a WSL distribution before or after saving it as a connection.
@@ -506,11 +427,7 @@ impl Pilo {
         this: Instance<Self>,
         distro: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let result = wsl_connection_test(&runtime, distro).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.wsl.test", json!({"distro": distro})).await
     }
 
     /// Adds a project directory on a connection to the catalog.
@@ -519,10 +436,11 @@ impl Pilo {
         connection_id: String,
         path: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let project = project_add(&runtime, connection_id, path).await?;
-            serde_json::to_value(project).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "project.add",
+            json!({"connectionId": connection_id, "path": path}),
+        )
         .await
     }
 
@@ -532,9 +450,11 @@ impl Pilo {
         connection_id: String,
         path: String,
     ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(connection_fs_read_dir(&runtime, connection_id, path).await?)
-        })
+        Self::host_call(
+            this,
+            "connection.readDir",
+            json!({"connectionId": connection_id, "path": path}),
+        )
         .await
     }
 
@@ -554,10 +474,7 @@ impl Pilo {
         this: Instance<Self>,
         project_id: String,
     ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(project_remove(&runtime, project_id).await?)
-        })
-        .await
+        Self::host_call(this, "project.remove", json!({"projectId": project_id})).await
     }
 
     /// Reconciles the session index, or reads it without a scan when `cached` is true.
@@ -568,27 +485,12 @@ impl Pilo {
         cached: Option<bool>,
         unwatched_only: Option<bool>,
     ) -> Result<Vec<JsonValue>, String> {
-        if cached == Some(true) {
-            return Self::with_runtime_blocking(this, move |runtime| {
-                encode_list(session_list(runtime, project_id)?)
-            })
-            .await;
-        }
-        let unwatched_only = unwatched_only == Some(true);
-        let task = this.with(|pilo| {
-            let host = pilo.host.clone();
-            pilo.executor
-                .spawn(run_with_runtime(host, move |runtime| async move {
-                    let sessions = if unwatched_only {
-                        session_refresh_unwatched(&runtime, project_id).await?
-                    } else {
-                        session_reconcile(&runtime, project_id).await?.sessions
-                    };
-                    encode_list(sessions)
-                }))
-        });
-        task.await
-            .map_err(|error| format!("failed to load sessions: {error}"))?
+        Self::host_call(
+            this,
+            "session.list",
+            json!({"projectId": project_id, "cached": cached, "unwatchedOnly": unwatched_only}),
+        )
+        .await
     }
 
     /// Reads Pi's current user-level model catalog for the connection.
@@ -596,9 +498,11 @@ impl Pilo {
         this: Instance<Self>,
         connection_id: String,
     ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            connection_models_get(&runtime, connection_id).await
-        })
+        Self::host_call(
+            this,
+            "connection.models",
+            json!({"connectionId": connection_id}),
+        )
         .await
     }
 
@@ -607,11 +511,7 @@ impl Pilo {
         this: Instance<Self>,
         project_id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let snapshot = project_model_cache_get(runtime, &project_id)?;
-            serde_json::to_value(snapshot).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "models.get", json!({"projectId": project_id})).await
     }
 
     /// Reads the Host's saved model scope for a project.
@@ -619,11 +519,7 @@ impl Pilo {
         this: Instance<Self>,
         project_id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let scope = project_model_scope_get(runtime, project_id)?;
-            serde_json::to_value(scope).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "models.scope.get", json!({"projectId": project_id})).await
     }
 
     /// Persists a refreshed project model catalog snapshot.
@@ -631,30 +527,12 @@ impl Pilo {
         this: Instance<Self>,
         snapshot: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let cache: pilo_domain::ProjectModelCache =
-                serde_json::from_value(snapshot).map_err(|error| error.to_string())?;
-            let cache = project_model_cache_set(
-                runtime,
-                cache.project_id,
-                cache.models,
-                cache.commands,
-                cache.default_model,
-                cache.default_thinking_level,
-                cache.refreshed_at_ms,
-            )?;
-            serde_json::to_value(cache).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "models.set", json!({"cache": snapshot})).await
     }
 
     /// Lists each connection's saved session-naming model.
     pub async fn load_naming_models(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let models = connection_naming_model_list(runtime)?;
-            serde_json::to_value(models).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "connection.namingModels.list", json!({})).await
     }
 
     /// Sets or clears a connection's session-naming model.
@@ -664,10 +542,11 @@ impl Pilo {
         provider: Option<String>,
         model_id: Option<String>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let model = connection_naming_model_set(runtime, connection_id, provider, model_id)?;
-            serde_json::to_value(model).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "connection.namingModels.set",
+            json!({"connectionId": connection_id, "provider": provider, "modelId": model_id}),
+        )
         .await
     }
 
@@ -677,11 +556,11 @@ impl Pilo {
         project_id: String,
         models: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let models = serde_json::from_value(models).map_err(|error| error.to_string())?;
-            let scope = project_model_scope_set(runtime, project_id, models)?;
-            serde_json::to_value(scope).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "models.scope.set",
+            json!({"projectId": project_id, "models": models}),
+        )
         .await
     }
 
@@ -690,9 +569,11 @@ impl Pilo {
         this: Instance<Self>,
         connection_id: String,
     ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            encode_list(cache_keep_alive_settings_list(runtime, connection_id)?)
-        })
+        Self::host_call(
+            this,
+            "cacheKeepAlive.settings.list",
+            json!({"connectionId": connection_id}),
+        )
         .await
     }
 
@@ -701,11 +582,11 @@ impl Pilo {
         this: Instance<Self>,
         settings: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let settings = serde_json::from_value(settings).map_err(|error| error.to_string())?;
-            let settings = cache_keep_alive_settings_set(&runtime, settings).await?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "cacheKeepAlive.settings.set",
+            json!({"settings": settings}),
+        )
         .await
     }
 
@@ -714,9 +595,11 @@ impl Pilo {
         this: Instance<Self>,
         session_key: String,
     ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            cache_keep_alive_pause(&runtime, session_key).await
-        })
+        Self::host_call(
+            this,
+            "cacheKeepAlive.pause",
+            json!({"sessionKey": session_key}),
+        )
         .await
     }
 
@@ -725,10 +608,11 @@ impl Pilo {
         this: Instance<Self>,
         connection_id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let settings = next_prompt_settings_get(runtime, connection_id)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "nextPrompt.settings.get",
+            json!({"connectionId": connection_id}),
+        )
         .await
     }
 
@@ -739,11 +623,11 @@ impl Pilo {
         enabled: bool,
         model: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
-            let settings = next_prompt_settings_set(runtime, connection_id, enabled, model)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "nextPrompt.settings.set",
+            json!({"connectionId": connection_id, "enabled": enabled, "model": model}),
+        )
         .await
     }
 
@@ -752,11 +636,7 @@ impl Pilo {
         this: Instance<Self>,
         request: JsonValue,
     ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let request = serde_json::from_value(request).map_err(|error| error.to_string())?;
-            next_prompt_request(&runtime, request).await
-        })
-        .await
+        Self::host_call(this, "nextPrompt.request", json!({"request": request})).await
     }
 
     /// Reads the connection's saved prompt enhancement settings.
@@ -764,10 +644,11 @@ impl Pilo {
         this: Instance<Self>,
         connection_id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let settings = prompt_enhancement_settings_get(runtime, connection_id)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "promptEnhancement.settings.get",
+            json!({"connectionId": connection_id}),
+        )
         .await
     }
 
@@ -778,11 +659,11 @@ impl Pilo {
         enabled: bool,
         model: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
-            let settings = prompt_enhancement_settings_set(runtime, connection_id, enabled, model)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "promptEnhancement.settings.set",
+            json!({"connectionId": connection_id, "enabled": enabled, "model": model}),
+        )
         .await
     }
 
@@ -793,10 +674,11 @@ impl Pilo {
         draft: String,
         model: JsonValue,
     ) -> Result<String, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
-            prompt_enhance(&runtime, project_id, draft, model).await
-        })
+        Self::host_call(
+            this,
+            "promptEnhancement.enhance",
+            json!({"projectId": project_id, "draft": draft, "model": model}),
+        )
         .await
     }
 
@@ -807,18 +689,22 @@ impl Pilo {
         query: String,
         limit: Option<f64>,
     ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let limit = limit
-                .map(|limit| {
-                    let invalid = "session search limit must be a non-negative safe integer";
-                    if !(0.0..=9_007_199_254_740_991.0).contains(&limit) || limit.fract() != 0.0 {
-                        return Err(invalid.to_owned());
-                    }
-                    usize::try_from(limit as u64).map_err(|_| invalid.to_owned())
-                })
-                .transpose()?;
-            encode_list(session_search(&runtime, project_id, query, limit).await?)
-        })
+        let limit = limit
+            .map(|limit| {
+                let invalid = "session search limit must be a non-negative safe integer";
+                if !(0.0..=9_007_199_254_740_991.0).contains(&limit) || limit.fract() != 0.0 {
+                    return Err(invalid.to_owned());
+                }
+                usize::try_from(limit as u64).map_err(|_| invalid.to_owned())
+            })
+            .transpose()?;
+        Self::host_call(
+            this,
+            "session.search",
+            json!({
+                "projectId": project_id, "query": query, "limit": limit,
+            }),
+        )
         .await
     }
 
@@ -830,7 +716,19 @@ impl Pilo {
         data: Vec<u8>,
     ) -> Result<String, String> {
         Self::with_runtime(this, move |runtime| async move {
-            project_chat_file_upload(&runtime, project_id, name, data).await
+            let result = host_api::call_binary(
+                &runtime,
+                &Principal::Local,
+                "chat.files.upload",
+                json!({"projectId": project_id, "name": name}),
+                Some(&data),
+            )
+            .await
+            .map_err(|err| err.message)?;
+            match result {
+                BinaryOutput::Json(value) => decode_host_response(value),
+                BinaryOutput::Bytes(_) => Err("expected a Host API JSON upload result".into()),
+            }
         })
         .await
     }
@@ -841,9 +739,11 @@ impl Pilo {
         project_id: String,
         path: String,
     ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_chat_file_remove(&runtime, project_id, path).await
-        })
+        Self::host_call(
+            this,
+            "chat.files.remove",
+            json!({"projectId": project_id, "path": path}),
+        )
         .await
     }
 
@@ -853,9 +753,11 @@ impl Pilo {
         project_id: String,
         query: String,
     ) -> Result<Vec<String>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_fs_search(&runtime, project_id, query).await
-        })
+        Self::host_call(
+            this,
+            "files.search",
+            json!({"projectId": project_id, "query": query}),
+        )
         .await
     }
 
@@ -865,9 +767,11 @@ impl Pilo {
         project_id: String,
         message: String,
     ) -> Result<Option<String>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            session_generate_title(&runtime, project_id, message).await
-        })
+        Self::host_call(
+            this,
+            "session.title",
+            json!({"projectId": project_id, "message": message}),
+        )
         .await
     }
 
@@ -876,9 +780,11 @@ impl Pilo {
         this: Instance<Self>,
         project_id: String,
     ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(session_external_activity(&runtime, project_id).await?)
-        })
+        Self::host_call(
+            this,
+            "session.externalActivity",
+            json!({"projectId": project_id}),
+        )
         .await
     }
 
@@ -888,10 +794,11 @@ impl Pilo {
         project_id: String,
         session_path: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            serde_json::to_value(session_delete(&runtime, project_id, session_path).await?)
-                .map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "session.delete",
+            json!({"projectId": project_id, "sessionPath": session_path}),
+        )
         .await
     }
 
@@ -902,11 +809,11 @@ impl Pilo {
         update: JsonValue,
         project_id: Option<String>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
-            let entry = session_update_ui_state(runtime, session_path, update, project_id)?;
-            serde_json::to_value(entry).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "session.uiState.set",
+            json!({"projectId": project_id, "sessionPath": session_path, "update": update}),
+        )
         .await
     }
 
@@ -917,37 +824,28 @@ impl Pilo {
         session_path: String,
         options: Option<NativeHistoryOptions>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let options = options.unwrap_or_default();
-            let checked_integer = |value: f64| {
-                if !(0.0..=9_007_199_254_740_991.0).contains(&value) || value.fract() != 0.0 {
-                    return Err(
-                        "history window offsets and limits must be non-negative safe integers"
-                            .to_owned(),
-                    );
-                }
-                Ok(value as usize)
-            };
-            let start = options.start_message.map(checked_integer).transpose()?;
-            let limit = checked_integer(options.message_limit.unwrap_or(256.0))?;
-            let (file_size, file_mtime_ns) = history_fingerprint_args(options.fingerprint)?;
-            let history = session_history(
-                &runtime,
-                project_id,
-                session_path,
-                file_size,
-                file_mtime_ns,
-                start,
-                Some(limit),
-                Some(options.include_message_index.unwrap_or(true)),
-            )
-            .await?;
-            tokio::task::spawn_blocking(move || {
-                serde_json::from_slice(&history).map_err(|error| error.to_string())
-            })
-            .await
-            .map_err(|error| format!("failed to parse session history: {error}"))?
-        })
+        let options = options.unwrap_or_default();
+        let checked_integer = |value: f64| {
+            if !(0.0..=9_007_199_254_740_991.0).contains(&value) || value.fract() != 0.0 {
+                return Err(
+                    "history window offsets and limits must be non-negative safe integers"
+                        .to_owned(),
+                );
+            }
+            Ok(value as usize)
+        };
+        let start = options.start_message.map(checked_integer).transpose()?;
+        let limit = options.message_limit.map(checked_integer).transpose()?;
+        let (file_size, file_mtime_ns) = history_fingerprint_args(options.fingerprint)?;
+        Self::host_call(
+            this,
+            "session.history",
+            json!({
+                "projectId": project_id, "sessionPath": session_path, "startMessage": start,
+                "messageLimit": limit, "includeMessageIndex": options.include_message_index,
+                "expectedFileSize": file_size, "expectedFileMtimeNs": file_mtime_ns,
+            }),
+        )
         .await
     }
 
@@ -959,18 +857,15 @@ impl Pilo {
         image_id: String,
         fingerprint: Option<NativeHistoryFingerprint>,
     ) -> Result<Vec<u8>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let (file_size, file_mtime_ns) = history_fingerprint_args(fingerprint)?;
-            session_history_image(
-                &runtime,
-                project_id,
-                session_path,
-                image_id,
-                file_size,
-                file_mtime_ns,
-            )
-            .await
-        })
+        let (file_size, file_mtime_ns) = history_fingerprint_args(fingerprint)?;
+        Self::host_download(
+            this,
+            "session.historyImage",
+            json!({
+                "projectId": project_id, "sessionPath": session_path, "imageId": image_id,
+                "expectedFileSize": file_size, "expectedFileMtimeNs": file_mtime_ns,
+            }),
+        )
         .await
     }
 
@@ -980,9 +875,13 @@ impl Pilo {
         project_id: String,
         path: String,
     ) -> Result<Vec<u8>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_fs_read_image(&runtime, project_id, path).await
-        })
+        Self::host_download(
+            this,
+            "files.image",
+            json!({
+                "projectId": project_id, "path": path,
+            }),
+        )
         .await
     }
 
@@ -1018,49 +917,32 @@ impl Pilo {
         this: Instance<Self>,
         input: NativeStartChatInput,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let builtin_extensions = input
-                .builtin_extensions
-                .map(|extensions| {
-                    let extensions = extensions
-                        .into_iter()
-                        .map(|extension| serde_json::json!({ "id": extension.id }))
-                        .collect();
-                    serde_json::from_value(JsonValue::Array(extensions))
-                        .map_err(|error| error.to_string())
-                })
-                .transpose()?;
-            let snapshot = chat_session_start(
-                &runtime,
-                input.project_id,
-                input.session_key,
-                input.session_path,
-                input.no_session.unwrap_or(false),
-                None,
-                builtin_extensions,
-            )
-            .await?;
-            serde_json::to_value(snapshot).map_err(|error| error.to_string())
-        })
+        let builtin_extensions = input.builtin_extensions.map(|extensions| {
+            extensions
+                .into_iter()
+                .map(|extension| json!({"id": extension.id}))
+                .collect::<Vec<_>>()
+        });
+        Self::host_call(
+            this,
+            "chat.start",
+            json!({
+                "projectId": input.project_id, "sessionKey": input.session_key,
+                "sessionPath": input.session_path, "noSession": input.no_session,
+                "builtinExtensions": builtin_extensions,
+            }),
+        )
         .await
     }
 
     /// Returns the Remote Host's live state (enabled, addresses, pairing, devices).
     pub async fn remote_host_state(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let state = remote_host_state(&runtime).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "remote.state", json!({})).await
     }
 
     /// Lists the machine's LAN IPs for the Remote Host address picker.
     pub async fn remote_lan_addresses(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let addresses = remote_lan_addresses(&runtime).await?;
-            serde_json::to_value(addresses).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "remote.lanAddresses", json!({})).await
     }
 
     /// Enables or disables the Remote Host.
@@ -1068,11 +950,7 @@ impl Pilo {
         this: Instance<Self>,
         enabled: bool,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_enabled(&runtime, enabled).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "remote.enabled.set", json!({"enabled": enabled})).await
     }
 
     /// Sets the Remote Host's listen port.
@@ -1080,11 +958,7 @@ impl Pilo {
         if !port.is_finite() || port.fract() != 0.0 || !(0.0..=65535.0).contains(&port) {
             return Err(format!("invalid port: {port}"));
         }
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_port(&runtime, port as u16).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "remote.port.set", json!({"port": port as u16})).await
     }
 
     /// Replaces the Remote Host's access addresses and entry selection.
@@ -1093,22 +967,17 @@ impl Pilo {
         addresses: JsonValue,
         entry_address_id: String,
     ) -> Result<JsonValue, String> {
-        let addresses: Vec<RemoteAccessAddress> =
-            serde_json::from_value(addresses).map_err(|error| error.to_string())?;
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_addresses(&runtime, addresses, entry_address_id).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "remote.addresses.set",
+            json!({"addresses": addresses, "entryAddressId": entry_address_id}),
+        )
         .await
     }
 
     /// Regenerates the Remote Host's pairing link.
     pub async fn remote_pairing_regenerate(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let state = remote_pairing_regenerate(&runtime).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "remote.pairing.regenerate", json!({})).await
     }
 
     /// Revokes a paired Remote device.
@@ -1116,11 +985,7 @@ impl Pilo {
         this: Instance<Self>,
         device_id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_device_revoke(&runtime, device_id).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "remote.device.revoke", json!({"deviceId": device_id})).await
     }
 
     /// Renames a paired Remote device.
@@ -1129,10 +994,11 @@ impl Pilo {
         device_id: String,
         name: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_device_rename(&runtime, device_id, name).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "remote.device.rename",
+            json!({"deviceId": device_id, "name": name}),
+        )
         .await
     }
 
@@ -1154,9 +1020,11 @@ impl Pilo {
         session_key: String,
         reason: Option<String>,
     ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            chat_session_stop(&runtime, session_key, reason).await
-        })
+        Self::host_call(
+            this,
+            "chat.stop",
+            json!({"sessionKey": session_key, "reason": reason}),
+        )
         .await
     }
 
@@ -1165,11 +1033,7 @@ impl Pilo {
         this: Instance<Self>,
         session_key: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            serde_json::to_value(chat_session_state(&runtime, session_key).await?)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "chat.state", json!({"sessionKey": session_key})).await
     }
 
     /// Captures persisted history and the live transcript at an ordered event cut.
@@ -1178,17 +1042,11 @@ impl Pilo {
         session_key: String,
         window: Option<JsonValue>,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let window: TranscriptWindow = window
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|error| error.to_string())?
-                .unwrap_or_default();
-            let snapshot = runtime
-                .chat_transcript_snapshot(&session_key, window)
-                .await?;
-            serde_json::to_value(snapshot).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "chat.transcript",
+            json!({"sessionKey": session_key, "window": window}),
+        )
         .await
     }
 
@@ -1198,9 +1056,11 @@ impl Pilo {
         session_key: String,
         command: JsonValue,
     ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            chat_session_send_rpc(&runtime, session_key, command).await
-        })
+        Self::host_call(
+            this,
+            "chat.rpc",
+            json!({"sessionKey": session_key, "command": command}),
+        )
         .await
     }
 
@@ -1208,14 +1068,7 @@ impl Pilo {
     pub async fn load_session_read_states(
         this: Instance<Self>,
     ) -> Result<Vec<NativeSessionReadState>, String> {
-        Self::with_runtime(this, |runtime| async move {
-            Ok(session_read_states(&runtime)
-                .await?
-                .into_iter()
-                .map(Into::into)
-                .collect())
-        })
-        .await
+        Self::host_call(this, "session.readStates", json!({})).await
     }
 
     /// Acknowledges an observed session revision and returns the resulting read state.
@@ -1225,14 +1078,16 @@ impl Pilo {
         session_path: String,
         revision: f64,
     ) -> Result<NativeSessionReadState, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            if !(1.0..=9_007_199_254_740_991.0).contains(&revision) || revision.fract() != 0.0 {
-                return Err("session read revision must be a positive safe integer".into());
-            }
-            session_mark_read(&runtime, project_id, session_path, revision as u64)
-                .await
-                .map(Into::into)
-        })
+        if !(1.0..=9_007_199_254_740_991.0).contains(&revision) || revision.fract() != 0.0 {
+            return Err("session read revision must be a positive safe integer".into());
+        }
+        Self::host_call(
+            this,
+            "session.markRead",
+            json!({
+                "projectId": project_id, "sessionPath": session_path, "revision": revision as u64,
+            }),
+        )
         .await
     }
 
@@ -1273,7 +1128,7 @@ impl Pilo {
     pub async fn load_preferences(
         this: Instance<Self>,
     ) -> Result<NativePreferencesSnapshot, String> {
-        Self::with_runtime_blocking(this, |runtime| preferences_get(runtime).map(Into::into)).await
+        Self::host_call(this, "preferences.get", json!({})).await
     }
 
     /// Applies a partial patch and returns the complete, updated preferences.
@@ -1282,22 +1137,20 @@ impl Pilo {
         patch: JsonValue,
         initial: Option<bool>,
     ) -> Result<NativePreferencesSnapshot, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let JsonValue::Object(patch) = patch else {
-                return Err("Pilo preference patch must be an object".into());
-            };
-            preferences_patch(runtime, patch, initial).map(Into::into)
-        })
+        if !patch.is_object() {
+            return Err("Pilo preference patch must be an object".into());
+        }
+        Self::host_call(
+            this,
+            "preferences.patch",
+            json!({"patch": patch, "initial": initial}),
+        )
         .await
     }
 
     /// Reads the complete Host appearance settings, including tokens and conversion reports.
     pub async fn load_theme_settings(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let settings = theme_settings_get(&runtime).await?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "theme.get", json!({})).await
     }
 
     /// Applies a Host appearance update and returns the complete settings.
@@ -1305,15 +1158,10 @@ impl Pilo {
         this: Instance<Self>,
         update: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            if !update.is_object() {
-                return Err("Pilo theme settings update must be an object".into());
-            }
-            let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
-            let settings = theme_settings_set(&runtime, update).await?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
+        if !update.is_object() {
+            return Err("Pilo theme settings update must be an object".into());
+        }
+        Self::host_call(this, "theme.set", json!({"update": update})).await
     }
 
     /// Lists the installed font families with the platform's monospace trait.
@@ -1348,12 +1196,17 @@ impl Pilo {
         url: String,
         preview: bool,
     ) -> Result<Option<JsonValue>, String> {
+        if preview {
+            return Self::host_call(
+                this,
+                "project.file.preview",
+                json!({"projectId": project_id, "url": url}),
+            )
+            .await;
+        }
         Self::with_runtime(this, move |runtime| async move {
-            let file =
-                project_api::project_file_link_open(&runtime, project_id, url, preview).await?;
-            file.map(serde_json::to_value)
-                .transpose()
-                .map_err(|error| error.to_string())
+            project_api::project_file_link_open(&runtime, project_id, url, false).await?;
+            Ok(None)
         })
         .await
     }
@@ -1363,11 +1216,7 @@ impl Pilo {
         this: Instance<Self>,
         project_id: String,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let status = project_api::project_git_status(&runtime, project_id).await?;
-            serde_json::to_value(status).map_err(|error| error.to_string())
-        })
-        .await
+        Self::host_call(this, "git.status", json!({"projectId": project_id})).await
     }
 
     /// Reads a unified Git diff for a project (or one project-relative file path).
@@ -1377,9 +1226,11 @@ impl Pilo {
         path: Option<String>,
         staged: bool,
     ) -> Result<String, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_api::project_git_diff(&runtime, project_id, path, staged).await
-        })
+        Self::host_call(
+            this,
+            "git.diff",
+            json!({"projectId": project_id, "path": path, "staged": staged}),
+        )
         .await
     }
 
@@ -1392,11 +1243,11 @@ impl Pilo {
         rows: f64,
     ) -> Result<JsonValue, String> {
         let (cols, rows) = terminal_size(cols, rows)?;
-        Self::with_runtime(this, move |runtime| async move {
-            let terminal =
-                project_api::project_terminal_open(&runtime, project_id, cols, rows).await?;
-            serde_json::to_value(terminal).map_err(|error| error.to_string())
-        })
+        Self::host_call(
+            this,
+            "terminal.open",
+            json!({"projectId": project_id, "cols": cols, "rows": rows}),
+        )
         .await
     }
 
@@ -1407,7 +1258,16 @@ impl Pilo {
         data: Vec<u8>,
     ) -> Result<(), String> {
         Self::with_runtime(this, move |runtime| async move {
-            project_api::terminal_write(&runtime, terminal_id, data).await
+            host_api::call_binary(
+                &runtime,
+                &Principal::Local,
+                "terminal.write",
+                json!({"terminalId": terminal_id}),
+                Some(&data),
+            )
+            .await
+            .map_err(|err| err.message)?;
+            Ok(())
         })
         .await
     }
@@ -1420,18 +1280,17 @@ impl Pilo {
         rows: f64,
     ) -> Result<(), String> {
         let (cols, rows) = terminal_size(cols, rows)?;
-        Self::with_runtime(this, move |runtime| async move {
-            project_api::terminal_resize(&runtime, terminal_id, cols, rows).await
-        })
+        Self::host_call(
+            this,
+            "terminal.resize",
+            json!({"terminalId": terminal_id, "cols": cols, "rows": rows}),
+        )
         .await
     }
 
     /// Closes a terminal and its shell; closing an absent one succeeds.
     pub async fn close_terminal(this: Instance<Self>, terminal_id: String) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_api::terminal_close(&runtime, terminal_id).await
-        })
-        .await
+        Self::host_call(this, "terminal.close", json!({"terminalId": terminal_id})).await
     }
 
     /// Waits for terminal events and returns up to `max` in order:

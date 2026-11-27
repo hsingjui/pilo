@@ -3,6 +3,7 @@
 use nsh_core::{JsonValue, prelude::*};
 use pilo_domain::SessionReadState;
 use pilo_runtime::preferences::PreferencesSnapshot;
+use serde::Deserialize;
 
 /// A session file's size and exact modification time, as returned by the runtime.
 #[derive(JsObject)]
@@ -20,7 +21,8 @@ pub struct NativeHistoryOptions {
 }
 
 /// The initial project catalog and runtime snapshots with their event cut.
-#[derive(JsObject)]
+#[derive(JsObject, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Bootstrap {
     /// The runtime event sequence before reading snapshot state.
     pub event_sequence: u64,
@@ -39,7 +41,8 @@ pub struct NativeDesktopSettings {
 }
 
 /// The current revision and complete Host preference values.
-#[derive(JsObject)]
+#[derive(JsObject, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NativePreferencesSnapshot {
     pub revision: u64,
     pub values: JsonValue,
@@ -55,7 +58,8 @@ impl From<PreferencesSnapshot> for NativePreferencesSnapshot {
 }
 
 /// The completed and acknowledged revisions for a saved session.
-#[derive(JsObject)]
+#[derive(JsObject, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NativeSessionReadState {
     pub project_id: String,
     pub session_path: String,

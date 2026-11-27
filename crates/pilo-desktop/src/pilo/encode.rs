@@ -2,7 +2,7 @@
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use nsh_core::JsonValue;
-use pilo_runtime::{Runtime, TerminalEvent, events::EventBatch, project_api::project_list};
+use pilo_runtime::{TerminalEvent, events::EventBatch};
 use serde::Serialize;
 
 use super::objects::NativeHistoryFingerprint;
@@ -73,10 +73,6 @@ pub(super) fn encode_terminal_events(events: Vec<TerminalEvent>) -> Vec<JsonValu
             }),
         })
         .collect()
-}
-
-pub(super) fn load_projects(runtime: &Runtime) -> Result<Vec<JsonValue>, String> {
-    encode_list(project_list(runtime)?)
 }
 
 pub(super) fn history_fingerprint_args(
