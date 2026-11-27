@@ -20,7 +20,7 @@ const WS_BATCH_MAX_EVENTS: usize = 64;
 
 #[derive(Deserialize)]
 pub(super) struct EventQuery {
-    after: Option<u64>,
+    pub(super) after: Option<u64>,
 }
 
 pub(super) async fn events(
@@ -33,7 +33,7 @@ pub(super) async fn events(
         .on_upgrade(move |socket| event_socket(socket, state, auth_session, query.after))
 }
 
-async fn refresh_auth_session(
+pub(super) async fn refresh_auth_session(
     paths: &HostPaths,
     session: &mut AuthSession,
     auth_generation: u64,
@@ -215,7 +215,7 @@ async fn event_socket(
     log::info!(target: "remote-webui", "event socket closed deviceId={} reason={close_reason} latestSequence={}", auth_session.device.id, events.latest_sequence());
 }
 
-enum EventBatchResult {
+pub(super) enum EventBatchResult {
     Ready(Vec<Arc<SequencedRuntimeEvent>>),
     Lagged,
     Closed,
@@ -230,7 +230,7 @@ fn is_coalesceable_stream_event(event: &SequencedRuntimeEvent) -> bool {
     )
 }
 
-async fn collect_event_batch(
+pub(super) async fn collect_event_batch(
     first: Arc<SequencedRuntimeEvent>,
     receiver: &mut crate::events::WebEventReceiver,
 ) -> EventBatchResult {
@@ -276,7 +276,7 @@ struct EventBatch<'a> {
     events: &'a [Arc<SequencedRuntimeEvent>],
 }
 
-async fn send_event_batch(
+pub(super) async fn send_event_batch(
     socket: &mut WebSocket,
     events: &[Arc<SequencedRuntimeEvent>],
 ) -> Result<(), axum::Error> {
@@ -291,7 +291,7 @@ async fn send_event_batch(
     .await
 }
 
-async fn send_ws_json<T: Serialize + ?Sized>(
+pub(super) async fn send_ws_json<T: Serialize + ?Sized>(
     socket: &mut WebSocket,
     value: &T,
 ) -> Result<(), axum::Error> {

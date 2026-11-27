@@ -34,6 +34,7 @@ mod host;
 mod middleware;
 mod model_settings;
 mod sessions;
+pub(crate) mod v2;
 mod ws;
 
 const AUTH_FAILURE_WINDOW: Duration = Duration::from_secs(60);
@@ -327,6 +328,15 @@ pub(crate) fn router(
                 .layer(DefaultBodyLimit::max(crate::remote_fs::MAX_CHAT_FILE_BYTES)),
         )
         .route("/api/v1/events", get(ws::events))
+        .route("/api/v2/call/{method}", post(v2::call))
+        .route(
+            "/api/v2/upload/{method}",
+            post(v2::upload).layer(DefaultBodyLimit::max(
+                crate::remote_fs::MAX_CHAT_FILE_BYTES.max(pilo_protocol::MAX_BINARY_PAYLOAD_BYTES),
+            )),
+        )
+        .route("/api/v2/blob/{method}", get(v2::blob))
+        .route("/api/v2/events", get(v2::events))
         .route_layer(from_fn_with_state(state.clone(), middleware::require_auth));
 
     let pairing = Router::new()
