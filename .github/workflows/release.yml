@@ -260,6 +260,14 @@ jobs:
               'AppUserModelID: "app.hsingjui.pilo"; AppUserModelToastActivatorCLSID: "58BCF293-2F89-430F-B5FA-7E0B41AFF62C"'
             )
           }
+          # Keep Setup's RedirectionGuard enabled. A per-user postinstall launch
+          # inherits it and cannot follow user-created junctions used by pnpm/mise.
+          # Start Pilo from the installed shortcut instead.
+          $postInstallLaunch = '(?m)^[ \t]*Filename:[ \t]*"\{app\}\\pilo-app\\Pilo\.exe";[^\r\n]*;[ \t]*Flags:[ \t]*[^\r\n]*\bpostinstall\b[^\r\n]*(?:\r?\n|$)'
+          if ($script -notmatch $postInstallLaunch) {
+            throw "Expected the Pilo postinstall launch in $installer"
+          }
+          $script = $script -replace $postInstallLaunch, ''
           $script += "`r`n" + @'
           [UninstallDelete]
           Type: filesandordirs; Name: "{app}\pilo-app"
