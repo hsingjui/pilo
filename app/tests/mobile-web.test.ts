@@ -286,6 +286,51 @@ test("nsh web pairing shows expired state on 401", async () => {
 	expect(app.shows("id:remote-pairing-open")).toBe(false);
 });
 
+test("the mobile drawer archives, opens and restores sessions by project", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+	});
+	await app.press("id:mobile-menu-button");
+	await app.waitFor("id:mobile-session-menu:s1");
+	await app.press("id:mobile-session-menu:s1");
+	await app.press("id:mobile-session-archive:s1");
+	await app.waitFor("id:mobile-session:s1", { state: "gone" });
+	await app.press("id:mobile-drawer-tab:recent");
+	expect(app.shows("id:mobile-session:s1")).toBe(false);
+	await app.press("id:mobile-drawer-archived");
+	await app.waitFor(
+		"id:mobile-drawer-archived-sessions >> id:mobile-session:s1",
+	);
+	const archivedProject = app.layout("id:mobile-drawer-archived-project:p1");
+	expect(archivedProject?.x).toBeGreaterThan(0);
+	expect(app.layout("id:mobile-session-title:s1")?.x).toBe(archivedProject?.x);
+	await app.press("id:mobile-session:s1");
+	await app.waitFor("text:Hello from iPhone Safari");
+	await app.press("id:mobile-menu-button");
+	await app.press("id:mobile-drawer-archived-back");
+	await app.press("id:mobile-drawer-tab:projects");
+	await app.press("id:mobile-project-archived:p1");
+	await app.waitFor("id:mobile-session-unarchive:s1");
+	expect(app.shows("id:mobile-session-menu:s1")).toBe(false);
+	await app.press("id:mobile-session-delete:s1");
+	await app.waitFor("text:Confirm delete");
+	await app.press("text:Cancel");
+	await app.press("id:mobile-session-unarchive:s1");
+	await app.waitFor("text:No archived sessions");
+	await app.press("id:mobile-drawer-archived-back");
+	await app.waitFor("id:mobile-session:s1");
+	await app.press("id:mobile-session-menu:s1");
+	await app.press("id:mobile-session-archive:s1");
+	await app.press("id:mobile-project-archived:p1");
+	await app.press("id:mobile-session-delete:s1");
+	await app.waitFor("text:Confirm delete");
+	await app.press("id:mobile-session-confirm-delete:s1");
+	await app.waitFor("text:No archived sessions");
+	await app.waitFor("text:Session moved to trash");
+});
+
 test("mobile drawer notifies when deleting a session succeeds or fails", async () => {
 	const app = await open("./mobile-web-fixture.tsx", {
 		locale: "en-US",

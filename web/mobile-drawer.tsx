@@ -23,6 +23,11 @@ import type { Theme } from "@shared/theme-settings-types";
 import type { WebFontScalePreset } from "@shared/web-font-scale";
 
 import { AppToaster } from "../app/shell/app-toasts";
+import { setSessionArchivedWithToast } from "../app/shell/archive-session";
+import {
+	type ArchiveView,
+	useArchivedSessions,
+} from "../app/shell/archived-sessions";
 import { connectionLabel } from "../app/shell/connection-label";
 import { deleteSessionWithToast } from "../app/shell/delete-session";
 import { t } from "../app/shell/i18n";
@@ -169,6 +174,12 @@ export function MobileDrawer(props: MobileDrawerProps) {
 	const viewport = MobileViewport();
 	const toasts = AppToaster();
 	const mode = signal<DrawerTab>("projects");
+	const archiveView = signal<ArchiveView | null>(null);
+	const archive = useArchivedSessions(props.store, archiveView);
+	const showArchive = (view: ArchiveView | null) => {
+		confirmingDeleteKey.set(null);
+		archiveView.set(view);
+	};
 	const sectionOverrides = signal<Record<string, boolean>>({});
 	const projectLimits = signal<Record<string, number>>({});
 	const confirmingDeleteKey = signal<string | null>(null);
@@ -395,6 +406,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 			!store.isViewingSession(session.projectId, session.sessionPath);
 		const confirming = () => confirmingDeleteKey() === key;
 		const saved = session.sessionPath !== "";
+		const archived = session.archivedAt != null;
 		const projectName = showProjectName
 			? projectNameById().get(session.projectId)
 			: undefined;
@@ -410,11 +422,13 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					}`}
 					style={selected() ? selectedRingStyle() : undefined}
 				>
-					<View class="h-5 w-4 shrink-0 items-center justify-center">
-						{!session.active && unread ? (
-							<View class="size-1.5 rounded-full bg-sidebar-primary" />
-						) : null}
-					</View>
+					{!archived && (
+						<View class="h-5 w-4 shrink-0 items-center justify-center">
+							{!session.active && unread ? (
+								<View class="size-1.5 rounded-full bg-sidebar-primary" />
+							) : null}
+						</View>
+					)}
 					<Text
 						class={`min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight ${
 							selected()
@@ -455,7 +469,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								{() =>
 									session.active
 										? t("sidebar.deleteRunningConfirm")
-										: t("common.delete")
+										: archived
+											? t("sidebar.confirmDelete")
+											: t("common.delete")
 								}
 							</Text>
 						</Button>
@@ -479,13 +495,16 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					accessibilityLabel={session.title}
 					onPress={() => selectSession(session)}
 				>
-					<View class="h-5 w-4 shrink-0 items-center justify-center">
-						{!session.active && unread ? (
-							<View class="size-1.5 rounded-full bg-sidebar-primary" />
-						) : null}
-					</View>
+					{!archived && (
+						<View class="h-5 w-4 shrink-0 items-center justify-center">
+							{!session.active && unread ? (
+								<View class="size-1.5 rounded-full bg-sidebar-primary" />
+							) : null}
+						</View>
+					)}
 					<View class="min-w-0 flex-1">
 						<Text
+							testID={`mobile-session-title:${session.id}`}
 							class={`min-w-0 truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight ${
 								selected() || unread ? "font-medium" : ""
 							} ${
@@ -513,10 +532,51 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					<View class="h-5 w-4 shrink-0 items-center justify-center">
 						{session.active ? (
 							<View class="size-1.5 animate-pulse rounded-full bg-sidebar-primary" />
+						) : archived && unread ? (
+							<View class="size-1.5 rounded-full bg-sidebar-primary" />
 						) : null}
 					</View>
 				</BaseButton>
-				{saved ? (
+				{saved && archived ? (
+					<>
+						<Button
+							testID={`mobile-session-unarchive:${session.id}`}
+							variant="ghost"
+							size="icon"
+							class={ROW_ACTION_CLASS}
+							accessibilityLabel={t("sidebar.unarchive")}
+							onPress={() =>
+								void setSessionArchivedWithToast(
+									store,
+									toasts,
+									session.projectId,
+									session.sessionPath,
+									false,
+								)
+							}
+						>
+							<Icon
+								name="ArchiveRestore"
+								size={16}
+								color={token("sidebar-foreground-muted")}
+							/>
+						</Button>
+						<Button
+							testID={`mobile-session-delete:${session.id}`}
+							variant="ghost"
+							size="icon"
+							class={ROW_ACTION_CLASS}
+							accessibilityLabel={t("sidebar.delete")}
+							onPress={() => confirmingDeleteKey.set(key)}
+						>
+							<Icon
+								name="Trash2"
+								size={16}
+								color={token("sidebar-foreground-muted")}
+							/>
+						</Button>
+					</>
+				) : saved ? (
 					<MobileDropdownMenu
 						align="end"
 						popupClass="w-44"
@@ -564,6 +624,30 @@ export function MobileDrawer(props: MobileDrawerProps) {
 							>
 								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight">
 									{() => t("chat.refreshSession")}
+								</Text>
+							</MobileDropdownItem>
+							<MobileDropdownItem
+								testID={`mobile-session-archive:${session.id}`}
+								icon={<Icon name="Archive" size={14} />}
+								disabled={session.active}
+								onSelect={() =>
+									void setSessionArchivedWithToast(
+										store,
+										toasts,
+										session.projectId,
+										session.sessionPath,
+										true,
+									)
+								}
+							>
+								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight">
+									{() =>
+										t(
+											session.active
+												? "sidebar.archiveRunning"
+												: "sidebar.archive",
+										)
+									}
 								</Text>
 							</MobileDropdownItem>
 							<MobileDropdownItem
@@ -658,85 +742,131 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									</Button>
 								</View>
 
-								{/* New Session button */}
-								<View class="shrink-0 px-3 pb-1">
-									<BaseButton
-										testID="mobile-drawer-new-session"
-										class={`min-h-11 w-full flex-row items-center gap-2 ${ROW_RADIUS_CLASS} px-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
-										accessibilityLabel={t("sidebar.newSession")}
-										onPress={() => startNewChat()}
-									>
-										<Icon
-											name="SquarePen"
-											size={16}
-											strokeWidth={1.5}
-											color={token("sidebar-foreground")}
-										/>
-										<Text class="truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground">
-											{() => t("sidebar.newSession")}
-										</Text>
-									</BaseButton>
-								</View>
-
-								{/* Projects / Recent segment toggle (40px track inside 44px touch target) */}
-								<View
-									testID="mobile-drawer-segments"
-									class="relative mx-3 mb-2 h-11 shrink-0 flex-row px-1"
-									onLayout={({ bounds }) => segmentWidth.set(bounds.size.width)}
-								>
-									<View class="pointer-events-none absolute inset-x-0 inset-y-0.5 rounded-(--pilo-segment-radius) bg-sidebar-hover/60" />
-									{() =>
-										segmentThumbWidth() > 0 ? (
-											<View
-												class="pointer-events-none absolute inset-y-1 left-1 rounded-(--pilo-segment-item-radius) bg-sidebar"
-												style={[
-													springTransition("transform", "crisp"),
-													{
-														width: segmentThumbWidth(),
-														transform: [
-															{
-																translateX:
-																	mode() === "recent" ? segmentThumbWidth() : 0,
-															},
-														],
-													},
-												]}
-											/>
-										) : null
-									}
-									{(
-										[
-											{ value: "projects", label: () => t("sidebar.projects") },
-											{
-												value: "recent",
-												label: () => t("sidebar.recentSessions"),
-											},
-										] as const
-									).map((tab) => (
-										<BaseButton
-											testID={`mobile-drawer-tab:${tab.value}`}
-											class={`relative min-w-0 flex-1 items-center justify-center rounded-(--pilo-segment-item-radius) px-2 ${
-												segmentThumbWidth() === 0 && mode() === tab.value
-													? "my-1 h-9 bg-sidebar"
-													: "h-11"
-											}`}
-											accessibilityLabel={tab.label()}
-											onPress={() => mode.set(tab.value)}
-										>
-											<Text
-												class={`truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-tight font-medium ${
-													mode() === tab.value
-														? "text-sidebar-foreground"
-														: "text-sidebar-foreground-muted"
-												}`}
-												style={tactileTransition("color")}
+								{() =>
+									archiveView() ? (
+										<View class="shrink-0 px-3 pb-1">
+											<BaseButton
+												testID="mobile-drawer-archived-back"
+												class={`min-h-11 w-full flex-row items-center gap-2 ${ROW_RADIUS_CLASS} px-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
+												onPress={() => showArchive(null)}
 											>
-												{tab.label}
-											</Text>
-										</BaseButton>
-									))}
-								</View>
+												<Icon name="ArrowLeft" size={16} />
+												<Text class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground">
+													{() => {
+														const id = archiveView()?.projectId;
+														const name = id && projectNameById().get(id);
+														return name
+															? `${t("sidebar.archivedSessions")} · ${name}`
+															: t("sidebar.archivedSessions");
+													}}
+												</Text>
+											</BaseButton>
+										</View>
+									) : (
+										<>
+											{/* New Session button */}
+											<View class="shrink-0 px-3 pb-1">
+												<BaseButton
+													testID="mobile-drawer-new-session"
+													class={`min-h-11 w-full flex-row items-center gap-2 ${ROW_RADIUS_CLASS} px-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
+													accessibilityLabel={t("sidebar.newSession")}
+													onPress={() => startNewChat()}
+												>
+													<Icon
+														name="SquarePen"
+														size={16}
+														strokeWidth={1.5}
+														color={token("sidebar-foreground")}
+													/>
+													<Text class="truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground">
+														{() => t("sidebar.newSession")}
+													</Text>
+												</BaseButton>
+											</View>
 
+											{/* Projects / Recent segment toggle (40px track inside 44px touch target) */}
+											<View
+												testID="mobile-drawer-segments"
+												class="relative mx-3 mb-2 h-11 shrink-0 flex-row px-1"
+												onLayout={({ bounds }) =>
+													segmentWidth.set(bounds.size.width)
+												}
+											>
+												<View class="pointer-events-none absolute inset-x-0 inset-y-0.5 rounded-(--pilo-segment-radius) bg-sidebar-hover/60" />
+												{() =>
+													segmentThumbWidth() > 0 ? (
+														<View
+															class="pointer-events-none absolute inset-y-1 left-1 rounded-(--pilo-segment-item-radius) bg-sidebar"
+															style={[
+																springTransition("transform", "crisp"),
+																{
+																	width: segmentThumbWidth(),
+																	transform: [
+																		{
+																			translateX:
+																				mode() === "recent"
+																					? segmentThumbWidth()
+																					: 0,
+																		},
+																	],
+																},
+															]}
+														/>
+													) : null
+												}
+												{(
+													[
+														{
+															value: "projects",
+															label: () => t("sidebar.projects"),
+														},
+														{
+															value: "recent",
+															label: () => t("sidebar.recentSessions"),
+														},
+													] as const
+												).map((tab) => (
+													<BaseButton
+														testID={`mobile-drawer-tab:${tab.value}`}
+														class={`relative min-w-0 flex-1 items-center justify-center rounded-(--pilo-segment-item-radius) px-2 ${
+															segmentThumbWidth() === 0 && mode() === tab.value
+																? "my-1 h-9 bg-sidebar"
+																: "h-11"
+														}`}
+														accessibilityLabel={tab.label()}
+														onPress={() => mode.set(tab.value)}
+													>
+														<Text
+															class={`truncate font-sans text-xs text-(length:--pilo-ui-text-xs) leading-tight font-medium ${
+																mode() === tab.value
+																	? "text-sidebar-foreground"
+																	: "text-sidebar-foreground-muted"
+															}`}
+															style={tactileTransition("color")}
+														>
+															{tab.label}
+														</Text>
+													</BaseButton>
+												))}
+											</View>
+
+											<BaseButton
+												testID="mobile-drawer-archived"
+												class={`mx-3 mb-2 min-h-11 shrink-0 flex-row items-center gap-2 ${ROW_RADIUS_CLASS} px-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
+												onPress={() => showArchive({})}
+											>
+												<Icon
+													name="Archive"
+													size={16}
+													color={token("sidebar-foreground-muted")}
+												/>
+												<Text class="font-sans text-sm text-sidebar-foreground">
+													{() => t("sidebar.archived")}
+												</Text>
+											</BaseButton>
+										</>
+									)
+								}
 								{/* Scrollable sessions list */}
 								<Scroll
 									testID="mobile-drawer-scroll"
@@ -745,6 +875,46 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									bounces={false}
 								>
 									{() => {
+										if (archiveView()) {
+											const groups = archive.groups();
+											const loading = archive.loading();
+											const failed = archive.failed();
+											return (
+												<View
+													testID="mobile-drawer-archived-sessions"
+													class="gap-3"
+												>
+													{groups.map(({ project, sessions }) => (
+														<View class="gap-1">
+															{archiveView()?.projectId === undefined && (
+																<View class="px-2">
+																	<Text
+																		testID={`mobile-drawer-archived-project:${project.id}`}
+																		class="truncate font-sans text-sm font-medium text-sidebar-foreground-muted"
+																	>
+																		{projectDisplayName(project)}
+																	</Text>
+																</View>
+															)}
+															{sessions.map((session) =>
+																renderSessionRow(session),
+															)}
+														</View>
+													))}
+													{(loading || failed || groups.length === 0) && (
+														<Text class="px-3 py-6 text-center font-sans text-sm text-sidebar-foreground-muted">
+															{t(
+																loading
+																	? "sidebar.refreshingSessions"
+																	: failed
+																		? "sidebar.loadArchivedFailed"
+																		: "sidebar.noArchivedSessions",
+															)}
+														</Text>
+													)}
+												</View>
+											);
+										}
 										if (mode() === "recent") {
 											const items = recent();
 											if (items.length === 0) {
@@ -879,7 +1049,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																			: [];
 																		const sessionCount = projExpanded
 																			? sessions.length
-																			: (index?.sessions.length ?? 0);
+																			: (index?.sessions.filter(
+																					(entry) => entry.archivedAt == null,
+																				).length ?? 0);
 																		const visibleLimit = Math.min(
 																			sessions.length,
 																			projectLimits()[project.id] ??
@@ -959,6 +1131,28 @@ export function MobileDrawer(props: MobileDrawerProps) {
 																							/>
 																						</View>
 																					</BaseButton>
+																					<Button
+																						testID={`mobile-project-archived:${project.id}`}
+																						variant="ghost"
+																						size="icon"
+																						class={ROW_ACTION_CLASS}
+																						accessibilityLabel={t(
+																							"sidebar.archivedSessions",
+																						)}
+																						onPress={() =>
+																							showArchive({
+																								projectId: project.id,
+																							})
+																						}
+																					>
+																						<Icon
+																							name="Archive"
+																							size={16}
+																							color={token(
+																								"sidebar-foreground-muted",
+																							)}
+																						/>
+																					</Button>
 																					<Button
 																						testID={`mobile-project-new:${project.id}`}
 																						variant="ghost"
