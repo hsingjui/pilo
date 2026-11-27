@@ -37,6 +37,37 @@ pub(crate) fn get_remote_host_config(db: &SqliteConnection) -> Result<RemoteHost
     read(db)?.ok_or_else(|| "failed to read Remote WebUI configuration: row missing".to_owned())
 }
 
+pub(crate) fn get_or_create_host_id(db: &SqliteConnection) -> Result<String, String> {
+    let _ = get_remote_host_config(db)?;
+    let read_id = |db: &SqliteConnection| {
+        db.query_row(
+            "SELECT host_id FROM remote_host_config WHERE id=1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| format!("failed to read host identity: {error}"))
+    };
+    let existing = read_id(db)?;
+    if !existing.is_empty() {
+        return Ok(existing);
+    }
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| format!("failed to generate host identity: {error}"))?;
+    let mut generated = String::with_capacity(5 + bytes.len() * 2);
+    generated.push_str("host-");
+    for byte in bytes {
+        use std::fmt::Write;
+        let _ = write!(&mut generated, "{byte:02x}");
+    }
+    db.execute(
+        "UPDATE remote_host_config SET host_id=?1 WHERE id=1 AND host_id=''",
+        params![generated],
+    )
+    .map_err(|error| format!("failed to persist host identity: {error}"))?;
+    read_id(db)
+}
+
 pub(crate) fn set_remote_host_config(
     db: &SqliteConnection,
     config: &RemoteHostConfig,

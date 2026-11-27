@@ -100,6 +100,7 @@ impl RemoteServerManager {
             config.enabled = true;
         } else {
             self.stop_listener().await;
+            runtime.terminals.close_all_remote().await;
             config.enabled = false;
             storage::clear_remote_pairing(&storage::open_with_paths(&paths)?)?;
         }
@@ -178,6 +179,7 @@ impl RemoteServerManager {
         .map_err(|_| "Remote WebUI address task failed".to_owned())??;
         if was_running {
             self.stop_listener().await;
+            runtime.terminals.close_all_remote().await;
         }
         config.port = port;
         tokio::task::spawn_blocking(move || {
@@ -343,6 +345,7 @@ impl RemoteServerManager {
         if let Some(running) = self.inner.lock().await.running.as_ref() {
             running.auth_generation.send_replace(next_auth_generation());
         }
+        runtime.terminals.close_by_device(device_id).await;
         self.snapshot(runtime).await
     }
 
@@ -380,6 +383,9 @@ impl RemoteServerManager {
             running.auth_generation.send_replace(next_auth_generation());
         }
         drop(inner);
+        if scopes != RemoteScopes::ChatWorkspace {
+            runtime.terminals.close_by_device(device_id).await;
+        }
         self.snapshot(runtime).await
     }
 
@@ -410,6 +416,7 @@ impl RemoteServerManager {
             running.auth_generation.send_replace(next_auth_generation());
         }
         drop(inner);
+        runtime.terminals.close_all_remote().await;
         self.snapshot(runtime).await
     }
 

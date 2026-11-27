@@ -331,9 +331,11 @@ mod tests {
             "project.add",
             "project.file.preview",
             "project.remove",
+            "terminal.attach",
             "terminal.close",
             "terminal.open",
             "terminal.resize",
+            "terminal.snapshot",
             "terminal.write",
         ]);
         let mut admin = HashSet::from([

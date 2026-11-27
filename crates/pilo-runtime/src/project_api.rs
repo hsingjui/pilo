@@ -141,6 +141,23 @@ pub async fn project_terminal_open(
     cols: u16,
     rows: u16,
 ) -> Result<TerminalInfo, String> {
+    project_terminal_open_for_owner(
+        runtime,
+        id,
+        cols,
+        rows,
+        crate::terminal::TerminalOwner::Local,
+    )
+    .await
+}
+
+pub(crate) async fn project_terminal_open_for_owner(
+    runtime: &Runtime,
+    id: String,
+    cols: u16,
+    rows: u16,
+    owner: crate::terminal::TerminalOwner,
+) -> Result<TerminalInfo, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     let (info, session) = runtime
         .terminals
@@ -150,6 +167,7 @@ pub async fn project_terminal_open(
             &project,
             cols,
             rows,
+            owner,
         )
         .await?;
     if let Err((error, session)) = runtime
@@ -170,7 +188,11 @@ pub async fn terminal_write(
     terminal_id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    runtime.terminals.write(&terminal_id, &data).await
+    runtime
+        .terminals
+        .write(&crate::terminal::TerminalOwner::Local, &terminal_id, &data)
+        .await
+        .map_err(crate::terminal::TerminalAccessError::into_message)
 }
 
 pub async fn terminal_resize(
@@ -179,11 +201,24 @@ pub async fn terminal_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    runtime.terminals.resize(&terminal_id, cols, rows).await
+    runtime
+        .terminals
+        .resize(
+            &crate::terminal::TerminalOwner::Local,
+            &terminal_id,
+            cols,
+            rows,
+        )
+        .await
+        .map_err(crate::terminal::TerminalAccessError::into_message)
 }
 
 pub async fn terminal_close(runtime: &Runtime, terminal_id: String) -> Result<(), String> {
-    runtime.terminals.close(&terminal_id).await
+    runtime
+        .terminals
+        .close(&crate::terminal::TerminalOwner::Local, &terminal_id)
+        .await
+        .map_err(crate::terminal::TerminalAccessError::into_message)
 }
 
 pub async fn connection_fs_read_dir(

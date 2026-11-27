@@ -92,20 +92,38 @@ register! {
     "git.diff": Workspace Json |rt, _who| (project_id: String, path: Option<String>, staged: bool) {
         json(project_api::project_git_diff(rt, project_id, path, staged).await.map_err(HostApiError::invalid)?)
     }
-    "terminal.open": Workspace Json |rt, _who| (project_id: String, cols: u16, rows: u16) {
+    "terminal.open": Workspace Json |rt, who| (project_id: String, cols: u16, rows: u16) {
         validate_terminal_size(cols, rows)?;
-        json(project_api::project_terminal_open(rt, project_id, cols, rows).await.map_err(HostApiError::invalid)?)
+        let owner = crate::terminal::TerminalOwner::from_principal(who);
+        let info = project_api::project_terminal_open_for_owner(rt, project_id.clone(), cols, rows, owner.clone())
+            .await
+            .map_err(HostApiError::invalid)?;
+        log::info!(target: "terminal", "terminal opened id={} projectId={} owner={owner:?}", info.id, project_id);
+        json(info)
     }
-    "terminal.write": Workspace BinaryIn(MAX_BINARY_PAYLOAD_BYTES) |rt, _who, data| (terminal_id: String) {
-        rt.terminals.write(&terminal_id, data).await.map_err(HostApiError::invalid)?;
+    "terminal.write": Workspace BinaryIn(MAX_BINARY_PAYLOAD_BYTES) |rt, who, data| (terminal_id: String) {
+        let owner = crate::terminal::TerminalOwner::from_principal(who);
+        rt.terminals.write(&owner, &terminal_id, data).await.map_err(terminal_access_error)?;
         json(())
     }
-    "terminal.resize": Workspace Json |rt, _who| (terminal_id: String, cols: u16, rows: u16) {
+    "terminal.resize": Workspace Json |rt, who| (terminal_id: String, cols: u16, rows: u16) {
         validate_terminal_size(cols, rows)?;
-        json(project_api::terminal_resize(rt, terminal_id, cols, rows).await.map_err(HostApiError::invalid)?)
+        let owner = crate::terminal::TerminalOwner::from_principal(who);
+        rt.terminals.resize(&owner, &terminal_id, cols, rows).await.map_err(terminal_access_error)?;
+        json(())
     }
-    "terminal.close": Workspace Json |rt, _who| (terminal_id: String) {
-        json(project_api::terminal_close(rt, terminal_id).await.map_err(HostApiError::invalid)?)
+    "terminal.close": Workspace Json |rt, who| (terminal_id: String) {
+        let owner = crate::terminal::TerminalOwner::from_principal(who);
+        rt.terminals.close(&owner, &terminal_id).await.map_err(terminal_access_error)?;
+        json(())
+    }
+    "terminal.attach": Workspace Json |rt, who| (terminal_id: String) {
+        let owner = crate::terminal::TerminalOwner::from_principal(who);
+        json(rt.terminals.attach(&owner, &terminal_id).map_err(terminal_access_error)?)
+    }
+    "terminal.snapshot": Workspace Json |rt, who| (terminal_id: String) {
+        let owner = crate::terminal::TerminalOwner::from_principal(who);
+        json(rt.terminals.snapshot(&owner, &terminal_id).map_err(terminal_access_error)?)
     }
 
     "connection.list": Chat Json |rt, _who| () {
@@ -216,6 +234,17 @@ register! {
     }
     "remote.devices.revokeAll": Admin Json |rt, _who| () {
         json(remote::remote_devices_revoke_all(rt).await.map_err(HostApiError::invalid)?)
+    }
+    "device.revokeSelf": Chat Json |rt, who| () {
+        let Principal::Device { id, .. } = who else {
+            return Err(HostApiError::invalid(
+                "device.revokeSelf requires a remote device principal",
+            ));
+        };
+        let _ = remote::remote_device_revoke(rt, id.clone())
+            .await
+            .map_err(HostApiError::invalid)?;
+        json(())
     }
 
     "preferences.get": Chat Json |rt, _who| () {
@@ -463,4 +492,14 @@ fn validate_terminal_size(cols: u16, rows: u16) -> Result<(), HostApiError> {
         ));
     }
     Ok(())
+}
+
+fn terminal_access_error(error: crate::terminal::TerminalAccessError) -> HostApiError {
+    match error {
+        crate::terminal::TerminalAccessError::NotFound(message) => HostApiError::not_found(message),
+        crate::terminal::TerminalAccessError::Forbidden(message) => {
+            HostApiError::new(super::ErrorCode::Forbidden, message)
+        }
+        crate::terminal::TerminalAccessError::Internal(message) => HostApiError::invalid(message),
+    }
 }

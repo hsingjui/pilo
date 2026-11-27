@@ -339,6 +339,12 @@ fn ensure_remote_host_config_columns(db: &SqliteConnection) -> Result<(), String
         )
         .map_err(|error| error.to_string())?;
     }
+    if !column_exists(db, "remote_host_config", "host_id")? {
+        db.execute_batch(
+            "ALTER TABLE remote_host_config ADD COLUMN host_id TEXT NOT NULL DEFAULT '';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
