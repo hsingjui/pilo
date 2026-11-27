@@ -64,6 +64,8 @@ export function ProjectSection(props: {
 	onViewProject: (projectId: string) => void;
 	onViewArchived: (projectId: string) => void;
 	onSelectChat?: (projectId: string) => void;
+	/** `false` leaves removing the project out of its menu. */
+	canRemove?: boolean;
 	project: Accessor<Project>;
 }) {
 	const { store, settings } = props;
@@ -238,7 +240,10 @@ export function ProjectSection(props: {
 								actionClass={hoverAction}
 								refreshing={refreshing}
 								open={menuOpen}
-								removable={!isDefaultWorkspace(props.project())}
+								removable={
+									props.canRemove !== false &&
+									!isDefaultWorkspace(props.project())
+								}
 								confirmingRemove={confirmingRemove}
 								onRefresh={() => void store.loadSessions(id())}
 								onViewArchived={() => props.onViewArchived(id())}

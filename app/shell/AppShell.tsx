@@ -173,6 +173,8 @@ export interface AppShellProps {
 	settings?: SettingsClient;
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
+	/** `false` hides removing projects (a Host paired without workspace access). */
+	canRemoveProjects?: boolean;
 	desktop?: DesktopWindowShell;
 	shell?: Pick<
 		DesktopShell,
@@ -767,6 +769,7 @@ export function AppShell(props: AppShellProps) {
 						: undefined
 				}
 				onAddProject={props.projectClient ? openAddProject : undefined}
+				canRemoveProjects={props.canRemoveProjects}
 				hostSwitcher={props.hostSwitcher}
 				onRemoveConnection={
 					client && !props.connectionsReadOnly
@@ -1092,7 +1095,11 @@ export function AppShell(props: AppShellProps) {
 												<SessionLanding
 													store={store}
 													project={project}
-													onAddProject={() => openAddProject(null)}
+													onAddProject={
+														props.projectClient
+															? () => openAddProject(null)
+															: undefined
+													}
 												/>
 											)}
 										/>
@@ -1210,7 +1217,11 @@ export function AppShell(props: AppShellProps) {
 										<SessionLanding
 											store={store}
 											project={project}
-											onAddProject={() => openAddProject(null)}
+											onAddProject={
+												props.projectClient
+													? () => openAddProject(null)
+													: undefined
+											}
 										/>,
 									)
 								);

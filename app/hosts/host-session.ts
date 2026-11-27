@@ -277,6 +277,7 @@ export class HostSession {
 			settings: client,
 			projectClient:
 				workspaceScope && offers("project.add") ? client : undefined,
+			canRemoveProjects: workspaceScope && offers("project.remove"),
 			shell: local ? shell : { ...shell, pickLocalProjectDirectory: undefined },
 			sidebarSettings: this.sidebarSettings,
 			toasts: this.toasts,

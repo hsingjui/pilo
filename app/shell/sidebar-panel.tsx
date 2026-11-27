@@ -385,6 +385,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 										onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
 										onAddProject={props.onAddProject}
 										onRemoveConnection={props.onRemoveConnection}
+										canRemoveProjects={props.canRemoveProjects}
 									/>
 								);
 							case "loading":

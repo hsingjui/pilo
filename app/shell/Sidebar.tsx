@@ -71,6 +71,8 @@ export interface SidebarProps {
 	onDefaultWorkspaceShown?: (connectionId: string, shown: boolean) => void;
 	onAddProject?: (connectionId: string | null) => void;
 	onRemoveConnection?: (connection: Connection) => void;
+	/** `false` hides removing projects (a Host paired without workspace access). */
+	canRemoveProjects?: boolean;
 }
 
 /** A connection's or the recent view's header (`pilo-sidebar-env-*`). */
@@ -596,6 +598,7 @@ function ConnectionSection(
 									settings={props.settings}
 									onViewProject={props.onViewProject}
 									onViewArchived={props.onViewArchived}
+									canRemove={props.canRemoveProjects !== false}
 									project={project}
 								/>
 							)}
