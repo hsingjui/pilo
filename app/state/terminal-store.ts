@@ -211,11 +211,13 @@ export class TerminalStore {
 		const tab = this.tabsSignal().find(({ id }) => id === terminalId);
 		if (!tab || tab.exited) return;
 		// Keystrokes may travel as separate HTTP calls; keep them in order.
-		const queued = (this.writes.get(terminalId) ?? Promise.resolve())
-			.then(() => this.client.writeTerminal(terminalId, data))
-			.catch((error: unknown) => {
+		const previous = this.writes.get(terminalId);
+		const send = () => this.client.writeTerminal(terminalId, data);
+		const queued = (previous ? previous.then(send) : send()).catch(
+			(error: unknown) => {
 				console.warn("Failed to write to the terminal", error);
-			});
+			},
+		);
 		this.writes.set(terminalId, queued);
 		void queued.then(() => {
 			if (this.writes.get(terminalId) === queued)
