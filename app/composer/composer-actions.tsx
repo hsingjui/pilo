@@ -388,43 +388,41 @@ export function ComposerActions(props: {
 				popupStyle={{ minWidth: 184, maxWidth: 232 }}
 				trigger={sendModeTrigger()}
 			>
-				<Text class="px-2.5 pt-1.5 pb-1 font-sans text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
+				<Text class="px-2.5 pt-1.5 pb-0.5 font-sans text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
 					{() => t("chat.sendMode")}
 				</Text>
-				<View class="gap-0.5">
-					{SEND_MODE_OPTIONS.map((entry) => {
-						const destructive = entry.mode === "send_now";
-						return (
-							<>
-								{destructive ? <MenuSeparator /> : null}
-								<MenuItem
-									testID={`chat-composer-send-mode:${entry.mode}`}
-									role="menuitemradio"
-									variant={destructive ? "destructive" : undefined}
-									checked={props.sendMode() === entry.mode}
-									accessibilityLabel={t(entry.label)}
-									class="gap-2.5 px-2.5 py-1.5"
-									icon={<Icon name={entry.icon} size={14} />}
-									onSelect={() => props.onSendModeChange(entry.mode)}
-								>
-									<View class="min-w-0 flex-1 gap-0.5">
-										<Text
-											class={classNames(
-												"font-sans text-sm text-(length:--pilo-ui-text-sm) font-medium leading-tight",
-												destructive && "text-destructive",
-											)}
-										>
-											{() => t(entry.label)}
-										</Text>
-										<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
-											{() => t(entry.detail)}
-										</Text>
-									</View>
-								</MenuItem>
-							</>
-						);
-					})}
-				</View>
+				{SEND_MODE_OPTIONS.map((entry) => {
+					const destructive = entry.mode === "send_now";
+					return (
+						<>
+							{destructive ? <MenuSeparator /> : null}
+							<MenuItem
+								testID={`chat-composer-send-mode:${entry.mode}`}
+								role="menuitemradio"
+								variant={destructive ? "destructive" : undefined}
+								checked={props.sendMode() === entry.mode}
+								accessibilityLabel={t(entry.label)}
+								class="gap-2.5 px-2.5 py-1.5"
+								icon={<Icon name={entry.icon} size={14} />}
+								onSelect={() => props.onSendModeChange(entry.mode)}
+							>
+								<View class="min-w-0 flex-1 gap-0.5">
+									<Text
+										class={classNames(
+											"font-sans text-sm text-(length:--pilo-ui-text-sm) font-medium leading-tight",
+											destructive && "text-destructive",
+										)}
+									>
+										{() => t(entry.label)}
+									</Text>
+									<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
+										{() => t(entry.detail)}
+									</Text>
+								</View>
+							</MenuItem>
+						</>
+					);
+				})}
 			</Menu>
 		);
 	return (

@@ -44,6 +44,7 @@ import {
 } from "../app/ui/motion";
 import { Spinner } from "../app/ui/spinner";
 import { styleVar } from "../app/ui/theme-style";
+import { menuListSpacing } from "../app/ui/menu";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
 import { mobileSelectedRingStyle } from "./mobile-typography";
 import { MobileViewport } from "./mobile-viewport";
@@ -1156,7 +1157,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 													>
 														<View
 															testID="mobile-drawer-font-scale-popup"
-															class="gap-0.5"
+															style={menuListSpacing()}
 														>
 															{FONT_SCALE_OPTIONS.map((option) => (
 																<MobileDropdownItem
@@ -1199,7 +1200,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 													>
 														<View
 															testID="mobile-drawer-theme-popup"
-															class="gap-0.5"
+															style={menuListSpacing()}
 														>
 															{COLOR_SCHEME_OPTIONS.map((option) => (
 																<MobileDropdownItem

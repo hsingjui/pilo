@@ -8,6 +8,7 @@ import { classNames } from "./class-names";
 import { Foreground } from "./foreground";
 import { Icon } from "./icon";
 import { tactileTransition } from "./motion";
+import { selectItemSpacing } from "./select";
 
 export type {
 	CommandEntry,
@@ -71,6 +72,7 @@ export function Command(props: CommandProps) {
 					local.itemClass,
 				)}
 				itemStyle={[
+					selectItemSpacing(),
 					tactileTransition("background-color, color"),
 					local.itemStyle,
 				]}

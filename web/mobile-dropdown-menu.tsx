@@ -18,7 +18,7 @@ import {
 import { classNames } from "../app/ui/class-names";
 import { Foreground } from "../app/ui/foreground";
 import { Icon } from "../app/ui/icon";
-import { menuPopupStyle } from "../app/ui/menu";
+import { menuListSpacing, menuPopupStyle } from "../app/ui/menu";
 import { menuRowClass } from "../app/ui/menu-row";
 import {
 	popupMotionStyles,
@@ -86,7 +86,7 @@ export function MobileDropdownMenu(props: MobileDropdownMenuProps) {
 			popupEndingStyle={motion().popupEndingStyle}
 		>
 			<DropdownClose.Provider value={() => setOpen(false)}>
-				<View role="menu" class="gap-(--pilo-menu-item-gap)">
+				<View role="menu" style={menuListSpacing()}>
 					{local.children}
 				</View>
 			</DropdownClose.Provider>

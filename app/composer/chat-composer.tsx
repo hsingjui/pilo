@@ -56,7 +56,7 @@ import { FileTypeIcon } from "../ui/file-type-icon";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
-import { menuPopupClass, menuPopupStyle } from "../ui/menu";
+import { menuListSpacing, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { menuRowClass } from "../ui/menu-row";
 import { MOTION, tactileTransition } from "../ui/motion";
 import { Skeleton } from "../ui/skeleton";
@@ -1269,7 +1269,7 @@ function SuggestionMenu(props: {
 				}}
 				role="listbox"
 				accessibilityLabel={title()}
-				contentClass="gap-(--pilo-menu-item-gap)"
+				contentStyle={menuListSpacing()}
 				bounces={false}
 				// React's `min(18rem | 13rem, 40% of the viewport)`.
 				style={{

@@ -476,22 +476,20 @@ function OverflowTabsMenu(props: { items: () => readonly AuxTabItem[] }) {
 				</Button>
 			}
 		>
-			<View class="gap-0.5">
-				<Each of={props.items()} key={(item) => item.id}>
-					{(item) => (
-						<MenuItem
-							testID={`overflow-tab:${item().id}`}
-							indicatorClass="hidden"
-							icon={<Icon name={item().icon} size={14} />}
-							onSelect={() => item().onSelect()}
-						>
-							<Text class="min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm)">
-								{() => item().label()}
-							</Text>
-						</MenuItem>
-					)}
-				</Each>
-			</View>
+			<Each of={props.items()} key={(item) => item.id}>
+				{(item) => (
+					<MenuItem
+						testID={`overflow-tab:${item().id}`}
+						indicatorClass="hidden"
+						icon={<Icon name={item().icon} size={14} />}
+						onSelect={() => item().onSelect()}
+					>
+						<Text class="min-w-0 flex-1 truncate font-sans text-sm text-(length:--pilo-ui-text-sm)">
+							{() => item().label()}
+						</Text>
+					</MenuItem>
+				)}
+			</Each>
 		</Menu>
 	);
 }
@@ -553,134 +551,132 @@ function SessionHeaderMenu(props: {
 					</Button>
 				}
 			>
-				<View class="gap-0.5">
-					<MenuItem
-						testID="session-menu-copy-id"
-						indicatorClass="hidden"
-						class="px-2.5 py-1.5"
-						disabled={!props.sessionId()}
-						onSelect={() => {
-							const id = props.sessionId();
-							if (id) copy(id);
-						}}
-					>
-						<View class="min-w-0 flex-1 gap-0.5">
-							<View class="flex-row items-center justify-between gap-2">
-								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
-									{() => t("chat.sessionId")}
-								</Text>
-								<Icon
-									name="Copy"
-									size={13}
-									color={token("muted-foreground")}
-									style={{ opacity: 0.75 }}
-								/>
-							</View>
-							<Text class="min-w-0 truncate font-mono text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
-								{() => props.sessionId() ?? "—"}
+				<MenuItem
+					testID="session-menu-copy-id"
+					indicatorClass="hidden"
+					class="px-2.5 py-1.5"
+					disabled={!props.sessionId()}
+					onSelect={() => {
+						const id = props.sessionId();
+						if (id) copy(id);
+					}}
+				>
+					<View class="min-w-0 flex-1 gap-0.5">
+						<View class="flex-row items-center justify-between gap-2">
+							<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+								{() => t("chat.sessionId")}
 							</Text>
+							<Icon
+								name="Copy"
+								size={13}
+								color={token("muted-foreground")}
+								style={{ opacity: 0.75 }}
+							/>
 						</View>
-					</MenuItem>
+						<Text class="min-w-0 truncate font-mono text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground">
+							{() => props.sessionId() ?? "—"}
+						</Text>
+					</View>
+				</MenuItem>
+				<MenuItem
+					testID="session-menu-copy-path"
+					indicatorClass="hidden"
+					class="px-2.5 py-1.5"
+					disabled={!props.sessionPath()}
+					onSelect={() => {
+						const path = props.sessionPath();
+						if (path) copy(path);
+					}}
+				>
+					<View class="min-w-0 flex-1 gap-0.5">
+						<View class="flex-row items-center justify-between gap-2">
+							<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
+								{() => t("chat.sessionFilePath")}
+							</Text>
+							<Icon
+								name="Copy"
+								size={13}
+								color={token("muted-foreground")}
+								style={{ opacity: 0.75 }}
+							/>
+						</View>
+						<Text
+							class={classNames(
+								"min-w-0 truncate text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground",
+								props.sessionPath() ? "font-mono" : "font-sans",
+							)}
+						>
+							{() => {
+								const path = props.sessionPath();
+								return path
+									? compactMiddlePath(path, 38)
+									: t("chat.sessionPathUnavailable");
+							}}
+						</Text>
+					</View>
+				</MenuItem>
+				{() =>
+					props.onRename || (props.onDelete && props.sessionPath()) ? (
+						<MenuSeparator class="mx-1.5 my-1" />
+					) : null
+				}
+				{props.onRename ? (
 					<MenuItem
-						testID="session-menu-copy-path"
+						testID="session-menu-rename"
 						indicatorClass="hidden"
-						class="px-2.5 py-1.5"
-						disabled={!props.sessionPath()}
-						onSelect={() => {
-							const path = props.sessionPath();
-							if (path) copy(path);
-						}}
+						class="gap-2.5 px-2.5 py-1.5"
+						icon={<Icon name="Pencil" size={14} />}
+						onSelect={() => setRenameOpen(true)}
 					>
-						<View class="min-w-0 flex-1 gap-0.5">
-							<View class="flex-row items-center justify-between gap-2">
-								<Text class="font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-foreground">
-									{() => t("chat.sessionFilePath")}
-								</Text>
-								<Icon
-									name="Copy"
-									size={13}
-									color={token("muted-foreground")}
-									style={{ opacity: 0.75 }}
-								/>
-							</View>
+						<Text class="font-sans">{() => t("chat.renameSession")}</Text>
+					</MenuItem>
+				) : null}
+				{() =>
+					props.onRename && props.onDelete && props.sessionPath() ? (
+						<MenuSeparator class="mx-1.5 my-1" />
+					) : null
+				}
+				{() =>
+					props.onDelete && props.sessionPath() ? (
+						<MenuItem
+							testID="session-menu-delete"
+							indicatorClass="hidden"
+							variant="destructive"
+							class={classNames(
+								"gap-2.5 px-2.5 py-1.5",
+								confirmingDelete() && "bg-destructive/10",
+							)}
+							icon={<Icon name="Trash2" size={14} />}
+							closeOnSelect={false}
+							onSelect={() => {
+								if (!confirmingDelete()) {
+									confirmingDelete.set(true);
+									return;
+								}
+								confirmingDelete.set(false);
+								menuOpen.set(false);
+								props.onDelete?.();
+							}}
+						>
 							<Text
 								class={classNames(
-									"min-w-0 truncate text-xs text-(length:--pilo-ui-text-xs) leading-tight text-muted-foreground",
-									props.sessionPath() ? "font-mono" : "font-sans",
+									"font-sans",
+									confirmingDelete() && "font-medium",
 								)}
 							>
-								{() => {
-									const path = props.sessionPath();
-									return path
-										? compactMiddlePath(path, 38)
-										: t("chat.sessionPathUnavailable");
-								}}
+								{() =>
+									confirmingDelete()
+										? t(
+												props.running?.()
+													? "sidebar.deleteRunningConfirm"
+													: "sidebar.confirmDelete",
+											)
+										: t("chat.deleteSession")
+								}
 							</Text>
-						</View>
-					</MenuItem>
-					{() =>
-						props.onRename || (props.onDelete && props.sessionPath()) ? (
-							<MenuSeparator class="mx-1.5 my-1" />
-						) : null
-					}
-					{props.onRename ? (
-						<MenuItem
-							testID="session-menu-rename"
-							indicatorClass="hidden"
-							class="gap-2.5 px-2.5 py-1.5"
-							icon={<Icon name="Pencil" size={14} />}
-							onSelect={() => setRenameOpen(true)}
-						>
-							<Text class="font-sans">{() => t("chat.renameSession")}</Text>
 						</MenuItem>
-					) : null}
-					{() =>
-						props.onRename && props.onDelete && props.sessionPath() ? (
-							<MenuSeparator class="mx-1.5 my-1" />
-						) : null
-					}
-					{() =>
-						props.onDelete && props.sessionPath() ? (
-							<MenuItem
-								testID="session-menu-delete"
-								indicatorClass="hidden"
-								variant="destructive"
-								class={classNames(
-									"gap-2.5 px-2.5 py-1.5",
-									confirmingDelete() && "bg-destructive/10",
-								)}
-								icon={<Icon name="Trash2" size={14} />}
-								closeOnSelect={false}
-								onSelect={() => {
-									if (!confirmingDelete()) {
-										confirmingDelete.set(true);
-										return;
-									}
-									confirmingDelete.set(false);
-									menuOpen.set(false);
-									props.onDelete?.();
-								}}
-							>
-								<Text
-									class={classNames(
-										"font-sans",
-										confirmingDelete() && "font-medium",
-									)}
-								>
-									{() =>
-										confirmingDelete()
-											? t(
-													props.running?.()
-														? "sidebar.deleteRunningConfirm"
-														: "sidebar.confirmDelete",
-												)
-											: t("chat.deleteSession")
-									}
-								</Text>
-							</MenuItem>
-						) : null
-					}
-				</View>
+					) : null
+				}
 			</Menu>
 			{props.onRename ? (
 				<RenameDialog

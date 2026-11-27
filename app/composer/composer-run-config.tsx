@@ -26,7 +26,12 @@ import type { ChatRunConfigState } from "../state/chat-run-config";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { classNames } from "../ui/class-names";
-import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
+import {
+	Menu,
+	menuListSpacing,
+	menuPopupClass,
+	menuPopupStyle,
+} from "../ui/menu";
 import { MenuCheck } from "../ui/menu-check";
 import { MenuItem } from "../ui/menu-item";
 import { menuRowClass } from "../ui/menu-row";
@@ -279,7 +284,7 @@ export function ComposerRunConfig(
 						/>
 					}
 				>
-					<View style={{ gap: Math.max(3, token("pilo-menu-item-gap")) }}>
+					<View style={menuListSpacing()}>
 						{() => {
 							const levels = thinkingLevels();
 							return untracked(() =>

@@ -21,7 +21,7 @@
 
 - `desktop/ui/menu.tsx` 的 `menuPopupClass` 默认最小宽度为 220 pt。只加 `popupClass="w-…"` 不会清掉这个下限。短操作菜单需要按内容收宽时，不另设固定宽度，用 `popupStyle={{ minWidth: 0 }}` 覆盖下限；带路径、描述或搜索框的菜单按内容需要保留宽度。
 - 普通操作不需要勾选位时，在 `MenuItem` 上设置 `indicatorClass="hidden"`。默认的 `opacity-0` 只让勾选图标不可见，仍会占位；单选、多选项保留勾选状态和可见标记。
-- nsh 的弹层内部有自己的滚动容器；在弹层 `popupClass` 或 `popupStyle` 上设 `gap` 不会给选项行留缝。需要隔开相邻高亮背景时，把 `gap` 放在直接承载菜单项的 `View` 上。会话菜单的 `⋯` 和右键入口共用同一组选项，行间距为 4 pt，见 `desktop/app/sidebar-session-row.tsx`。
+- nsh 的弹层内部有自己的滚动容器；在弹层 `popupClass` 或 `popupStyle` 上设 `gap` 不会给选项行留缝。`app/ui/menu.tsx` 的 `Menu` 已默认用 `menuListSpacing()`（`Math.max(3, token("pilo-menu-item-gap"))`）包裹子项，`web/mobile-dropdown-menu.tsx` 也共用该间距；直接使用 `nsh/base` `ContextMenu` 或自定义 `Submenu` 弹层时，仍需把 `menuListSpacing()` 或 `gap-1` 放在直接承载菜单项的 `View` 上（如 `app/shell/sidebar-session-row.tsx`、`app/composer/composer-run-config.tsx`）。
 - 在原生窗口复核：短标签不应留下空勾选槽，最长标签（含确认态）不应换行或裁切，相邻行高亮不应相接。仅检查类名不能确认实际宽度或间距。
 
 ## 下拉选择

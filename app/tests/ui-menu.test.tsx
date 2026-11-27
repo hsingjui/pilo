@@ -9,6 +9,7 @@ test("Menu selects and closes, ignores disabled items, and dismisses with Escape
 	expect(app.shows("text:New session")).toBe(false);
 	await app.press("id:trigger");
 	await app.waitFor("text:New session");
+	await app.waitFor("text:Item gap: 3");
 	expect(app.enabled("id:disabled")).toBe(false);
 	await expect(app.press("id:disabled")).rejects.toThrow();
 	expect(app.shows("text:Selections: 0")).toBe(true);

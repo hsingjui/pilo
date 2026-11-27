@@ -88,6 +88,7 @@ import { MOTION } from "../app/ui/motion";
 import { Spinner } from "../app/ui/spinner";
 import { ErrorState } from "../app/ui/state-view";
 import { MobileDrawer, mobileDrawerWidth } from "./mobile-drawer";
+import { menuListSpacing } from "../app/ui/menu";
 import { MobileDropdownItem, MobileDropdownMenu } from "./mobile-dropdown-menu";
 import type { RemoteChatQueue } from "./remote-chat-queue";
 import {
@@ -719,7 +720,10 @@ export function MobileAppShell(props: MobileAppShellProps) {
 								</Button>
 							}
 						>
-							<View testID="mobile-session-menu-popup" class="gap-0.5">
+							<View
+								testID="mobile-session-menu-popup"
+								style={menuListSpacing()}
+							>
 								<MobileDropdownItem
 									testID="mobile-session-copy-id"
 									class="px-2.5 py-1.5"
