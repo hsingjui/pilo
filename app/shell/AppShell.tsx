@@ -1279,9 +1279,11 @@ export function AppShell(props: AppShellProps) {
 								api={props.projectClient}
 								connectionId={addProjectConnection}
 								projects={() => store.state().projects}
-								onAdd={(connectionId, path) =>
-									store.addProject(connectionId, path)
-								}
+								onAdd={async (connectionId, path) => {
+									const project = await store.addProject(connectionId, path);
+									store.selectProject(project.id);
+									return project;
+								}}
 							/>
 						) : null
 					}
