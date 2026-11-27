@@ -191,6 +191,7 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	followOpenSession(store, chat);
 	endLeftTemporaryChats(
 		store,
+		chat,
 		(sessionKey, reason) => client.stopChat(sessionKey, reason),
 		{
 			graceMs: 8_000,

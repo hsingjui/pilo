@@ -108,6 +108,8 @@ export class AppStore {
 	private resumed = false;
 	private syncing: Promise<void> | undefined;
 	private syncAgain = false;
+	/** The most recent confirmed gap still awaiting a fresh bootstrap. */
+	private temporaryGap: object | undefined;
 	private readonly pending: PiloClientEvent[] = [];
 	/** Counts project reads, so a reload superseded by a newer read is dropped. */
 	private projectReads = 0;
@@ -166,7 +168,7 @@ export class AppStore {
 		if (!this.connection) return;
 		// Events from before this connection are not on top of the chat's
 		// last snapshot any more.
-		void this.chat?.refresh();
+		void this.chat?.resync();
 		await this.sync();
 	}
 
@@ -558,7 +560,9 @@ export class AppStore {
 		for (const listener of this.messageListeners) listener(message);
 		if (message.type === "resyncRequired") {
 			for (const listener of this.liveListeners) listener(null);
-			void this.chat?.refresh();
+			void this.chat?.resync();
+			// A WebUI reconnect can still replay the reply's real end event.
+			if (!message.replayPending) this.temporaryGap = {};
 			void this.sync();
 		} else if (message.type === "events") {
 			this.resumed = false;
@@ -733,6 +737,7 @@ export class AppStore {
 	private async runSync() {
 		do {
 			this.syncAgain = false;
+			const temporaryGap = this.temporaryGap;
 			this.projectReads += 1;
 			const connection = this.connection;
 			// A load for a stream that ended since is not shown: nothing would
@@ -748,6 +753,10 @@ export class AppStore {
 				]);
 				if (!current()) continue;
 				this.bootstraps += 1;
+				if (temporaryGap && temporaryGap === this.temporaryGap) {
+					this.temporaryGap = undefined;
+					this.chat?.reconcileTemporaryTurns(snapshot);
+				}
 				this.apply(
 					{ type: "bootstrapped", snapshot },
 					{ type: "theme_settings_loaded", settings },

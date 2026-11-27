@@ -1139,6 +1139,7 @@ export class WebRemotePiloClient implements WebRemoteClient {
 			this.broadcast({
 				type: "resyncRequired",
 				latestSequence: this.replayCursor,
+				replayPending: true,
 			});
 		}
 		if (this.socketReady) this.notifyStatus(true);

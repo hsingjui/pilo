@@ -12,7 +12,10 @@ import {
 	createChatHistoryWindowStore,
 	type ChatHistoryWindowStore,
 } from "@shared/chat/chat-history-window-store";
-import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type {
+	PiloClientBootstrap,
+	PiloClientEvent,
+} from "@shared/api/pilo-client";
 import type {
 	SessionHistory,
 	SessionHistoryFingerprint,
@@ -37,6 +40,7 @@ import type {
 	ChatTranscriptWindow,
 	NshPiloClient,
 } from "../client/nsh-pilo-client";
+import { isTemporarySessionKey } from "./app-state";
 import {
 	applyChatEvents,
 	conversationFromHistory,
@@ -86,6 +90,10 @@ function historyMetadata({
 }
 
 const TRANSCRIPT_CACHE_CAPACITY = 16;
+const interruptTurn = {
+	type: "assistant_turn_end",
+	completion: "interrupted",
+} as const;
 
 type CachedTranscript = {
 	projectId: string;
@@ -245,7 +253,27 @@ function startsTurn(event: PiloClientEvent) {
  */
 export class ChatTranscriptStore {
 	private readonly current = signal(closed);
-	readonly state: Accessor<ChatTranscriptState> = this.current;
+	// A temporary chat has no file to replay. Keep its reader and event cursor
+	// alive until the shell commits cleanup, even while another chat is visible.
+	private readonly temporary = new Map<string, ChatTranscriptStore>();
+	private readonly visibleTemporary = signal<ChatTranscriptStore | null>(null);
+	// Keep the original conversation for late events up to the idle proof.
+	private readonly idleThrough = signal<number | null>(null);
+	private readonly displayed = computed(() => {
+		const state = this.current();
+		if (this.idleThrough() === null || !state.conversation?.active)
+			return state;
+		return {
+			...state,
+			conversation: reduceConversationActions(
+				state.conversation,
+				[interruptTurn],
+				this.context,
+			),
+		};
+	});
+	readonly state: Accessor<ChatTranscriptState> = () =>
+		this.visibleTemporary()?.displayed() ?? this.current();
 	private readonly failedPageStarts = signal<ReadonlySet<number>>(new Set());
 	private readonly liveTurnSignal = signal(false);
 	private readonly historyMetaSignal =
@@ -255,11 +283,11 @@ export class ChatTranscriptStore {
 		this.historyMetaSignal;
 	/** Saved history prefix before the live window; reference only changes on page loads or rereads. */
 	readonly historyPrefix: Accessor<readonly ChatMessage[]> = computed(
-		() => this.current().historyPrefix,
+		() => this.state().historyPrefix,
 	);
 	/** Newest loaded/streaming messages after `historyPrefix`, without copying the prefix. */
 	readonly liveMessages: Accessor<readonly ChatMessage[]> = computed(
-		() => this.current().conversation?.messages ?? noMessages,
+		() => this.state().conversation?.messages ?? noMessages,
 	);
 	/** Total number of messages across `historyPrefix` and `liveMessages`, without joining arrays. */
 	readonly messageCount: Accessor<number> = computed(
@@ -273,7 +301,7 @@ export class ChatTranscriptStore {
 	 * `computed`, which would build it for each event whether read or not.
 	 */
 	readonly messages: Accessor<readonly ChatMessage[]> = () => {
-		const { conversation, historyPrefix } = this.current();
+		const { conversation, historyPrefix } = this.state();
 		const loaded = conversation?.messages ?? noMessages;
 		if (historyPrefix.length === 0) return loaded;
 		if (
@@ -323,7 +351,7 @@ export class ChatTranscriptStore {
 	private historyRead: { changed: boolean } | undefined;
 	/** The chat's events since the read in flight was requested. */
 	private buffer: PiloClientEvent[] | undefined;
-	/** The snapshot the conversation was built from, while it is exact. */
+	/** The saved snapshot's cut, or the last event consumed by a temporary chat. */
 	private cut:
 		| Pick<
 				ChatTranscriptSnapshot,
@@ -365,6 +393,31 @@ export class ChatTranscriptStore {
 
 	/** Shows the chat. A fresh draft has no file or running Pi to read yet. */
 	open(
+		target: ChatTranscriptTarget,
+		connected: boolean,
+		options?: ChatTranscriptOpenOptions,
+	) {
+		if (!target.sessionPath && isTemporarySessionKey(target.sessionKey)) {
+			let transcript = this.temporary.get(target.sessionKey);
+			let opening: Promise<void> | undefined;
+			if (!transcript) {
+				transcript = new ChatTranscriptStore(this.client, this.context);
+				this.temporary.set(target.sessionKey, transcript);
+				// noSession has no replayable history or live snapshot. Read the
+				// event stream from the first event we receive instead.
+				opening = transcript.openTarget(target, connected, {
+					freshDraft: true,
+				});
+			}
+			this.visibleTemporary.set(transcript);
+			if (this.target) this.closeTarget();
+			return opening ?? Promise.resolve();
+		}
+		this.visibleTemporary.set(null);
+		return this.openTarget(target, connected, options);
+	}
+
+	private openTarget(
 		target: ChatTranscriptTarget,
 		connected: boolean,
 		options?: ChatTranscriptOpenOptions,
@@ -427,6 +480,24 @@ export class ChatTranscriptStore {
 	}
 
 	close() {
+		this.visibleTemporary.set(null);
+		this.closeTarget();
+	}
+
+	hasTemporaryMessages(sessionKey: string): boolean {
+		const conversation = this.temporary.get(sessionKey)?.current().conversation;
+		return Boolean(conversation?.messages.length);
+	}
+
+	discardTemporary(sessionKey: string): void {
+		const transcript = this.temporary.get(sessionKey);
+		if (!transcript) return;
+		this.temporary.delete(sessionKey);
+		if (this.visibleTemporary() === transcript) this.visibleTemporary.set(null);
+		transcript.closeTarget();
+	}
+
+	private closeTarget() {
 		this.reset();
 		this.current.set(closed);
 	}
@@ -490,7 +561,12 @@ export class ChatTranscriptStore {
 
 	/** Whether the open chat has a live turn in flight (local submission or live stream). */
 	hasLiveTurn(sessionKey: string): boolean {
-		return this.current().sessionKey === sessionKey && this.liveTurnSignal();
+		const visible = this.visibleTemporary() ?? this;
+		return (
+			visible.current().sessionKey === sessionKey &&
+			visible.idleThrough() === null &&
+			visible.liveTurnSignal()
+		);
 	}
 
 	/**
@@ -504,6 +580,8 @@ export class ChatTranscriptStore {
 		text: string,
 		images: ChatConversationImage[],
 	): string | null {
+		const temporary = this.visibleTemporary();
+		if (temporary) return temporary.submitLocal(sessionKey, text, images);
 		if (
 			this.target?.sessionKey !== sessionKey ||
 			!this.current().conversation ||
@@ -511,6 +589,7 @@ export class ChatTranscriptStore {
 		) {
 			return null;
 		}
+		if (this.idleThrough() !== null) this.finishTemporaryRecovery();
 		const timestampMs = this.context.now();
 		const clientMessageId = this.context.createMessageId("user");
 		this.local = {
@@ -537,6 +616,9 @@ export class ChatTranscriptStore {
 	 * the prompt; nothing once it has.
 	 */
 	setLocalStatus(clientMessageId: string, status?: AssistantPendingStatus) {
+		for (const transcript of this.temporary.values()) {
+			transcript.setLocalStatus(clientMessageId, status);
+		}
 		const { local } = this;
 		if (local?.clientMessageId !== clientMessageId) return;
 		const action: ConversationAction = {
@@ -550,6 +632,9 @@ export class ChatTranscriptStore {
 
 	/** Takes back a local turn whose prompt did not start a turn. */
 	dropLocal(clientMessageId: string) {
+		for (const transcript of this.temporary.values()) {
+			transcript.dropLocal(clientMessageId);
+		}
 		if (this.local?.clientMessageId !== clientMessageId) return;
 		this.local = undefined;
 		const state = this.current();
@@ -603,6 +688,7 @@ export class ChatTranscriptStore {
 		this.target = undefined;
 		this.buffer = undefined;
 		this.cut = undefined;
+		this.idleThrough.set(null);
 		this.waiting = false;
 		this.seen = undefined;
 		this.running = false;
@@ -616,12 +702,43 @@ export class ChatTranscriptStore {
 		this.historyMetaSignal.set(null);
 	}
 
-	/**
-	 * Reads the open chat again: the stream lost events or was reconnected,
-	 * so the events after the last snapshot can no longer be trusted.
-	 */
+	/** Reads the visible saved chat or draft again, for a manual retry. */
 	refresh() {
 		return this.target ? this.read() : Promise.resolve();
+	}
+
+	/** Reloads replayable history; temporary chats keep their event cursor. */
+	resync() {
+		return this.refresh();
+	}
+
+	/** Ends orphaned replies after a confirmed event gap, without replacing messages. */
+	reconcileTemporaryTurns({
+		chatSessions,
+		latestSequence,
+	}: Pick<PiloClientBootstrap, "chatSessions" | "latestSequence">) {
+		for (const [sessionKey, transcript] of this.temporary) {
+			if (
+				!transcript.liveTurnSignal() ||
+				transcript.local ||
+				!transcript.cut ||
+				transcript.cut.eventSequence > latestSequence
+			) {
+				continue;
+			}
+			const runtime = chatSessions.find(
+				(chat) => chat.sessionKey === sessionKey,
+			);
+			if (runtime?.activeTurn === false) {
+				transcript.idleThrough.set(latestSequence);
+			}
+		}
+	}
+
+	private finishTemporaryRecovery() {
+		this.liveTurnSignal.set(false);
+		if (this.current().conversation?.active) this.applyLocal([interruptTurn]);
+		this.idleThrough.set(null);
 	}
 
 	private acknowledgeLocal(
@@ -652,13 +769,17 @@ export class ChatTranscriptStore {
 
 	/** Takes a batch of runtime events, in order, of any chat or of none. */
 	receive(events: readonly PiloClientEvent[]) {
+		for (const transcript of this.temporary.values())
+			transcript.receive(events);
 		const sessionKey = this.target?.sessionKey;
 		if (sessionKey === undefined) return;
+		const temporary =
+			!this.target?.sessionPath && isTemporarySessionKey(sessionKey);
 		const later: PiloClientEvent[] = [];
 		let turnOver = false;
+		let idleThrough = this.idleThrough();
 		for (const event of events) {
 			if (event.sessionKey !== sessionKey) continue;
-			turnOver ||= settles(event);
 			const activeProcessEvent =
 				this.cut !== undefined
 					? "generation" in event &&
@@ -669,21 +790,68 @@ export class ChatTranscriptStore {
 						this.buffer !== undefined ||
 						this.running ||
 						this.showsNewProcess(event);
+			if (temporary && (!activeProcessEvent || !("generation" in event))) {
+				continue;
+			}
+			const started = startsTurn(event);
+			const settled = settles(event);
+			const restarted =
+				temporary &&
+				this.cut !== undefined &&
+				"generation" in event &&
+				event.generation > this.cut.generation;
+			// Bootstrap reads activity after taking its sequence. Let late output
+			// (including the actual end) still land on the recovered reply.
+			if (
+				idleThrough !== null &&
+				event.sequence > idleThrough &&
+				(restarted || event.type === "user_message_start")
+			) {
+				this.flush(later);
+				this.finishTemporaryRecovery();
+				idleThrough = null;
+			}
+			turnOver ||= settled;
 			if (activeProcessEvent) {
-				if (startsTurn(event)) this.liveTurnSignal.set(true);
-				else if (settles(event)) this.liveTurnSignal.set(false);
+				if (started) this.liveTurnSignal.set(true);
+				else if (settled || (restarted && !this.local))
+					this.liveTurnSignal.set(false);
 			}
 			// Pi's echo of the local prompt, or the end of its process, takes
 			// the place of what was shown for it.
 			if (event.type === "user_message_start") {
 				this.acknowledgeLocal(event.text, event.generation, event.sequence);
-			} else if (settles(event)) {
+			} else if (settled) {
+				if (temporary && this.local && event.type !== "assistant_message_end") {
+					this.flush(later);
+					this.dropLocal(this.local.clientMessageId);
+				}
 				this.local = undefined;
 				// A snapshot in flight may be from before this turn finished.
 				if (event.type !== "assistant_message_end")
 					this.localPromptEcho = undefined;
 			}
-			if (this.buffer) {
+			if (temporary && "generation" in event) {
+				// A snapshot cut would also skip reconnect replay that noSession
+				// never writes to disk. Advance only over events we received.
+				this.cut = {
+					sessionKey,
+					generation: event.generation,
+					eventSequence: event.sequence,
+				};
+				if (restarted || (settled && event.type !== "assistant_message_end")) {
+					this.flush(later);
+					if (this.current().conversation?.active) {
+						this.applyLocal([interruptTurn]);
+					}
+				}
+				later.push(event);
+				if (idleThrough !== null && event.sequence >= idleThrough && settled) {
+					this.flush(later);
+					this.finishTemporaryRecovery();
+					idleThrough = null;
+				}
+			} else if (this.buffer) {
 				// Looked at when the read in flight is done.
 				this.buffer.push(event);
 			} else if (this.cut) {

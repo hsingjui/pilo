@@ -181,6 +181,7 @@ export async function launch(
 	followOpenSession(store, chat);
 	endLeftTemporaryChats(
 		store,
+		chat,
 		(sessionKey, reason) => client.stopChat(sessionKey, reason),
 		{
 			graceMs: 8_000,

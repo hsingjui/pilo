@@ -200,6 +200,7 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
  */
 export function endLeftTemporaryChats(
 	store: AppStore,
+	chat: ChatTranscriptStore,
 	stopChat: (sessionKey: string, reason?: string) => Promise<void>,
 	options?: {
 		graceMs?: number;
@@ -245,8 +246,9 @@ export function endLeftTemporaryChats(
 		entry.dismissToast?.();
 	};
 	cleanup(() => {
-		for (const entry of pendingStops.values()) {
+		for (const [sessionKey, entry] of pendingStops) {
 			if (entry.timer !== undefined) clearTimeout(entry.timer);
+			chat.discardTemporary(sessionKey);
 		}
 		pendingStops.clear();
 	});
@@ -259,10 +261,13 @@ export function endLeftTemporaryChats(
 			if (!left || left.sessionKey === next?.sessionKey) return;
 			const state = store.state();
 			const hasContent =
+				chat.hasTemporaryMessages(left.sessionKey) ||
 				state.chatSessions.some(
 					(chat) => chat.sessionKey === left.sessionKey,
-				) || state.pendingDrafts.has(left.sessionKey);
+				) ||
+				state.pendingDrafts.has(left.sessionKey);
 			const stopChatNow = () => {
+				chat.discardTemporary(left.sessionKey);
 				void stopChat(left.sessionKey, "temporary_chat_left").catch(
 					(error: unknown) => {
 						console.warn("Failed to stop the temporary chat", error);

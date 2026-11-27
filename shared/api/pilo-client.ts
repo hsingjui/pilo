@@ -64,7 +64,7 @@ export type PiloClientEvent = PiloRuntimeEvent & { sequence: number };
 export type PiloClientEventMessage =
 	| { type: "hello"; latestSequence: number; deviceId?: string }
 	| { type: "events"; events: PiloClientEvent[] }
-	| { type: "resyncRequired"; latestSequence: number };
+	| { type: "resyncRequired"; latestSequence: number; replayPending?: true };
 
 export type PiloClientEventOptions = {
 	after?: number;
