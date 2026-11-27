@@ -22,6 +22,36 @@ use super::{
 
 static PROMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+pub(crate) enum PiCommandError {
+    NotAccepted(String),
+    OutcomeUnknown(String),
+}
+
+impl PiCommandError {
+    pub(crate) fn into_message(self) -> String {
+        match self {
+            Self::NotAccepted(message) | Self::OutcomeUnknown(message) => message,
+        }
+    }
+}
+
+pub(crate) fn same_session_file(candidate: &str, path: &str, local_windows: bool) -> bool {
+    if !local_windows {
+        return candidate == path;
+    }
+    fn windows_key(path: &str) -> String {
+        let path = path.replace('/', "\\");
+        if let Some(unc) = path.strip_prefix("\\\\?\\UNC\\") {
+            format!("\\\\{unc}").to_ascii_lowercase()
+        } else {
+            path.strip_prefix("\\\\?\\")
+                .unwrap_or(&path)
+                .to_ascii_lowercase()
+        }
+    }
+    Path::new(candidate) == Path::new(path) || windows_key(candidate) == windows_key(path)
+}
+
 impl ChatSessions {
     pub(crate) async fn configure_cache_keep_alive(
         &self,
@@ -149,7 +179,26 @@ impl ChatSessions {
             .map_err(|_| "prediction transport timed out".to_owned())?
     }
 
-    pub async fn send(&self, session_key: &str, mut command: Value) -> Result<(), String> {
+    pub async fn send(&self, session_key: &str, command: Value) -> Result<(), String> {
+        self.send_inner(session_key, command, false)
+            .await
+            .map_err(PiCommandError::into_message)
+    }
+
+    pub(crate) async fn send_when_idle(
+        &self,
+        session_key: &str,
+        command: Value,
+    ) -> Result<(), PiCommandError> {
+        self.send_inner(session_key, command, true).await
+    }
+
+    async fn send_inner(
+        &self,
+        session_key: &str,
+        mut command: Value,
+        require_idle: bool,
+    ) -> Result<(), PiCommandError> {
         let start_if_idle = command
             .as_object_mut()
             .and_then(|fields| fields.remove("piloStartIfIdle"))
@@ -173,8 +222,9 @@ impl ChatSessions {
                 .unwrap_or("unknown")
         }
         .to_owned();
-        // Pi may resume autonomously before either UI observes its new turn.
-        if command_type == "prompt"
+        // UI prompts can queue on autonomous continuation. CLI prompts never opt in.
+        if !require_idle
+            && command_type == "prompt"
             && let Some(command) = command.as_object_mut()
         {
             command
@@ -200,7 +250,9 @@ impl ChatSessions {
                 .processes
                 .get(session_key)
                 .cloned()
-                .ok_or_else(|| format!("session '{session_key}' is not running"))?;
+                .ok_or_else(|| {
+                    PiCommandError::NotAccepted(format!("session '{session_key}' is not running"))
+                })?;
             // Read-only polling must not keep an otherwise idle Pi warm forever.
             if !command_type.starts_with("get_") {
                 process
@@ -219,7 +271,28 @@ impl ChatSessions {
         let session = process.session.lock().await;
         let lock_wait_ms = started.elapsed().as_millis();
         if process.closed.load(Ordering::Acquire) {
-            return Err("project is closing".to_owned());
+            return Err(PiCommandError::NotAccepted("project is closing".to_owned()));
+        }
+        if require_idle {
+            if !process.initialized.load(Ordering::Acquire)
+                || session.snapshot().state != PiProcessState::Running
+            {
+                return Err(PiCommandError::NotAccepted(
+                    "session is not ready; message was not sent".to_owned(),
+                ));
+            }
+            if process.active_turn.load(Ordering::Acquire)
+                || process.compacting.load(Ordering::Acquire)
+            {
+                return Err(PiCommandError::NotAccepted(
+                    "session is busy; message was not sent".to_owned(),
+                ));
+            }
+            // This is a read-only RPC; even a lost reply means the prompt was never attempted.
+            session
+                .check_idle()
+                .await
+                .map_err(PiCommandError::NotAccepted)?;
         }
         runtime_trace(
             "chat.send.begin",
@@ -307,7 +380,7 @@ impl ChatSessions {
                 "error": result.as_ref().err(),
             }),
         );
-        result
+        result.map_err(PiCommandError::OutcomeUnknown)
     }
 
     async fn resource_change_candidates(
@@ -355,6 +428,19 @@ impl ChatSessions {
     }
 
     pub async fn stop(&self, session_key: &str, reason: Option<&str>) -> Result<(), String> {
+        let project_id = self
+            .registry
+            .lock()
+            .await
+            .processes
+            .get(session_key)
+            .map(|process| process.project_id.clone());
+        // Explicit stop detaches before awaiting Pi; trash must not race that gap.
+        let _files = if let Some(project_id) = project_id {
+            Some(self.session_file_gate(&project_id).await.read_owned().await)
+        } else {
+            None
+        };
         let process = self.close_process(session_key).await;
         let Some(process) = process else {
             runtime_trace(
@@ -395,6 +481,30 @@ impl ChatSessions {
             }),
         );
         result?;
+        Ok(())
+    }
+
+    pub(crate) async fn require_session_file_stopped(
+        &self,
+        project: &Project,
+        session_path: &str,
+    ) -> Result<(), String> {
+        let local_windows =
+            cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local);
+        let registry = self.registry.lock().await;
+        if registry.processes.values().any(|process| {
+            process.project_id == project.id
+                && process
+                    .session_path
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .as_deref()
+                    .is_some_and(|path| same_session_file(path, session_path, local_windows))
+        }) {
+            return Err(
+                "session is managed by Pilo; run 'sessions stop' before deleting it".to_owned(),
+            );
+        }
         Ok(())
     }
 

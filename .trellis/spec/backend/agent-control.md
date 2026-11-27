@@ -2,8 +2,9 @@
 
 ## Scope and ownership
 
-Interactive Pi sessions can query and change Pilo settings and add an existing
-project through `pilo-server ctl`. This is not an arbitrary Tauri/SQL bridge and
+Interactive Pi sessions can query and change Pilo settings, add an existing
+project, and manage sessions in the calling project through `pilo-server ctl`.
+This is not an arbitrary Tauri/SQL bridge and
 does not create a second daemon. Host owns authorization, target resolution and
 business operations; Server forwards bounded control messages only.
 
@@ -44,6 +45,47 @@ keeps the existing OS registration behavior and errors.
   implementation. Return native errors, not synthetic success. Notifications
   report a saved preference; OS/browser permission is still required.
   Remote pairing URLs/tokens are never returned as ordinary settings.
+
+## Session CLI
+
+1. **Scope:** `pilo-server ctl sessions` uses the existing Host session index,
+   Pi runtime and history readers. The lease binds the source runtime key as
+   well as the project; `status` reports `sourceSessionKey` and `sourceProjectId`.
+2. **Signatures:** All session commands take `--project ID`. `list` accepts
+   optional stdin JSON `{offset?,limit?}`. `create --stdin` requires
+   `{message,title?}`. `send ID --stdin` requires `{message}`; `update ID --stdin`
+   accepts `{title?,pinned?}`. `history ID` accepts optional stdin JSON
+   `{startMessage?,messageLimit?}`. `get|abort|stop|resume|delete ID` take no JSON.
+3. **Contracts:** `ID` is a runtime key or a saved Pi session ID, not an arbitrary
+   file path. Resolve both under the calling project. New sessions dispatch a
+   first prompt and return a runtime key after the correlated Pi response, not
+   after generation completes. `accepted` means Pi acknowledged the command;
+   `disposition` can be `handled` if an input handler consumed it. Sending to
+   a saved session can resume it. Runtime state and bounded history are separate
+   reads; Pi JSONL remains the source of conversation data. `abort` interrupts
+   a turn; `stop` closes a Host-managed Pi process and preserves its history.
+4. **Validation / errors:** Reject mismatched project scope, blank or slash-command
+   messages, busy targets, and self-send/abort/stop/delete. Do not opt into Pi's
+   follow-up queue. Changes preserve omitted title/pin fields. Delete only
+   indexed files without a Host-managed owner; require explicit `sessions stop`
+   before trashing a managed file. Use `session.trash`, never unlink. If the
+   calling file identity is unknown, fail closed on deletion. On `create`, stop
+   the newly launched process if the first message was not sent or Pi explicitly
+   rejected it. If delivery is uncertain, preserve the process and include its
+   runtime key in the error. Do not automatically retry an uncertain write.
+5. **Good / base / bad:** Create with a prompt, poll `get`, then read a bounded
+   `history` page. Existing Desktop/WebUI delete and queue behavior is unchanged.
+   Cross-project IDs, external Pi ownership and missing trash support must not
+   silently mutate another session or unlink its file.
+6. **Checks pending:** In a managed session, assert empty create does not launch
+   a process, the first message is submitted once, busy send does not queue,
+   abort differs from stop and resume preserves history. Verify a rejected
+   first message stops its new process while a lost reply does not. Verify
+   managed delete does not interrupt Pi and self-delete or missing-trash errors
+   preserve the JSONL file. Cover Local/WSL/SSH routing.
+7. **Wrong vs correct:** Do not report a transport write as a completed response,
+   or let an old Server ignore a trash-only flag on `session.delete`. Correlate
+   the Pi response and use a separate RPC that old versions reject.
 
 ## CLI argument and single-field validation
 

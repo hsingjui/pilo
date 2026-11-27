@@ -1,4 +1,5 @@
 mod catalog;
+mod sessions;
 mod settings;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -28,6 +29,7 @@ pub(crate) struct ControlLease {
     runtime: WeakRuntime,
     source_project: String,
     source_connection: String,
+    source_session: String,
 }
 
 impl ControlLease {
@@ -40,6 +42,7 @@ impl ControlLease {
                 &self.stream,
                 self.source_project.clone(),
                 self.source_connection.clone(),
+                self.source_session.clone(),
             );
             self.client = client.clone();
         }
@@ -66,6 +69,7 @@ pub(crate) async fn attach(
     client: Arc<ServerClient>,
     stream: String,
     project_id: &str,
+    session_key: &str,
     local: bool,
 ) -> Result<(ControlContext, ControlLease), String> {
     // Resolve from Host storage, never from a caller-supplied source identity.
@@ -76,6 +80,7 @@ pub(crate) async fn attach(
         &stream,
         source.id.clone(),
         source.connection.id.clone(),
+        session_key.to_owned(),
     );
     let lease = ControlLease {
         client: client.clone(),
@@ -84,6 +89,7 @@ pub(crate) async fn attach(
         runtime: runtime.downgrade(),
         source_project: source.id,
         source_connection: source.connection.id,
+        source_session: session_key.to_owned(),
     };
     // On Windows, ctl needs the console runtime, not the GUI host executable.
     let executable = if local && cfg!(windows) {
@@ -119,6 +125,7 @@ fn spawn_dispatcher(
     stream: &str,
     source_project: String,
     source_connection: String,
+    source_session: String,
 ) -> JoinHandle<()> {
     let mut events = client.subscribe(stream);
     let dispatcher = client;
@@ -135,13 +142,25 @@ fn spawn_dispatcher(
                     let Ok(runtime) = runtime.upgrade() else { break };
                     let source_project = source_project.clone();
                     let source_connection = source_connection.clone();
+                    let source_session = source_session.clone();
                     if work.len() >= 16 {
                         let _ = client.request("control.respond", json!({ "id": request.id, "reply": ControlReply { result: None, error: Some("Pilo control capacity exhausted".to_owned()) } })).await;
                         continue;
                     }
                     work.spawn(async move {
                         // This task is independent of the transport reader and can call the same Server.
-                        let result = tokio::time::timeout(std::time::Duration::from_secs(55), execute(&runtime, request.command, &source_project, &source_connection)).await
+                        let result = tokio::time::timeout(std::time::Duration::from_secs(55), async {
+                            if request.command.method.starts_with("sessions.") {
+                                sessions::execute(&runtime, request.command, &source_project, &source_session).await
+                            } else {
+                                let is_status = request.command.method == "status";
+                                let mut result = execute(&runtime, request.command, &source_project, &source_connection).await?;
+                                if is_status {
+                                    result["sourceSessionKey"] = json!(source_session);
+                                }
+                                Ok(result)
+                            }
+                        }).await
                             .unwrap_or_else(|_| Err("Pilo control execution timed out; write outcome may be unknown; do not automatically retry".to_owned()));
                         let reply = match result { Ok(result) => ControlReply { result: Some(result), error: None }, Err(error) => ControlReply { result: None, error: Some(error) } };
                         let _ = client.request("control.respond", json!({ "id": request.id, "reply": reply })).await;
