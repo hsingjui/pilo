@@ -1,7 +1,10 @@
 import { type Accessor, computed, signal } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
-import { runtimeSessionIdFromKey } from "@shared/chat/chat-session-runtime-model";
+import {
+	runtimeSessionIdFromKey,
+	runtimeSessionPathKey,
+} from "@shared/chat/chat-session-runtime-model";
 import type {
 	PiloClientEvent,
 	PiloClientEventMessage,
@@ -408,9 +411,18 @@ export class AppStore {
 	 * completed turns.
 	 */
 	selectSession(projectId: string, sessionPath: string) {
-		this.apply({ type: "session_selected", projectId, sessionPath });
+		const sessions = this.current().sessionIndexes[projectId]?.sessions;
+		const pathKey = runtimeSessionPathKey(sessionPath);
+		// Pi can report a different Windows spelling than the session index.
+		const indexed =
+			sessions?.find((entry) => entry.sessionPath === sessionPath) ??
+			sessions?.find(
+				(entry) => runtimeSessionPathKey(entry.sessionPath) === pathKey,
+			);
+		const path = indexed?.sessionPath ?? sessionPath;
+		this.apply({ type: "session_selected", projectId, sessionPath: path });
 		const opened = this.current().navigation.session;
-		if (opened?.projectId === projectId && opened.sessionPath === sessionPath) {
+		if (opened?.projectId === projectId && opened.sessionPath === path) {
 			this.acknowledgeOpenSession();
 		}
 	}

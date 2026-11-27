@@ -22,6 +22,7 @@ import type {
 	ChatTranscriptTarget,
 } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
+import { isForkRuntime } from "./session-fork";
 
 /** Ids and times for the messages this app builds, as the WebUI makes them. */
 export function conversationContext(): ConversationReducerContext {
@@ -62,7 +63,9 @@ export function openChatTarget(state: AppState): ChatTranscriptTarget | null {
 		(chat) =>
 			chat.projectId === projectId &&
 			chat.sessionPath &&
-			runtimeSessionPathKey(chat.sessionPath) === pathKey,
+			runtimeSessionPathKey(chat.sessionPath) === pathKey &&
+			// Fork helpers briefly report the source path, but never own its UI.
+			!isForkRuntime(chat.sessionKey),
 	);
 	if (held) return { sessionKey: held.sessionKey, projectId, sessionPath };
 	const saved = state.sessionIndexes[projectId]?.sessions.find(

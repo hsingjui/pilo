@@ -1,6 +1,9 @@
 import { type Accessor, signal } from "nsh";
 
-import { chatSessionKey } from "@shared/api/chat-session-key";
+import {
+	chatSessionKey,
+	parseChatSessionKey,
+} from "@shared/api/chat-session-key";
 import type {
 	PiAgentState,
 	PiSessionEntries,
@@ -46,15 +49,21 @@ export type SessionForkOptions = {
 
 const RPC_TIMEOUT_MS = 10_000;
 const FORK_TIMEOUT_MS = 30_000;
+const FORK_RUNTIME_PREFIX = "fork-runtime-";
 /** How long a fork notice shows. */
 export const NOTICE_MS = 6_000;
 let noticeSequence = 0;
 
+export function isForkRuntime(sessionKey: string): boolean {
+	return (
+		parseChatSessionKey(sessionKey)?.[1].startsWith(FORK_RUNTIME_PREFIX) ??
+		false
+	);
+}
+
 /**
- * Forks the open chat at an assistant message, as the WebUI does: a
- * second chat session attaches to the source session file, runs Pi's `fork`
- * (or `clone`, when the reply ends the branch) and reports the new session's
- * file; the source session is not touched.
+ * A dedicated Pi process reads the source session and runs `fork` (or `clone`
+ * at the end of the branch) without switching the open chat's runtime.
  */
 export class SessionForker {
 	private readonly current = signal<SessionForkState>({
@@ -128,35 +137,23 @@ export class SessionForker {
 		this.current.set({ forkingMessageId: messageId, notice: null });
 		let forkKey: string | null = null;
 		try {
-			// The source Pi must answer get_state/get_entries; attach it first.
+			forkKey = chatSessionKey(
+				target.projectId,
+				`${FORK_RUNTIME_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			);
 			await this.client.startChat({
 				projectId: target.projectId,
-				sessionKey: target.sessionKey,
+				sessionKey: forkKey,
 				sessionPath: target.sessionPath,
 			});
-			const [sourceState, entries] = await Promise.all([
-				this.rpc<PiAgentState>(target.sessionKey, { type: "get_state" }),
-				this.rpc<PiSessionEntries>(target.sessionKey, {
-					type: "get_entries",
-				}),
-			]);
-			if (!sourceState.sessionFile) {
-				throw new Error(t("chat.forkUnsaved"));
-			}
+			const entries = await this.rpc<PiSessionEntries>(forkKey, {
+				type: "get_entries",
+			});
 			const forkTarget = resolveAssistantForkTarget(
 				messages,
 				messageId,
 				entries,
 			);
-			forkKey = chatSessionKey(
-				target.projectId,
-				`fork-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-			);
-			await this.client.startChat({
-				projectId: target.projectId,
-				sessionKey: forkKey,
-				sessionPath: sourceState.sessionFile,
-			});
 			const result =
 				forkTarget.type === "clone"
 					? await this.rpc<{ cancelled: boolean }>(
