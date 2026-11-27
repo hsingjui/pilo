@@ -74,7 +74,7 @@
 		},
 		{
 			"kind": "binary_in",
-			"maxBinaryInputBytes": 33554432,
+			"maxBinaryInputBytes": 1048576,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.write",
 			"scope": "workspace",

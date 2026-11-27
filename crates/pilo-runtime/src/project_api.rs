@@ -149,6 +149,39 @@ pub async fn project_terminal_open(
         crate::terminal::TerminalOwner::Local,
     )
     .await
+    .map_err(|error| error.message)
+}
+
+fn verify_remote_terminal_owner(
+    runtime: &Runtime,
+    owner: &crate::terminal::TerminalOwner,
+) -> Result<(), crate::host_api::HostApiError> {
+    let crate::terminal::TerminalOwner::Device(device_id) = owner else {
+        return Ok(());
+    };
+    let db =
+        crate::storage::open(&runtime.paths).map_err(crate::host_api::HostApiError::internal)?;
+    let host_config = crate::storage::get_remote_host_config(&db)
+        .map_err(crate::host_api::HostApiError::internal)?;
+    if !host_config.enabled {
+        return Err(crate::host_api::HostApiError::new(
+            crate::host_api::ErrorCode::Unavailable,
+            "remote access is disabled",
+        ));
+    }
+    match crate::storage::get_active_remote_device_scopes(&db, device_id, crate::storage::now_ms())
+        .map_err(crate::host_api::HostApiError::internal)?
+    {
+        Some(pilo_domain::RemoteScopes::ChatWorkspace) => Ok(()),
+        Some(_) => Err(crate::host_api::HostApiError::new(
+            crate::host_api::ErrorCode::Forbidden,
+            "remote device lacks workspace scope",
+        )),
+        None => Err(crate::host_api::HostApiError::new(
+            crate::host_api::ErrorCode::Forbidden,
+            "remote device is revoked or expired",
+        )),
+    }
 }
 
 pub(crate) async fn project_terminal_open_for_owner(
@@ -157,8 +190,11 @@ pub(crate) async fn project_terminal_open_for_owner(
     cols: u16,
     rows: u16,
     owner: crate::terminal::TerminalOwner,
-) -> Result<TerminalInfo, String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
+) -> Result<TerminalInfo, crate::host_api::HostApiError> {
+    verify_remote_terminal_owner(runtime, &owner)?;
+    let project = project::ready(runtime, &runtime.servers, &id)
+        .await
+        .map_err(crate::host_api::HostApiError::invalid)?;
     let (info, session) = runtime
         .terminals
         .start(
@@ -167,16 +203,22 @@ pub(crate) async fn project_terminal_open_for_owner(
             &project,
             cols,
             rows,
-            owner,
+            owner.clone(),
         )
-        .await?;
+        .await
+        .map_err(crate::host_api::HostApiError::invalid)?;
     if let Err((error, session)) = runtime
         .terminals
-        .commit_if(session, || project::get(runtime, &id).map(|_| ()))
+        .commit_if(session, || {
+            project::get(runtime, &id)
+                .map(|_| ())
+                .map_err(crate::host_api::HostApiError::invalid)?;
+            verify_remote_terminal_owner(runtime, &owner)
+        })
         .await
     {
         if let Err(close_error) = session.close().await {
-            log::warn!(target: "terminal", "failed to close terminal {} after project removal: {close_error}", info.id);
+            log::warn!(target: "terminal", "failed to close terminal {} after rejected commit: {close_error}", info.id);
         }
         return Err(error);
     }

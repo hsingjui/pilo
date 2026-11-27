@@ -3,7 +3,7 @@ use pilo_domain::{
     ProjectScopedModel, PromptEnhancementModel, RemoteAccessAddress, RemoteScopes,
     SessionUiStateUpdate, ThemeSettingsUpdate,
 };
-use pilo_protocol::{BuiltinExtension, MAX_BINARY_PAYLOAD_BYTES, MAX_CHAT_FILE_BYTES};
+use pilo_protocol::{BuiltinExtension, MAX_CHAT_FILE_BYTES};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -96,12 +96,11 @@ register! {
         validate_terminal_size(cols, rows)?;
         let owner = crate::terminal::TerminalOwner::from_principal(who);
         let info = project_api::project_terminal_open_for_owner(rt, project_id.clone(), cols, rows, owner.clone())
-            .await
-            .map_err(HostApiError::invalid)?;
+            .await?;
         log::info!(target: "terminal", "terminal opened id={} projectId={} owner={owner:?}", info.id, project_id);
         json(info)
     }
-    "terminal.write": Workspace BinaryIn(MAX_BINARY_PAYLOAD_BYTES) |rt, who, data| (terminal_id: String) {
+    "terminal.write": Workspace BinaryIn(super::MAX_TERMINAL_WRITE_BYTES) |rt, who, data| (terminal_id: String) {
         let owner = crate::terminal::TerminalOwner::from_principal(who);
         rt.terminals.write(&owner, &terminal_id, data).await.map_err(terminal_access_error)?;
         json(())

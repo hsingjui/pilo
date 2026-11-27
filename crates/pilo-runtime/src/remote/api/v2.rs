@@ -192,6 +192,28 @@ pub(super) async fn upload(
     Query(query): Query<HashMap<String, String>>,
     data: Bytes,
 ) -> Response {
+    if let Some(spec) = host_api::methods().iter().find(|spec| spec.name == method) {
+        if !host.principal.allows(spec.scope) {
+            return v2_error(HostApiError::new(
+                ErrorCode::Forbidden,
+                format!("Access to '{method}' is forbidden"),
+            ));
+        }
+        if let Some(limit) = spec.limits.max_binary_input_bytes
+            && data.len() > limit
+        {
+            let message = if method == "chat.files.upload" {
+                "chat attachment exceeds the 10 MB limit".to_owned()
+            } else {
+                format!("'{method}' binary input exceeds {limit} bytes")
+            };
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(json!({ "ok": false, "error": HostApiError::invalid(message) })),
+            )
+                .into_response();
+        }
+    }
     let params = match query_to_json(query) {
         Ok(params) => params,
         Err(error) => return v2_error(error),
@@ -226,6 +248,17 @@ pub(super) async fn blob(
         Err(error) => return v2_error(error),
     };
     match host.binary(&method, params, None).await {
+        Ok(BinaryOutput::Bytes(bytes)) if bytes.len() > host_api::MAX_BLOB_OUTPUT_BYTES => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({
+                "ok": false,
+                "error": HostApiError::invalid(format!(
+                    "'{method}' binary output exceeds {} bytes",
+                    host_api::MAX_BLOB_OUTPUT_BYTES
+                )),
+            })),
+        )
+            .into_response(),
         Ok(BinaryOutput::Bytes(bytes)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/octet-stream")
@@ -436,7 +469,7 @@ async fn event_socket_v2(
                                     && let Some(terminal_id) = message.get("terminalId").and_then(Value::as_str)
                                 {
                                     let owner = TerminalOwner::Device(auth_session.device.id.clone());
-                                    if terminals.owns(&owner, terminal_id) {
+                                    if terminals.attach(&owner, terminal_id).is_ok() {
                                         subscribed_terminals.insert(terminal_id.to_owned());
                                     }
                                 }
@@ -1259,6 +1292,298 @@ mod tests {
         .await;
         assert_eq!(status, 404);
         assert_eq!(err["error"]["code"], "not_found");
+
+        host.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn v2_terminal_open_rejects_downgraded_revoked_disabled_and_expires_headless_terminal() {
+        let host = TestHost::start_ephemeral("term-race").await;
+        let project_dir = host.root.join("term-race-proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let project_path = project_dir.to_string_lossy().to_string();
+
+        let (token_dev1, dev1_id) = host.pair(RemoteScopes::ChatWorkspace, "Dev1").await;
+        let (_token_dev2, dev2_id) = host.pair(RemoteScopes::ChatWorkspace, "Dev2").await;
+
+        let (status, added) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/project.add",
+            Some(&token_dev1),
+            None,
+            &json!({ "connectionId": "local", "path": project_path }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let project_id = added["result"]["id"].as_str().unwrap().to_owned();
+
+        // 1. Opening a terminal via HTTP with no active v2 WS starts the retention timer and
+        //    closes the PTY if the device never attaches or subscribes.
+        host.runtime
+            .terminals
+            .set_disconnect_retention(Duration::from_millis(120));
+        let (status, opened_headless) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/terminal.open",
+            Some(&token_dev1),
+            None,
+            &json!({ "projectId": project_id, "cols": 80, "rows": 24 }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let headless_id = opened_headless["result"]["id"].as_str().unwrap().to_owned();
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        let (status, err) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/terminal.attach",
+            Some(&token_dev1),
+            None,
+            &json!({ "terminalId": headless_id }),
+        )
+        .await;
+        assert_eq!(status, 404);
+        assert_eq!(err["error"]["code"], "not_found");
+
+        // 2. Opening without WS and subscribing via WS before retention cancels the timer.
+        host.runtime
+            .terminals
+            .set_disconnect_retention(Duration::from_millis(200));
+        let (status, opened_sub) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/terminal.open",
+            Some(&token_dev1),
+            None,
+            &json!({ "projectId": project_id, "cols": 80, "rows": 24 }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let sub_id = opened_sub["result"]["id"].as_str().unwrap().to_owned();
+        let mut ws1 = WsClient::connect(host.port, "/api/v2/events", &token_dev1).await;
+        let _hello = ws1.recv_json().await;
+        ws1.send_text(&json!({ "type": "terminal.subscribe", "terminalId": sub_id }))
+            .await;
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert!(
+            host.runtime
+                .terminals
+                .owns(&TerminalOwner::Device(dev1_id.clone()), &sub_id),
+            "subscribing via WS must cancel the headless retention timer"
+        );
+        drop(ws1);
+
+        // 3. Re-validation at commit_if rejects downgraded, revoked, and disabled remote access.
+        //    Also test concurrent open + scope downgrade / revoke leaves no orphaned PTY.
+        let (open_res, downgrade_res) = tokio::join!(
+            crate::project_api::project_terminal_open_for_owner(
+                &host.runtime,
+                project_id.clone(),
+                80,
+                24,
+                TerminalOwner::Device(dev1_id.clone()),
+            ),
+            host.runtime
+                .remote
+                .set_device_scopes(&host.runtime, &dev1_id, RemoteScopes::Chat),
+        );
+        downgrade_res.unwrap();
+        if let Ok(info) = open_res {
+            // If open committed before downgrade, downgrade must have closed it immediately.
+            assert!(
+                !host
+                    .runtime
+                    .terminals
+                    .owns(&TerminalOwner::Device(dev1_id.clone()), &info.id),
+                "concurrent downgrade must not leave a terminal owned by a downgraded device"
+            );
+        }
+        // Subsequent open for downgraded device fails with Forbidden.
+        let downgraded_err = crate::project_api::project_terminal_open_for_owner(
+            &host.runtime,
+            project_id.clone(),
+            80,
+            24,
+            TerminalOwner::Device(dev1_id.clone()),
+        )
+        .await
+        .expect_err("downgraded device must be rejected");
+        assert_eq!(downgraded_err.code, ErrorCode::Forbidden);
+
+        // Concurrent open + revoke for Dev2.
+        let (open_res2, revoke_res) = tokio::join!(
+            crate::project_api::project_terminal_open_for_owner(
+                &host.runtime,
+                project_id.clone(),
+                80,
+                24,
+                TerminalOwner::Device(dev2_id.clone()),
+            ),
+            host.runtime.remote.revoke_device(&host.runtime, &dev2_id),
+        );
+        revoke_res.unwrap();
+        if let Ok(info) = open_res2 {
+            assert!(
+                !host
+                    .runtime
+                    .terminals
+                    .owns(&TerminalOwner::Device(dev2_id.clone()), &info.id),
+                "concurrent revoke must not leave a terminal owned by a revoked device"
+            );
+        }
+        let revoked_err = crate::project_api::project_terminal_open_for_owner(
+            &host.runtime,
+            project_id.clone(),
+            80,
+            24,
+            TerminalOwner::Device(dev2_id.clone()),
+        )
+        .await
+        .expect_err("revoked device must be rejected");
+        assert_eq!(revoked_err.code, ErrorCode::Forbidden);
+
+        // Disabling remote access rejects open with Unavailable.
+        let (_token_dev3, dev3_id) = host.pair(RemoteScopes::ChatWorkspace, "Dev3").await;
+        host.runtime
+            .remote
+            .set_enabled(&host.runtime, false)
+            .await
+            .unwrap();
+        let disabled_err = crate::project_api::project_terminal_open_for_owner(
+            &host.runtime,
+            project_id,
+            80,
+            24,
+            TerminalOwner::Device(dev3_id),
+        )
+        .await
+        .expect_err("disabled remote access must reject remote terminal open");
+        assert_eq!(disabled_err.code, ErrorCode::Unavailable);
+
+        host.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn v2_binary_limits_enforce_terminal_write_1mib_and_blob_10mib() {
+        let host = TestHost::start_ephemeral("bin-limit").await;
+        let project_dir = host.root.join("bin-limit-proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let project_path = project_dir.to_string_lossy().to_string();
+
+        let (token_ws, _) = host.pair(RemoteScopes::ChatWorkspace, "WsDev").await;
+        let (token_chat, _) = host.pair(RemoteScopes::Chat, "ChatDev").await;
+
+        let (status, added) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/project.add",
+            Some(&token_ws),
+            None,
+            &json!({ "connectionId": "local", "path": project_path }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let project_id = added["result"]["id"].as_str().unwrap().to_owned();
+
+        // 1. terminal.write > 1 MiB returns 413 with invalid_params for workspace device,
+        //    and 403 forbidden for chat-only device.
+        let oversized_write = vec![b'a'; host_api::MAX_TERMINAL_WRITE_BYTES + 1];
+        let (status, body) = http_raw(
+            host.port,
+            "POST",
+            "/api/v2/upload/terminal.write?terminalId=term-1",
+            Some(&token_ws),
+            None,
+            Some("application/octet-stream"),
+            &oversized_write,
+        )
+        .await;
+        assert_eq!(status, 413);
+        let parsed: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["ok"], false);
+        assert_eq!(parsed["error"]["code"], "invalid_params");
+
+        let (status, body) = http_raw(
+            host.port,
+            "POST",
+            "/api/v2/upload/terminal.write?terminalId=term-1",
+            Some(&token_chat),
+            None,
+            Some("application/octet-stream"),
+            &oversized_write,
+        )
+        .await;
+        assert_eq!(status, 403);
+        let parsed: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["error"]["code"], "forbidden");
+
+        // 2. session.historyImage returning > 10 MiB returns 413 with invalid_params.
+        let pi_agent_dir = std::env::var_os("PI_CODING_AGENT_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap()).join(".pi/agent"));
+        let session_dir = pi_agent_dir
+            .join("sessions")
+            .join(format!("pilo-v2-blob-limit-{}", std::process::id()));
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join("oversized-image-session.jsonl");
+        let raw_image = vec![0xABu8; host_api::MAX_BLOB_OUTPUT_BYTES + 16];
+        let encoded_image = BASE64.encode(&raw_image);
+        let header = json!({
+            "type": "session",
+            "version": 3,
+            "id": "oversized-img-session",
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "cwd": project_path,
+        });
+        let entry = json!({
+            "type": "message",
+            "id": "m1",
+            "parentId": null,
+            "timestamp": "2026-01-01T00:00:01.000Z",
+            "message": {
+                "role": "user",
+                "content": [
+                    { "type": "image", "mimeType": "image/png", "data": encoded_image }
+                ]
+            }
+        });
+        std::fs::write(&session_path, format!("{header}\n{entry}\n")).unwrap();
+        let session_path_str = session_path.to_string_lossy().to_string();
+
+        let (status, history) = http_json(
+            host.port,
+            "POST",
+            "/api/v2/call/session.history",
+            Some(&token_chat),
+            None,
+            &json!({ "projectId": project_id, "sessionPath": session_path_str }),
+        )
+        .await;
+        assert_eq!(status, 200, "session.history failed: {history}");
+        let image_id = "m1:0";
+
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("projectId", &project_id)
+            .append_pair("sessionPath", &session_path_str)
+            .append_pair("imageId", image_id)
+            .finish();
+        let (status, body) = http_raw(
+            host.port,
+            "GET",
+            &format!("/api/v2/blob/session.historyImage?{query}"),
+            Some(&token_chat),
+            None,
+            Some("application/octet-stream"),
+            &[],
+        )
+        .await;
+        let _ = std::fs::remove_dir_all(&session_dir);
+        assert_eq!(status, 413);
+        let parsed: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["ok"], false);
+        assert_eq!(parsed["error"]["code"], "invalid_params");
 
         host.cleanup().await;
     }

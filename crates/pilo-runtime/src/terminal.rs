@@ -476,20 +476,43 @@ impl TerminalManager {
     }
 
     /// Commits a started terminal if `check` succeeds; returns the session back for closing on error.
-    pub(crate) async fn commit_if<F>(
+    pub(crate) async fn commit_if<F, E>(
         &self,
-        session: TerminalSession,
+        mut session: TerminalSession,
         check: F,
-    ) -> Result<(), (String, Box<TerminalSession>)>
+    ) -> Result<(), (E, Box<TerminalSession>)>
     where
-        F: FnOnce() -> Result<(), String>,
+        F: FnOnce() -> Result<(), E>,
     {
         let _gate = self.project_gate.lock().await;
         if let Err(error) = check() {
             return Err((error, Box::new(session)));
         }
+        let has_ws_connection = match &session.owner {
+            TerminalOwner::Local => true,
+            TerminalOwner::Device(device_id) => {
+                self.device_connections
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get(device_id)
+                    .copied()
+                    .unwrap_or(0)
+                    > 0
+            }
+        };
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         if !session.ended.load(Ordering::Acquire) {
+            if !has_ws_connection {
+                let retention = *self
+                    .retention_duration
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                session.disconnect_timer = Some(Self::spawn_disconnect_timer(
+                    Arc::clone(&self.sessions),
+                    session.id.clone(),
+                    retention,
+                ));
+            }
             sessions.insert(session.id.clone(), session);
         }
         Ok(())
@@ -626,6 +649,7 @@ impl TerminalManager {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn owns(&self, owner: &TerminalOwner, terminal_id: &str) -> bool {
         self.sessions
             .lock()
@@ -673,25 +697,34 @@ impl TerminalManager {
             if session.owner != owner || session.disconnect_timer.is_some() {
                 continue;
             }
-            let sessions_map = Arc::clone(&self.sessions);
-            let id = terminal_id.clone();
-            let timer = tokio::spawn(async move {
-                tokio::time::sleep(retention).await;
-                let removed = sessions_map
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&id);
-                if let Some(mut session) = removed {
-                    // Detach self handle so close() does not abort the currently running timer task.
-                    session.disconnect_timer = None;
-                    log::info!(target: "terminal", "closing disconnected remote terminal {id} after retention timeout");
-                    if let Err(error) = session.close().await {
-                        log::warn!(target: "terminal", "failed to close expired remote terminal {id}: {error}");
-                    }
-                }
-            });
-            session.disconnect_timer = Some(timer);
+            session.disconnect_timer = Some(Self::spawn_disconnect_timer(
+                Arc::clone(&self.sessions),
+                terminal_id.clone(),
+                retention,
+            ));
         }
+    }
+
+    fn spawn_disconnect_timer(
+        sessions_map: Arc<StdMutex<HashMap<String, TerminalSession>>>,
+        id: String,
+        retention: Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            tokio::time::sleep(retention).await;
+            let removed = sessions_map
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&id);
+            if let Some(mut session) = removed {
+                // Detach self handle so close() does not abort the currently running timer task.
+                session.disconnect_timer = None;
+                log::info!(target: "terminal", "closing disconnected remote terminal {id} after retention timeout");
+                if let Err(error) = session.close().await {
+                    log::warn!(target: "terminal", "failed to close expired remote terminal {id}: {error}");
+                }
+            }
+        })
     }
 
     pub(crate) async fn close_by_device(&self, device_id: &str) {
@@ -706,6 +739,7 @@ impl TerminalManager {
 
     async fn close_matching(&self, predicate: impl Fn(&TerminalSession) -> bool) {
         let taken = {
+            let _gate = self.project_gate.lock().await;
             let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
             let ids = sessions
                 .iter()

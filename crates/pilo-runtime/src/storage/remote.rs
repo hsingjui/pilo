@@ -365,6 +365,25 @@ pub(crate) fn authenticate_remote_device(
     Ok(Some(device))
 }
 
+pub(crate) fn get_active_remote_device_scopes(
+    db: &SqliteConnection,
+    device_id: &str,
+    now_ms: u64,
+) -> Result<Option<RemoteScopes>, String> {
+    let now_i64 = as_i64(now_ms, "now_ms")?;
+    let scopes_raw = db
+        .query_row(
+            "SELECT scopes
+             FROM remote_devices
+             WHERE id = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
+            params![device_id, now_i64],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to query remote device scopes: {error}"))?;
+    Ok(scopes_raw.and_then(|raw| raw.parse::<RemoteScopes>().ok()))
+}
+
 pub(crate) fn list_remote_devices(db: &SqliteConnection) -> Result<Vec<RemoteDevice>, String> {
     let mut statement = db
         .prepare(

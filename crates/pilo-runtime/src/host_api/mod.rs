@@ -14,6 +14,8 @@ pub use handlers::methods;
 
 pub const PROTOCOL_VERSION: &str = "2.0";
 pub const MAX_JSON_REQUEST_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_TERMINAL_WRITE_BYTES: usize = 1024 * 1024;
+pub const MAX_BLOB_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 pub const GATEWAY_TIMEOUT: Duration = Duration::from_secs(45);
 
 pub fn method_table_json() -> Value {
@@ -51,7 +53,7 @@ pub enum Principal {
 }
 
 impl Principal {
-    fn allows(&self, scope: Scope) -> bool {
+    pub(crate) fn allows(&self, scope: Scope) -> bool {
         match (self, scope) {
             (Self::Local, _) | (Self::Device { .. }, Scope::Chat) => true,
             (Self::Device { scopes, .. }, Scope::Workspace) => {
