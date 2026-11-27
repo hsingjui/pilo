@@ -11,7 +11,7 @@ function openSidebar(storage: Record<string, string> = {}) {
 type App = Awaited<ReturnType<typeof openSidebar>>;
 
 function collapsedSections(app: App) {
-	return JSON.parse(app.storage()["pilo.collapsedSections"] ?? "{}");
+	return JSON.parse(app.storage()["pilo.collapsedSections@local"] ?? "{}");
 }
 
 /**
@@ -90,7 +90,7 @@ test("expanding a project lists its running session, then its five latest", asyn
 
 test("pressing a project or a session opens it and shows it selected", async () => {
 	const app = await openSidebar({
-		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+		"pilo.collapsedSections@local": JSON.stringify({ "ws:pilo": false }),
 	});
 	// A project stored as expanded reads its sessions at launch.
 	await app.waitFor("id:session:s7");
@@ -172,7 +172,7 @@ function clientCalls(app: App): ClientCall[] {
 
 test("a session row's menu renames it inline and refreshes the list", async () => {
 	const app = await openSidebar({
-		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+		"pilo.collapsedSections@local": JSON.stringify({ "ws:pilo": false }),
 	});
 	await app.waitFor("id:session:s4");
 
@@ -213,7 +213,7 @@ test("a session row's menu renames it inline and refreshes the list", async () =
 
 test("the hover archive closes the open session and Undo restores it", async () => {
 	const app = await openSidebar({
-		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+		"pilo.collapsedSections@local": JSON.stringify({ "ws:pilo": false }),
 	});
 	await app.waitFor("id:session:s4");
 	await app.press("id:session:s4");
@@ -281,7 +281,7 @@ test("an unavailable archive shows a load error instead of looking empty", async
 
 test("a session row's delete asks again, then removes and closes it", async () => {
 	const app = await openSidebar({
-		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+		"pilo.collapsedSections@local": JSON.stringify({ "ws:pilo": false }),
 	});
 	await app.waitFor("id:session:s4");
 	await app.press("id:session:s4");
@@ -314,7 +314,7 @@ test("a session row's delete asks again, then removes and closes it", async () =
 
 test("deleting a session notifies on permanent delete and failure", async () => {
 	const app = await openSidebar({
-		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+		"pilo.collapsedSections@local": JSON.stringify({ "ws:pilo": false }),
 	});
 	await app.waitFor("id:session:s3");
 

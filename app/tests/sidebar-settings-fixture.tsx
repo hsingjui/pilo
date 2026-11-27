@@ -1,11 +1,11 @@
-import { mount, Text, View } from "nsh";
+import { mount, Storage, Text, View } from "nsh";
 import { Button } from "nsh/base";
 
 import { SidebarSettingsStore } from "../shell/sidebar-settings";
 
 /** Shows the sidebar's stored settings and changes each of them. */
-function Fixture() {
-	const store = new SidebarSettingsStore();
+function Fixture({ hostId }: { hostId?: string }) {
+	const store = new SidebarSettingsStore(hostId);
 	void store.load();
 	const settings = store.settings;
 	return (
@@ -16,6 +16,7 @@ function Fixture() {
 			<Text>
 				{() => `sections: ${JSON.stringify(settings().collapsedSections)}`}
 			</Text>
+			<Text>{() => `order: ${JSON.stringify(settings().projectOrder)}`}</Text>
 			<Button onPress={() => void store.setView("recent")}>
 				<Text>Use recent</Text>
 			</Button>
@@ -40,4 +41,5 @@ function Fixture() {
 	);
 }
 
-mount(Fixture);
+const hostId = (await Storage.getItem("fixture.hostId")) ?? undefined;
+mount(() => <Fixture hostId={hostId} />);
