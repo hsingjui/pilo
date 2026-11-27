@@ -49,6 +49,7 @@ pub struct SessionIndexEntry {
     pub indexed_at_ms: u64,
     pub pinned: bool,
     pub title_override: Option<String>,
+    pub archived_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,8 +64,22 @@ pub struct SessionReadState {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUiStateUpdate {
-    pub pinned: bool,
-    pub title_override: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_title_override",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title_override: Option<Option<String>>,
+    pub archived: Option<bool>,
+}
+
+fn deserialize_title_override<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +115,7 @@ mod tests {
             indexed_at_ms: 0,
             pinned: false,
             title_override: None,
+            archived_at: None,
         }
     }
 

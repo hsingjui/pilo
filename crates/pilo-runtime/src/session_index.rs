@@ -437,6 +437,7 @@ fn build_index_entry(
         indexed_at_ms: storage::now_ms(),
         pinned: previous.is_some_and(|value| value.pinned),
         title_override: previous.and_then(|value| value.title_override.clone()),
+        archived_at: previous.and_then(|value| value.archived_at),
     })
 }
 
@@ -525,6 +526,7 @@ mod tests {
             indexed_at_ms: 1,
             pinned: true,
             title_override: None,
+            archived_at: None,
         };
         let entry = build_index_entry(
             &project,
@@ -669,6 +671,7 @@ mod tests {
             indexed_at_ms: 0,
             pinned: false,
             title_override: None,
+            archived_at: None,
         }
     }
 

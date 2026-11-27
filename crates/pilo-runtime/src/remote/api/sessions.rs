@@ -315,7 +315,7 @@ pub(super) struct SessionUiStateRequest {
     update: pilo_domain::SessionUiStateUpdate,
 }
 
-/// Mobile WebUI 的会话重命名 / UI 状态更新。
+/// Mobile WebUI 的会话重命名、归档及其他 UI 状态更新。
 pub(super) async fn session_ui_state(
     state: RemoteHttpState,
     Json(request): Json<SessionUiStateRequest>,

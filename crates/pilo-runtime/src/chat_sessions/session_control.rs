@@ -15,6 +15,8 @@ use super::{
     super::{
         debug_trace::runtime_trace,
         events::{PiProcessState, RuntimeEvent, RuntimeEventEnvelope},
+        host_paths::HostPaths,
+        session_api::unarchive_session_on_prompt,
     },
     ChatProcess, ChatSessions,
     turn_projection::{PromptMode, PromptStart},
@@ -149,7 +151,12 @@ impl ChatSessions {
             .map_err(|_| "prediction transport timed out".to_owned())?
     }
 
-    pub async fn send(&self, session_key: &str, mut command: Value) -> Result<(), String> {
+    pub(crate) async fn send(
+        &self,
+        paths: &HostPaths,
+        session_key: &str,
+        mut command: Value,
+    ) -> Result<(), String> {
         let command_type = command
             .get("type")
             .and_then(Value::as_str)
@@ -229,6 +236,15 @@ impl ChatSessions {
                 .unwrap_or_else(|error| error.into_inner()) = Some(id);
             owns_prompt_flag = true;
         }
+        let prompt_path = if matches!(command_type.as_str(), "prompt" | "steer" | "follow_up") {
+            process
+                .session_path
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        } else {
+            None
+        };
         let result = if matches!(command_type.as_str(), "prompt" | "steer") {
             let mode = if command_type == "steer"
                 || (was_active && command["streamingBehavior"] == "steer")
@@ -239,18 +255,13 @@ impl ChatSessions {
             } else {
                 PromptMode::Idle
             };
-            let path = process
-                .session_path
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
             process
                 .turn
                 .send_prompt(
                     &process.events,
                     PromptStart {
                         generation: session.snapshot().generation,
-                        path,
+                        path: prompt_path.clone(),
                         id: command_id.clone(),
                         mode,
                     },
@@ -289,6 +300,22 @@ impl ChatSessions {
                 "error": result.as_ref().err(),
             }),
         );
+        drop(session);
+        if !process.no_session
+            && result.is_ok()
+            && let Some(path) = prompt_path
+        {
+            let paths = paths.clone();
+            let unarchive = tokio::task::spawn_blocking(move || {
+                unarchive_session_on_prompt(&paths, &process.events, &process.project_id, &path)
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|result| result);
+            if let Err(error) = unarchive {
+                log::warn!(target: "session-index", "failed to unarchive session after prompt: {error}");
+            }
+        }
         result
     }
 

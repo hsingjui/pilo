@@ -110,12 +110,28 @@ pub fn session_update_ui_state(
         &update,
         project_id.as_deref(),
     )?;
-    runtime.events.send(RuntimeEventEnvelope::global(
+    notify_sessions_indexed(&runtime.events, &entry.project_id);
+    Ok(entry)
+}
+
+pub(crate) fn unarchive_session_on_prompt(
+    paths: &super::host_paths::HostPaths,
+    events: &super::RuntimeEventBus,
+    project_id: &str,
+    session_path: &str,
+) -> Result<(), String> {
+    if storage::unarchive_session_if_archived(&storage::open(paths)?, project_id, session_path)? {
+        notify_sessions_indexed(events, project_id);
+    }
+    Ok(())
+}
+
+fn notify_sessions_indexed(events: &super::RuntimeEventBus, project_id: &str) {
+    events.send(RuntimeEventEnvelope::global(
         RuntimeEvent::SessionsIndexed {
-            project_id: entry.project_id.clone(),
+            project_id: project_id.to_owned(),
         },
     ));
-    Ok(entry)
 }
 
 pub async fn session_external_activity(
@@ -543,6 +559,7 @@ mod tests {
                 indexed_at_ms: 0,
                 pinned: false,
                 title_override: None,
+                archived_at: None,
             },
         )
         .unwrap();
@@ -550,8 +567,9 @@ mod tests {
             &runtime,
             "/session.jsonl".into(),
             SessionUiStateUpdate {
-                pinned: true,
-                title_override: Some("Title".into()),
+                pinned: Some(true),
+                title_override: Some(Some("Title".into())),
+                ..Default::default()
             },
             Some("project".into()),
         )
@@ -562,6 +580,34 @@ mod tests {
             session_list(&runtime, "project".into()).unwrap(),
             vec![state]
         );
+        session_update_ui_state(
+            &runtime,
+            "/session.jsonl".into(),
+            SessionUiStateUpdate {
+                archived: Some(true),
+                ..Default::default()
+            },
+            Some("project".into()),
+        )
+        .unwrap();
+        runtime.events.set_web_events_enabled(true);
+        let sequence = runtime.events.latest_sequence();
+        unarchive_session_on_prompt(&runtime.paths, &runtime.events, "project", "/session.jsonl")
+            .unwrap();
+        let events = runtime.events.replay_after(sequence).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0].event.event,
+            RuntimeEvent::SessionsIndexed { project_id } if project_id == "project"
+        ));
+        let restored = &session_list(&runtime, "project".into()).unwrap()[0];
+        assert_eq!(restored.archived_at, None);
+        assert!(!restored.pinned);
+        assert_eq!(restored.title_override.as_deref(), Some("Title"));
+        for path in ["/session.jsonl", "/missing.jsonl"] {
+            unarchive_session_on_prompt(&runtime.paths, &runtime.events, "project", path).unwrap();
+        }
+        assert_eq!(runtime.events.latest_sequence(), sequence + 1);
         drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }

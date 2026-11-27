@@ -895,7 +895,7 @@ impl Pilo {
         .await
     }
 
-    /// Updates an indexed session's pin state or title override.
+    /// Updates an indexed session's pin, title, or archive state.
     pub async fn update_session_ui_state(
         this: Instance<Self>,
         session_path: String,

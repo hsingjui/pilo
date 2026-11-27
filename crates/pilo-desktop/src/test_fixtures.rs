@@ -220,6 +220,7 @@ impl BootstrapFixture {
                 indexed_at_ms: 1_767_225_601_000,
                 pinned: false,
                 title_override: None,
+                archived_at: None,
             },
         )
     }
