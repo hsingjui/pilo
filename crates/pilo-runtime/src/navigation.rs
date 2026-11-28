@@ -14,7 +14,10 @@ use std::{
 use pilo_domain::{ConnectionKind, Project, SessionIndexEntry};
 use serde::Serialize;
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::{
+    sync::{Mutex, mpsc, oneshot, watch},
+    time::Instant,
+};
 
 use crate::{
     Runtime,
@@ -28,6 +31,11 @@ const UI_READY_TIMEOUT: Duration = Duration::from_secs(30);
 const RECEIPT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_LISTED_CANDIDATES: usize = 10;
 
+tokio::task_local! {
+    /// Set by local IPC around a call: becomes `true` once its client disconnects.
+    pub(crate) static CALLER_LEFT: watch::Receiver<bool>;
+}
+
 /// One navigation for the desktop UI; answered with `Navigator::complete`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,15 +44,20 @@ pub struct NavigationRequest {
     pub project_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_path: Option<String>,
+    /// Time left, when taken, to apply it; past that it must not be applied.
+    pub expires_in_ms: u64,
 }
 
-type Receipt = oneshot::Sender<Result<(), String>>;
+struct Pending {
+    receipt: oneshot::Sender<Result<(), String>>,
+    deadline: Instant,
+}
 
 /// The queue between local clients and the desktop UI.
 pub struct Navigator {
     sender: mpsc::UnboundedSender<NavigationRequest>,
     receiver: Mutex<mpsc::UnboundedReceiver<NavigationRequest>>,
-    pending: SyncMutex<HashMap<u64, Receipt>>,
+    pending: SyncMutex<HashMap<u64, Pending>>,
     ready: watch::Sender<bool>,
     closed: watch::Sender<bool>,
     next_id: AtomicU64,
@@ -70,7 +83,7 @@ impl Default for Navigator {
 
 impl Navigator {
     /// Waits for the next navigation the UI should apply; `None` once closed.
-    /// The first call marks the UI ready. Requests whose caller gave up are skipped.
+    /// The first call marks the UI ready. Expired and cancelled requests are skipped.
     pub async fn next(&self) -> Option<NavigationRequest> {
         self.ready.send_replace(true);
         let mut closed = self.closed.subscribe();
@@ -79,21 +92,35 @@ impl Navigator {
             if *closed.borrow() {
                 return None;
             }
-            let request = tokio::select! {
+            let mut request = tokio::select! {
                 request = receiver.recv() => request?,
                 _ = closed.changed() => return None,
             };
-            if self.lock_pending().contains_key(&request.id) {
+            if let Some(left) = self.time_left(request.id) {
+                request.expires_in_ms = u64::try_from(left.as_millis()).unwrap_or(u64::MAX);
                 return Some(request);
             }
         }
     }
 
+    /// Whether request `id` may still be applied: its caller is waiting and
+    /// its deadline has not passed. The UI checks this right before applying.
+    pub fn is_current(&self, id: u64) -> bool {
+        self.time_left(id).is_some()
+    }
+
     /// The UI's receipt for request `id`: `None` when it navigated, else why not.
     pub fn complete(&self, id: u64, error: Option<String>) {
-        if let Some(receipt) = self.lock_pending().remove(&id) {
-            let _ = receipt.send(error.map_or(Ok(()), Err));
+        if let Some(pending) = self.lock_pending().remove(&id) {
+            let _ = pending.receipt.send(error.map_or(Ok(()), Err));
         }
+    }
+
+    fn time_left(&self, id: u64) -> Option<Duration> {
+        let pending = self.lock_pending();
+        let entry = pending.get(&id)?;
+        let left = entry.deadline.saturating_duration_since(Instant::now());
+        (!left.is_zero() && !entry.receipt.is_closed()).then_some(left)
     }
 
     pub fn close(&self) {
@@ -106,41 +133,66 @@ impl Navigator {
         project_id: String,
         session_path: Option<String>,
     ) -> Result<(), HostApiError> {
+        let mut caller = CALLER_LEFT.try_with(Clone::clone).ok();
+        let caller_left = async {
+            match caller.as_mut() {
+                Some(left) => {
+                    let _ = left.wait_for(|left| *left).await;
+                }
+                None => std::future::pending().await,
+            }
+        };
+        tokio::pin!(caller_left);
         let mut ready = self.ready.subscribe();
-        tokio::time::timeout(self.ui_ready_timeout, ready.wait_for(|ready| *ready))
-            .await
-            .map_err(|_| unavailable("the Pilo window did not become ready to navigate"))?
-            .map_err(|_| unavailable("the Pilo window is closing"))?;
+        tokio::select! {
+            ready = tokio::time::timeout(self.ui_ready_timeout, ready.wait_for(|ready| *ready)) => {
+                ready
+                    .map_err(|_| unavailable("the Pilo window did not become ready to navigate"))?
+                    .map_err(|_| unavailable("the Pilo window is closing"))?;
+            }
+            () = &mut caller_left => return Err(caller_gone()),
+        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (receipt, answer) = oneshot::channel();
-        self.lock_pending().insert(id, receipt);
+        let deadline = Instant::now() + self.receipt_timeout;
+        self.lock_pending()
+            .insert(id, Pending { receipt, deadline });
         let request = NavigationRequest {
             id,
             project_id,
             session_path,
+            expires_in_ms: 0,
         };
         if self.sender.send(request).is_err() {
             self.lock_pending().remove(&id);
             return Err(unavailable("the Pilo window is closing"));
         }
-        match tokio::time::timeout(self.receipt_timeout, answer).await {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(error))) => Err(HostApiError::new(
+        // Leaving early drops the receipt, which cancels the request for the UI.
+        let outcome = tokio::select! {
+            answer = answer => answer,
+            () = tokio::time::sleep_until(deadline) => {
+                self.lock_pending().remove(&id);
+                return Err(HostApiError::new(
+                    ErrorCode::Timeout,
+                    "the Pilo window did not confirm the navigation",
+                ));
+            }
+            () = &mut caller_left => {
+                self.lock_pending().remove(&id);
+                return Err(caller_gone());
+            }
+        };
+        match outcome {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(HostApiError::new(
                 ErrorCode::Conflict,
                 format!("the Pilo window could not navigate: {error}"),
             )),
-            Ok(Err(_)) => Err(unavailable("the Pilo window is closing")),
-            Err(_) => {
-                self.lock_pending().remove(&id);
-                Err(HostApiError::new(
-                    ErrorCode::Timeout,
-                    "the Pilo window did not confirm the navigation",
-                ))
-            }
+            Err(_) => Err(unavailable("the Pilo window is closing")),
         }
     }
 
-    fn lock_pending(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Receipt>> {
+    fn lock_pending(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Pending>> {
         self.pending
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -151,6 +203,10 @@ impl Runtime {
     pub fn navigator(&self) -> Arc<Navigator> {
         self.navigator.clone()
     }
+}
+
+fn caller_gone() -> HostApiError {
+    unavailable("the caller disconnected before the window navigated")
 }
 
 fn unavailable(message: &str) -> HostApiError {

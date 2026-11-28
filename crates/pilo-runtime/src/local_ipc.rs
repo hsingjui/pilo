@@ -16,7 +16,7 @@ use pilo_ipc::{
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{Semaphore, watch},
+    sync::{Semaphore, mpsc, watch},
     task::JoinHandle,
 };
 
@@ -137,7 +137,10 @@ impl Runtime {
 }
 
 /// Runs the hello exchange and then answers requests in order until EOF.
-async fn serve<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, shared: Arc<Shared>) {
+async fn serve<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
+    mut stream: S,
+    shared: Arc<Shared>,
+) {
     // Reading the client hello and writing the reply share one deadline.
     let deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
     let hello = tokio::time::timeout_at(deadline, read_frame(&mut stream)).await;
@@ -169,24 +172,44 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, shared: Arc<Sha
     if !accepted || !matches!(written, Ok(Ok(()))) {
         return;
     }
-    loop {
-        let frame = match read_frame(&mut stream).await {
-            Ok(Some(frame)) => frame,
-            Ok(None) => return,
-            Err(error) => {
-                // A torn or oversized frame leaves the stream unframed; reply once and close.
-                let _ = write_frame(&mut stream, &frame_error(None, &error)).await;
+    // Frames are read on their own task so a disconnect is seen while a call
+    // runs; calls that care (navigation) then stop waiting.
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    let (left, caller_left) = watch::channel(false);
+    let (frames, mut incoming) = mpsc::channel::<Result<Value, FrameError>>(1);
+    let read = tokio::spawn(async move {
+        loop {
+            let frame = read_frame(&mut reader).await;
+            let end = !matches!(frame, Ok(Some(_)));
+            let delivered = match frame {
+                Ok(Some(frame)) => frames.send(Ok(frame)).await.is_ok(),
+                Ok(None) => true,
+                Err(error) => frames.send(Err(error)).await.is_ok(),
+            };
+            if end || !delivered {
+                left.send_replace(true);
                 return;
             }
+        }
+    });
+    while let Some(frame) = incoming.recv().await {
+        let frame = match frame {
+            Ok(frame) => frame,
+            Err(error) => {
+                // A torn or oversized frame leaves the stream unframed; reply once and close.
+                let _ = write_frame(&mut writer, &frame_error(None, &error)).await;
+                break;
+            }
         };
-        let response = respond(&shared, frame).await;
-        if write_frame(&mut stream, &response).await.is_err() {
-            return;
+        let response = respond(&shared, frame, caller_left.clone()).await;
+        if write_frame(&mut writer, &response).await.is_err() {
+            break;
         }
     }
+    read.abort();
 }
 
-async fn respond(shared: &Shared, frame: Value) -> Value {
+async fn respond(shared: &Shared, frame: Value, caller_left: watch::Receiver<bool>) -> Value {
     let id = frame
         .get("id")
         .cloned()
@@ -225,10 +248,11 @@ async fn respond(shared: &Shared, frame: Value) -> Value {
     };
     // Finish the call even if the client disconnects: a cancelled write could
     // otherwise leave its outcome unknown on the Host side as well.
-    let call =
-        tokio::spawn(
-            async move { host_api::call(&runtime, &Principal::Local, &method, params).await },
-        );
+    let call = tokio::spawn(
+        crate::navigation::CALLER_LEFT.scope(caller_left, async move {
+            host_api::call(&runtime, &Principal::Local, &method, params).await
+        }),
+    );
     match call.await {
         Ok(Ok(result)) => json!({ "id": id, "result": result }),
         Ok(Err(error)) => json!({ "id": id, "error": error }),

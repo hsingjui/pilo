@@ -204,6 +204,54 @@ async fn requests_whose_caller_gave_up_are_not_delivered() {
     assert_eq!(seen[0].project_id, "fresh");
 }
 
+#[tokio::test]
+async fn a_request_that_expires_after_the_ui_took_it_is_not_current() {
+    let navigator = Arc::new(quick());
+    let caller = tokio::spawn({
+        let navigator = navigator.clone();
+        async move { navigator.navigate("alpha".into(), None).await }
+    });
+    let request = navigator.next().await.unwrap();
+    assert!(request.expires_in_ms > 0 && request.expires_in_ms <= 50);
+    assert!(navigator.is_current(request.id));
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    assert!(!navigator.is_current(request.id));
+    assert_eq!(caller.await.unwrap().unwrap_err().code, ErrorCode::Timeout);
+    // A late receipt changes nothing.
+    navigator.complete(request.id, None);
+    assert!(!navigator.is_current(request.id));
+}
+
+#[tokio::test]
+async fn a_caller_that_leaves_cancels_its_request() {
+    let navigator = Arc::new(Navigator::default());
+    let (left, caller_left) = tokio::sync::watch::channel(false);
+    let caller = tokio::spawn({
+        let navigator = navigator.clone();
+        CALLER_LEFT.scope(caller_left, async move {
+            navigator.navigate("alpha".into(), None).await
+        })
+    });
+    let request = navigator.next().await.unwrap();
+    assert!(navigator.is_current(request.id));
+    left.send_replace(true);
+    assert_eq!(
+        caller.await.unwrap().unwrap_err().code,
+        ErrorCode::Unavailable
+    );
+    assert!(!navigator.is_current(request.id));
+
+    // Leaving before the window is ready cancels too.
+    let navigator = Arc::new(Navigator::default());
+    let (left, caller_left) = tokio::sync::watch::channel(true);
+    drop(left);
+    let error = CALLER_LEFT
+        .scope(caller_left, navigator.navigate("alpha".into(), None))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Unavailable);
+}
+
 fn quick() -> Navigator {
     Navigator {
         ui_ready_timeout: std::time::Duration::from_millis(50),
