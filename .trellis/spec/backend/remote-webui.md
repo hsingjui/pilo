@@ -564,9 +564,13 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   `Principal::Device { id, scopes }` from the authenticated device. `HostRequest`
   passes this extension to the Registry for JSON and binary operations. Both device
   permission sets allow Chat. Workspace requires `RemoteScopes::ChatWorkspace`,
-  serialized as `"chat,workspace"`. Existing devices and ordinary pairing default
-  to `"chat"`. Admin requires Local, including connection configuration, device
-  management and pairing regeneration. Scope denial returns `HostApiError` with
+  serialized as `"chat,workspace"`. New links created on listener start or from
+  desktop settings grant Chat and Workspace to both desktop and WebUI clients,
+  without a scope picker. Address edits preserve the scope of a live batch and use
+  the new-link default when no batch remains. Existing devices keep their
+  scopes; a chat-only device must pair again to gain Workspace. Admin requires
+  Local, including connection configuration, device management and pairing
+  regeneration. Scope denial returns `HostApiError` with
   code `forbidden` and HTTP 403 on v1. WebSocket reauthentication refreshes
   `AuthSession` when the auth generation changes and closes the connection if
   the token is no longer valid.

@@ -223,13 +223,8 @@ const enUS = {
 		remoteError: "Remote WebUI error",
 		remoteActionFailed: "Remote WebUI action failed",
 		remotePairing: "Pair a device",
-		remotePairingPermissions: "Permissions for the next link",
-		remotePairingLinkPermissions: "Current link: {{scope}}",
-		remoteDevicePermissions: "Device permissions",
-		remoteScopeChat: "Chat only",
-		remoteScopeWorkspace: "Chat + workspace",
-		remoteWorkspaceWarning:
-			"Workspace access allows running terminal commands and reading and writing project files.",
+		remotePairingShareWarning:
+			"Share this link only with people you trust. Paired devices can read and write project files and run terminal commands.",
 		remoteOpenLink: "Scan the QR code or open the link",
 		remoteCopyLink: "Copy link",
 		remoteAccessAddress: "Access address",

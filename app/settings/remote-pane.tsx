@@ -11,7 +11,6 @@ import { Collapsible } from "nsh/base";
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
-	RemoteScopes,
 } from "@shared/api/remote-types";
 import { userErrorMessage } from "@shared/app-error";
 import {
@@ -242,11 +241,11 @@ export function RemotePane(props: {
 		}
 	};
 
-	const regenerate = async (scopes: RemoteScopes) => {
+	const regenerate = async () => {
 		if (busy()) return;
 		busy.set("pairing");
 		try {
-			state.set(await client.remotePairingRegenerate(scopes));
+			state.set(await client.remotePairingRegenerate("chat,workspace"));
 			error.set(null);
 		} catch (caught) {
 			fail(caught);
@@ -274,19 +273,6 @@ export function RemotePane(props: {
 			error.set(null);
 		} catch (caught) {
 			fail(caught);
-		}
-	};
-
-	const setScopes = async (deviceId: string, scopes: RemoteScopes) => {
-		if (busy()) return;
-		busy.set("scopes");
-		try {
-			state.set(await client.remoteDeviceSetScopes(deviceId, scopes));
-			error.set(null);
-		} catch (caught) {
-			fail(caught);
-		} finally {
-			busy.set(null);
 		}
 	};
 
@@ -620,12 +606,11 @@ export function RemotePane(props: {
 									url={() => current().pairingUrl}
 									regenerating={() => busy() === "pairing"}
 									disabled={() => Boolean(busy())}
-									scopes={() => current().pairingScopes}
 									copied={() => copiedKey() === "pairing"}
 									onCopy={() =>
 										void copyToClipboard(current().pairingUrl, "pairing")
 									}
-									onRegenerate={(scopes) => void regenerate(scopes)}
+									onRegenerate={() => void regenerate()}
 								/>
 							}
 						/>
@@ -641,9 +626,6 @@ export function RemotePane(props: {
 							onRename={(deviceId, name) => void rename(deviceId, name)}
 							onRevoke={(deviceId) => void revoke(deviceId)}
 							onRevokeAll={() => revokeAllConfirm.set(true)}
-							onSetScopes={(deviceId, scopes) =>
-								void setScopes(deviceId, scopes)
-							}
 						/>
 					</>
 				) : null

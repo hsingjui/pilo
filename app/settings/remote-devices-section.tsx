@@ -1,6 +1,6 @@
 import { type Accessor, computed, signal, Text, View } from "nsh";
 
-import type { RemoteDevice, RemoteScopes } from "@shared/api/remote-types";
+import type { RemoteDevice } from "@shared/api/remote-types";
 import { appLocale, t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
@@ -13,7 +13,6 @@ import {
 	SettingsRow,
 	SettingsSection,
 } from "./layout";
-import { RemoteScopeSelect } from "./remote-scope-select";
 
 /** A device name that turns into a rename field (double-click / pencil / Enter). */
 function DeviceNameCell(props: {
@@ -92,7 +91,6 @@ export function RemoteDevicesSection(props: {
 	onRename: (deviceId: string, name: string) => void;
 	onRevoke: (deviceId: string) => void;
 	onRevokeAll: () => void;
-	onSetScopes: (deviceId: string, scopes: RemoteScopes) => void;
 }) {
 	const hasDevices = computed(() => props.devices().length > 0);
 	const confirmingId = signal<string | null>(null);
@@ -130,15 +128,6 @@ export function RemoteDevicesSection(props: {
 									}
 								>
 									<View class="flex-row flex-wrap items-center gap-1.5">
-										<RemoteScopeSelect
-											testID={`remote-device:${device().id}:scopes`}
-											label={t("settings.remoteDevicePermissions")}
-											value={device().scopes}
-											disabled={props.busy()}
-											onChange={(scopes) =>
-												props.onSetScopes(device().id, scopes)
-											}
-										/>
 										{() =>
 											isConfirming() ? (
 												<SettingsActionButton

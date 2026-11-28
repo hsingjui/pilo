@@ -84,7 +84,6 @@ export type SettingsClient = Pick<
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
 	| "remoteDevicesRevokeAll"
-	| "remoteDeviceSetScopes"
 	| "remoteDeviceRename"
 > &
 	/** Optional host-only discovery helpers. */

@@ -56,6 +56,7 @@ struct RemoteServerInner {
 }
 
 const MIN_REMOTE_PORT: u16 = 1024;
+const DEFAULT_PAIRING_SCOPES: RemoteScopes = RemoteScopes::ChatWorkspace;
 
 fn next_auth_generation() -> u64 {
     // The auth cache outlives listeners, so starts and revocations share one sequence.
@@ -271,7 +272,7 @@ impl RemoteServerManager {
             let scopes = pairing
                 .as_ref()
                 .and_then(|pairing| pairing.snapshot())
-                .map_or(RemoteScopes::Chat, |(_, info)| info.scopes);
+                .map_or(DEFAULT_PAIRING_SCOPES, |(_, info)| info.scopes);
             if changed && let Some(pairing) = &pairing {
                 pairing.invalidate();
             }
@@ -564,7 +565,11 @@ impl RemoteServerManager {
         let addresses = tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths_for_init, &lan_for_init)?;
             let addresses = access::pairing_addresses(&config);
-            pairing_for_init.regenerate(&paths_for_init, addresses.clone(), RemoteScopes::Chat)?;
+            pairing_for_init.regenerate(
+                &paths_for_init,
+                addresses.clone(),
+                DEFAULT_PAIRING_SCOPES,
+            )?;
             Ok::<_, String>(addresses)
         })
         .await
