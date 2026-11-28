@@ -566,7 +566,7 @@ impl SessionTurn {
         state.sequence = sequenced.sequence;
         state.revision = state.revision.wrapping_add(1);
         let event = &sequenced.event.event;
-        if let Some(generation) = event_generation(event)
+        if let Some(generation) = event.generation()
             && !state.generation(generation)
         {
             return;
@@ -731,49 +731,6 @@ impl SessionTurn {
                     .push_with_images(event.clone(), sequenced.event.images.clone());
             }
         }
-    }
-}
-
-fn event_generation(event: &RuntimeEvent) -> Option<u64> {
-    match event {
-        RuntimeEvent::ProcessState { generation, .. }
-        | RuntimeEvent::RpcMessage { generation, .. }
-        | RuntimeEvent::UserMessageStart { generation, .. }
-        | RuntimeEvent::AssistantMessageStart { generation }
-        | RuntimeEvent::AssistantUsageUpdate { generation, .. }
-        | RuntimeEvent::AssistantTextDelta { generation, .. }
-        | RuntimeEvent::AssistantTextSnapshot { generation, .. }
-        | RuntimeEvent::AssistantThinkingStart { generation }
-        | RuntimeEvent::AssistantThinkingDelta { generation, .. }
-        | RuntimeEvent::AssistantThinkingEnd { generation }
-        | RuntimeEvent::ToolExecutionStart { generation, .. }
-        | RuntimeEvent::ToolExecutionUpdate { generation, .. }
-        | RuntimeEvent::ToolExecutionEnd { generation, .. }
-        | RuntimeEvent::PiReattached { generation, .. }
-        | RuntimeEvent::AssistantMessageEnd { generation, .. }
-        | RuntimeEvent::QueueUpdate { generation, .. }
-        | RuntimeEvent::CompactionStart { generation, .. }
-        | RuntimeEvent::CompactionEnd { generation, .. }
-        | RuntimeEvent::AutoRetryStart { generation, .. }
-        | RuntimeEvent::AutoRetryEnd { generation, .. }
-        | RuntimeEvent::SummarizationRetryScheduled { generation, .. }
-        | RuntimeEvent::SummarizationRetryAttemptStart { generation, .. }
-        | RuntimeEvent::SummarizationRetryFinished { generation }
-        | RuntimeEvent::ExtensionUiRequest { generation, .. }
-        | RuntimeEvent::RuntimeLog { generation, .. }
-        | RuntimeEvent::RuntimeError { generation, .. } => Some(*generation),
-        RuntimeEvent::PreferencesChanged { .. }
-        | RuntimeEvent::ConfigurationChanged
-        | RuntimeEvent::ThemeSettingsChanged { .. }
-        | RuntimeEvent::SessionTurnCompleted { .. }
-        | RuntimeEvent::SessionsIndexed { .. }
-        | RuntimeEvent::SessionIndexError { .. }
-        | RuntimeEvent::ExternalSessionActivityChanged { .. }
-        | RuntimeEvent::SessionReadStateChanged { .. }
-        | RuntimeEvent::CacheKeepAliveSettingsChanged { .. }
-        | RuntimeEvent::NextPromptSettingsChanged { .. }
-        | RuntimeEvent::PromptEnhancementSettingsChanged { .. }
-        | RuntimeEvent::ProjectModelScopeChanged { .. } => None,
     }
 }
 

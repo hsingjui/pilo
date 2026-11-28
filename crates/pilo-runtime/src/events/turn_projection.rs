@@ -257,43 +257,13 @@ impl TurnProjection {
     }
 }
 
-fn event_generation(event: &RuntimeEvent) -> Option<u64> {
-    match event {
-        RuntimeEvent::ProcessState { generation, .. }
-        | RuntimeEvent::RpcMessage { generation, .. }
-        | RuntimeEvent::UserMessageStart { generation, .. }
-        | RuntimeEvent::AssistantMessageStart { generation }
-        | RuntimeEvent::AssistantUsageUpdate { generation, .. }
-        | RuntimeEvent::AssistantTextDelta { generation, .. }
-        | RuntimeEvent::AssistantTextSnapshot { generation, .. }
-        | RuntimeEvent::AssistantThinkingStart { generation }
-        | RuntimeEvent::AssistantThinkingDelta { generation, .. }
-        | RuntimeEvent::AssistantThinkingEnd { generation }
-        | RuntimeEvent::ToolExecutionStart { generation, .. }
-        | RuntimeEvent::ToolExecutionUpdate { generation, .. }
-        | RuntimeEvent::ToolExecutionEnd { generation, .. }
-        | RuntimeEvent::PiReattached { generation, .. }
-        | RuntimeEvent::AssistantMessageEnd { generation, .. }
-        | RuntimeEvent::QueueUpdate { generation, .. }
-        | RuntimeEvent::CompactionStart { generation, .. }
-        | RuntimeEvent::CompactionEnd { generation, .. }
-        | RuntimeEvent::AutoRetryStart { generation, .. }
-        | RuntimeEvent::AutoRetryEnd { generation, .. }
-        | RuntimeEvent::SummarizationRetryScheduled { generation, .. }
-        | RuntimeEvent::SummarizationRetryAttemptStart { generation, .. }
-        | RuntimeEvent::SummarizationRetryFinished { generation }
-        | RuntimeEvent::ExtensionUiRequest { generation, .. }
-        | RuntimeEvent::RuntimeLog { generation, .. }
-        | RuntimeEvent::RuntimeError { generation, .. } => Some(*generation),
-        _ => None,
-    }
-}
-
 fn is_segment_boundary(event: &RuntimeEvent, generation: u64) -> bool {
     matches!(
         event,
         RuntimeEvent::UserMessageStart { .. } | RuntimeEvent::CompactionEnd { .. }
-    ) || event_generation(event).is_some_and(|existing| existing != generation)
+    ) || event
+        .generation()
+        .is_some_and(|existing| existing != generation)
 }
 
 fn find_segment_tool_update(

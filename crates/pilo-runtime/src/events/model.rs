@@ -259,6 +259,42 @@ pub enum RuntimeEvent {
     },
 }
 
+impl RuntimeEvent {
+    /// The Pi generation an event belongs to, when it is generation-scoped.
+    /// Session-level events (indexing, preferences, lifecycle) return `None`.
+    pub fn generation(&self) -> Option<u64> {
+        match self {
+            RuntimeEvent::ProcessState { generation, .. }
+            | RuntimeEvent::RpcMessage { generation, .. }
+            | RuntimeEvent::UserMessageStart { generation, .. }
+            | RuntimeEvent::AssistantMessageStart { generation }
+            | RuntimeEvent::AssistantUsageUpdate { generation, .. }
+            | RuntimeEvent::AssistantTextDelta { generation, .. }
+            | RuntimeEvent::AssistantTextSnapshot { generation, .. }
+            | RuntimeEvent::AssistantThinkingStart { generation }
+            | RuntimeEvent::AssistantThinkingDelta { generation, .. }
+            | RuntimeEvent::AssistantThinkingEnd { generation }
+            | RuntimeEvent::ToolExecutionStart { generation, .. }
+            | RuntimeEvent::ToolExecutionUpdate { generation, .. }
+            | RuntimeEvent::ToolExecutionEnd { generation, .. }
+            | RuntimeEvent::PiReattached { generation, .. }
+            | RuntimeEvent::AssistantMessageEnd { generation, .. }
+            | RuntimeEvent::QueueUpdate { generation, .. }
+            | RuntimeEvent::CompactionStart { generation, .. }
+            | RuntimeEvent::CompactionEnd { generation, .. }
+            | RuntimeEvent::AutoRetryStart { generation, .. }
+            | RuntimeEvent::AutoRetryEnd { generation, .. }
+            | RuntimeEvent::SummarizationRetryScheduled { generation, .. }
+            | RuntimeEvent::SummarizationRetryAttemptStart { generation, .. }
+            | RuntimeEvent::SummarizationRetryFinished { generation }
+            | RuntimeEvent::ExtensionUiRequest { generation, .. }
+            | RuntimeEvent::RuntimeLog { generation, .. }
+            | RuntimeEvent::RuntimeError { generation, .. } => Some(*generation),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeEventEnvelope {
