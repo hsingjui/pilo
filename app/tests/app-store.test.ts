@@ -926,3 +926,29 @@ test("the store keeps the chat states current through the native module", async 
 		timeout: 30_000,
 	});
 });
+
+test("navigating to a project the Host just added waits for a reload that lists it", async () => {
+	const { store, emit, projectLists, sessionLists } = await startedStore();
+	const opened = store.navigateTo("p3", "s3");
+	await Promise.resolve();
+	// The add's own change event supersedes the first read.
+	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
+	projectLists[0]?.resolve([project("p1"), project("p2")]);
+	projectLists[1]?.resolve([project("p1"), project("p2"), project("p3")]);
+	await settle();
+	sessionLists[0]?.resolve([session("p3", "s3")]);
+	await opened;
+	expect(openChatTarget(store.state())?.projectId).toBe("p3");
+	expect(store.state().navigation.projectId).toBe("p3");
+
+	let missing: unknown;
+	const failing = store.navigateTo("gone").catch((error) => (missing = error));
+	for (let index = 2; index < 22; index += 1) {
+		await settle();
+		projectLists[index]?.resolve([project("p1")]);
+		await new Promise((resolve) => setTimeout(resolve, 110));
+	}
+	await failing;
+	expect((missing as Error).message).toBe("project gone is not in this window");
+});

@@ -32,6 +32,7 @@ import {
 	type DesktopShell,
 	type DesktopWindowShell,
 } from "./desktop-shell";
+import { serveDesktopNavigation } from "./desktop-navigation";
 import { appLocale, t } from "./i18n";
 
 function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
@@ -275,5 +276,10 @@ export async function launch(
 		});
 	if (desktop?.isQuitting()) return;
 	await local.start();
+	void serveDesktopNavigation(pilo, {
+		local,
+		registry,
+		desktop: () => desktop,
+	});
 	if (remote) void registry.load();
 }

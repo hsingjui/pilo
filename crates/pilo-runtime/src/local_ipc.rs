@@ -8,9 +8,10 @@
 
 use std::{sync::Arc, time::Duration};
 
+pub use pilo_ipc::Installation;
 use pilo_ipc::{
-    ClientHello, Endpoint, FrameError, HELLO_TIMEOUT, HostHello, Installation, PROTOCOL_VERSION,
-    error_code, protocol_compatible, read_frame, write_frame,
+    ClientHello, Endpoint, FrameError, HELLO_TIMEOUT, HostHello, PROTOCOL_VERSION, error_code,
+    protocol_compatible, read_frame, write_frame,
 };
 use serde_json::{Value, json};
 use tokio::{

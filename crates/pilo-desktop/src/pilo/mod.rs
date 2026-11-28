@@ -16,7 +16,7 @@ use pilo_runtime::{
     host_api::{self, BinaryOutput, Principal},
     host_paths::HostPaths,
     initialize_local_server_binary, initialize_server_resource_dir,
-    local_ipc::LocalIpcConfig,
+    local_ipc::{Installation, LocalIpcConfig},
     project_api,
     project_opener::ProjectApp,
     storage,
@@ -207,9 +207,46 @@ impl Pilo {
             let config = LocalIpcConfig {
                 app_id,
                 app_version: env!("CARGO_PKG_VERSION").to_owned(),
-                installation: None,
+                installation: crate::cli_install::current_installation().map(|installation| {
+                    Installation {
+                        source: installation.source,
+                        path: installation.path.to_string_lossy().into_owned(),
+                    }
+                }),
             };
             runtime.start_local_ipc(config).await.map(|_| ())
+        })
+        .await
+    }
+
+    /// Waits for the next navigation a local client (`pilo open`) requested;
+    /// `null` once the runtime closes. Answer each with `completeNavigation`.
+    pub async fn next_navigation(this: Instance<Self>) -> Result<JsonValue, String> {
+        let task = this.with(|pilo| {
+            let host = pilo.host.clone();
+            pilo.executor.spawn(async move {
+                let navigator =
+                    run_with_runtime(host, |runtime| async move { Ok(runtime.navigator()) })
+                        .await?;
+                serde_json::to_value(navigator.next().await).map_err(|error| error.to_string())
+            })
+        });
+        task.await
+            .map_err(|error| format!("Pilo navigation task failed: {error}"))?
+    }
+
+    /// The window's receipt for navigation `id`: `error` is null when it navigated.
+    pub async fn complete_navigation(
+        this: Instance<Self>,
+        id: f64,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        if !(id.is_finite() && id >= 1.0 && id.fract() == 0.0) {
+            return Err(format!("invalid navigation ID: {id}"));
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            runtime.navigator().complete(id as u64, error);
+            Ok(())
         })
         .await
     }

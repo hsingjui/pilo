@@ -450,7 +450,7 @@ pub(crate) fn same_path(left: &Path, right: &Path) -> bool {
 }
 
 /// The app's install location and source, from the running executable.
-fn current_installation() -> Option<Installation> {
+pub(crate) fn current_installation() -> Option<Installation> {
     let exe = std::env::current_exe().ok()?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
     let dir = exe.parent()?.to_path_buf();
