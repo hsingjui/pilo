@@ -1,6 +1,6 @@
 //! Session operations for scripted callers (the `pilo` CLI over local IPC).
 //!
-//! Sessions are addressed by project plus Pi session ID or runtime session key,
+//! Sessions are addressed by project plus Pi session ID, CLI alias, or runtime session key,
 //! never by a JSONL path. Writes report explicit rejections (`conflict`) apart
 //! from results that may or may not have taken effect (`outcome_unknown`).
 
@@ -34,6 +34,7 @@ const STATUS_MESSAGE_WINDOW: usize = 32;
 /// A session resolved inside one project.
 pub(crate) struct Target {
     pub key: String,
+    pi_session_id: Option<String>,
     pub entry: Option<SessionIndexEntry>,
     pub state: Option<ChatSessionState>,
 }
@@ -43,6 +44,7 @@ impl Target {
         self.entry
             .as_ref()
             .map(|entry| entry.pi_session_id.clone())
+            .or_else(|| self.pi_session_id.clone())
             .unwrap_or_else(|| self.key.clone())
     }
 
@@ -99,22 +101,41 @@ pub(crate) async fn resolve(
         return Err(HostApiError::invalid("session ID is required"));
     }
     let states = runtime_states(runtime, project).await;
-    let entries = blocking(runtime, {
+    let (entries, alias) = blocking(runtime, {
         let project = project.to_owned();
-        move |runtime| session_api::session_list(runtime, project)
+        let id = serde_json::from_str::<[String; 2]>(id)
+            .ok()
+            .filter(|[owner, _]| owner == &project)
+            .map_or_else(|| id.to_owned(), |[_, id]| id);
+        move |runtime| {
+            let db = storage::open(&runtime.paths)?;
+            Ok((
+                storage::list_sessions(&db, &project)?,
+                storage::cli_session_alias(&db, &project, &id)?,
+            ))
+        }
     })
     .await?;
     let short_key = chat_key(project, id);
-    let input_state = states
-        .iter()
-        .find(|state| state.session_key == id || state.session_key == short_key);
+    let alias_key = alias
+        .as_ref()
+        .map(|(request, _)| chat_key(project, request));
+    let input_state = states.iter().find(|state| {
+        state.session_key == id
+            || state.session_key == short_key
+            || alias_key.as_ref() == Some(&state.session_key)
+    });
     let entry = if let Some(state) = input_state.filter(|state| state.session_path.is_some()) {
         entries
             .iter()
             .find(|entry| owns_file(state, &entry.session_path))
     } else {
         entries.iter().find(|entry| {
-            entry.pi_session_id == id || chat_key(project, &entry.pi_session_id) == id
+            entry.pi_session_id == id
+                || chat_key(project, &entry.pi_session_id) == id
+                || alias
+                    .as_ref()
+                    .is_some_and(|(_, pi_id)| &entry.pi_session_id == pi_id)
         })
     };
     let state = input_state.or_else(|| {
@@ -132,6 +153,7 @@ pub(crate) async fn resolve(
         .ok_or_else(|| HostApiError::not_found("session not found in the specified project"))?;
     Ok(Target {
         key,
+        pi_session_id: alias.map(|(_, pi_id)| pi_id),
         entry: entry.cloned(),
         state: state.cloned(),
     })
@@ -217,9 +239,47 @@ pub(crate) async fn create(
     start(runtime, project.clone(), key.clone(), None)
         .await
         .map_err(|error| HostApiError::invalid(format!("{error}; first message was not sent")))?;
-    if let Err(error) = session_api::session_watch_start(runtime, project).await {
+    if let Err(error) = session_api::session_watch_start(runtime, project.clone()).await {
         log::warn!("failed to watch the project of a CLI-created session: {error}");
     }
+    let pi_session_id = async {
+        let _policy = runtime.pi_resource_policy.read().await;
+        let response = call(runtime, &key, json!({"type": "get_state"}), false)
+            .await
+            .map_err(command_error)?;
+        let pi_session_id = response["sessionId"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| HostApiError::internal("Pi did not report a session ID"))?
+            .to_owned();
+        blocking(runtime, {
+            let pi_session_id = pi_session_id.clone();
+            let request_id = session_id.clone();
+            move |runtime| {
+                let db = storage::open(&runtime.paths)?;
+                storage::insert_cli_session_alias(&db, &project, &request_id, &pi_session_id)
+            }
+        })
+        .await?;
+        Ok::<_, HostApiError>(pi_session_id)
+    }
+    .await;
+    let pi_session_id = match pi_session_id {
+        Ok(id) => id,
+        Err(error) => {
+            if let Err(stop_error) = runtime
+                .chat_sessions
+                .stop(&key, Some("cli_create_failed"))
+                .await
+            {
+                log::warn!("could not stop Pi after session identity lookup failed: {stop_error}");
+            }
+            return Err(conflict(format!(
+                "{}; first message was not sent",
+                error.message
+            )));
+        }
+    };
     let result = async {
         if let Some(title) = title {
             let _policy = runtime.pi_resource_policy.read().await;
@@ -267,7 +327,8 @@ pub(crate) async fn create(
     };
     let state = runtime.chat_sessions.state(&key).await;
     Ok(json!({
-        "sessionId": session_id,
+        "sessionId": pi_session_id,
+        "requestId": session_id,
         "sessionKey": key,
         "accepted": true,
         "disposition": disposition,
@@ -529,18 +590,21 @@ fn last_assistant_message(history: &Value) -> Option<String> {
 const NEW_SESSION_ID_PREFIX: &str = "cli-";
 
 fn validate_new_session_id(id: &str) -> Result<(), HostApiError> {
-    let hex = id.strip_prefix(NEW_SESSION_ID_PREFIX).unwrap_or_default();
-    if hex.len() == 32
-        && hex
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-    {
+    if is_cli_session_id(id) {
         Ok(())
     } else {
         Err(HostApiError::invalid(
             "sessionId must be 'cli-' followed by 32 lowercase hex digits",
         ))
     }
+}
+
+pub(crate) fn is_cli_session_id(id: &str) -> bool {
+    let hex = id.strip_prefix(NEW_SESSION_ID_PREFIX).unwrap_or_default();
+    hex.len() == 32
+        && hex
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn chat_key(project: &str, id: &str) -> String {

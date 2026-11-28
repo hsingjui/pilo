@@ -158,6 +158,13 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
          CREATE INDEX IF NOT EXISTS idx_sessions_project_mtime ON sessions(project_id, file_mtime_ns DESC);
          CREATE INDEX IF NOT EXISTS idx_sessions_path ON sessions(session_path);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_project_pi_id ON sessions(project_id, pi_session_id);
+         CREATE TABLE IF NOT EXISTS cli_session_aliases (
+           project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+           request_id TEXT NOT NULL,
+           pi_session_id TEXT NOT NULL,
+           PRIMARY KEY(project_id, request_id),
+           UNIQUE(project_id, pi_session_id)
+         );
          CREATE TABLE IF NOT EXISTS session_ui_state (
            session_path TEXT PRIMARY KEY,
            pinned INTEGER NOT NULL DEFAULT 0,

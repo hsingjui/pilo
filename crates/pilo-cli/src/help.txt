@@ -41,9 +41,10 @@ Commands:
                                             {sessionId, state, turn, runningTools,
                                              lastAssistantMessage}; never starts Pi
   sessions create --project <id>            stdin: {"message": "...", "title"?: "..."}
-                                            Returns once Pi accepted the first prompt;
-                                            outcome_unknown errors carry the new
-                                            sessionId to query
+                                            Returns once Pi accepts the first prompt,
+                                            with the Pi sessionId and a CLI requestId.
+                                            outcome_unknown carries the CLI request
+                                            ID in error.sessionId.
   sessions send <session id> --project <id> stdin: {"message": "..."}; busy sessions
                                             are refused, not queued
   sessions abort <session id> --project <id>   Interrupt the current turn only
@@ -53,7 +54,8 @@ Commands:
   sessions update <session id> --project <id>  stdin: {"title"?: "...", "pinned"?: bool}
   sessions delete <session id> --project <id>  Move to trash; refused while running
 
-Session IDs are Pi session IDs or the sessionKey returned by create.
+Use the Pi sessionId or full CLI requestId after create, including after
+stopping Pi once the session is saved. Session commands also accept sessionKey.
 Messages must be plain text: no slash commands, up to 64 KiB.
 
 Output: one JSON value on stdout, exit 0. Errors: {"error": {"category", "code",

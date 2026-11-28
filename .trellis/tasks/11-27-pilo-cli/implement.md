@@ -14,6 +14,7 @@
 - [ ] 实现 settings / projects / sessions、help、version、默认 60 秒请求超时与 `--timeout`（不改变 hello 超时），固定 stdin/stdout、分页、错误类别及退出码；新增文档和 JSON 示例。通过进程测试检查命令解析与输出，通过 Host 集成测试检查副作用。
 - [ ] CLI 用编译期 App ID 选择默认 IPC 实例，保留 `--dev` 覆盖；不检测 `argv[0]`，也不依赖 `debug_assertions`。不实现通用 `pilo api` 调用。
 - [ ] 实现 `sessions status <id>`：用 `chat.state`、`chat.transcript` 和历史回退返回一次 JSON 快照；不启动 Pi、不订阅、不靠 JSONL 推断进度。验收覆盖空闲、运行（生成/工具）、压缩、未运行、进程失败、无最近回复，以及当前轮截断时不猜测工具；区分会话失败与查询失败，检查稳定字段和无启动副作用。
+- [ ] `sessions create` 返回 Pi ID 与持久化的 CLI 请求 ID。验收：会话已保存后停止 Pi、重启 Host，用任一 ID 查询或导航到同一会话；请求 ID 不能跨项目解析。
 - 验证：`pnpm generate:host-api --check`、`cargo test -p pilo-cli`、`cargo test -p pilo-runtime`、`pnpm check`、`pnpm test:unit`。检查缺失/错误项目范围被拒绝、首条 prompt 仅提交一次、已接受不等待完成、明确失败回收、超时保留可查询 key；archive/restore 与更新不覆盖无关字段，删除不绕过回收或隐式停止。macOS/Linux/Windows 各做终端冒烟测试，覆盖双实例和不兼容版本。
 
 ## 3. 打开 App、导航与按需启动

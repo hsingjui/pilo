@@ -169,6 +169,41 @@ async fn opening_a_session_accepts_full_ids_and_unique_prefixes_only() {
 }
 
 #[tokio::test]
+async fn saved_cli_session_ids_resolve_after_runtime_restart() {
+    let (runtime, root) = runtime("saved-cli-id");
+    const ALIAS: &str = "cli-0123456789abcdef0123456789abcdef";
+    add_project(&runtime, "alpha", &root);
+    add_project(&runtime, "beta", &root);
+    let db = storage::open(&runtime.paths).unwrap();
+    storage::insert_cli_session_alias(&db, "alpha", ALIAS, "pi-id").unwrap();
+    add_session(&runtime, "alpha", "pi-id");
+    add_session(&runtime, "beta", "pi-id");
+    let paths = runtime.paths.clone();
+    drop(db);
+    drop(runtime);
+    let runtime = Runtime::new(paths);
+
+    for id in [ALIAS, "pi-id"] {
+        let target = session_ops::resolve(&runtime, "alpha", id).await.unwrap();
+        assert_eq!(target.session_id(), "pi-id");
+        assert_eq!(target.entry.unwrap().session_path, "/sessions/pi-id.jsonl");
+        assert!(target.state.is_none());
+    }
+    assert!(session_ops::resolve(&runtime, "beta", ALIAS).await.is_err());
+
+    let ui = serve_ui(runtime.navigator(), None);
+    let opened = open(&runtime, None, Some(ALIAS.into())).await.unwrap();
+    assert_eq!(opened["sessionId"], "pi-id");
+    assert_eq!(opened["projectId"], "alpha");
+    runtime.navigator().close();
+    let seen = ui.await.unwrap();
+    assert_eq!(
+        seen[0].session_path.as_deref(),
+        Some("/sessions/pi-id.jsonl")
+    );
+}
+
+#[tokio::test]
 async fn a_failed_navigation_receipt_is_reported() {
     let (runtime, root) = runtime("receipt");
     std::fs::create_dir_all(&root).unwrap();

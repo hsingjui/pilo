@@ -22,7 +22,7 @@ use tokio::{
 use crate::{
     Runtime,
     host_api::{ErrorCode, HostApiError},
-    project, project_api, session_api,
+    project, project_api, session_ops, storage,
 };
 
 /// How long a request waits for the desktop UI to start taking navigations.
@@ -285,17 +285,34 @@ async fn open_session(runtime: &Runtime, id: String) -> Result<Value, HostApiErr
             "'{id}' looks like a path; pass a session ID or its unique prefix"
         )));
     }
-    let candidates = load(runtime, |runtime| {
+    let lookup = id.clone();
+    let candidates = load(runtime, move |runtime| {
         let mut sessions = Vec::new();
+        let mut aliases = Vec::new();
+        let db = storage::open(&runtime.paths)?;
         for project in project::list(runtime)? {
-            for entry in session_api::session_list(runtime, project.id.clone())? {
-                sessions.push((project.clone(), entry));
+            let alias = if session_ops::is_cli_session_id(&lookup) {
+                storage::cli_session_alias(&db, &project.id, &lookup)?
+                    .filter(|(request, _)| request == &lookup)
+            } else {
+                None
+            };
+            for entry in storage::list_sessions(&db, &project.id)? {
+                if alias
+                    .as_ref()
+                    .is_some_and(|(_, id)| id == &entry.pi_session_id)
+                {
+                    aliases.push((project.clone(), entry));
+                } else {
+                    sessions.push((project.clone(), entry));
+                }
             }
         }
-        Ok(sessions)
+        Ok((sessions, aliases))
     })
     .await?;
-    let (project, entry) = match_session(candidates, &id)?;
+    let (sessions, aliases) = candidates;
+    let (project, entry) = match_session(sessions, aliases, &id)?;
     runtime
         .navigator
         .navigate(project.id.clone(), Some(entry.session_path.clone()))
@@ -309,15 +326,17 @@ async fn open_session(runtime: &Runtime, id: String) -> Result<Value, HostApiErr
     }))
 }
 
-/// The one session whose ID is `id`, else the one whose ID starts with it.
+/// Exact Pi IDs and CLI aliases win over Pi ID prefixes.
 fn match_session(
     candidates: Vec<(Project, SessionIndexEntry)>,
+    mut exact: Vec<(Project, SessionIndexEntry)>,
     id: &str,
 ) -> Result<(Project, SessionIndexEntry), HostApiError> {
-    let (exact, prefixed): (Vec<_>, Vec<_>) = candidates
+    let (pi_exact, prefixed): (Vec<_>, Vec<_>) = candidates
         .into_iter()
         .filter(|(_, entry)| entry.pi_session_id.starts_with(id))
         .partition(|(_, entry)| entry.pi_session_id == id);
+    exact.extend(pi_exact);
     let mut matches = if exact.is_empty() { prefixed } else { exact };
     match matches.len() {
         0 => Err(HostApiError::new(

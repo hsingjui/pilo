@@ -6,6 +6,35 @@ use pilo_domain::{SessionIndexEntry, SessionUiStateUpdate};
 
 use super::now_ms;
 
+pub(crate) fn insert_cli_session_alias(
+    db: &SqliteConnection,
+    project_id: &str,
+    request_id: &str,
+    pi_session_id: &str,
+) -> Result<(), String> {
+    db.execute(
+        "INSERT INTO cli_session_aliases(project_id,request_id,pi_session_id) VALUES(?1,?2,?3)",
+        params![project_id, request_id, pi_session_id],
+    )
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+pub(crate) fn cli_session_alias(
+    db: &SqliteConnection,
+    project_id: &str,
+    id: &str,
+) -> Result<Option<(String, String)>, String> {
+    db.query_row(
+        "SELECT request_id,pi_session_id FROM cli_session_aliases
+         WHERE project_id=?1 AND (request_id=?2 OR pi_session_id=?2)",
+        params![project_id, id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
 pub fn list_sessions(
     db: &SqliteConnection,
     project_id: &str,
