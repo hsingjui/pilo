@@ -132,11 +132,14 @@ unknown session or query failure are command errors, not `not_running`.
   target, queues it for the desktop window and returns only after the window's
   receipt: `{projectId, project, path, added}` or, for sessions, `{projectId,
   project, path, sessionId, sessionPath}`. The window waits up to 30 s to start
-  serving navigations and 30 s to answer; requests whose caller gave up are
-  dropped, not applied late. The window switches to the local Host before
+  serving navigations and 30 s to answer. Each request has an absolute
+  deadline and is cancelled when the Host times out or the IPC caller
+  disconnects; the window re-checks `navigationCurrent` after every await and
+  before selecting, and answers with a failure instead of applying it late. The
+  receipt is a success only if the window now shows the target project/session. The window switches to the local Host before
   selecting, never to a remote Host or the Remote WebUI.
 - CLI codes: `app_not_found` / `installation_mismatch` (rejected),
-  `launch_failed` / `launch_timeout` (offline; launch waits 30 s for hello and
+  `launch_failed` / `launch_timeout` (offline; connects, each hello (≤ 5 s) and retry waits share one 30 s deadline;
   retries only connect + hello). Ambiguous prefixes are `conflict` listing up
   to 10 candidates; no match is `not_found`.
 
