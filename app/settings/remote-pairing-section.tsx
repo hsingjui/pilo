@@ -94,6 +94,7 @@ export function RemotePairingSection(props: {
 	hasLink: Accessor<boolean>;
 	url: Accessor<string | null>;
 	regenerating: Accessor<boolean>;
+	disabled: Accessor<boolean>;
 	copied?: Accessor<boolean>;
 	onCopy: () => void;
 	onRegenerate: () => void;
@@ -114,6 +115,9 @@ export function RemotePairingSection(props: {
 							<Text class="font-sans text-sm font-medium">
 								{t("settings.remoteOpenLink")}
 							</Text>
+							<Text class="font-sans text-xs text-muted-foreground">
+								{t("settings.remotePairingShareWarning")}
+							</Text>
 							<PairingUrl url={props.url} />
 							<View class="flex-row flex-wrap gap-1.5">
 								<SettingsActionButton
@@ -131,7 +135,7 @@ export function RemotePairingSection(props: {
 								</SettingsActionButton>
 								<SettingsActionButton
 									testID="remote-pairing-regenerate"
-									disabled={props.regenerating()}
+									disabled={props.disabled()}
 									onPress={props.onRegenerate}
 								>
 									{() =>
@@ -165,7 +169,7 @@ export function RemotePairingSection(props: {
 						<SettingsActionButton
 							variant="outline"
 							testID="remote-pairing-regenerate"
-							disabled={props.regenerating()}
+							disabled={props.disabled()}
 							onPress={props.onRegenerate}
 						>
 							{() =>

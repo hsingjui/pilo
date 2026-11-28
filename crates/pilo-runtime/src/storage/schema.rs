@@ -185,6 +185,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
          CREATE TABLE IF NOT EXISTS remote_pairing (
            id INTEGER PRIMARY KEY CHECK(id=1),
            secret_hash TEXT NOT NULL,
+           scopes TEXT NOT NULL DEFAULT 'chat',
            expires_at_ms INTEGER NOT NULL,
            consumed_at_ms INTEGER
          );
@@ -192,6 +193,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            id TEXT PRIMARY KEY,
            name TEXT NOT NULL,
            pair_ip TEXT NOT NULL DEFAULT '',
+           scopes TEXT NOT NULL DEFAULT 'chat',
            token_hash TEXT NOT NULL UNIQUE,
            created_at_ms INTEGER NOT NULL,
            last_seen_at_ms INTEGER NOT NULL,
@@ -337,6 +339,12 @@ fn ensure_remote_host_config_columns(db: &SqliteConnection) -> Result<(), String
         )
         .map_err(|error| error.to_string())?;
     }
+    if !column_exists(db, "remote_host_config", "host_id")? {
+        db.execute_batch(
+            "ALTER TABLE remote_host_config ADD COLUMN host_id TEXT NOT NULL DEFAULT '';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -344,6 +352,18 @@ fn ensure_remote_device_columns(db: &SqliteConnection) -> Result<(), String> {
     if !column_exists(db, "remote_devices", "pair_ip")? {
         db.execute_batch("ALTER TABLE remote_devices ADD COLUMN pair_ip TEXT NOT NULL DEFAULT '';")
             .map_err(|error| error.to_string())?;
+    }
+    if !column_exists(db, "remote_devices", "scopes")? {
+        db.execute_batch(
+            "ALTER TABLE remote_devices ADD COLUMN scopes TEXT NOT NULL DEFAULT 'chat';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    if !column_exists(db, "remote_pairing", "scopes")? {
+        db.execute_batch(
+            "ALTER TABLE remote_pairing ADD COLUMN scopes TEXT NOT NULL DEFAULT 'chat';",
+        )
+        .map_err(|error| error.to_string())?;
     }
     Ok(())
 }

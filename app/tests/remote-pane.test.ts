@@ -52,10 +52,24 @@ test("editing the port saves a valid value and rejects an invalid one", async ()
 	await app.waitFor("text:Port must be an integer between 1024 and 65535");
 });
 
-test("regenerating refreshes the pairing link", async () => {
+test("regenerating creates a new pairing link with workspace access", async () => {
 	const app = await openPane();
 	await app.press("id:remote-pairing-regenerate");
 	await app.waitFor("text:http://192.168.1.5:48001/pair?code=PAIR-CODE-regen");
+	await app.waitUntil(
+		() => app.storage()["pilo.test.pairingScopes"] === "chat,workspace",
+	);
+});
+
+test("all devices can be revoked together", async () => {
+	const app = await openPane();
+	await app.press("id:remote-devices-revoke-all");
+	await app.waitFor("id:remote-revoke-all-dialog-confirm");
+	expect(app.shows("text:2 active")).toBe(true);
+	await app.press("id:remote-revoke-all-dialog-confirm");
+	await app.waitFor("text:No authorized devices");
+	expect(app.shows("id:remote-pairing-qr")).toBe(false);
+	expect(app.shows("text:Running")).toBe(true);
 });
 
 test("revoking a device removes it from the list", async () => {

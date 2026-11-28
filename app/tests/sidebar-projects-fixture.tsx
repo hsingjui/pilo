@@ -233,6 +233,7 @@ async function run() {
 		composer,
 		projectClient: runtime.client,
 		settings: runtime.client,
+		shell: runtime.shell,
 	});
 	await store.start();
 }

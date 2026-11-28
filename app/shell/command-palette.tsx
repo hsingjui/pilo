@@ -14,7 +14,7 @@ import type { CommandItem } from "nsh/base";
 import type { SessionSearchMatch } from "@shared/api/sessions-types";
 import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 import { displayProjectPath } from "@shared/project-path";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { HostClient } from "@shared/api/host-client";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import { Command } from "../ui/command";
@@ -33,7 +33,7 @@ export interface CommandPaletteProps {
 	store: AppStore;
 	shortcuts: Accessor<Partial<KeyboardShortcutMap>>;
 	/** Searches saved message text; the message group is absent without it. */
-	searchSessions?: Pick<NshPiloClient, "searchSessions">;
+	searchSessions?: Pick<HostClient, "searchSessions">;
 	/** Opens the settings dialog; the settings action is absent without it. */
 	onOpenSettings?: () => void;
 	onNewTemporaryChat?: (projectId: string) => void;

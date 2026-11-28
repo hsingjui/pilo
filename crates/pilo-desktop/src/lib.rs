@@ -26,6 +26,9 @@ fn native(registry: &mut Registry) {
     registry.module::<notifications::DesktopNotifications>();
     registry.module::<updater::DesktopUpdates>();
     registry.class::<pilo::Pilo>();
+    registry.module::<pilo::remote_proxy::RemoteProxy>();
+    registry.class::<pilo::remote_proxy::RemoteProxyRequest>();
+    registry.class::<pilo::remote_proxy::RemoteProxySocket>();
     #[cfg(debug_assertions)]
     test_fixtures::register(registry);
 }

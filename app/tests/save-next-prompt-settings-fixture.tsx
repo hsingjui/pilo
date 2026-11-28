@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("saving next-prompt settings");
 const model = { provider: "fixture", id: "prediction" };
@@ -36,7 +37,8 @@ async function save(
 	previousRevision: number,
 	sequence: number,
 ) {
-	const saved = (await pilo.saveNextPromptSettings(
+	const hostClient = createNativeHostClient(pilo);
+	const saved = (await hostClient.saveNextPromptSettings(
 		"local",
 		enabled,
 		selected,
@@ -71,22 +73,25 @@ async function save(
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const { eventSequence } = await pilo.bootstrap();
+		const { latestSequence: eventSequence } = await hostClient.bootstrap();
 		const enabled = await save(pilo, true, model, 0, eventSequence + 1);
 		await expectError(
-			pilo.saveNextPromptSettings("local", true, { ...model, id: " " }),
+			hostClient.saveNextPromptSettings("local", true, { ...model, id: " " }),
 			"prediction model provider and id must be nonempty and within limits",
 		);
 		await expectError(
-			pilo.saveNextPromptSettings("local", true, { provider: "fixture" }),
+			hostClient.saveNextPromptSettings("local", true, {
+				provider: "fixture",
+			} as never),
 			"missing field",
 		);
 		await expectError(
-			pilo.saveNextPromptSettings("missing", false, null),
+			hostClient.saveNextPromptSettings("missing", false, null),
 			"Connection 'missing' was not found",
 		);
-		expectSnapshot(await pilo.loadNextPromptSettings("local"), enabled);
+		expectSnapshot(await hostClient.loadNextPromptSettings("local"), enabled);
 		const disabled = await save(
 			pilo,
 			false,
@@ -104,12 +109,16 @@ async function run() {
 
 		await pilo.shutdown();
 		await expectError(
-			pilo.saveNextPromptSettings("local", false, null),
+			hostClient.saveNextPromptSettings("local", false, null),
 			"Pilo runtime has been shut down",
 		);
 		const reopened = new Pilo(fixture.dataDir());
+		const reopenedClient = createNativeHostClient(reopened);
 		try {
-			expectSnapshot(await reopened.loadNextPromptSettings("local"), inherited);
+			expectSnapshot(
+				await reopenedClient.loadNextPromptSettings("local"),
+				inherited,
+			);
 		} finally {
 			await reopened.shutdown();
 		}

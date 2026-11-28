@@ -1,4 +1,4 @@
-import { computed, effect, mount } from "nsh";
+import { computed, effect, mount, Storage, View } from "nsh";
 import {
 	currentWindow,
 	displays,
@@ -8,42 +8,31 @@ import {
 	type WindowState,
 } from "nsh/desktop";
 
-import type { PiloClientEvent } from "@shared/api/pilo-client";
-import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
-import { ComposerStore } from "../composer/composer-store";
-import { AppStore } from "../state/app-store";
-import { ChatQueueStore } from "../state/chat-queue-store";
-import { ChatRunConfigStore } from "../state/chat-run-config";
-import { ChatTranscriptStore } from "../state/chat-transcript-store";
-import { ModelCatalogStore } from "../state/model-catalog";
-import { TerminalStore } from "../state/terminal-store";
-import { WorkspaceStore } from "../state/workspace-store";
+import { LOCAL_HOST_ID } from "@shared/host-id";
+import {
+	createNativeHostClient,
+	type NativeHostBackend,
+} from "../client/native-transport";
+import { setHostPerspective } from "../hosts/host-perspective";
+import {
+	HostRegistry,
+	type RemoteHostCredentials,
+	type RemoteHostProxyTransport,
+} from "../hosts/host-registry";
+import {
+	HostSession,
+	LOCAL_HOST_ACCESS,
+	sameHostAccess,
+} from "../hosts/host-session";
 import manifest from "../../nsh.json";
-import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
-import { AppToasts } from "./app-toasts";
+import { AppShell, StartupFrame } from "./AppShell";
 import { showStartupTheme } from "./appearance";
 import {
-	defaultDesktopNotifications,
-	type DesktopNotificationsApi,
-} from "./desktop-notifications";
-import {
 	connectDesktopShell,
-	type DesktopDockApi,
-	type DesktopSettingsClient,
+	type DesktopShell,
+	type DesktopWindowShell,
 } from "./desktop-shell";
 import { appLocale, t } from "./i18n";
-import {
-	conversationContext,
-	endLeftTemporaryChats,
-	followOpenSession,
-	followRunConfig,
-	openChatTarget,
-} from "./open-chat";
-import { followOpenSessionRead } from "./read-open-session";
-import { SessionForker } from "./session-fork";
-import { createSessionAutoTitle } from "./session-auto-title";
-import { connectSessionNotifications } from "./session-notifications";
-import { SidebarSettingsStore } from "./sidebar-settings";
 
 function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
 	const area = display.visibleBounds;
@@ -83,205 +72,95 @@ function fitMainWindow(main: WindowRef, state: WindowState, display: Display) {
 	}
 }
 
+/** The Dock badge, when the platform shows one. */
+export type DesktopBadge = { setBadge(count: number): void };
+
 /**
- * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
- * open session's transcript read and marks its finished turns as seen.
+ * Starts the app on `pilo`: the embedded Host's session, then every paired
+ * remote Host's, each with its own stores; the window shows one at a time.
  */
 export async function launch(
-	pilo: PiloNative,
-	desktopSettings?: DesktopSettingsClient,
-	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
-	desktopDock?: DesktopDockApi,
+	pilo: NativeHostBackend,
+	shell: DesktopShell,
+	remote?: {
+		credentials: RemoteHostCredentials;
+		proxy?: RemoteHostProxyTransport;
+		machineName: () => string | null;
+		badge?: DesktopBadge;
+	},
 ) {
-	const client = new NshPiloClient(pilo);
-	const chat = new ChatTranscriptStore(client, conversationContext());
-	const workspace = new WorkspaceStore();
-	const terminals = new TerminalStore(client);
-	let notify: ((event: PiloClientEvent) => Promise<void>) | undefined;
-	let desktop: ReturnType<typeof connectDesktopShell> | undefined;
-	const store = new AppStore(
-		client,
-		chat,
-		(event) => {
+	let desktop: DesktopWindowShell | undefined;
+	const local = new HostSession({
+		hostId: LOCAL_HOST_ID,
+		kind: "local",
+		client: createNativeHostClient(pilo),
+		shell,
+		onLiveEvent: (event) => {
 			if (event.type === "configuration_changed") {
 				void desktop?.refreshExitOnClose();
 			}
-			void notify?.(event).catch((error: unknown) => {
-				console.warn("Failed to send Pilo session notification", error);
-			});
-		},
-		(projectId) =>
-			terminals.activeTab(projectId) === null &&
-			!workspace.isGitActive(projectId) &&
-			workspace.activeFile(projectId) === null,
-	);
-	const catalog = new ModelCatalogStore(client);
-	const runConfig = new ChatRunConfigStore(client, catalog.state);
-	const toasts = new AppToasts();
-	const queue = new ChatQueueStore(client);
-	store.subscribeEventMessages((message) => {
-		if (!message || message.type === "resyncRequired") {
-			queue.reset();
-			return;
-		}
-		if (message.type !== "events") return;
-		for (const event of message.events) queue.receive(event);
-	});
-	const nameSession = createSessionAutoTitle(client, (target, error) => {
-		composer.setStatus(
-			`${t("settings.automaticNamingFailed")}: ${
-				error instanceof Error ? error.message : String(error)
-			}`,
-			target.sessionKey,
-		);
-	});
-	const composer: ComposerStore = new ComposerStore({
-		client,
-		app: store.state,
-		activeModel: () => runConfig.state()?.model ?? null,
-		catalog,
-		queue,
-		beforeSend: (sessionKey, ensureReady, inBackground) =>
-			runConfig.prepareToSend(sessionKey, ensureReady, inBackground),
-		transcript: chat,
-		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
-		onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),
-		onPromptStarted: (target, text) => {
-			store.confirmDraft(target, text);
-			nameSession(target, text);
-		},
-		onNewChat: () => {
-			const projectId =
-				composer.target()?.projectId ?? store.state().navigation.projectId;
-			terminals.select(null);
-			workspace.selectChat(projectId ?? undefined);
-			if (projectId) store.selectProject(projectId);
-		},
-		onCompacted: () => {
-			void runConfig.refresh();
-		},
-		onNotice: (notice) => toasts.show(notice),
-	});
-	const forker = new SessionForker(client, {
-		target: () => openChatTarget(store.state()),
-		messages: () => chat.messages(),
-		disabled: () => {
-			const target = openChatTarget(store.state());
-			const held = store
-				.state()
-				.chatSessions.find((c) => c.sessionKey === target?.sessionKey);
-			return chat.state().status !== "ready" || (held?.activeTurn ?? false);
-		},
-		onForked: (projectId, sessionPath) => {
-			void store
-				.loadSessions(projectId)
-				.then(() => store.selectSession(projectId, sessionPath));
 		},
 	});
-	followOpenSession(store, chat);
-	endLeftTemporaryChats(
-		store,
-		chat,
-		(sessionKey, reason) => client.stopChat(sessionKey, reason),
-		{
-			onLeaving: ({ graceMs, restore, onDismiss }) => {
-				const toastId = toasts.show({
-					variant: "info",
-					title: t("app.temporaryChatLeaving"),
-					countdown: (count) => t("app.temporaryChatClearingIn", { count }),
-					timeout: graceMs,
-					onDismiss,
-					action: {
-						label: t("app.returnToTemporaryChat"),
-						onPress: restore,
-					},
-				});
-				return () => {
-					if (toastId) toasts.dismiss(toastId);
-				};
-			},
+	const registry = new HostRegistry({
+		local,
+		shell,
+		storage: Storage,
+		proxy: remote?.proxy,
+		credentials: remote?.credentials ?? {
+			remoteHostToken: () => Promise.resolve(null),
+			saveRemoteHostToken: () =>
+				Promise.reject(new Error("remote Hosts are unavailable")),
+			deleteRemoteHostToken: () => Promise.resolve(),
 		},
-	);
-	followOpenSessionRead(store);
-	followRunConfig(store, runConfig, catalog, chat);
+	});
 	// The first frame takes the saved theme and sidebar width, so a launch or
 	// reload neither flashes the default theme nor resizes its outline.
-	const sidebarSettings = new SidebarSettingsStore();
 	const [startupTheme] = await Promise.all([
 		showStartupTheme(),
-		sidebarSettings.load().catch((error: unknown) => {
+		local.sidebarSettings.load().catch((error: unknown) => {
 			console.warn("Failed to load the sidebar settings", error);
 		}),
 	]);
-	const shellProps: AppShellProps = {
-		store,
-		chat,
-		composer,
-		queue,
-		assistanceClient: client,
-		runConfig,
-		catalog,
-		forker,
-		searchSessions: client,
-		settings: client,
-		projectClient: client,
-		notifications,
-		sidebarSettings,
-		toasts,
-		workspace,
-		terminals,
-		openProjectInApp: (projectId, app, path) =>
-			client.openProjectInApp(projectId, app, path),
-		openFileLink: (projectId, url, preview) =>
-			client.openFileLink(projectId, url, preview),
-		git: client,
-		onRenameSession: (projectId, sessionPath, title) =>
-			store.renameSession(projectId, sessionPath, title),
-		onPauseCacheKeepAlive: (sessionKey) =>
-			client.pauseCacheKeepAlive(sessionKey),
-		readProjectImage: (projectId, path) =>
-			client.readProjectImage(projectId, path),
-		readHistoryImage: (projectId, sessionPath, imageId) =>
-			client.readHistoryImage(projectId, sessionPath, imageId),
-		saveImage: (suggestedName, bytes) => client.saveImage(suggestedName, bytes),
-	};
+	const loadedSettings = new WeakSet<HostSession>([local]);
 	const showShell = computed(() => {
-		const { themeSettings, status } = store.state();
+		const { themeSettings, status } = registry.activeSession().store.state();
 		return (
 			themeSettings !== null ||
 			status.type === "failed" ||
 			status.type === "closed"
 		);
 	});
+	const remoteHostPairing = remote
+		? { registry, machineName: remote.machineName }
+		: undefined;
+	/** Follows one Host's session for as long as it is open. */
+	const SessionRuntime = (props: { session: HostSession }) => {
+		const { session } = props;
+		session.follow({
+			desktop,
+			notifications: desktop ? shell.notifications : undefined,
+			isActive: () => registry.activeSession() === session,
+			onActivate: () => registry.activate(session.hostId),
+		});
+		if (!loadedSettings.has(session)) {
+			loadedSettings.add(session);
+			void session.sidebarSettings.load().catch((error: unknown) => {
+				console.warn("Failed to load the sidebar settings", error);
+			});
+		}
+		return <View class="hidden" />;
+	};
 	mount(() => {
-		composer.followBackgroundSessions();
 		if (isAvailable) {
 			// nsh creates the implicit main window as part of mount.
 			const main = currentWindow();
 			main.set({ title: manifest.name });
-			if (desktopSettings) {
+			if (shell.settings) {
 				desktop = connectDesktopShell(
 					main,
-					desktopSettings,
-					async () => {
-						store.stop();
-						await client.shutdown();
-					},
-					desktopDock,
-				);
-				notify = connectSessionNotifications(
-					client,
-					store,
-					desktop,
-					notifications,
-					{
-						isViewingSession: (projectId, sessionPath) =>
-							store.isViewingSession(projectId, sessionPath),
-						onSelectTarget: (projectId) => {
-							terminals.select(null);
-							workspace.selectChat(projectId);
-						},
-					},
+					shell.settings,
+					() => registry.shutdown(),
+					shell.dock,
 				);
 			}
 			// nsh applies the manifest defaults or restores saved geometry first.
@@ -302,24 +181,99 @@ export async function launch(
 				}
 			});
 		}
-		return () =>
-			showShell() ? (
-				<AppShell {...shellProps} desktop={desktop} />
-			) : (
-				<StartupFrame
-					claude={startupTheme?.themeFamily === "claude"}
-					sidebarWidth={sidebarSettings.width}
-				/>
-			);
+		effect(() => {
+			const count = registry.unreadCount();
+			remote?.badge?.setBadge(count);
+		});
+		effect(() => {
+			const session = registry.activeSession();
+			if (session.kind === "local") {
+				setHostPerspective(null);
+				return;
+			}
+			const record = registry.record(session.hostId);
+			setHostPerspective({
+				remoteName: registry.displayName(session.hostId) ?? session.hostId,
+				platform: record?.platform ?? "linux",
+			});
+		});
+		// A Host that revoked this device or runs an incompatible Pilo says so once.
+		const told = new Map<string, string>();
+		effect(() => {
+			for (const entry of registry.entries()) {
+				const previous = told.get(entry.hostId);
+				told.set(entry.hostId, entry.status);
+				if (previous === entry.status) continue;
+				if (
+					entry.status === "unauthorized" ||
+					entry.status === "incompatible"
+				) {
+					registry.activeSession().toasts.show({
+						variant: "error",
+						title: t(
+							entry.status === "unauthorized"
+								? "hosts.needsPairing"
+								: "hosts.incompatibleHost",
+							{ name: entry.name },
+						),
+					});
+				}
+			}
+		});
+		// Only another shown Host or other access remounts the shell: pairing,
+		// reconnecting or dropping another Host leaves its tabs as they are.
+		const shownSession = computed(() => registry.activeSession());
+		const shownAccess = computed(
+			() => {
+				const session = shownSession();
+				return session.kind === "local"
+					? LOCAL_HOST_ACCESS
+					: registry.access(session.hostId);
+			},
+			{ equals: sameHostAccess },
+		);
+		return () => (
+			<>
+				<Each
+					of={registry.sessions()}
+					key={(session: HostSession) => session.hostId}
+				>
+					{(session: () => HostSession) => (
+						<SessionRuntime session={session()} />
+					)}
+				</Each>
+				{() => {
+					const session = shownSession();
+					if (!showShell()) {
+						return (
+							<StartupFrame
+								claude={startupTheme?.themeFamily === "claude"}
+								sidebarWidth={session.sidebarSettings.width}
+							/>
+						);
+					}
+					const access = shownAccess();
+					return (
+						<AppShell
+							{...session.shellProps(access, shell)}
+							desktop={desktop}
+							remoteHostPairing={remoteHostPairing}
+						/>
+					);
+				}}
+			</>
+		);
 	});
 	// Overlap initial theme preload with locale seeding before store bootstrap.
-	void store.preloadThemeSettings().catch((error: unknown) => {
+	void local.store.preloadThemeSettings().catch((error: unknown) => {
 		console.warn("Failed to preload Host theme", error);
 	});
-	await client
+	await local.client
 		.savePreferences({ locale: appLocale() }, true)
 		.catch((error: unknown) => {
 			console.warn("Failed to initialize Host locale", error);
 		});
-	if (!desktop?.isQuitting()) await store.start();
+	if (desktop?.isQuitting()) return;
+	await local.start();
+	if (remote) void registry.load();
 }

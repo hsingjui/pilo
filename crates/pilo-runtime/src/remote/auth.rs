@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 
 use crate::{host_paths::HostPaths, storage};
-use pilo_domain::RemoteDevice;
+use pilo_domain::{RemoteDevice, RemoteScopes};
 
 const PAIRING_TTL_MS: u64 = 10 * 60 * 1_000;
 const AUTH_CACHE_TOUCH_INTERVAL_MS: u64 = 60 * 1_000;
@@ -62,12 +62,15 @@ pub(crate) fn normalize_device_name(name: Option<&str>) -> String {
     normalized
 }
 
-pub(crate) fn issue_pairing(paths: &HostPaths) -> Result<PairingSecret, String> {
+pub(crate) fn issue_pairing(
+    paths: &HostPaths,
+    scopes: RemoteScopes,
+) -> Result<PairingSecret, String> {
     let now_ms = storage::now_ms();
     let secret = random_secret(32)?;
     let expires_at_ms = now_ms.saturating_add(PAIRING_TTL_MS);
     let db = storage::open_with_paths(paths)?;
-    storage::replace_remote_pairing(&db, &hash_credential(&secret), expires_at_ms)?;
+    storage::replace_remote_pairing(&db, &hash_credential(&secret), expires_at_ms, scopes)?;
     Ok(PairingSecret {
         secret,
         expires_at_ms,
@@ -77,6 +80,7 @@ pub(crate) fn issue_pairing(paths: &HostPaths) -> Result<PairingSecret, String> 
 pub(crate) fn create_device(
     device_name: Option<&str>,
     pair_ip: &str,
+    scopes: RemoteScopes,
 ) -> Result<PairedDevice, String> {
     let now_ms = storage::now_ms();
     let token = random_secret(32)?;
@@ -84,6 +88,7 @@ pub(crate) fn create_device(
         id: random_secret(16)?,
         name: normalize_device_name(device_name),
         pair_ip: pair_ip.trim().to_owned(),
+        scopes,
         created_at_ms: now_ms,
         last_seen_at_ms: now_ms,
         expires_at_ms: now_ms.saturating_add(storage::DEVICE_TOKEN_TTL_MS),

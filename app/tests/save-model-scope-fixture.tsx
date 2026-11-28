@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("saving project model scope");
 
@@ -66,8 +67,9 @@ async function expectScopeEvent(pilo: Pilo, sequence: number, scope: Scope) {
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const initial = await pilo.bootstrap();
+		const initial = await hostClient.bootstrap();
 		const projects = initial.projects as {
 			id: string;
 			connection: { id: string };
@@ -77,7 +79,10 @@ async function run() {
 		);
 		if (!project) throw new Error("missing local fixture project");
 		const projectId = project.id;
-		const saved = (await pilo.saveModelScope(projectId, models)) as Scope;
+		const saved = (await hostClient.saveModelScope(
+			projectId,
+			models as never,
+		)) as Scope;
 		const [first, second] = saved.models ?? [];
 		if (
 			saved.projectId !== projectId ||
@@ -94,46 +99,51 @@ async function run() {
 		) {
 			throw new Error(`unexpected saved scope: ${JSON.stringify(saved)}`);
 		}
-		await expectScopeEvent(pilo, initial.eventSequence + 1, saved);
+		await expectScopeEvent(pilo, initial.latestSequence + 1, saved);
 
 		await expectError(
-			pilo.saveModelScope(projectId, [models[0], models[0]]),
+			hostClient.saveModelScope(projectId, [models[0], models[0]] as never),
 			"model scope contains duplicate model identities",
 		);
 		await expectError(
-			pilo.saveModelScope(projectId, [
+			hostClient.saveModelScope(projectId, [
 				{ ...models[0], isDefault: true },
 				models[1],
-			]),
+			] as never),
 			"model scope can contain only one default model",
 		);
 		await expectError(
-			pilo.saveModelScope(projectId, [{ ...models[0], modelId: " " }]),
+			hostClient.saveModelScope(projectId, [
+				{ ...models[0], modelId: " " },
+			] as never),
 			"model scope provider and model id cannot be empty",
 		);
 		await expectError(
-			pilo.saveModelScope(projectId, [
+			hostClient.saveModelScope(projectId, [
 				{ ...models[0], thinkingLevel: "bogus" },
-			]),
+			] as never),
 			"unknown variant",
 		);
 		await expectError(
-			pilo.saveModelScope("missing", []),
+			hostClient.saveModelScope("missing", []),
 			"Project 'missing' was not found",
 		);
-		expectScope(await pilo.loadModelScope(projectId), saved);
+		expectScope(await hostClient.loadModelScope(projectId), saved);
 
-		const empty = (await pilo.saveModelScope(projectId, [])) as Scope;
+		const empty = (await hostClient.saveModelScope(projectId, [])) as Scope;
 		if (
 			empty.models?.length !== 0 ||
 			!(empty.updatedAtMs > saved.updatedAtMs)
 		) {
 			throw new Error(`unexpected empty scope: ${JSON.stringify(empty)}`);
 		}
-		expectScope(await pilo.loadModelScope(projectId), empty);
-		await expectScopeEvent(pilo, initial.eventSequence + 2, empty);
+		expectScope(await hostClient.loadModelScope(projectId), empty);
+		await expectScopeEvent(pilo, initial.latestSequence + 2, empty);
 
-		const inherited = (await pilo.saveModelScope(projectId, null)) as Scope;
+		const inherited = (await hostClient.saveModelScope(
+			projectId,
+			null,
+		)) as Scope;
 		if (
 			inherited.models !== null ||
 			!(inherited.updatedAtMs > empty.updatedAtMs)
@@ -142,15 +152,16 @@ async function run() {
 				`unexpected inherited scope: ${JSON.stringify(inherited)}`,
 			);
 		}
-		await expectScopeEvent(pilo, initial.eventSequence + 3, inherited);
+		await expectScopeEvent(pilo, initial.latestSequence + 3, inherited);
 		await pilo.shutdown();
 		await expectError(
-			pilo.saveModelScope(projectId, []),
+			hostClient.saveModelScope(projectId, [] as never),
 			"Pilo runtime has been shut down",
 		);
 		const reopened = new Pilo(fixture.dataDir());
+		const reopenedClient = createNativeHostClient(reopened);
 		try {
-			expectScope(await reopened.loadModelScope(projectId), inherited);
+			expectScope(await reopenedClient.loadModelScope(projectId), inherited);
 		} finally {
 			await reopened.shutdown();
 		}

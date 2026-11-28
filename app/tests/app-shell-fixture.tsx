@@ -2,7 +2,8 @@ import { BootstrapFixture, Pilo } from "app/native";
 
 import { initializeI18n } from "../shell/i18n";
 import { launch } from "../shell/launch";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeDesktopShell } from "../shell/native-desktop-shell";
+import { createNativeHostClient } from "../client/native-transport";
 import { fixtureThemeFamily } from "./fixture-theme";
 
 /**
@@ -15,9 +16,9 @@ async function run() {
 	const pilo = new Pilo(fixture.dataDir());
 	const themeFamily = await fixtureThemeFamily();
 	if (themeFamily !== "lody") {
-		await new NshPiloClient(pilo).saveThemeSettings({ themeFamily });
+		await createNativeHostClient(pilo).saveThemeSettings({ themeFamily });
 	}
-	await launch(pilo);
+	await launch(pilo, createNativeDesktopShell(pilo));
 }
 
 initializeI18n();

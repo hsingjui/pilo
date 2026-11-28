@@ -4,7 +4,7 @@ use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
 use serde_json::Value;
 
-use crate::server_client::ServerManager;
+use crate::{host_api::ImageReadError, server_client::ServerManager};
 use pilo_domain::Project;
 
 use super::{
@@ -23,7 +23,7 @@ pub async fn read_history_image_bytes(
     path: &str,
     image_id: &str,
     expected_fingerprint: Option<(u64, u64)>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ImageReadError> {
     let key = cache_key(&project.id, path);
     let load_lock = cache.lock().await.load_lock(&key);
     let load_guard = load_lock.lock().await;
@@ -129,7 +129,17 @@ async fn read_session_range(
     Ok(out)
 }
 
-fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, String> {
+fn decoded_base64_len(encoded: &str) -> usize {
+    let trimmed = encoded.trim_end_matches('=');
+    (trimmed.len() / 4) * 3
+        + match trimmed.len() % 4 {
+            2 => 1,
+            3 => 2,
+            _ => 0,
+        }
+}
+
+fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, ImageReadError> {
     let (base_id, content_index) = image_id
         .rsplit_once(':')
         .ok_or_else(|| format!("invalid session history image id '{image_id}'"))?;
@@ -139,9 +149,9 @@ fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, S
     let entry: Value = serde_json::from_slice(line)
         .map_err(|error| format!("failed to parse session history image line: {error}"))?;
     if entry.get("id").and_then(Value::as_str) != Some(base_id) {
-        return Err(format!(
-            "session history image '{image_id}' points at an unrelated entry"
-        ));
+        return Err(
+            format!("session history image '{image_id}' points at an unrelated entry").into(),
+        );
     }
     let part = entry
         .get("message")
@@ -150,18 +160,23 @@ fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, S
         .and_then(|parts| parts.get(content_index))
         .ok_or_else(|| format!("session history image '{image_id}' content is missing"))?;
     if part.get("type").and_then(Value::as_str) != Some("image") {
-        return Err(format!(
-            "session history image '{image_id}' content is not an image"
-        ));
+        return Err(format!("session history image '{image_id}' content is not an image").into());
     }
     let data = part
         .get("data")
         .and_then(Value::as_str)
         .ok_or_else(|| format!("session history image '{image_id}' payload is missing"))?;
+    if decoded_base64_len(data) > crate::host_api::MAX_BLOB_OUTPUT_BYTES {
+        return Err(ImageReadError::TooLarge(format!(
+            "session history image '{image_id}' exceeds the 10 MB limit"
+        )));
+    }
     STANDARD
         .decode(data)
         .or_else(|_| STANDARD_NO_PAD.decode(data))
-        .map_err(|error| format!("failed to decode session history image '{image_id}': {error}"))
+        .map_err(|error| {
+            format!("failed to decode session history image '{image_id}': {error}").into()
+        })
 }
 
 #[cfg(test)]
@@ -181,5 +196,20 @@ mod tests {
         assert!(extract_history_image_bytes(line, "u2").is_err());
         assert!(extract_history_image_bytes(line, "u2:1").is_err());
         assert!(extract_history_image_bytes(line, "other:0").is_err());
+    }
+
+    #[test]
+    fn history_image_bytes_reject_oversized_base64_before_decoding() {
+        // Invalid base64 characters would fail decoding if decoded, so hitting the size error
+        // proves we reject from the encoded length before decoding.
+        let oversized_encoded = "!".repeat((crate::host_api::MAX_BLOB_OUTPUT_BYTES / 3 + 2) * 4);
+        let line = format!(
+            r#"{{"type":"message","id":"u3","message":{{"role":"user","content":[{{"type":"image","data":"{oversized_encoded}","mimeType":"image/png"}}]}}}}"#
+        );
+        let err = extract_history_image_bytes(line.as_bytes(), "u3:0").unwrap_err();
+        assert!(
+            matches!(&err, ImageReadError::TooLarge(message) if message.contains("exceeds the 10 MB limit")),
+            "unexpected error: {err:?}"
+        );
     }
 }

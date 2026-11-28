@@ -8,7 +8,7 @@ export function followOpenSessionRead(store: AppStore) {
 	// need acknowledgement while the previous write is still in flight.
 	const unseen = computed(() => {
 		const key = store.viewedSessionKey();
-		if (key === null) return null;
+		if (key === null || !store.isShown()) return null;
 		const read = store.state().readStates[key];
 		return read && read.completedRevision > read.readRevision
 			? `${key}\n${read.completedRevision}`

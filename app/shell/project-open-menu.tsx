@@ -5,7 +5,7 @@ import powershellIcon from "../assets/editors/powershell.svg";
 import rexIcon from "../assets/editors/rex.svg";
 import vscodeIcon from "../assets/editors/vscode.svg";
 import wincIcon from "../assets/editors/winc.svg";
-import type { ProjectNativeApp } from "../client/nsh-pilo-client";
+import type { ProjectNativeApp } from "./desktop-shell";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";

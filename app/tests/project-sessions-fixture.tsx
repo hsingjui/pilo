@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const fixture = new BootstrapFixture();
 const status = signal("loading projects and sessions");
@@ -29,21 +30,24 @@ async function expectError(promise: Promise<unknown>, message: string) {
 
 async function run() {
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const projects = (await pilo.listProjects()) as CatalogProject[];
+		const projects = (await hostClient.listProjects()) as CatalogProject[];
 		const local = projects.find((project) => project.connection.id === "local");
 		if (
 			!local ||
 			JSON.stringify(projects) !==
-				JSON.stringify((await pilo.bootstrap()).projects)
+				JSON.stringify((await hostClient.bootstrap()).projects)
 		) {
 			throw new Error("standalone project catalog did not match bootstrap");
 		}
-		if ((await pilo.listSessions(local.id)).length !== 0) {
+		if ((await hostClient.listSessions(local.id)).length !== 0) {
 			throw new Error("expected a fresh workspace with no indexed sessions");
 		}
 		fixture.seedIndexedSession(local.id, local.path);
-		const sessions = (await pilo.listSessions(local.id)) as IndexedSession[];
+		const sessions = (await hostClient.listSessions(
+			local.id,
+		)) as IndexedSession[];
 		const [session] = sessions;
 		if (
 			sessions.length !== 1 ||
@@ -55,15 +59,18 @@ async function run() {
 			throw new Error("saved session did not preserve the indexed values");
 		}
 		await expectError(
-			pilo.listSessions("missing"),
+			hostClient.listSessions("missing"),
 			"Project 'missing' was not found",
 		);
 	} finally {
 		await pilo.shutdown();
 	}
-	await expectError(pilo.listProjects(), "Pilo runtime has been shut down");
 	await expectError(
-		pilo.listSessions("missing"),
+		hostClient.listProjects(),
+		"Pilo runtime has been shut down",
+	);
+	await expectError(
+		hostClient.listSessions("missing"),
 		"Pilo runtime has been shut down",
 	);
 	status.set("project catalog and saved sessions loaded");

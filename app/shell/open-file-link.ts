@@ -10,21 +10,16 @@ import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
 import {
 	workspaceFileKey,
-	type WorkspaceFile,
 	type WorkspaceLineRange,
 } from "@shared/project-workspace";
 
 import type { ChatMarkdownFileLink } from "../chat/chat-markdown";
 import type { ChatImagePreview } from "../chat/chat-media-actions";
+import type { HostClient } from "@shared/api/host-client";
 import type { WorkspaceStore } from "../state/workspace-store";
 import type { AppToasts } from "./app-toasts";
+import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
-
-export type OpenFileLinkClient = (
-	projectId: string,
-	url: string,
-	preview: boolean,
-) => Promise<WorkspaceFile | null>;
 
 function decodeFileUrlPath(url: string): string {
 	return decodeURIComponent(new URL(url).pathname).replace(
@@ -36,7 +31,8 @@ function decodeFileUrlPath(url: string): string {
 export interface FileLinkOpenContext {
 	project: () => Pick<Project, "id" | "path"> | null;
 	workspace?: WorkspaceStore;
-	openFileLink?: OpenFileLinkClient;
+	previewFileLink?: HostClient["previewFileLink"];
+	openFileLink?: DesktopShell["openFileLink"];
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	openImage?: (image: ChatImagePreview) => void;
 	toasts: AppToasts;
@@ -62,7 +58,7 @@ export function openMarkdownFileLink(
 		ctx.toasts.show({ variant: "error", title: t("chat.fileLinkInvalid") });
 		return;
 	}
-	const { openFileLink, workspace } = ctx;
+	const { openFileLink, previewFileLink, workspace } = ctx;
 	const showOpenError = (error: unknown) => {
 		ctx.toasts.show({
 			variant: "error",
@@ -99,9 +95,7 @@ export function openMarkdownFileLink(
 							label: t("chat.fileLinkOpenInSystem"),
 							onPress: () => {
 								if (ctx.project()?.id !== project.id) return;
-								void openFileLink(project.id, link.url, false).catch(
-									showOpenError,
-								);
+								void openFileLink(project.id, link.url).catch(showOpenError);
 							},
 						},
 					}),
@@ -109,17 +103,25 @@ export function openMarkdownFileLink(
 			});
 		return;
 	}
-	if (!openFileLink || !workspace) {
+	const showUnavailable = () => {
 		ctx.toasts.show({
 			variant: "error",
 			title: t(
 				workspace ? "file.workspaceUnavailable" : "chat.fileLinkWebUnsupported",
 			),
 		});
+	};
+	if (fileLinkPreviewKind(decodedPath) === null) {
+		if (openFileLink)
+			void openFileLink(project.id, link.url).catch(showOpenError);
+		else showUnavailable();
 		return;
 	}
-	const preview = fileLinkPreviewKind(decodedPath) !== null;
-	const existing = preview && workspace.findFile(project.id, decodedPath);
+	if (!previewFileLink || !workspace) {
+		showUnavailable();
+		return;
+	}
+	const existing = workspace.findFile(project.id, decodedPath);
 	if (existing) {
 		workspace.selectFile(project.id, existing.path, link.lineRange, true);
 		ctx.onFileActivated?.();
@@ -128,7 +130,7 @@ export function openMarkdownFileLink(
 		const refreshKey = `${project.id}:${workspaceFileKey(existing.path)}`;
 		const seq = (backgroundRefreshSeq.get(refreshKey) ?? 0) + 1;
 		backgroundRefreshSeq.set(refreshKey, seq);
-		void openFileLink(project.id, link.url, true)
+		void previewFileLink(project.id, link.url)
 			.then((refreshed) => {
 				if (backgroundRefreshSeq.get(refreshKey) !== seq || !refreshed) return;
 				const current = workspace.findFile(project.id, refreshed.path);
@@ -139,7 +141,7 @@ export function openMarkdownFileLink(
 			.catch(() => {});
 		return;
 	}
-	void openFileLink(project.id, link.url, preview)
+	void previewFileLink(project.id, link.url)
 		.then((file) => {
 			if (!file) return;
 			workspace.openFile(project.id, file, link.lineRange);

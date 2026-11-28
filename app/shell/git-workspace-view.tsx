@@ -20,7 +20,7 @@ import { fileBasename } from "@shared/chat/chat-tool-result";
 import type { HostPreferenceValues } from "@shared/host-preferences-types";
 import type { GitWorkspaceView } from "@shared/project-workspace";
 
-import type { GitFileStatus, GitStatus } from "../client/nsh-pilo-client";
+import type { GitFileStatus, GitStatus } from "@shared/api/git-types";
 import type { WorkspaceStore } from "../state/workspace-store";
 import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";

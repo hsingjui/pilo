@@ -13,10 +13,10 @@ import {
 	isPiScopeCatalogResolved,
 } from "@shared/pi-model-selection";
 import { createNshModelProbe } from "../client/model-probe";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { HostClient } from "@shared/api/host-client";
 
 export type ModelCatalogClient = Pick<
-	NshPiloClient,
+	HostClient,
 	| "startChat"
 	| "stopChat"
 	| "sendChatCommand"

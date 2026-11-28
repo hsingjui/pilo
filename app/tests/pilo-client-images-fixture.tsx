@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { ImageFixture, Pilo, SessionFilesFixture } from "app/native";
 
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const projectId = "session-files";
 const status = signal("reading image bytes through the client");
@@ -45,7 +45,7 @@ async function run() {
 		},
 	})}\n`;
 	const fixture = new SessionFilesFixture(jsonl);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const sessionPath = fixture.sessionPath();
 	try {
 		assertBytes(

@@ -1,10 +1,8 @@
-import { cleanup, computed, effect, untracked } from "nsh";
+import { cleanup, computed, effect, signal, Text, untracked, View } from "nsh";
 
-import {
-	chatSessionKey,
-	parseChatSessionKey,
-} from "@shared/api/chat-session-key";
-import { runtimeSessionPathKey } from "@shared/chat/chat-session-runtime-model";
+import { HostClient } from "@shared/api/host-client";
+import type { HostApiMethodName } from "@shared/api/host-methods";
+import type { HostHelloMessage } from "@shared/api/host-transport";
 import { userErrorMessage } from "@shared/app-error";
 import { AppToasts, showToast } from "../app/shell/app-toasts";
 import { t } from "../app/shell/i18n";
@@ -18,15 +16,7 @@ import {
 import { followOpenSessionRead } from "../app/shell/read-open-session";
 import { createSessionAutoTitle } from "../app/shell/session-auto-title";
 import { SessionForker } from "../app/shell/session-fork";
-import {
-	ComposerStore,
-	type ComposerTarget,
-} from "../app/composer/composer-store";
-import {
-	createDraftSessionId,
-	isDraftSessionId,
-	isTemporarySessionKey,
-} from "../app/state/app-state";
+import { ComposerStore } from "../app/composer/composer-store";
 import { AppStore } from "../app/state/app-store";
 import { ChatRunConfigStore } from "../app/state/chat-run-config";
 import { ChatTranscriptStore } from "../app/state/chat-transcript-store";
@@ -34,14 +24,16 @@ import { ModelCatalogStore } from "../app/state/model-catalog";
 import { MobileAppShell } from "./mobile-app-shell";
 import { RemoteChatQueue } from "./remote-chat-queue";
 import { RemoteExtensionUi } from "./remote-extension-ui";
+import { webDesktopShell } from "./web-desktop-shell";
 import { browserSessionStorage } from "./web-remote-browser";
-import { WebRemotePiloClient } from "./web-remote-client";
-
-const ACTIVE_PROJECT_KEY = "pilo.web.activeProject.v1";
-const DRAFT_TEXT_KEY_PREFIX = "pilo.web.draftText.v3:";
-const SAVED_DRAFT_TEXT_KEY_PREFIX = "pilo.web.savedDraftText.v1:";
-const LEGACY_SESSION_TEXT_PREFIX = "pilo.web.draftText.v2:";
-const LEGACY_PROJECT_TEXT_PREFIX = "pilo.web.draftText.v1:";
+import {
+	canUseWebWorkspace,
+	createWebHostTransport,
+	type WebRemoteConnectionState,
+	type WebRemoteRecoveryState,
+} from "./web-host-transport";
+import { createWebWorkspaceStorage } from "./web-workspace-storage";
+import { Button } from "../app/ui/button";
 
 export interface MobileRemoteWorkspaceProps {
 	token: string;
@@ -50,9 +42,99 @@ export interface MobileRemoteWorkspaceProps {
 }
 
 export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
-	const client = new WebRemotePiloClient(props.token, {
-		onAuthExpired: props.onAuthExpired,
+	const transport = createWebHostTransport(props.token, props.onAuthExpired);
+	const client = new HostClient(transport);
+	const stream = client.eventStream();
+	const hello = signal<HostHelloMessage | null>(null);
+	const connectionState = signal<WebRemoteConnectionState>(
+		transport.currentState,
+	);
+	const recoveryState = signal<WebRemoteRecoveryState>("idle");
+	let connected = false;
+	let recoveredTimer: ReturnType<typeof setTimeout> | undefined;
+	const disconnectState = stream.onConnectionState?.((state) => {
+		connectionState.set(state);
+		clearTimeout(recoveredTimer);
+		if (state === "connected") {
+			recoveryState.set(connected ? "recovered" : "idle");
+			if (connected) {
+				recoveredTimer = setTimeout(() => recoveryState.set("idle"), 2_500);
+			}
+			connected = true;
+		} else if (connected) {
+			recoveryState.set("reconnecting");
+		}
 	});
+	const disconnectHello = stream.onHello?.((message) => hello.set(message));
+	const disconnect = stream.subscribeEvents({
+		onStatus: () => {},
+		onMessage: () => {},
+	});
+	const hostId = computed(() => hello()?.hostId ?? null);
+	cleanup(() => {
+		clearTimeout(recoveredTimer);
+		disconnectHello?.();
+		disconnectState?.();
+		disconnect();
+		client.dispose();
+	});
+	const reconnect = () => transport.reconnectNow();
+	return (
+		<View class="min-h-0 flex-1">
+			{() => {
+				const id = hostId();
+				return id ? (
+					<ConnectedWorkspace
+						client={client}
+						hostId={id}
+						connectionState={connectionState}
+						recoveryState={recoveryState}
+						canUseWorkspace={(...methods) =>
+							canUseWebWorkspace(hello()?.scopes, client, ...methods)
+						}
+						onReconnect={reconnect}
+						onSignOut={props.onSignOut}
+					/>
+				) : (
+					<View class="flex-1 items-center justify-center gap-3 p-6">
+						<Text class="text-center font-sans text-foreground">
+							{() =>
+								t(
+									connectionState() === "incompatible"
+										? "settings.remoteProtocolIncompatible"
+										: connectionState() === "offline"
+											? "settings.remoteOffline"
+											: "settings.remoteReconnecting",
+								)
+							}
+						</Text>
+						{() =>
+							connectionState() === "incompatible" ? null : (
+								<Button class="min-h-11" onPress={reconnect}>
+									<Text>{() => t("common.retry")}</Text>
+								</Button>
+							)
+						}
+						<Button class="min-h-11" variant="ghost" onPress={props.onSignOut}>
+							<Text>{() => t("settings.remoteSignOut")}</Text>
+						</Button>
+					</View>
+				);
+			}}
+		</View>
+	);
+}
+
+function ConnectedWorkspace(props: {
+	client: HostClient;
+	hostId: string;
+	connectionState: () => WebRemoteConnectionState;
+	recoveryState: () => WebRemoteRecoveryState;
+	canUseWorkspace: (...methods: HostApiMethodName[]) => boolean;
+	onReconnect: () => void;
+	onSignOut?: () => void;
+}) {
+	const { client, hostId } = props;
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
 	const catalog = new ModelCatalogStore(client);
@@ -61,73 +143,16 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	const queue = new RemoteChatQueue(client);
 	const extensionUi = new RemoteExtensionUi(client, toasts);
 	const tabStorage = browserSessionStorage();
-	const readTabValue = (key: string) => {
-		try {
-			return tabStorage?.getItem(key) ?? null;
-		} catch {
-			return null;
-		}
-	};
-	const writeTabValue = (key: string, value: string) => {
-		if (!tabStorage) return false;
-		try {
-			if (value) tabStorage.setItem(key, value);
-			else tabStorage.removeItem(key);
-			return true;
-		} catch {
-			// Browser storage may be disabled or full; keep the live draft usable.
-			return false;
-		}
-	};
-	const draftStorageKey = ({
-		sessionKey,
-		projectId,
-		sessionPath,
-	}: ComposerTarget) => {
-		if (isTemporarySessionKey(sessionKey)) return null;
-		return sessionPath
-			? SAVED_DRAFT_TEXT_KEY_PREFIX +
-					chatSessionKey(projectId, runtimeSessionPathKey(sessionPath))
-			: DRAFT_TEXT_KEY_PREFIX + sessionKey;
-	};
-	try {
-		const keys = Array.from({ length: tabStorage?.length ?? 0 }, (_, index) =>
-			tabStorage?.key(index),
-		);
-		for (const key of keys) {
-			if (!key) continue;
-			if (key.startsWith(DRAFT_TEXT_KEY_PREFIX)) {
-				const text = readTabValue(key);
-				if (!text?.trim()) continue;
-				const sessionKey = key.slice(DRAFT_TEXT_KEY_PREFIX.length);
-				const parsed = parseChatSessionKey(sessionKey);
-				if (parsed && isDraftSessionId(parsed[1])) {
-					store.setUnsentDraft({ sessionKey, projectId: parsed[0] }, text);
-				}
-				continue;
-			}
-			const legacyPrefix = [
-				LEGACY_PROJECT_TEXT_PREFIX,
-				`${LEGACY_SESSION_TEXT_PREFIX}draft:`,
-			].find((prefix) => key.startsWith(prefix));
-			if (!legacyPrefix) continue;
-			const text = readTabValue(key);
-			if (!text?.trim()) continue;
-			const projectId = key.slice(legacyPrefix.length);
-			const sessionKey = chatSessionKey(projectId, createDraftSessionId());
-			if (writeTabValue(DRAFT_TEXT_KEY_PREFIX + sessionKey, text)) {
-				writeTabValue(key, "");
-				store.setUnsentDraft({ sessionKey, projectId }, text);
-			}
-		}
-	} catch {
-		// Browser storage can be unavailable even after retrieving the object.
-	}
-	const initialProjectId = readTabValue(ACTIVE_PROJECT_KEY);
+	const workspaceStorage =
+		tabStorage && createWebWorkspaceStorage(tabStorage, hostId);
+	workspaceStorage?.restoreDrafts((target, text) =>
+		store.setUnsentDraft(target, text),
+	);
+	const initialProjectId = workspaceStorage?.readActiveProject();
 	const activeProjectId = computed(() => store.state().navigation.projectId);
 	effect(() => {
 		const projectId = activeProjectId();
-		if (projectId) writeTabValue(ACTIVE_PROJECT_KEY, projectId);
+		if (projectId) workspaceStorage?.writeActiveProject(projectId);
 	});
 	const nameSession = createSessionAutoTitle(client, (target, error) => {
 		composer.setStatus(
@@ -139,27 +164,10 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	});
 	const composer = new ComposerStore({
 		client,
+		shell: webDesktopShell,
+		hostId,
 		app: store.state,
-		draftTextStorage: tabStorage && {
-			read: (target) => {
-				const key = draftStorageKey(target);
-				if (!key) return null;
-				const value = readTabValue(key);
-				return (
-					value ??
-					(target.sessionPath
-						? readTabValue(LEGACY_SESSION_TEXT_PREFIX + target.sessionKey)
-						: null)
-				);
-			},
-			write: (target, value) => {
-				const key = draftStorageKey(target);
-				if (!key || !writeTabValue(key, value)) return false;
-				if (target.sessionPath)
-					writeTabValue(LEGACY_SESSION_TEXT_PREFIX + target.sessionKey, "");
-				return true;
-			},
-		},
+		draftTextStorage: workspaceStorage?.draftText,
 		queue,
 		waitForStartupApproval: (sessionKey) =>
 			extensionUi.waitForStartupApproval(sessionKey),
@@ -215,7 +223,8 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 
 	let alive = true;
 	const forkDisabled = () =>
-		client.connectionState() !== "connected" ||
+		props.connectionState() !== "connected" ||
+		!client.hasMethod("chat.rpc") ||
 		chat.state().status !== "ready" ||
 		composer.state().sending ||
 		composer.running() ||
@@ -268,7 +277,6 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 		extensionUi.dispose();
 		void liveEvents.then((disconnect) => disconnect());
 		store.stop();
-		client.dispose();
 	});
 
 	void store.preloadThemeSettings().catch(() => undefined);
@@ -277,6 +285,7 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 	return (
 		<MobileAppShell
 			store={store}
+			shell={webDesktopShell}
 			chat={chat}
 			composer={composer}
 			initialProjectId={initialProjectId}
@@ -287,10 +296,12 @@ export function MobileRemoteWorkspace(props: MobileRemoteWorkspaceProps) {
 			runConfig={runConfig}
 			catalog={catalog}
 			searchSessions={client}
-			connectionState={client.connectionState}
-			recoveryState={client.recoveryState}
-			onReconnect={() => client.reconnectNow()}
+			connectionState={props.connectionState}
+			recoveryState={props.recoveryState}
+			onReconnect={props.onReconnect}
 			onSignOut={props.onSignOut}
+			workspaceClient={client}
+			canUseWorkspace={props.canUseWorkspace}
 			onPauseCacheKeepAlive={(sessionKey) =>
 				void client.pauseCacheKeepAlive(sessionKey).catch((error: unknown) => {
 					showToast(toasts, {

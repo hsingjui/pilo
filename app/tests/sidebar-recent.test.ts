@@ -122,7 +122,7 @@ test("a recent session opens from the list and the list collapses", async () => 
 	expect(app.shows("id:sidebar >> text:Port the settings page")).toBe(false);
 	const collapsed = JSON.stringify({ recent: true });
 	await app.waitUntil(
-		() => app.storage()["pilo.collapsedSections"] === collapsed,
+		() => app.storage()["pilo.collapsedSections@local"] === collapsed,
 	);
 
 	// The next launch keeps it collapsed once the sessions are read.

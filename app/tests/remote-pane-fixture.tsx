@@ -1,6 +1,6 @@
-import { mount, Scroll, View } from "nsh";
+import { mount, Scroll, Storage, View } from "nsh";
 
-import type { RemoteHostState } from "@shared/api/remote-types";
+import type { RemoteHostState, RemoteScopes } from "@shared/api/remote-types";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { initializeI18n } from "../shell/i18n";
 import { RemotePane } from "../settings/remote-pane";
@@ -25,6 +25,7 @@ const remoteHost: RemoteHostState = {
 	addressConfigError: null,
 	pairingRemainingUses: 3,
 	pairingTotalUses: 5,
+	pairingScopes: "chat",
 	pairingUrl: "http://192.168.1.5:48001/pair?code=PAIR-CODE",
 	pairingExpiresAtMs: Date.now() + 600_000,
 	lastError: null,
@@ -33,6 +34,7 @@ const remoteHost: RemoteHostState = {
 			id: "dev-iphone",
 			name: "Jui's iPhone",
 			pairIp: "192.168.1.20",
+			scopes: "chat",
 			createdAtMs: 1,
 			lastSeenAtMs: 2,
 			expiresAtMs: 9,
@@ -42,6 +44,7 @@ const remoteHost: RemoteHostState = {
 			id: "dev-ipad",
 			name: "iPad",
 			pairIp: "192.168.1.21",
+			scopes: "chat",
 			createdAtMs: 1,
 			lastSeenAtMs: 2,
 			expiresAtMs: 9,
@@ -54,6 +57,14 @@ const runtime = scriptedClient({
 	remoteHost,
 	remoteLanIps: ["192.168.1.5", "10.0.0.8"],
 });
+const client = {
+	...runtime.client,
+	async remotePairingRegenerate(scopes: RemoteScopes) {
+		const state = await runtime.client.remotePairingRegenerate(scopes);
+		await Storage.setItem("pilo.test.pairingScopes", scopes);
+		return state;
+	},
+};
 
 function run() {
 	mount(() => {
@@ -62,7 +73,7 @@ function run() {
 			<AppToaster.Provider value={toasts}>
 				<Scroll class="flex-1 bg-background">
 					<View class="p-3">
-						<RemotePane client={runtime.client} />
+						<RemotePane client={client} />
 					</View>
 				</Scroll>
 				<AppToastStack toasts={toasts} />

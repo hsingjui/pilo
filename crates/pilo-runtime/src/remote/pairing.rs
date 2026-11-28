@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Mutex};
 use serde::Serialize;
 
 use crate::{host_paths::HostPaths, storage};
-use pilo_domain::RemoteAccessAddress;
+use pilo_domain::{RemoteAccessAddress, RemoteScopes};
 
 use super::auth::{self, PairedDevice};
 
@@ -21,6 +21,7 @@ pub(crate) struct PairingInfo {
     pub addresses: Vec<PairingAddress>,
     pub expires_at_ms: u64,
     pub remaining_uses: usize,
+    pub scopes: RemoteScopes,
 }
 
 pub(crate) enum PairingError {
@@ -39,6 +40,7 @@ struct ActivePairing {
     secret: String,
     secret_hash: String,
     expires_at_ms: u64,
+    scopes: RemoteScopes,
     addresses: Vec<RemoteAccessAddress>,
     receipts: HashMap<String, Receipt>,
 }
@@ -55,6 +57,7 @@ impl ActivePairing {
                 })
                 .collect(),
             expires_at_ms: self.expires_at_ms,
+            scopes: self.scopes,
             remaining_uses: self.addresses.len().saturating_sub(self.receipts.len()),
         }
     }
@@ -70,6 +73,7 @@ impl PairingSession {
         &self,
         paths: &HostPaths,
         addresses: Vec<RemoteAccessAddress>,
+        scopes: RemoteScopes,
     ) -> Result<(), String> {
         let mut active = self
             .active
@@ -80,11 +84,12 @@ impl PairingSession {
             storage::clear_remote_pairing(&storage::open_with_paths(paths)?)?;
             return Err("Remote WebUI needs a valid access address".to_owned());
         }
-        let pairing = auth::issue_pairing(paths)?;
+        let pairing = auth::issue_pairing(paths, scopes)?;
         *active = Some(ActivePairing {
             secret_hash: auth::hash_credential(&pairing.secret),
             secret: pairing.secret,
             expires_at_ms: pairing.expires_at_ms,
+            scopes,
             addresses,
             receipts: HashMap::new(),
         });
@@ -193,7 +198,8 @@ impl PairingSession {
                 .collect::<String>(),
             label.chars().take(36).collect::<String>(),
         );
-        let paired = auth::create_device(Some(&name), pair_ip).map_err(PairingError::Internal)?;
+        let paired = auth::create_device(Some(&name), pair_ip, pairing.scopes)
+            .map_err(PairingError::Internal)?;
         let exhausted = pairing.receipts.len() + 1 == pairing.addresses.len();
         if !storage::insert_remote_pairing_device(
             &mut db,

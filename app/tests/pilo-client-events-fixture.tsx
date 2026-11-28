@@ -1,8 +1,9 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
+import type { HostClient } from "@shared/api/host-client";
 import type { PiloClientEventMessage } from "@shared/api/pilo-client";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 /** More events than the native queue's 2,048, even after one batch is taken. */
 const OVERFLOWING_SAVES = 2_400;
@@ -14,7 +15,7 @@ function assert(condition: boolean, message: string) {
 	if (!condition) throw new Error(message);
 }
 
-function listen(client: NshPiloClient) {
+function listen(client: HostClient) {
 	const messages: PiloClientEventMessage[] = [];
 	const statuses: boolean[] = [];
 	let wake = () => {};
@@ -41,7 +42,7 @@ function listen(client: NshPiloClient) {
 }
 
 async function run() {
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	try {
 		const { latestSequence } = await client.bootstrap();
 		const live = listen(client);

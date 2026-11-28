@@ -17,7 +17,7 @@ import { Button as BaseButton, Dialog } from "nsh/base";
 import { Select } from "../ui/select";
 
 import type { AppState } from "../state/app-state";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { HostClient } from "@shared/api/host-client";
 import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
 import { classNames } from "../ui/class-names";
 import { DialogClose } from "../ui/dialog-close";
@@ -27,13 +27,12 @@ import { Icon, type IconName } from "../ui/icon";
 import { MOTION, tactileTransition, useMountedDialog } from "../ui/motion";
 import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
-import type { DesktopNotificationsApi } from "../shell/desktop-notifications";
-import type { DesktopShell } from "../shell/desktop-shell";
+import type { DesktopShell, DesktopWindowShell } from "../shell/desktop-shell";
 import type { DesktopUpdate } from "../shell/desktop-update";
 import { t } from "../shell/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
-import { ConnectionsPane } from "./connections-pane";
+import { ConnectionsPane, type ConnectionsPaneProps } from "./connections-pane";
 import { FontsPane } from "./fonts-pane";
 import { SETTINGS_SM_WIDTH } from "./layout";
 import { NextPromptPane } from "./next-prompt-pane";
@@ -46,7 +45,7 @@ import { ThemePane } from "./theme-pane";
 
 /** The native calls the settings panes make; grows as panes land. */
 export type SettingsClient = Pick<
-	NshPiloClient,
+	HostClient,
 	| "savePreferences"
 	| "saveThemeSettings"
 	| "loadConnectionModels"
@@ -84,16 +83,11 @@ export type SettingsClient = Pick<
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
+	| "remoteDevicesRevokeAll"
 	| "remoteDeviceRename"
-	| "openLogDirectory"
 > &
 	/** Optional host-only discovery helpers. */
-	Partial<
-		Pick<
-			NshPiloClient,
-			"systemFontFamilies" | "listSshConfigHosts" | "listSshLocalKeys"
-		>
-	>;
+	Partial<Pick<HostClient, "listSshConfigHosts" | "listSshLocalKeys">>;
 
 export interface SettingsDialogProps {
 	open: () => boolean;
@@ -101,9 +95,17 @@ export interface SettingsDialogProps {
 	/** The app state the panes read (preferences, theme, projects). */
 	state: Accessor<AppState>;
 	client: SettingsClient;
-	desktop?: DesktopShell;
-	notifications?: DesktopNotificationsApi;
+	desktop?: DesktopWindowShell;
+	shell?: Pick<
+		DesktopShell,
+		"systemFontFamilies" | "openLogDirectory" | "openExternal" | "notifications"
+	>;
 	update?: DesktopUpdate;
+	/** A remote Host's connections, which only that Host edits. */
+	connectionsReadOnly?: boolean;
+	remoteHostPairing?: ConnectionsPaneProps["remoteHostPairing"];
+	/** Panes the shown Host does not let this client use. */
+	hiddenTabs?: readonly SettingsTabId[];
 }
 
 export type SettingsTabId =
@@ -215,6 +217,9 @@ const CONTENT_MAX_WIDTH = 1024; // max-w-5xl
  */
 export function SettingsDialog(props: SettingsDialogProps) {
 	const active = signal<SettingsTabId>("preferences");
+	const shownTabs = SETTINGS_TABS.filter(
+		(tab) => !props.hiddenTabs?.includes(tab.id),
+	);
 	const dialog = useMountedDialog(props.open);
 	let contentScroll: ScrollRef | undefined;
 	const paneMotion = createMotion();
@@ -287,7 +292,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											scrollbar={{ mode: "always", vertical: scrollbarLook() }}
 										>
 											{SECTIONS.map((section) => {
-												const tabs = SETTINGS_TABS.filter(
+												const tabs = shownTabs.filter(
 													(tab) => tab.section === section.id,
 												);
 												return (
@@ -373,7 +378,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												testID="settings-tab-select"
 												class="w-full"
 												accessibilityLabel={t("settings.title")}
-												items={SETTINGS_TABS.map((tab) => ({
+												items={shownTabs.map((tab) => ({
 													value: tab.id,
 													title: String(t(tab.labelKey)),
 												}))}
@@ -424,6 +429,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														<FontsPane
 															state={props.state}
 															client={props.client}
+															shell={props.shell}
 														/>
 													);
 												case "connections":
@@ -431,6 +437,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														<ConnectionsPane
 															state={props.state}
 															client={props.client}
+															readOnly={props.connectionsReadOnly}
+															remoteHostPairing={props.remoteHostPairing}
 														/>
 													);
 												case "next-prompt":
@@ -458,7 +466,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														<NotificationsPane
 															state={props.state}
 															client={props.client}
-															notifications={props.notifications}
+															notifications={props.shell?.notifications}
 														/>
 													);
 												case "shortcuts":
@@ -472,7 +480,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												case "about":
 													return (
 														<AboutPane
-															client={props.client}
+															shell={props.shell}
 															update={props.update}
 														/>
 													);

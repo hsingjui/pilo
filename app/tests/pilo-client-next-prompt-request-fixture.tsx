@@ -4,7 +4,7 @@ import { ChatFixture, Pilo } from "app/native";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { decodeNextPromptResult } from "@shared/next-prompt";
 import type { NextPromptRequest } from "@shared/next-prompt-types";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const sessionKey = "nsh-client-next-prompt-fixture";
 const status = signal("requesting a next prompt through the client");
@@ -25,7 +25,7 @@ async function expectError(promise: Promise<unknown>, message: string) {
 
 async function run() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const received: PiloClientEvent[] = [];
 	let wake = () => {};
 	/** The first event of this chat, in arrival order, that matches. */

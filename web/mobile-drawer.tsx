@@ -38,7 +38,7 @@ import {
 	sidebarGroups,
 	sidebarSessions,
 } from "../app/shell/sidebar-projects";
-import type { WebRemoteConnectionState } from "./web-remote-client";
+import type { WebRemoteConnectionState } from "./web-host-transport";
 import type { AppStore } from "../app/state/app-store";
 import { Button } from "../app/ui/button";
 import { Icon, type IconName } from "../app/ui/icon";

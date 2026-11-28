@@ -9,75 +9,30 @@ use nsh_core::{
     file_dialog::{OpenDialog, SaveDialog},
     prelude::*,
 };
-use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
-    Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream, TranscriptWindow,
-    appearance::{system_font_families, theme_settings_get, theme_settings_set},
-    cache_keep_alive::{
-        cache_keep_alive_pause, cache_keep_alive_settings_list, cache_keep_alive_settings_set,
-    },
-    connections::{
-        connection_health_get, connection_models_get, connection_naming_model_list,
-        connection_naming_model_set, connection_pi_probe, connection_settings_update,
-        connection_shown_in_home_set, local_connection_get, local_connection_test,
-        ssh::{
-            SaveSshConnectionRequest, ssh_agent_identities_list, ssh_config_hosts_list,
-            ssh_connection_list, ssh_connection_password_get, ssh_connection_remove,
-            ssh_connection_save, ssh_connection_test, ssh_connection_test_draft,
-            ssh_local_keys_list,
-        },
-        wsl::{
-            wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
-            wsl_list_distributions,
-        },
-    },
+    Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream,
+    appearance::system_font_families,
     events::{EventQueueLimits, EventStream},
-    handle::{session_mark_read, session_read_states},
+    host_api::{self, BinaryOutput, Principal},
     host_paths::HostPaths,
-    initialize_local_server_binary, initialize_server_resource_dir,
-    next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
-    preferences::{preferences_get, preferences_patch},
-    project_api::{
-        self, connection_fs_read_dir, project_add, project_chat_file_remove,
-        project_chat_file_upload, project_fs_read_image, project_fs_search,
-        project_model_cache_get, project_model_cache_set, project_model_scope_get,
-        project_model_scope_set, project_remove,
-    },
+    initialize_local_server_binary, initialize_server_resource_dir, project_api,
     project_opener::ProjectApp,
-    prompt_enhancement::{
-        prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
-    },
-    remote::{
-        remote_device_rename, remote_device_revoke, remote_host_state, remote_lan_addresses,
-        remote_pairing_regenerate, remote_set_addresses, remote_set_enabled, remote_set_port,
-    },
-    runtime_api::{
-        chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
-    },
-    session_api::{
-        session_delete, session_external_activity, session_history, session_history_image,
-        session_list, session_reconcile, session_refresh_unwatched, session_search,
-        session_update_ui_state,
-    },
-    session_naming::session_generate_title,
     storage,
 };
 use tokio::{runtime::Runtime as Executor, sync::Mutex};
 
+mod credentials;
 mod encode;
 mod host;
 mod objects;
+pub(crate) mod remote_proxy;
 mod shell;
 
-use encode::{
-    encode_event_batch, encode_list, encode_terminal_events, history_fingerprint_args,
-    load_projects, positive_count, terminal_size,
-};
-use host::{CLOSED, Host, run_with_runtime, stop_host};
-use objects::{
-    Bootstrap, NativeDesktopSettings, NativeHistoryFingerprint, NativeHistoryOptions,
-    NativePreferencesSnapshot, NativeSessionReadState, NativeStartChatInput,
-};
+use encode::{encode_event_batch, encode_terminal_events, positive_count};
+#[cfg(test)]
+use host::CLOSED;
+use host::{Host, run_with_runtime, stop_host};
+use objects::NativeDesktopSettings;
 use shell::{
     NshHostShell, ShellWebAssets, data_identifier, default_data_dir, executor, init_file_logger,
     read_local_file, resolve_log_directory, sanitize_save_file_name, server_resource_name,
@@ -100,21 +55,6 @@ pub struct Pilo {
 }
 
 impl Pilo {
-    async fn load_bootstrap(host: Host) -> Result<Bootstrap, String> {
-        let runtime = { host.lock().await.as_ref().ok_or(CLOSED)?.clone() };
-        let executor = tokio::runtime::Handle::current();
-        let snapshot =
-            tokio::task::spawn_blocking(move || executor.block_on(runtime.bootstrap_snapshot()))
-                .await
-                .map_err(|error| format!("failed to load bootstrap snapshot: {error}"))??;
-        Ok(Bootstrap {
-            event_sequence: snapshot.event_sequence,
-            projects: encode_list(snapshot.projects)?,
-            chat_sessions: encode_list(snapshot.chat_sessions)?,
-            preferences: snapshot.preferences.into(),
-        })
-    }
-
     async fn with_runtime<T, F>(
         this: Instance<Self>,
         operation: impl FnOnce(Runtime) -> F + Send + 'static,
@@ -252,13 +192,6 @@ impl Pilo {
         })
     }
 
-    /// Reads the saved project catalog, live chat snapshots and Host preferences.
-    pub async fn bootstrap(this: Instance<Self>) -> Result<Bootstrap, String> {
-        let task = this.with(|pilo| pilo.executor.spawn(Self::load_bootstrap(pilo.host.clone())));
-        task.await
-            .map_err(|error| format!("failed to bootstrap Pilo: {error}"))?
-    }
-
     /// Waits for an ordered batch, an inclusive gap, or a closed event stream.
     pub async fn next_events(this: Instance<Self>, max: f64) -> Result<JsonValue, String> {
         let max = positive_count(max, "event batch size")?;
@@ -273,267 +206,57 @@ impl Pilo {
             .map_err(|error| format!("Pilo event stream task failed: {error}"))?
     }
 
-    /// Reads the saved project catalog without loading live chat snapshots.
-    pub async fn list_projects(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, load_projects).await
-    }
-
-    /// The connections a project can live on (local, WSL, SSH).
-    pub async fn list_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| {
-            let mut connections = vec![local_connection_get(runtime)?];
-            connections.extend(
-                wsl_connection_list(runtime)?
-                    .into_iter()
-                    .map(|info| info.connection),
-            );
-            connections.extend(
-                ssh_connection_list(runtime)?
-                    .into_iter()
-                    .map(|info| info.connection),
-            );
-            encode_list(connections)
-        })
-        .await
-    }
-
-    /// The local connection row, created if the catalog does not have it yet.
-    pub async fn get_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, |runtime| {
-            serde_json::to_value(local_connection_get(runtime)?).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Renames a connection and sets its custom Pi executable path.
-    pub async fn update_connection_settings(
+    /// Calls a Host API JSON method on the embedded local runtime.
+    pub async fn call(
         this: Instance<Self>,
-        id: String,
-        name: String,
-        pi_executable: Option<String>,
+        method: String,
+        params: JsonValue,
     ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let connection = connection_settings_update(runtime, id, name, pi_executable)?;
-            serde_json::to_value(connection).map_err(|error| error.to_string())
+        if method == "host.shutdown" {
+            Self::shutdown(this).await?;
+            return Ok(JsonValue::Null);
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            host_api::call(&runtime, &Principal::Local, &method, params)
+                .await
+                .map_err(|err| err.message)
         })
         .await
     }
 
-    /// Toggles whether a connection shows in the home environment list.
-    pub async fn set_connection_shown_in_home(
+    /// Calls a Host API binary-input method on the embedded local runtime.
+    pub async fn upload(
         this: Instance<Self>,
-        id: String,
-        shown: bool,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let connection = connection_shown_in_home_set(runtime, id, shown)?;
-            serde_json::to_value(connection).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Pings the connection and probes its Pi executable for diagnostics.
-    pub async fn get_connection_health(
-        this: Instance<Self>,
-        id: String,
+        method: String,
+        params: JsonValue,
+        data: Vec<u8>,
     ) -> Result<JsonValue, String> {
         Self::with_runtime(this, move |runtime| async move {
-            let health = connection_health_get(&runtime, id).await?;
-            serde_json::to_value(health).map_err(|error| error.to_string())
+            match host_api::call_binary(&runtime, &Principal::Local, &method, params, Some(&data))
+                .await
+                .map_err(|err| err.message)?
+            {
+                BinaryOutput::Json(value) => Ok(value),
+                BinaryOutput::Bytes(_) => Err("expected a Host API JSON upload result".into()),
+            }
         })
         .await
     }
 
-    /// Probes a Pi executable path on a connection without saving it.
-    pub async fn probe_connection_pi(
+    /// Calls a Host API binary-output method on the embedded local runtime.
+    pub async fn download(
         this: Instance<Self>,
-        id: String,
-        executable: Option<String>,
-    ) -> Result<JsonValue, String> {
+        method: String,
+        params: JsonValue,
+    ) -> Result<Vec<u8>, String> {
         Self::with_runtime(this, move |runtime| async move {
-            let info = connection_pi_probe(&runtime, id, executable).await?;
-            serde_json::to_value(info).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Pings the local pilo-server connection.
-    pub async fn test_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let result = local_connection_test(&runtime).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// The SSH connections in the catalog, with project counts and secret flags.
-    pub async fn list_ssh_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_connection_list(runtime)?))
-            .await
-    }
-
-    /// The SSH agent's public identities, for the connection editor.
-    pub async fn list_ssh_agent_identities(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(ssh_agent_identities_list(&runtime).await?)
-        })
-        .await
-    }
-
-    /// Host aliases parsed from `~/.ssh/config` (and its `Include` files).
-    pub async fn list_ssh_config_hosts(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_config_hosts_list(runtime)?))
-            .await
-    }
-
-    /// Private key files discovered under `~/.ssh/`.
-    pub async fn list_ssh_local_keys(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_local_keys_list(runtime)?))
-            .await
-    }
-
-    /// Saves an SSH connection draft; `password` replaces its stored secret.
-    pub async fn save_ssh_connection(
-        this: Instance<Self>,
-        request: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let request: SaveSshConnectionRequest =
-                serde_json::from_value(request).map_err(|error| error.to_string())?;
-            let info = ssh_connection_save(&runtime, request).await?;
-            serde_json::to_value(info).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// The stored password of an SSH connection, or null when it has none.
-    pub async fn get_ssh_connection_password(
-        this: Instance<Self>,
-        id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            serde_json::to_value(ssh_connection_password_get(runtime, id)?)
-                .map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Removes an SSH connection, stopping its projects first.
-    pub async fn remove_ssh_connection(
-        this: Instance<Self>,
-        id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            ssh_connection_remove(&runtime, id).await?;
-            Ok(JsonValue::Null)
-        })
-        .await
-    }
-
-    /// Pings a saved SSH connection.
-    pub async fn test_ssh_connection(
-        this: Instance<Self>,
-        id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let result = ssh_connection_test(&runtime, id).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Pings an SSH draft before it is saved.
-    pub async fn test_ssh_connection_draft(
-        this: Instance<Self>,
-        connection: JsonValue,
-        password: Option<String>,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let connection: Connection =
-                serde_json::from_value(connection).map_err(|error| error.to_string())?;
-            let result = ssh_connection_test_draft(&runtime, connection, password).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// The WSL distributions on the host; errors when WSL is unavailable.
-    pub async fn list_wsl_distributions(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(
-                wsl_list_distributions(&runtime)
-                    .await
-                    .map_err(|error| error.to_string())?,
-            )
-        })
-        .await
-    }
-
-    /// The WSL connections in the catalog, with project counts.
-    pub async fn list_wsl_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(wsl_connection_list(runtime)?))
-            .await
-    }
-
-    /// Saves a WSL connection row.
-    pub async fn save_wsl_connection(
-        this: Instance<Self>,
-        connection: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let connection: Connection =
-                serde_json::from_value(connection).map_err(|error| error.to_string())?;
-            let info = wsl_connection_save(runtime, connection)?;
-            serde_json::to_value(info).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Removes a WSL connection, stopping its projects first.
-    pub async fn remove_wsl_connection(
-        this: Instance<Self>,
-        id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            wsl_connection_remove(&runtime, id).await?;
-            Ok(JsonValue::Null)
-        })
-        .await
-    }
-
-    /// Pings a WSL distribution before or after saving it as a connection.
-    pub async fn test_wsl_connection(
-        this: Instance<Self>,
-        distro: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let result = wsl_connection_test(&runtime, distro).await?;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Adds a project directory on a connection to the catalog.
-    pub async fn add_project(
-        this: Instance<Self>,
-        connection_id: String,
-        path: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let project = project_add(&runtime, connection_id, path).await?;
-            serde_json::to_value(project).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Reads a directory on a non-local connection for the remote browser.
-    pub async fn read_connection_dir(
-        this: Instance<Self>,
-        connection_id: String,
-        path: String,
-    ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(connection_fs_read_dir(&runtime, connection_id, path).await?)
+            match host_api::call_binary(&runtime, &Principal::Local, &method, params, None)
+                .await
+                .map_err(|err| err.message)?
+            {
+                BinaryOutput::Bytes(bytes) => Ok(bytes),
+                BinaryOutput::Json(_) => Err("expected a Host API binary result".into()),
+            }
         })
         .await
     }
@@ -547,443 +270,6 @@ impl Pilo {
         Ok(folders
             .and_then(|folders| folders.into_iter().next())
             .map(|folder| folder.to_string_lossy().into_owned()))
-    }
-
-    /// Removes the project from the catalog, stopping its chats first.
-    pub async fn remove_project(
-        this: Instance<Self>,
-        project_id: String,
-    ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(project_remove(&runtime, project_id).await?)
-        })
-        .await
-    }
-
-    /// Reconciles the session index, or reads it without a scan when `cached` is true.
-    /// With `unwatched_only`, scans only when no live session watcher covers the project.
-    pub async fn list_sessions(
-        this: Instance<Self>,
-        project_id: String,
-        cached: Option<bool>,
-        unwatched_only: Option<bool>,
-    ) -> Result<Vec<JsonValue>, String> {
-        if cached == Some(true) {
-            return Self::with_runtime_blocking(this, move |runtime| {
-                encode_list(session_list(runtime, project_id)?)
-            })
-            .await;
-        }
-        let unwatched_only = unwatched_only == Some(true);
-        let task = this.with(|pilo| {
-            let host = pilo.host.clone();
-            pilo.executor
-                .spawn(run_with_runtime(host, move |runtime| async move {
-                    let sessions = if unwatched_only {
-                        session_refresh_unwatched(&runtime, project_id).await?
-                    } else {
-                        session_reconcile(&runtime, project_id).await?.sessions
-                    };
-                    encode_list(sessions)
-                }))
-        });
-        task.await
-            .map_err(|error| format!("failed to load sessions: {error}"))?
-    }
-
-    /// Reads Pi's current user-level model catalog for the connection.
-    pub async fn load_connection_models(
-        this: Instance<Self>,
-        connection_id: String,
-    ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            connection_models_get(&runtime, connection_id).await
-        })
-        .await
-    }
-
-    /// Reads a cached project catalog without launching Pi.
-    pub async fn load_models(
-        this: Instance<Self>,
-        project_id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let snapshot = project_model_cache_get(runtime, &project_id)?;
-            serde_json::to_value(snapshot).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Reads the Host's saved model scope for a project.
-    pub async fn load_model_scope(
-        this: Instance<Self>,
-        project_id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let scope = project_model_scope_get(runtime, project_id)?;
-            serde_json::to_value(scope).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Persists a refreshed project model catalog snapshot.
-    pub async fn save_models(
-        this: Instance<Self>,
-        snapshot: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let cache: pilo_domain::ProjectModelCache =
-                serde_json::from_value(snapshot).map_err(|error| error.to_string())?;
-            let cache = project_model_cache_set(
-                runtime,
-                cache.project_id,
-                cache.models,
-                cache.commands,
-                cache.default_model,
-                cache.default_thinking_level,
-                cache.refreshed_at_ms,
-            )?;
-            serde_json::to_value(cache).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Lists each connection's saved session-naming model.
-    pub async fn load_naming_models(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let models = connection_naming_model_list(runtime)?;
-            serde_json::to_value(models).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Sets or clears a connection's session-naming model.
-    pub async fn save_naming_model(
-        this: Instance<Self>,
-        connection_id: String,
-        provider: Option<String>,
-        model_id: Option<String>,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let model = connection_naming_model_set(runtime, connection_id, provider, model_id)?;
-            serde_json::to_value(model).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Replaces a project's saved model scope or restores Pi inheritance.
-    pub async fn save_model_scope(
-        this: Instance<Self>,
-        project_id: String,
-        models: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let models = serde_json::from_value(models).map_err(|error| error.to_string())?;
-            let scope = project_model_scope_set(runtime, project_id, models)?;
-            serde_json::to_value(scope).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Lists the saved cache keep-alive policies for a connection.
-    pub async fn load_cache_keep_alive_settings(
-        this: Instance<Self>,
-        connection_id: String,
-    ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            encode_list(cache_keep_alive_settings_list(runtime, connection_id)?)
-        })
-        .await
-    }
-
-    /// Saves a model's cache keep-alive policy for a connection.
-    pub async fn save_cache_keep_alive_settings(
-        this: Instance<Self>,
-        settings: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let settings = serde_json::from_value(settings).map_err(|error| error.to_string())?;
-            let settings = cache_keep_alive_settings_set(&runtime, settings).await?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Pauses active prompt-cache keep-alive for one session without changing saved settings.
-    pub async fn pause_cache_keep_alive(
-        this: Instance<Self>,
-        session_key: String,
-    ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            cache_keep_alive_pause(&runtime, session_key).await
-        })
-        .await
-    }
-
-    /// Reads the connection's saved next-prompt settings.
-    pub async fn load_next_prompt_settings(
-        this: Instance<Self>,
-        connection_id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let settings = next_prompt_settings_get(runtime, connection_id)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Saves next-prompt settings for a connection.
-    pub async fn save_next_prompt_settings(
-        this: Instance<Self>,
-        connection_id: String,
-        enabled: bool,
-        model: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
-            let settings = next_prompt_settings_set(runtime, connection_id, enabled, model)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Requests or cancels next-prompt assistance in an existing chat.
-    pub async fn request_next_prompt(
-        this: Instance<Self>,
-        request: JsonValue,
-    ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let request = serde_json::from_value(request).map_err(|error| error.to_string())?;
-            next_prompt_request(&runtime, request).await
-        })
-        .await
-    }
-
-    /// Reads the connection's saved prompt enhancement settings.
-    pub async fn load_prompt_enhancement_settings(
-        this: Instance<Self>,
-        connection_id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let settings = prompt_enhancement_settings_get(runtime, connection_id)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Saves prompt enhancement settings for a connection.
-    pub async fn save_prompt_enhancement_settings(
-        this: Instance<Self>,
-        connection_id: String,
-        enabled: bool,
-        model: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
-            let settings = prompt_enhancement_settings_set(runtime, connection_id, enabled, model)?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Rewrites a draft using the connection's prompt enhancement settings.
-    pub async fn enhance_prompt(
-        this: Instance<Self>,
-        project_id: String,
-        draft: String,
-        model: JsonValue,
-    ) -> Result<String, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
-            prompt_enhance(&runtime, project_id, draft, model).await
-        })
-        .await
-    }
-
-    /// Searches saved session messages for a project.
-    pub async fn search_sessions(
-        this: Instance<Self>,
-        project_id: String,
-        query: String,
-        limit: Option<f64>,
-    ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let limit = limit
-                .map(|limit| {
-                    let invalid = "session search limit must be a non-negative safe integer";
-                    if !(0.0..=9_007_199_254_740_991.0).contains(&limit) || limit.fract() != 0.0 {
-                        return Err(invalid.to_owned());
-                    }
-                    usize::try_from(limit as u64).map_err(|_| invalid.to_owned())
-                })
-                .transpose()?;
-            encode_list(session_search(&runtime, project_id, query, limit).await?)
-        })
-        .await
-    }
-
-    /// Stores a composer attachment inside the project and returns its path.
-    pub async fn upload_chat_file(
-        this: Instance<Self>,
-        project_id: String,
-        name: String,
-        data: Vec<u8>,
-    ) -> Result<String, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_chat_file_upload(&runtime, project_id, name, data).await
-        })
-        .await
-    }
-
-    /// Removes a stored composer attachment.
-    pub async fn remove_chat_file(
-        this: Instance<Self>,
-        project_id: String,
-        path: String,
-    ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_chat_file_remove(&runtime, project_id, path).await
-        })
-        .await
-    }
-
-    /// Searches project file paths for composer `@` mentions.
-    pub async fn search_project_files(
-        this: Instance<Self>,
-        project_id: String,
-        query: String,
-    ) -> Result<Vec<String>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_fs_search(&runtime, project_id, query).await
-        })
-        .await
-    }
-
-    /// Generates a title with the connection's naming model, if configured.
-    pub async fn generate_session_title(
-        this: Instance<Self>,
-        project_id: String,
-        message: String,
-    ) -> Result<Option<String>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            session_generate_title(&runtime, project_id, message).await
-        })
-        .await
-    }
-
-    /// Reads which of the project's sessions an external Pi runs a turn in.
-    pub async fn external_session_activity(
-        this: Instance<Self>,
-        project_id: String,
-    ) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            encode_list(session_external_activity(&runtime, project_id).await?)
-        })
-        .await
-    }
-
-    /// Deletes an indexed session and returns the removal method.
-    pub async fn delete_session(
-        this: Instance<Self>,
-        project_id: String,
-        session_path: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            serde_json::to_value(session_delete(&runtime, project_id, session_path).await?)
-                .map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Updates an indexed session's pin, title, or archive state.
-    pub async fn update_session_ui_state(
-        this: Instance<Self>,
-        session_path: String,
-        update: JsonValue,
-        project_id: Option<String>,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
-            let entry = session_update_ui_state(runtime, session_path, update, project_id)?;
-            serde_json::to_value(entry).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Reads a window of settled session history without starting Pi.
-    pub async fn load_history(
-        this: Instance<Self>,
-        project_id: String,
-        session_path: String,
-        options: Option<NativeHistoryOptions>,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let options = options.unwrap_or_default();
-            let checked_integer = |value: f64| {
-                if !(0.0..=9_007_199_254_740_991.0).contains(&value) || value.fract() != 0.0 {
-                    return Err(
-                        "history window offsets and limits must be non-negative safe integers"
-                            .to_owned(),
-                    );
-                }
-                Ok(value as usize)
-            };
-            let start = options.start_message.map(checked_integer).transpose()?;
-            let limit = checked_integer(options.message_limit.unwrap_or(256.0))?;
-            let (file_size, file_mtime_ns) = history_fingerprint_args(options.fingerprint)?;
-            let history = session_history(
-                &runtime,
-                project_id,
-                session_path,
-                file_size,
-                file_mtime_ns,
-                start,
-                Some(limit),
-                Some(options.include_message_index.unwrap_or(true)),
-            )
-            .await?;
-            tokio::task::spawn_blocking(move || {
-                serde_json::from_slice(&history).map_err(|error| error.to_string())
-            })
-            .await
-            .map_err(|error| format!("failed to parse session history: {error}"))?
-        })
-        .await
-    }
-
-    /// Reads one image attachment from a Pi session's JSONL.
-    pub async fn read_history_image(
-        this: Instance<Self>,
-        project_id: String,
-        session_path: String,
-        image_id: String,
-        fingerprint: Option<NativeHistoryFingerprint>,
-    ) -> Result<Vec<u8>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let (file_size, file_mtime_ns) = history_fingerprint_args(fingerprint)?;
-            session_history_image(
-                &runtime,
-                project_id,
-                session_path,
-                image_id,
-                file_size,
-                file_mtime_ns,
-            )
-            .await
-        })
-        .await
-    }
-
-    /// Reads a supported image from a project-relative path.
-    pub async fn read_project_image(
-        this: Instance<Self>,
-        project_id: String,
-        path: String,
-    ) -> Result<Vec<u8>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_fs_read_image(&runtime, project_id, path).await
-        })
-        .await
     }
 
     /// Saves image bytes through the native save dialog; returns `false` if canceled.
@@ -1013,129 +299,6 @@ impl Pilo {
             .map_err(|error| format!("failed to read file: {error}"))?
     }
 
-    /// Starts or resumes a Pi chat and returns its ready process snapshot.
-    pub async fn start_chat(
-        this: Instance<Self>,
-        input: NativeStartChatInput,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let builtin_extensions = input
-                .builtin_extensions
-                .map(|extensions| {
-                    let extensions = extensions
-                        .into_iter()
-                        .map(|extension| serde_json::json!({ "id": extension.id }))
-                        .collect();
-                    serde_json::from_value(JsonValue::Array(extensions))
-                        .map_err(|error| error.to_string())
-                })
-                .transpose()?;
-            let snapshot = chat_session_start(
-                &runtime,
-                input.project_id,
-                input.session_key,
-                input.session_path,
-                input.no_session.unwrap_or(false),
-                None,
-                builtin_extensions,
-            )
-            .await?;
-            serde_json::to_value(snapshot).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Returns the Remote Host's live state (enabled, addresses, pairing, devices).
-    pub async fn remote_host_state(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let state = remote_host_state(&runtime).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Lists the machine's LAN IPs for the Remote Host address picker.
-    pub async fn remote_lan_addresses(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let addresses = remote_lan_addresses(&runtime).await?;
-            serde_json::to_value(addresses).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Enables or disables the Remote Host.
-    pub async fn remote_set_enabled(
-        this: Instance<Self>,
-        enabled: bool,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_enabled(&runtime, enabled).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Sets the Remote Host's listen port.
-    pub async fn remote_set_port(this: Instance<Self>, port: f64) -> Result<JsonValue, String> {
-        if !port.is_finite() || port.fract() != 0.0 || !(0.0..=65535.0).contains(&port) {
-            return Err(format!("invalid port: {port}"));
-        }
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_port(&runtime, port as u16).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Replaces the Remote Host's access addresses and entry selection.
-    pub async fn remote_set_addresses(
-        this: Instance<Self>,
-        addresses: JsonValue,
-        entry_address_id: String,
-    ) -> Result<JsonValue, String> {
-        let addresses: Vec<RemoteAccessAddress> =
-            serde_json::from_value(addresses).map_err(|error| error.to_string())?;
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_addresses(&runtime, addresses, entry_address_id).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Regenerates the Remote Host's pairing link.
-    pub async fn remote_pairing_regenerate(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let state = remote_pairing_regenerate(&runtime).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Revokes a paired Remote device.
-    pub async fn remote_device_revoke(
-        this: Instance<Self>,
-        device_id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_device_revoke(&runtime, device_id).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Renames a paired Remote device.
-    pub async fn remote_device_rename(
-        this: Instance<Self>,
-        device_id: String,
-        name: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_device_rename(&runtime, device_id, name).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
     /// Opens the app's log directory in the file manager, preferring nsh's `log_file` parent when set.
     pub async fn open_log_directory(
         this: Instance<Self>,
@@ -1146,94 +309,6 @@ impl Pilo {
         std::fs::create_dir_all(&directory)
             .map_err(|error| format!("creating log directory {directory:?} failed: {error}"))?;
         element::open_path(directory).await
-    }
-
-    /// Stops a Pi chat; stopping an absent session succeeds.
-    pub async fn stop_chat(
-        this: Instance<Self>,
-        session_key: String,
-        reason: Option<String>,
-    ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            chat_session_stop(&runtime, session_key, reason).await
-        })
-        .await
-    }
-
-    /// Returns a live chat state, or null when none is available for the key.
-    pub async fn chat_state(
-        this: Instance<Self>,
-        session_key: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            serde_json::to_value(chat_session_state(&runtime, session_key).await?)
-                .map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Captures persisted history and the live transcript at an ordered event cut.
-    pub async fn chat_transcript_snapshot(
-        this: Instance<Self>,
-        session_key: String,
-        window: Option<JsonValue>,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let window: TranscriptWindow = window
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|error| error.to_string())?
-                .unwrap_or_default();
-            let snapshot = runtime
-                .chat_transcript_snapshot(&session_key, window)
-                .await?;
-            serde_json::to_value(snapshot).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Sends a Pi RPC command; responses arrive independently on the event stream.
-    pub async fn send_chat_command(
-        this: Instance<Self>,
-        session_key: String,
-        command: JsonValue,
-    ) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            chat_session_send_rpc(&runtime, session_key, command).await
-        })
-        .await
-    }
-
-    /// Loads the persisted read states across projects.
-    pub async fn load_session_read_states(
-        this: Instance<Self>,
-    ) -> Result<Vec<NativeSessionReadState>, String> {
-        Self::with_runtime(this, |runtime| async move {
-            Ok(session_read_states(&runtime)
-                .await?
-                .into_iter()
-                .map(Into::into)
-                .collect())
-        })
-        .await
-    }
-
-    /// Acknowledges an observed session revision and returns the resulting read state.
-    pub async fn mark_session_read(
-        this: Instance<Self>,
-        project_id: String,
-        session_path: String,
-        revision: f64,
-    ) -> Result<NativeSessionReadState, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            if !(1.0..=9_007_199_254_740_991.0).contains(&revision) || revision.fract() != 0.0 {
-                return Err("session read revision must be a positive safe integer".into());
-            }
-            session_mark_read(&runtime, project_id, session_path, revision as u64)
-                .await
-                .map(Into::into)
-        })
-        .await
     }
 
     /// Reads the saved global show shortcut and main-window close behavior.
@@ -1269,53 +344,6 @@ impl Pilo {
         .await
     }
 
-    /// Reads the complete Host preferences from the runtime's SQLite index.
-    pub async fn load_preferences(
-        this: Instance<Self>,
-    ) -> Result<NativePreferencesSnapshot, String> {
-        Self::with_runtime_blocking(this, |runtime| preferences_get(runtime).map(Into::into)).await
-    }
-
-    /// Applies a partial patch and returns the complete, updated preferences.
-    pub async fn save_preferences(
-        this: Instance<Self>,
-        patch: JsonValue,
-        initial: Option<bool>,
-    ) -> Result<NativePreferencesSnapshot, String> {
-        Self::with_runtime_blocking(this, move |runtime| {
-            let JsonValue::Object(patch) = patch else {
-                return Err("Pilo preference patch must be an object".into());
-            };
-            preferences_patch(runtime, patch, initial).map(Into::into)
-        })
-        .await
-    }
-
-    /// Reads the complete Host appearance settings, including tokens and conversion reports.
-    pub async fn load_theme_settings(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime(this, |runtime| async move {
-            let settings = theme_settings_get(&runtime).await?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Applies a Host appearance update and returns the complete settings.
-    pub async fn save_theme_settings(
-        this: Instance<Self>,
-        update: JsonValue,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            if !update.is_object() {
-                return Err("Pilo theme settings update must be an object".into());
-            }
-            let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
-            let settings = theme_settings_set(&runtime, update).await?;
-            serde_json::to_value(settings).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
     /// Lists the installed font families with the platform's monospace trait.
     pub async fn system_font_families(this: Instance<Self>) -> Result<JsonValue, String> {
         Self::with_runtime(this, |runtime| async move {
@@ -1341,97 +369,62 @@ impl Pilo {
         .await
     }
 
-    /// Opens a file link: returns `{ path, content }` when previewing text, or `null` after opening in the system app.
+    /// Opens a project file link in the system app.
     pub async fn open_file_link(
         this: Instance<Self>,
         project_id: String,
         url: String,
-        preview: bool,
-    ) -> Result<Option<JsonValue>, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let file =
-                project_api::project_file_link_open(&runtime, project_id, url, preview).await?;
-            file.map(serde_json::to_value)
-                .transpose()
-                .map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Reads the project's Git branch and porcelain file statuses on its connection.
-    pub async fn project_git_status(
-        this: Instance<Self>,
-        project_id: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let status = project_api::project_git_status(&runtime, project_id).await?;
-            serde_json::to_value(status).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Reads a unified Git diff for a project (or one project-relative file path).
-    pub async fn project_git_diff(
-        this: Instance<Self>,
-        project_id: String,
-        path: Option<String>,
-        staged: bool,
-    ) -> Result<String, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_api::project_git_diff(&runtime, project_id, path, staged).await
-        })
-        .await
-    }
-
-    /// Opens a shell in the project's environment and returns its terminal
-    /// (`id`, `projectId`, `title`); its output comes from `next_terminal_events`.
-    pub async fn open_terminal(
-        this: Instance<Self>,
-        project_id: String,
-        cols: f64,
-        rows: f64,
-    ) -> Result<JsonValue, String> {
-        let (cols, rows) = terminal_size(cols, rows)?;
-        Self::with_runtime(this, move |runtime| async move {
-            let terminal =
-                project_api::project_terminal_open(&runtime, project_id, cols, rows).await?;
-            serde_json::to_value(terminal).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
-    /// Sends input bytes to a terminal.
-    pub async fn write_terminal(
-        this: Instance<Self>,
-        terminal_id: String,
-        data: Vec<u8>,
     ) -> Result<(), String> {
         Self::with_runtime(this, move |runtime| async move {
-            project_api::terminal_write(&runtime, terminal_id, data).await
+            project_api::project_file_link_open(&runtime, project_id, url, false).await?;
+            Ok(())
         })
         .await
     }
 
-    /// Changes a terminal's size in character cells.
-    pub async fn resize_terminal(
+    /// Reads the saved device token for a paired remote Host; `null` when none is saved.
+    pub async fn remote_host_token(
         this: Instance<Self>,
-        terminal_id: String,
-        cols: f64,
-        rows: f64,
-    ) -> Result<(), String> {
-        let (cols, rows) = terminal_size(cols, rows)?;
-        Self::with_runtime(this, move |runtime| async move {
-            project_api::terminal_resize(&runtime, terminal_id, cols, rows).await
-        })
-        .await
+        host_id: String,
+    ) -> Result<Option<String>, String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn_blocking(move || credentials::get_remote_host_token(&host_id))
+        });
+        task.await
+            .map_err(|error| format!("failed to read the remote Host token: {error}"))?
     }
 
-    /// Closes a terminal and its shell; closing an absent one succeeds.
-    pub async fn close_terminal(this: Instance<Self>, terminal_id: String) -> Result<(), String> {
-        Self::with_runtime(this, move |runtime| async move {
-            project_api::terminal_close(&runtime, terminal_id).await
-        })
-        .await
+    /// Saves the device token for a paired remote Host in the system credential store.
+    pub async fn save_remote_host_token(
+        this: Instance<Self>,
+        host_id: String,
+        token: String,
+    ) -> Result<(), String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn_blocking(move || credentials::set_remote_host_token(&host_id, &token))
+        });
+        task.await
+            .map_err(|error| format!("failed to save the remote Host token: {error}"))?
+    }
+
+    /// Deletes the saved device token for a remote Host; deleting an absent one succeeds.
+    pub async fn delete_remote_host_token(
+        this: Instance<Self>,
+        host_id: String,
+    ) -> Result<(), String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn_blocking(move || credentials::delete_remote_host_token(&host_id))
+        });
+        task.await
+            .map_err(|error| format!("failed to delete the remote Host token: {error}"))?
+    }
+
+    /// The machine's host name, used to name this desktop when pairing with a remote Host.
+    pub fn machine_name(&self) -> Option<String> {
+        credentials::machine_name()
     }
 
     /// Waits for terminal events and returns up to `max` in order:

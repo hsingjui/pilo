@@ -1,5 +1,6 @@
 import { mount, signal, Text } from "nsh";
 import { Pilo, SessionFilesFixture } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 import type { SessionHistoryResult } from "@shared/api/sessions-types";
 
 const status = signal("loading settled history");
@@ -27,10 +28,11 @@ async function run() {
 		.join("\n");
 	const fixture = new SessionFilesFixture(`${jsonl}\n`);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	const project = "session-files";
 	const path = fixture.sessionPath();
 	try {
-		const full = (await pilo.loadHistory(
+		const full = (await hostClient.loadHistory(
 			project,
 			path,
 		)) as SessionHistoryResult;
@@ -50,7 +52,7 @@ async function run() {
 		) {
 			throw new Error(`unexpected settled history: ${JSON.stringify(full)}`);
 		}
-		const window = (await pilo.loadHistory(project, path, {
+		const window = (await hostClient.loadHistory(project, path, {
 			startMessage: 1,
 			messageLimit: 1,
 			includeMessageIndex: false,
@@ -75,7 +77,7 @@ async function run() {
 			throw new Error(`unexpected history window: ${JSON.stringify(window)}`);
 		}
 		try {
-			await pilo.loadHistory(
+			await hostClient.loadHistory(
 				project,
 				path.replace(/fixture\.jsonl$/, "missing.jsonl"),
 			);

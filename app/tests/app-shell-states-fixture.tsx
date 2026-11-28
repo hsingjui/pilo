@@ -58,7 +58,13 @@ async function run() {
 	});
 	// The shell opens a new chat in the active project, as the app's launch.
 	followOpenSession(store, chat);
-	mount(AppShell, { store, chat, composer, projectClient: runtime.client });
+	mount(AppShell, {
+		store,
+		chat,
+		composer,
+		projectClient: runtime.client,
+		shell: runtime.shell,
+	});
 	await store.start();
 	if (scenario === "closed") setTimeout(runtime.close, 50);
 }

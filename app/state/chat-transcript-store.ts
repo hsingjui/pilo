@@ -35,11 +35,11 @@ import type {
 	ConversationReducerContext,
 	ConversationState,
 } from "@shared/chat/conversation-types";
+import type { HostClient } from "@shared/api/host-client";
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,
-	NshPiloClient,
-} from "../client/nsh-pilo-client";
+} from "@shared/api/host-methods";
 import { isTemporarySessionKey } from "./app-state";
 import {
 	applyChatEvents,
@@ -51,7 +51,7 @@ import {
 import type { SessionHistoryMetadata } from "./chat-run-config";
 
 export type ChatTranscriptClient = Pick<
-	NshPiloClient,
+	HostClient,
 	"chatState" | "chatTranscriptSnapshot" | "loadHistory"
 >;
 

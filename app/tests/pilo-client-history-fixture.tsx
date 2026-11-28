@@ -2,7 +2,7 @@ import { mount, signal, Text, View } from "nsh";
 import { Pilo, SessionFilesFixture } from "app/native";
 
 import type { SessionHistoryResult } from "@shared/api/sessions-types";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const projectId = "session-files";
 const status = signal("reading settled history through the client");
@@ -52,7 +52,7 @@ async function run() {
 		)
 		.join("\n");
 	const fixture = new SessionFilesFixture(`${jsonl}\n`);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const sessionPath = fixture.sessionPath();
 	try {
 		// Without options: the whole short session, with its message index.

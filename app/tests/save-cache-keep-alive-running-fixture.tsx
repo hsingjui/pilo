@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("saving a policy with a running chat");
 const sessionKey = "cache-keep-alive-running";
@@ -34,15 +35,16 @@ async function waitForEvent(pilo: Pilo, matches: (event: Event) => boolean) {
 async function run() {
 	const fixture = new ChatFixture(false);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		const started = (await pilo.startChat({
+		const started = (await hostClient.startChat({
 			projectId: "chat-fixture",
 			sessionKey,
 			noSession: true,
 		})) as { generation: number; state: string };
 		if (started.state !== "running")
 			throw new Error("fixture chat did not start");
-		await pilo.sendChatCommand(sessionKey, {
+		await hostClient.sendChatCommand(sessionKey, {
 			id: "fixture-cache-model",
 			type: "set_model",
 			provider: policy.provider,
@@ -58,8 +60,8 @@ async function run() {
 		if (model.message?.success !== true)
 			throw new Error("fixture model was not set");
 
-		const saved = (await pilo.saveCacheKeepAliveSettings(
-			policy,
+		const saved = (await hostClient.saveCacheKeepAliveSettings(
+			policy as never,
 		)) as typeof policy & {
 			updatedAtMs: number;
 		};
@@ -79,7 +81,7 @@ async function run() {
 				"the save and change event did not carry the expected policy",
 			);
 		}
-		const state = (await pilo.chatState(sessionKey)) as {
+		const state = (await hostClient.chatState(sessionKey)) as {
 			snapshot: { generation: number; state: string };
 		} | null;
 		if (

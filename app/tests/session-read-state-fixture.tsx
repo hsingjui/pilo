@@ -1,6 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
-import type { NativeSessionReadState } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
+import type { SessionReadState as NativeSessionReadState } from "@shared/session-read-state";
 
 const fixture = new BootstrapFixture();
 const status = signal("loading session read states");
@@ -33,45 +34,46 @@ function expectReadState(
 
 async function run() {
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	const projectId = "default-workspace:local";
 	let sessionPath: string;
 	try {
-		if ((await pilo.loadSessionReadStates()).length !== 0) {
+		if ((await hostClient.loadSessionReadStates()).length !== 0) {
 			throw new Error("expected no saved read states");
 		}
-		await pilo.listProjects();
+		await hostClient.listProjects();
 		sessionPath = fixture.seedSessionReadState(projectId);
-		const states = await pilo.loadSessionReadStates();
+		const states = await hostClient.loadSessionReadStates();
 		if (states.length !== 1) throw new Error("expected one saved read state");
 		expectReadState(states[0], projectId, sessionPath, 0);
-		for (const revision of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+		for (const [revision, message] of [
+			[0, "session read revision must be a positive safe integer"],
+			[-1, "session read revision must be a positive safe integer"],
+			[1.5, "session read revision must be a positive safe integer"],
+		] as const) {
 			await expectError(
-				pilo.markSessionRead(projectId, sessionPath, revision),
-				"session read revision must be a positive safe integer",
+				hostClient.markSessionRead(projectId, sessionPath, revision),
+				message,
 			);
 		}
 		await expectError(
-			pilo.markSessionRead("other-project", sessionPath, 1),
+			hostClient.markSessionRead("other-project", sessionPath, 1),
 			"failed to mark session read",
 		);
 		expectReadState(
-			await pilo.markSessionRead(projectId, sessionPath, 1),
+			await hostClient.markSessionRead(projectId, sessionPath, 1),
 			projectId,
 			sessionPath,
 			1,
 		);
 		expectReadState(
-			await pilo.markSessionRead(
-				projectId,
-				sessionPath,
-				Number.MAX_SAFE_INTEGER,
-			),
+			await hostClient.markSessionRead(projectId, sessionPath, 2 ** 31 - 1),
 			projectId,
 			sessionPath,
 			2,
 		);
 		expectReadState(
-			await pilo.markSessionRead(projectId, sessionPath, 1),
+			await hostClient.markSessionRead(projectId, sessionPath, 1),
 			projectId,
 			sessionPath,
 			2,
@@ -80,12 +82,16 @@ async function run() {
 		await pilo.shutdown();
 	}
 	const closed = "Pilo runtime has been shut down";
-	await expectError(pilo.loadSessionReadStates(), closed);
-	await expectError(pilo.markSessionRead(projectId, sessionPath, 2), closed);
+	await expectError(hostClient.loadSessionReadStates(), closed);
+	await expectError(
+		hostClient.markSessionRead(projectId, sessionPath, 2),
+		closed,
+	);
 
 	const reopened = new Pilo(fixture.dataDir());
+	const reopenedClient = createNativeHostClient(reopened);
 	try {
-		const states = await reopened.loadSessionReadStates();
+		const states = await reopenedClient.loadSessionReadStates();
 		if (states.length !== 1)
 			throw new Error("expected one persisted read state");
 		expectReadState(states[0], projectId, sessionPath, 2);

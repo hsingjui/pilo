@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const fixture = new BootstrapFixture();
 const status = signal("calling the native module through the client");
@@ -21,7 +21,7 @@ async function expectError(promise: Promise<unknown>, message: string) {
 }
 
 async function run() {
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	try {
 		const initial = await client.bootstrap();
 		const local = initial.projects.find(

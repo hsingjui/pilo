@@ -1,9 +1,10 @@
-import { effect, signal } from "nsh";
+import { effect, signal, Storage } from "nsh";
 import { expect, test } from "nsh/test";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { PiCommand } from "@shared/api/pi-runtime-types";
 import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
+import type { DesktopShell } from "../shell/desktop-shell";
 import type { AppState } from "../state/app-state";
 import { createAppState } from "../state/app-state";
 import type { ModelCatalogState } from "../state/model-catalog";
@@ -165,6 +166,35 @@ test("ArrowUp recalls the project's earlier prompts", async () => {
 	expect(store.state().value).toBe("second");
 });
 
+test("composer history upgrades without leaking between Hosts", async () => {
+	const key = "pilo.chatInputHistory.v1";
+	const history = '{"p1":["before upgrade"]}';
+	const { client } = fakeClient();
+	const { store, app } = storeFor(client);
+	const other = new ComposerStore({ client, app: () => app, hostId: "other" });
+	const localKey = `${key}@local`;
+	const otherKey = `${key}@other`;
+	const previous = await Storage.getItem(localKey);
+	try {
+		await Storage.removeItem(localKey);
+		await Storage.setItem(key, history);
+		await Storage.setItem(otherKey, "{corrupt");
+		other.setTarget(targetA);
+		expect((await other.navigateHistory("older")).handled).toBe(false);
+		expect(await Storage.getItem(key)).toBe(history);
+		store.setTarget(targetA);
+		expect((await store.navigateHistory("older")).handled).toBe(true);
+		expect(store.state().value).toBe("before upgrade");
+		expect(await Storage.getItem(localKey)).toBe(history);
+		expect(await Storage.getItem(key)).toBe(null);
+	} finally {
+		if (previous === null) await Storage.removeItem(localKey);
+		else await Storage.setItem(localKey, previous);
+		await Storage.removeItem(key);
+		await Storage.removeItem(otherKey);
+	}
+});
+
 test("switching before dispatch restores the original session draft without polluting another session", async () => {
 	const { client, sent } = fakeClient();
 	const { store } = storeFor(client);
@@ -229,11 +259,12 @@ test("image attachments are isolated per session", async () => {
 test("pasted image URIs use the clipboard image only if the original cannot attach", async () => {
 	const original = "file:///original.png";
 	const oversized = "file:///oversized.png";
-	const { client } = fakeClient({
+	const { client } = fakeClient();
+	const shell = {
 		readLocalFile: async (uri) =>
 			new Uint8Array(uri === oversized ? MAX_CHAT_IMAGE_BYTES + 1 : 2),
-	});
-	const { store } = storeFor(client);
+	} satisfies Pick<DesktopShell, "readLocalFile">;
+	const store = new ComposerStore({ client, shell, app: createAppState });
 	store.setTarget(targetA);
 	const clipboard = new File([new Uint8Array([0x89, 0x50])], "image.png", {
 		type: "image/png",

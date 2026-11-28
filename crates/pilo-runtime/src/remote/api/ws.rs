@@ -1,211 +1,43 @@
 use std::{sync::Arc, time::Duration};
 
-use axum::{
-    extract::{
-        Extension, Query, WebSocketUpgrade,
-        ws::{Message, WebSocket},
-    },
-    response::Response,
-};
+use axum::extract::ws::{Message, WebSocket};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use tokio::sync::broadcast;
 
 use crate::{events::SequencedRuntimeEvent, host_paths::HostPaths, remote::auth};
 
-use super::{AuthSession, RemoteHttpState};
+use super::AuthSession;
 
 const WS_BATCH_WINDOW: Duration = Duration::from_millis(16);
 const WS_BATCH_MAX_EVENTS: usize = 64;
 
 #[derive(Deserialize)]
 pub(super) struct EventQuery {
-    after: Option<u64>,
+    pub(super) after: Option<u64>,
 }
 
-pub(super) async fn events(
-    state: RemoteHttpState,
-    Extension(auth_session): Extension<AuthSession>,
-    Query(query): Query<EventQuery>,
-    ws: WebSocketUpgrade,
-) -> Response {
-    ws.protocols(["pilo"])
-        .on_upgrade(move |socket| event_socket(socket, state, auth_session, query.after))
-}
-
-async fn remote_token_is_valid(paths: &HostPaths, token: &str, auth_generation: u64) -> bool {
+pub(super) async fn refresh_auth_session(
+    paths: &HostPaths,
+    session: &mut AuthSession,
+    auth_generation: u64,
+) -> bool {
     let paths = paths.clone();
-    let token = token.to_owned();
-    tokio::task::spawn_blocking(move || auth::authenticate_cached(&paths, &token, auth_generation))
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .flatten()
-        .is_some()
-}
-
-async fn event_socket(
-    mut socket: WebSocket,
-    state: RemoteHttpState,
-    auth_session: AuthSession,
-    after: Option<u64>,
-) {
-    let events = state.runtime.events.clone();
-    let paths = state.runtime.paths.clone();
-    let mut lifetime = state.runtime.downgrade();
-    let mut shutdown = state.shutdown.clone();
-    let mut auth_generation = state.auth_generation.clone();
-    drop(state);
-    let mut receiver = events.subscribe_web();
-    let snapshot_sequence = events.latest_sequence();
-    log::info!(target: "remote-webui", "event socket opened deviceId={} after={after:?} latestSequence={snapshot_sequence}", auth_session.device.id);
-
-    if send_ws_json(
-        &mut socket,
-        &json!({
-            "type": "hello",
-            "deviceId": auth_session.device.id,
-            "latestSequence": snapshot_sequence,
-        }),
-    )
+    let token = session.token.clone();
+    let device = tokio::task::spawn_blocking(move || {
+        auth::authenticate_cached(&paths, &token, auth_generation)
+    })
     .await
-    .is_err()
-    {
-        return;
-    }
-
-    if let Some(after) = after {
-        match events.replay_after(after) {
-            Some(replay) => {
-                let replay = replay
-                    .into_iter()
-                    .filter(|event| event.sequence <= snapshot_sequence)
-                    .collect::<Vec<_>>();
-                for chunk in replay.chunks(WS_BATCH_MAX_EVENTS) {
-                    if send_event_batch(&mut socket, chunk).await.is_err() {
-                        return;
-                    }
-                }
-            }
-            None => {
-                log::warn!(target: "remote-webui", "event replay gap deviceId={} after={after} latestSequence={snapshot_sequence}", auth_session.device.id);
-                if send_ws_json(
-                    &mut socket,
-                    &json!({ "type": "resyncRequired", "latestSequence": snapshot_sequence }),
-                )
-                .await
-                .is_err()
-                {
-                    return;
-                }
-            }
-        }
-    }
-
-    let mut auth_tick = tokio::time::interval(Duration::from_secs(15));
-    auth_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    auth_tick.tick().await;
-
-    let close_reason = loop {
-        tokio::select! {
-            _ = lifetime.closed() => {
-                let _ = socket.send(Message::Close(None)).await;
-                break "runtime dropped";
-            }
-            changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() {
-                    let _ = socket.send(Message::Close(None)).await;
-                    break "shutdown";
-                }
-            }
-            _ = auth_tick.tick() => {
-                let current_gen = *auth_generation.borrow();
-                if !remote_token_is_valid(&paths, &auth_session.token, current_gen).await {
-                    let _ = socket.send(Message::Close(None)).await;
-                    break "authentication expired";
-                }
-            }
-            changed = auth_generation.changed() => {
-                let current_gen = *auth_generation.borrow();
-                if changed.is_err()
-                    || !remote_token_is_valid(&paths, &auth_session.token, current_gen).await
-                {
-                    let _ = socket.send(Message::Close(None)).await;
-                    break "authentication changed";
-                }
-            }
-            incoming = socket.recv() => {
-                match incoming {
-                    Some(Ok(Message::Close(_))) | None => break "peer closed",
-                    Some(Err(error)) => {
-                        log::warn!(target: "remote-webui", "event socket read failed deviceId={} error={error}", auth_session.device.id);
-                        break "socket read failed";
-                    }
-                    Some(Ok(Message::Ping(data))) => {
-                        if socket.send(Message::Pong(data)).await.is_err() {
-                            break "pong send failed";
-                        }
-                    }
-                    Some(Ok(Message::Text(text))) => {
-                        // Browser WebSockets cannot send native Ping frames.
-                        if let Ok(message) = serde_json::from_str::<Value>(&text)
-                            && message.get("type").and_then(Value::as_str) == Some("ping")
-                            && send_ws_json(&mut socket, &json!({ "type": "pong" })).await.is_err()
-                        {
-                            break "pong send failed";
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            received = receiver.recv() => {
-                match received {
-                    Ok(first) => {
-                        if first.sequence <= snapshot_sequence {
-                            continue;
-                        }
-                        match collect_event_batch(first, &mut receiver).await {
-                            EventBatchResult::Ready(batch) => {
-                                if send_event_batch(&mut socket, &batch).await.is_err() {
-                                    break "event send failed";
-                                }
-                            }
-                            EventBatchResult::Lagged => {
-                                log::warn!(target: "remote-webui", "event batch lagged deviceId={} latestSequence={}", auth_session.device.id, events.latest_sequence());
-                                if send_ws_json(
-                                    &mut socket,
-                                    &json!({ "type": "resyncRequired", "latestSequence": events.latest_sequence() }),
-                                )
-                                .await
-                                .is_err()
-                                {
-                                    break "resync send failed";
-                                }
-                            }
-                            EventBatchResult::Closed => break "event receiver closed",
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        log::warn!(target: "remote-webui", "event receiver lagged deviceId={} skipped={skipped} latestSequence={}", auth_session.device.id, events.latest_sequence());
-                        if send_ws_json(
-                            &mut socket,
-                            &json!({ "type": "resyncRequired", "latestSequence": events.latest_sequence() }),
-                        )
-                        .await
-                        .is_err()
-                        {
-                            break "resync send failed";
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break "event receiver closed",
-                }
-            }
-        }
+    .ok()
+    .and_then(Result::ok)
+    .flatten();
+    let Some(device) = device else {
+        return false;
     };
-    log::info!(target: "remote-webui", "event socket closed deviceId={} reason={close_reason} latestSequence={}", auth_session.device.id, events.latest_sequence());
+    session.device = device;
+    true
 }
 
-enum EventBatchResult {
+pub(super) enum EventBatchResult {
     Ready(Vec<Arc<SequencedRuntimeEvent>>),
     Lagged,
     Closed,
@@ -220,7 +52,7 @@ fn is_coalesceable_stream_event(event: &SequencedRuntimeEvent) -> bool {
     )
 }
 
-async fn collect_event_batch(
+pub(super) async fn collect_event_batch(
     first: Arc<SequencedRuntimeEvent>,
     receiver: &mut crate::events::WebEventReceiver,
 ) -> EventBatchResult {
@@ -266,7 +98,7 @@ struct EventBatch<'a> {
     events: &'a [Arc<SequencedRuntimeEvent>],
 }
 
-async fn send_event_batch(
+pub(super) async fn send_event_batch(
     socket: &mut WebSocket,
     events: &[Arc<SequencedRuntimeEvent>],
 ) -> Result<(), axum::Error> {
@@ -281,7 +113,7 @@ async fn send_event_batch(
     .await
 }
 
-async fn send_ws_json<T: Serialize + ?Sized>(
+pub(super) async fn send_ws_json<T: Serialize + ?Sized>(
     socket: &mut WebSocket,
     value: &T,
 ) -> Result<(), axum::Error> {

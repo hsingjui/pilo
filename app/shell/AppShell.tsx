@@ -48,7 +48,7 @@ import type { ChatQueueStore } from "../state/chat-queue-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
-import type { NshPiloClient } from "../client/nsh-pilo-client";
+import type { HostClient } from "@shared/api/host-client";
 import { defaultKeyboardShortcuts } from "@shared/keyboard-shortcuts-core";
 import type {
 	KeyboardShortcutMap,
@@ -59,6 +59,8 @@ import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
+	type SettingsDialogProps,
+	type SettingsTabId,
 } from "../settings/settings-dialog";
 import { createRemoteStatus, RemoteDialog } from "../settings/remote-dialog";
 import { Button } from "../ui/button";
@@ -69,8 +71,7 @@ import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import { deleteSessionWithToast } from "./delete-session";
-import type { DesktopNotificationsApi } from "./desktop-notifications";
-import type { DesktopShell } from "./desktop-shell";
+import type { DesktopShell, DesktopWindowShell } from "./desktop-shell";
 import { createDesktopUpdate, type DesktopUpdate } from "./desktop-update";
 import { t } from "./i18n";
 import { UpdateDialog } from "./update-dialog";
@@ -86,12 +87,12 @@ import {
 	canOpenToolFilePath,
 	openMarkdownFileLink,
 	openToolFilePath,
-	type OpenFileLinkClient,
+	type FileLinkOpenContext,
 } from "./open-file-link";
 import { HeaderActions } from "./header-actions";
 import { SessionHeader } from "./session-header";
 import { TerminalLayer } from "./terminal-view";
-import type { ProjectNativeApp } from "../client/nsh-pilo-client";
+import type { ProjectNativeApp } from "./desktop-shell";
 import type { TerminalStore } from "../state/terminal-store";
 import { WorkspaceStore } from "../state/workspace-store";
 import {
@@ -137,11 +138,11 @@ export interface AppShellProps {
 	) => Promise<Uint8Array>;
 	/** Prompts the user to save an image from the preview lightbox. */
 	saveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
-	/** Opens a file link via the runtime (returns preview text or launches the system app). */
-	openFileLink?: OpenFileLinkClient;
+	previewFileLink?: FileLinkOpenContext["previewFileLink"];
+	openFileLink?: FileLinkOpenContext["openFileLink"];
 	/** Native Git status/diff reader for the desktop-only Git workspace tab. */
 	git?: GitWorkspaceClient;
-	/** Per-project open file preview and Git tabs; created automatically when `openFileLink` or `git` is given. */
+	/** Per-project open file preview and Git tabs. */
 	workspace?: WorkspaceStore;
 	/** What a project file link in a reply does when pressed (overrides default workspace handling). */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
@@ -168,13 +169,23 @@ export interface AppShellProps {
 	/** Forks the open session at an assistant message. */
 	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 	/** Searches saved message text for the command palette. */
-	searchSessions?: Pick<NshPiloClient, "searchSessions">;
+	searchSessions?: Pick<HostClient, "searchSessions">;
 	/** The settings panes' saves and reads; no settings entry without it. */
 	settings?: SettingsClient;
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
-	desktop?: DesktopShell;
-	notifications?: DesktopNotificationsApi;
+	/** `false` hides removing projects (a Host paired without workspace access). */
+	canRemoveProjects?: boolean;
+	desktop?: DesktopWindowShell;
+	shell?: Pick<
+		DesktopShell,
+		| "pickLocalProjectDirectory"
+		| "systemFontFamilies"
+		| "openLogDirectory"
+		| "openExternal"
+		| "notifications"
+		| "createUpdate"
+	>;
 	/** Desktop updater state shared by the sidebar button, About pane, and update dialog. */
 	update?: DesktopUpdate;
 	/** The project terminals the title bar opens in tabs; none without it. */
@@ -189,6 +200,16 @@ export interface AppShellProps {
 	sidebarSettings?: SidebarSettingsStore;
 	/** Shared app toast queue; a private one is created if omitted. */
 	toasts?: AppToasts;
+	/** Whether this client manages the Host's remote access (only on its own machine). */
+	remoteAccess?: boolean;
+	/** The Host's connections are listed but edited only on that Host. */
+	connectionsReadOnly?: boolean;
+	/** Paired desktop Hosts and the local pairing flow. */
+	remoteHostPairing?: SettingsDialogProps["remoteHostPairing"];
+	/** Settings panes the Host does not let this client use. */
+	hiddenSettingsTabs?: readonly SettingsTabId[];
+	/** Add Project browses the Host's folders instead of this machine's picker. */
+	browseHostDirectories?: boolean;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -207,12 +228,15 @@ export function AppShell(props: AppShellProps) {
 	const toasts = props.toasts ?? new AppToasts();
 	const workspace =
 		props.workspace ??
-		(props.openFileLink || props.git ? new WorkspaceStore() : undefined);
+		(props.previewFileLink || props.openFileLink || props.git
+			? new WorkspaceStore()
+			: undefined);
 	const previewImage = signal<ChatImagePreview | null>(null);
 	const fileOpenContext = workspace
 		? {
 				project,
 				workspace,
+				previewFileLink: props.previewFileLink,
 				openFileLink: props.openFileLink,
 				readProjectImage: props.readProjectImage,
 				openImage: (image: ChatImagePreview) => previewImage.set(image),
@@ -314,7 +338,7 @@ export function AppShell(props: AppShellProps) {
 	const ownedUpdate =
 		props.update || !props.settings
 			? null
-			: createDesktopUpdate({
+			: (props.shell?.createUpdate ?? createDesktopUpdate)({
 					restart: props.desktop?.restart,
 					hasActiveWork: () => {
 						const state = store.state();
@@ -646,7 +670,10 @@ export function AppShell(props: AppShellProps) {
 		appShortcutBindings.set(bound);
 	});
 	const client = props.settings;
-	const remoteStatus = client ? createRemoteStatus(client, remoteOpen) : null;
+	const remoteStatus =
+		client && props.remoteAccess !== false
+			? createRemoteStatus(client, remoteOpen)
+			: null;
 	const defaultWorkspaceShown = () =>
 		store.state().preferences?.values.defaultWorkspaceVisibility ?? {};
 	const expandButton = () => (
@@ -745,8 +772,10 @@ export function AppShell(props: AppShellProps) {
 						: undefined
 				}
 				onAddProject={props.projectClient ? openAddProject : undefined}
+				canRemoveProjects={props.canRemoveProjects}
+				hosts={props.remoteHostPairing?.registry}
 				onRemoveConnection={
-					client
+					client && !props.connectionsReadOnly
 						? (connection) => {
 								const removal =
 									connection.kind.type === "wsl"
@@ -1016,6 +1045,7 @@ export function AppShell(props: AppShellProps) {
 													project={project}
 													readProjectImage={props.readProjectImage}
 													onFileLink={handleFileLink}
+													openExternal={props.shell?.openExternal}
 												/>
 											)}
 											preferences={() => store.state().preferences?.values}
@@ -1068,7 +1098,11 @@ export function AppShell(props: AppShellProps) {
 												<SessionLanding
 													store={store}
 													project={project}
-													onAddProject={() => openAddProject(null)}
+													onAddProject={
+														props.projectClient
+															? () => openAddProject(null)
+															: undefined
+													}
 												/>
 											)}
 										/>
@@ -1186,7 +1220,11 @@ export function AppShell(props: AppShellProps) {
 										<SessionLanding
 											store={store}
 											project={project}
-											onAddProject={() => openAddProject(null)}
+											onAddProject={
+												props.projectClient
+													? () => openAddProject(null)
+													: undefined
+											}
 										/>,
 									)
 								);
@@ -1279,8 +1317,11 @@ export function AppShell(props: AppShellProps) {
 								state={store.state}
 								client={props.settings}
 								desktop={props.desktop}
-								notifications={props.notifications}
+								shell={props.shell}
 								update={update}
+								connectionsReadOnly={props.connectionsReadOnly}
+								remoteHostPairing={props.remoteHostPairing}
+								hiddenTabs={props.hiddenSettingsTabs}
 							/>
 						) : null
 					}
@@ -1292,6 +1333,12 @@ export function AppShell(props: AppShellProps) {
 							<AddProjectDialog
 								open={addProjectOpen}
 								api={props.projectClient}
+								pickLocalProjectDirectory={
+									props.browseHostDirectories
+										? undefined
+										: props.shell?.pickLocalProjectDirectory
+								}
+								browseHostLocal={props.browseHostDirectories}
 								connectionId={addProjectConnection}
 								projects={() => store.state().projects}
 								onAdd={async (connectionId, path) => {
@@ -1320,6 +1367,7 @@ export function AppShell(props: AppShellProps) {
 						image={previewImage}
 						onClose={() => previewImage.set(null)}
 						onSaveImage={props.saveImage}
+						openExternal={props.shell?.openExternal}
 					/>
 					<AppToastStack toasts={toasts} />
 				</View>

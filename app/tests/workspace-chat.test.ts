@@ -7,7 +7,7 @@ async function openApp() {
 		width: 1200,
 		height: 800,
 		storage: {
-			"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+			"pilo.collapsedSections@local": JSON.stringify({ "ws:pilo": false }),
 		},
 	});
 	await app.waitFor("id:session:s4");

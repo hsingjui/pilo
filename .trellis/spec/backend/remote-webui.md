@@ -76,7 +76,7 @@ JSON fields are camelCase. `live` is tagged by `type`: `{"type":"idle"}`,
 `{"type":"active","events":[...]}`, or `{"type":"truncated"}`. `history`
 uses the existing history DTO, window selection and fingerprint; a missing
 `messageLimit` requests all messages, otherwise the reader's 1–256 limit applies.
-The native `Pilo` bridge and WebUI's `GET /api/v1/chat/transcript` expose the same
+The native `Pilo` bridge and WebUI's `POST /api/v2/call/chat.transcript` expose the same
 snapshot.
 
 Subscribe first and keep the stream while awaiting the snapshot. For the selected
@@ -325,7 +325,7 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
   `sessions_indexed { projectId }` on the runtime bus. Do not rely on the legacy
   `pilo://sessions` shell event.
 - On `sessions_indexed`, desktop reads `listSessions(projectId, true)` and WebUI
-  reads `GET /api/v1/sessions?projectId=…&cached=true`. These are cache reads,
+  posts `{ projectId, cached: true }` to `/api/v2/call/session.list`. These are cache reads,
   not new scans. User refresh and resync still reconcile. The external Pi
   activity push updates running indicators, not index membership.
 
@@ -334,8 +334,8 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
 Public:
 
 ```text
-GET  /api/v1/health          -> { ok, service }
-POST /api/v1/auth/pairing    -> { addresses: [{ id, name, baseUrl, issued }], expiresAtMs, remainingUses }
+GET  /api/v2/health         -> { ok, service }
+POST /api/v1/auth/pairing    -> { addresses: [{ id, name, baseUrl, issued }], expiresAtMs, remainingUses, scopes }
                               body: { secret }
 POST /api/v1/auth/pair       -> { token, device }
                               body: { secret, addressId, requestId, deviceName? }
@@ -344,25 +344,20 @@ POST /api/v1/auth/pair       -> { token, device }
 Authenticated (`require_auth` middleware):
 
 ```text
-GET  /api/v1/bootstrap       -> { projects, chatSessions, latestSequence }
-GET  /api/v1/bootstrap?includePreferences=true -> also includes preferences read after the event cut
-GET  /api/v1/bootstrap?includeUiState=true -> also includes uiState: { themeSettings, sessionReadStates } read after the same cut
 GET  /api/v1/auth/device     -> { expiresAtMs }          (current device only)
 POST /api/v1/auth/device/renew -> { expiresAtMs }        (resets current device to full TTL)
-GET  /api/v1/theme           -> ThemeSettings (Host SQLite)
-POST /api/v1/theme           -> ThemeSettingsUpdate body -> committed ThemeSettings
-GET  /api/v1/sessions?projectId=...&cached=true // optional; default reconciles JSONL
-GET  /api/v1/history?projectId=&sessionPath=&startMessage=&messageLimit=&includeMessageIndex=
-GET  /api/v1/models?projectId=... -> ProjectModelCache | null  (Host-cached model and command catalog)
-POST /api/v1/models          -> ProjectModelCache        body: ProjectModelCache (Host assigns timestamp)
-POST /api/v1/chat/start      -> PiSessionSnapshot        body: ChatStartRequest
-GET  /api/v1/chat/state?sessionKey=...
-POST /api/v1/chat/rpc        -> 204                      body: { sessionKey, command }
-GET  /api/v1/files/search?projectId=&query= -> string[]  (read-only @ mention search)
-GET  /api/v1/files/image?projectId=&path= -> binary image bytes (project-relative, image-only)
-POST /api/v1/chat/files?projectId=&name= -> JSON server-side absolute path (raw file bytes, max 10 MB)
-GET  /api/v1/events          -> WebSocket upgrade
+POST /api/v2/call/{method}   -> Host API envelope; JSON params in the body
+POST /api/v2/upload/{method} -> Host API envelope; octet-stream body, params in the query
+GET  /api/v2/blob/{method}   -> binary bytes on success; params in the query
+GET  /api/v2/events          -> WebSocket upgrade
 ```
+
+The envelope is `{ ok: true, result }` or `{ ok: false, error: { code, message, retryable } }`.
+The method registry defines params, kind and scope; see `shared/api/host-methods.ts`.
+For example, `host.bootstrap` returns projects, chat sessions and the event cut.
+It also reads preferences unless `includePreferences` is false, and reads theme
+and session read state after the same cut if `includeUiState` is true.
+Only auth routes remain under v1; `/pair` still serves the pairing page.
 
 `fallback` serves Mobile WebUI files through the injected `WebAssets` trait.
 The nsh `ShellWebAssets` adapter serves from its configured WebUI root;
@@ -396,11 +391,24 @@ index file through the same response path.
 
 - Subprotocols: `pilo`, `pilo-token.<token>`.
 - Client may pass `?after=<sequence>` for replay.
-- Server frames: `{ type: "hello", deviceId, latestSequence }`,
+- Server frames: `{ type: "hello", hostId, hostName, deviceId, protocolVersion,
+  scopes, capabilities, latestSequence }`,
   `{ type: "events", events: SequencedRuntimeEvent[] }`,
   `{ type: "resyncRequired", latestSequence }`.
 - Transport-only heartbeat: client `{ type: "ping" }`, server `{ type: "pong" }`.
   The Web adapter consumes pong; it is not a sequenced runtime event or a resync.
+- Business requests wait at most 15 seconds for the current socket's compatible
+  hello, including after reconnect. The method list governs capability checks.
+  Aborting the request also cancels the hello wait. The client bounds ordinary
+  JSON requests at 50 seconds and binary transfers at 60 seconds; the long-running
+  chat start, prompt enhancement and title generation use the Gateway's deadline
+  without an additional client timer. The WebSocket is not subject to these timers.
+- Workspace terminal client sends `{ type: "terminal.subscribe", terminalId, ack: true }`.
+  The Gateway registers it before replying with `{ type: "terminal.subscribed",
+  terminalId, offset }` (or an `error` payload). The client waits for the ACK
+  before attaching and snapshotting, buffers intervening live frames, and merges
+  them with the snapshot using `startOffset` and `endOffset`. The snapshot covers
+  at most the most recent 64 KiB; terminal frames are not part of event replay.
 - `SequencedRuntimeEvent` = `{ sequence, ...RuntimeEventEnvelope }` (flattened).
 - Background index events are global, without Pi generation/session keys:
   `sessions_indexed { projectId }` once after the background worker finishes and
@@ -492,7 +500,10 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   the desktop QR; descriptions and original-proof retries remain available
   within the original TTL, but no new authorization can be issued.
 - **Atomic / idempotent exchange**: `requestId` is a 32-byte CSPRNG proof encoded
-  as 64 hex characters, stored in target-origin `sessionStorage` before POST.
+  as 64 hex characters. Before POST, WebUI stores it in target-origin `sessionStorage`;
+  the desktop pairing dialog keeps one proof per address in memory until the link
+  is edited or the dialog closes. Manual retry after an exchange or `hello` timeout
+  must reuse that proof, not generate another one.
   Never use `utils.randomId` / its `Math.random` fallback for this proof.
   The batch mutex covers an immediate SQLite transaction, device insertion,
   exhaustion update and receipt recording, all inside `spawn_blocking` with no
@@ -552,30 +563,47 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
 - **Device rename**: `remote_device_rename` reuses `auth::normalize_device_name`,
   so the same 80-char bound applies. Renaming requires the device to exist and
   not be revoked.
-- **Auth scope**: authenticated == full MVP capability. No roles/capabilities yet.
-- **Auth rate limiting**: only the pairing secret is IP-rate-limited (5 failures /
-  60 s). Device tokens are 32 random bytes looked up by SHA-256 hash, so they are
-  **not** rate-limited — blocking them turned the `401` a client needs to drop a
-  stale token into an unrecoverable `429` lockout (and also gated `/auth/pair`).
+- Native adapters use `host_api::Principal::Local`. Remote middleware inserts
+  `Principal::Device { id, scopes }` from the authenticated device. `HostRequest`
+  passes this extension to the Registry for JSON and binary operations. Both device
+  permission sets allow Chat. Workspace requires `RemoteScopes::ChatWorkspace`,
+  serialized as `"chat,workspace"`. New links created on listener start or from
+  desktop settings grant Chat and Workspace to both desktop and WebUI clients,
+  without a scope picker. Address edits preserve the scope of a live batch and use
+  the new-link default when no batch remains. Existing devices keep their
+  scopes; a chat-only device must pair again to gain Workspace. Admin requires
+  Local, including connection configuration, device management and pairing
+  regeneration. Scope denial returns `HostApiError` with
+  code `forbidden` and HTTP 403 on v1. WebSocket reauthentication refreshes
+  `AuthSession` when the auth generation changes and closes the connection if
+  the token is no longer valid.
+- **Auth rate limiting**: pairing and device-token failures have separate
+  per-IP budgets (5 failures / 60 s). Authenticate a presented device token
+  before consulting the budget: valid credentials pass regardless of the IP's
+  budget, missing credentials return `401` without spending it, and invalid
+  credentials return `429` only after the budget is exhausted. Check and record
+  each failure atomically. The table holds up to 4096 IPs, prunes expired
+  failures when accessing an IP, and evicts the oldest tracked IP on overflow.
 - **Stale auth responses**: HTTP JSON/image helpers clear localStorage on 401
   only if its token still equals the token sent by that request. Pairing pages
   do not clear it again; the workspace error handler adopts the current stored
   token instead of discarding a newer authorization. Effect cancellation alone
   cannot prevent a late response from deleting credentials.
 - **RPC allowlist**: only chat-mutating/querying commands are forwarded (see
-  `remote/api/validation.rs`). HTTP validates the command before calling the same
+  `host_api/validation.rs`). The registry validates the command before calling the same
   `runtime_api::chat_session_send_rpc` operation as the desktop bridge. Chat stop and
   state use the corresponding Runtime operations too; HTTP owns status/JSON mapping.
-  No generic command proxy; Terminal/Files/Git are not exposed.
-- **Files surfaces**: `GET /api/v1/files/search` forwards host `fs.search` and
-  returns paths only. `/files/image` is the image-only exception for Markdown
-  replies (see below); generic reads, writes, and directory listing stay private.
-- **Model and command catalog**: `GET /api/v1/models` returns the shared
+  There is no generic command proxy. Workspace devices can use the separately
+  scoped directory browser, file preview, Git and terminal methods.
+- **Files surfaces**: `POST /api/v2/call/files.search` forwards host `fs.search`
+  and returns paths only. `GET /api/v2/blob/files.image` reads project images
+  for Markdown replies (see below).
+- **Model and command catalog**: `POST /api/v2/call/models.get` returns the shared
   `project_model_cache` snapshot (or `null`). Complete caches have no TTL or
   periodic refresh. On missing/incomplete caches or explicit refresh, WebUI
   reuses the same TypeScript probe logic as Desktop through the existing socket
-  and chat transport, then persists via authenticated `POST /api/v1/models`.
-  `builtinExtensions: [{ id: "model-catalog" }]` on `/chat/start` is allowed only
+  and chat transport, then persists via authenticated `POST /api/v2/call/models.set`.
+  `builtinExtensions: [{ id: "model-catalog" }]` on `chat.start` is allowed only
   with `noSession: true` and no sessionPath; other client-selected extensions
   are rejected. This path calls `chat_service::prepare`, not `start`, to avoid
   creating an empty persisted session. Normal chats retain their existing path.
@@ -909,10 +937,10 @@ Do not return a receipt based on only the reusable secret + address ID.
 - **Independent event readers.** `RuntimeEventBus` fans sequenced envelopes out
   to bounded native readers and the Web live/replay queues. A lagging reader must
   not block the Host or prevent delivery to other readers.
-- **Transport-neutral client.** `NshPiloClient` calls the native bridge;
-  `WebPiloClient` uses HTTP/WebSocket. Share data contracts in `shared/api/`,
-  while keeping generic native-only file, terminal and Git operations out of the
-  Remote API. Project image reads remain shared through `readProjectImage`.
+- **Transport-neutral client.** Both clients use `HostClient`, with
+  `NativeTransport` for the embedded host and `HttpTransport` for WebUI.
+  Keep data contracts in `shared/api/` and OS shell operations outside the Host API.
+  Project image reads are shared through `readProjectImage`.
 
 ## Removed Screen Viewing
 
@@ -932,7 +960,7 @@ security boundary. This uses plain Pi reply text; it does not extend Pi RPC.
 ### 2. Signatures
 
 - `project_fs_read_image(id: String, path: String) -> Result<Vec<u8>, String>`
-- Authenticated `GET /api/v1/files/image?projectId=&path=` -> binary bytes
+- Authenticated `GET /api/v2/blob/files.image?projectId=&path=` -> binary bytes
 - `PiloClient.readProjectImage(projectId, path) -> Promise<Uint8Array<ArrayBuffer>>`
 - `remote_fs::read_image(servers, project, path)` owns both transport validations.
 
@@ -1012,17 +1040,17 @@ access.
 ### 2. Signatures
 
 - `project_chat_file_upload(id, name, data: Vec<u8>) -> Result<String, String>`
-- Authenticated `POST /api/v1/chat/files?projectId=&name=`: octet-stream body;
-  returns a JSON string containing the absolute path in the selected environment.
+- Authenticated `POST /api/v2/upload/chat.files.upload?projectId=&name=`:
+  octet-stream body; the result is the absolute path in the selected environment.
 - `project_chat_file_remove(id, path) -> Result<(), String>` and authenticated
-  `DELETE /api/v1/chat/files?projectId=&path=` (204 on success) remove one
+  `POST /api/v2/call/chat.files.remove` with `{ projectId, path }` remove one
   attachment directory, subject to server-side validation.
 - Server transport: `chat.file_upload({ id, name }, binary: [bytes]) -> string`
   and `chat.file_remove({ path }) -> null`. The Host generates the canonical
   16-byte base64url ID; only the server resolves its runtime root. Both methods
   are required server capabilities. `MAX_CHAT_FILE_BYTES` lives in `pilo-protocol`.
 - Shared `ChatComposer.onUploadFile(file: File) -> Promise<string>` is supplied
-  by the desktop files adapter or `WebPiloClient.uploadChatFile`.
+  by the shared `HostClient.uploadChatFile` method.
 - `chat-file-lifecycle.ts` registers an upload's transport-bound cleanup callback,
   discards removed/late uploads and retains submitted references.
 

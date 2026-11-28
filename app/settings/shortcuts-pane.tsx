@@ -26,7 +26,7 @@ import {
 import type { PreferencePatch } from "@shared/host-preferences-types";
 import { isReservedSendShortcut, nshAppShortcut } from "../shortcuts";
 import type { AppState } from "../state/app-state";
-import type { DesktopShell } from "../shell/desktop-shell";
+import type { DesktopWindowShell } from "../shell/desktop-shell";
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
@@ -212,7 +212,7 @@ function ShortcutRecorder(props: {
 export function ShortcutsPane(props: {
 	state: Accessor<AppState>;
 	client: Pick<SettingsClient, "savePreferences">;
-	desktop?: DesktopShell;
+	desktop?: DesktopWindowShell;
 }) {
 	const toasts = AppToaster();
 	const map = () => props.state().preferences?.values.keyboardShortcuts;
@@ -459,11 +459,11 @@ export function ShortcutsPane(props: {
 
 /**
  * The global "show Pilo" shortcut with the same recorder as the in-app rows:
- * captured keystrokes go through `DesktopShell.saveShortcut`, which validates,
+ * captured keystrokes go through `DesktopWindowShell.saveShortcut`, which validates,
  * registers and persists them.
  */
 function GlobalShortcutSetting(props: {
-	desktop: DesktopShell;
+	desktop: DesktopWindowShell;
 	recording: Accessor<boolean>;
 	findAppConflict?: (shortcut: string) => string | null;
 	onRecordingChange: (recording: boolean) => void;

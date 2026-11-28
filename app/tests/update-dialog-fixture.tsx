@@ -158,6 +158,7 @@ async function run() {
 				chat={chat}
 				composer={composer}
 				settings={runtime.client}
+				shell={runtime.shell}
 				update={update}
 			/>
 		</View>

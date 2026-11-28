@@ -33,7 +33,9 @@
 		"picker": true,
 		"notifications": true,
 		"statusBar": true,
-		"process": { "env": ["PILO_APPIMAGE"] },
+		"process": {
+			"env": ["PILO_APPIMAGE"]
+		},
 		"network": {
 			"http": [
 				{
@@ -42,9 +44,12 @@
 					"methods": ["GET"],
 					"pathPrefix": "/repos/hsingjui/pilo/releases/tags/"
 				}
-			]
+			],
+			"hosts": ["*"]
 		},
-		"openUrl": { "schemes": ["https", "zed", "vscode", "cursor"] }
+		"openUrl": {
+			"schemes": ["https", "zed", "vscode", "cursor"]
+		}
 	},
 	"rust": "crates/pilo-desktop",
 	"resolve": {

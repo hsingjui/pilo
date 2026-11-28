@@ -59,7 +59,7 @@ pub struct SavedCustomTheme {
     pub tokens_pending_conversion: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SavedCustomThemeInput {
     pub name: String,
@@ -99,15 +99,19 @@ pub struct ThemeSettings {
     pub saved_custom_themes: Vec<SavedCustomTheme>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ThemeSettingsUpdate {
     pub theme: Option<ThemeMode>,
     pub theme_family: Option<ThemeFamily>,
     pub theme_custom_css: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_tokens")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_tokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub theme_custom_tokens: Option<CustomThemeTokens>,
-    #[serde(default, rename = "themeCustomConversion")]
+    #[serde(default, rename = "themeCustomConversion", skip_serializing)]
     pub _theme_custom_conversion: serde::de::IgnoredAny,
     pub theme_custom_name: Option<String>,
     pub save_custom_theme: Option<SavedCustomThemeInput>,

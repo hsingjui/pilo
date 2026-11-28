@@ -1,5 +1,26 @@
 import { expect, open, test } from "nsh/test";
 
+test("mobile workspace actions follow negotiated scope and methods", async () => {
+	const workspace = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 500,
+		height: 844,
+		storage: { "fixture.scenario": "workspace" },
+	});
+	await workspace.waitFor("id:mobile-workspace-actions");
+	await workspace.press("id:mobile-workspace-actions");
+	await workspace.waitFor("id:mobile-add-project");
+	expect(workspace.shows("id:mobile-remove-project")).toBe(false);
+
+	const chat = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 500,
+		height: 844,
+	});
+	await chat.waitFor("id:mobile-header");
+	expect(chat.shows("id:mobile-workspace-actions")).toBe(false);
+});
+
 test("mobile shell uses textarea composer only and removes React/engine switchers", async () => {
 	const app = await open("./mobile-web-fixture.tsx", {
 		locale: "en-US",

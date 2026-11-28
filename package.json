@@ -7,6 +7,7 @@
 		"dev:web": "nsh dev --target web web",
 		"generate:icons": "node scripts/generate-desktop-icons.mjs",
 		"generate:themes": "node scripts/generate-desktop-themes.mjs",
+		"generate:host-api": "node scripts/generate-host-api.mjs",
 		"build": "tsc -p shared && node scripts/build-nsh-web.mjs",
 		"build:web": "node scripts/build-nsh-web.mjs",
 		"server:build": "node scripts/build-server.mjs",

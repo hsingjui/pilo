@@ -1,5 +1,6 @@
 import { host, mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("starting Pi");
 const projectId = "chat-fixture";
@@ -28,7 +29,8 @@ async function readEvents(pilo: Pilo, handle: (event: ChatEvent) => boolean) {
 }
 
 async function smokeTurn(pilo: Pilo) {
-	await pilo.sendChatCommand(sessionKey, {
+	const hostClient = createNativeHostClient(pilo);
+	await hostClient.sendChatCommand(sessionKey, {
 		id: "fixture-model",
 		type: "set_model",
 		provider: "relay",
@@ -47,7 +49,7 @@ async function smokeTurn(pilo: Pilo) {
 			throw new Error(response.error ?? "set_model failed");
 		return true;
 	});
-	await pilo.sendChatCommand(sessionKey, {
+	await hostClient.sendChatCommand(sessionKey, {
 		id: "fixture-prompt",
 		type: "prompt",
 		message: "Reply with only this exact text: NSH_BRIDGE_OK",
@@ -74,7 +76,8 @@ async function smokeTurn(pilo: Pilo) {
 }
 
 async function expectCommandResponse(pilo: Pilo) {
-	await pilo.sendChatCommand(sessionKey, {
+	const hostClient = createNativeHostClient(pilo);
+	await hostClient.sendChatCommand(sessionKey, {
 		id: "fixture-probe",
 		type: "get_state",
 		probe: { values: [true, 42, "native"] },
@@ -112,7 +115,8 @@ async function expectError(promise: Promise<unknown>, message: string) {
 }
 
 async function expectIdle(pilo: Pilo, generation: number) {
-	const state = (await pilo.chatState(sessionKey)) as {
+	const hostClient = createNativeHostClient(pilo);
+	const state = (await hostClient.chatState(sessionKey)) as {
 		sessionKey: string;
 		projectId: string;
 		sessionPath: string | null;
@@ -142,16 +146,17 @@ async function run() {
 	const stop = state || host.params.stop === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	const input = { projectId, sessionKey, noSession: true };
 	try {
-		if (state && (await pilo.chatState(sessionKey)) !== null) {
+		if (state && (await hostClient.chatState(sessionKey)) !== null) {
 			throw new Error("unexpected chat state before startup");
 		}
 		await expectError(
-			pilo.startChat({ ...input, projectId: "missing" }),
+			hostClient.startChat({ ...input, projectId: "missing" }),
 			"Project 'missing' was not found",
 		);
-		const snapshot = (await pilo.startChat(input)) as {
+		const snapshot = (await hostClient.startChat(input)) as {
 			state: string;
 			projectId: string;
 			generation: number;
@@ -171,13 +176,13 @@ async function run() {
 			await expectCommandResponse(pilo);
 		}
 		if (stop) {
-			await pilo.stopChat(sessionKey, "fixture complete");
+			await hostClient.stopChat(sessionKey, "fixture complete");
 			await expectError(
-				pilo.sendChatCommand(sessionKey, { type: "get_state" }),
+				hostClient.sendChatCommand(sessionKey, { type: "get_state" }),
 				"is not running",
 			);
-			await pilo.stopChat(sessionKey);
-			if (state && (await pilo.chatState(sessionKey)) !== null) {
+			await hostClient.stopChat(sessionKey);
+			if (state && (await hostClient.chatState(sessionKey)) !== null) {
 				throw new Error("chat state remained after stopping Pi");
 			}
 		}
@@ -185,22 +190,25 @@ async function run() {
 		await pilo.shutdown();
 		fixture.dispose();
 	}
-	await expectError(pilo.startChat(input), "Pilo runtime has been shut down");
+	await expectError(
+		hostClient.startChat(input),
+		"Pilo runtime has been shut down",
+	);
 	if (stop) {
 		await expectError(
-			pilo.stopChat(sessionKey),
+			hostClient.stopChat(sessionKey),
 			"Pilo runtime has been shut down",
 		);
 	}
 	if (state) {
 		await expectError(
-			pilo.chatState(sessionKey),
+			hostClient.chatState(sessionKey),
 			"Pilo runtime has been shut down",
 		);
 	}
 	if (command) {
 		await expectError(
-			pilo.sendChatCommand(sessionKey, { type: "get_state" }),
+			hostClient.sendChatCommand(sessionKey, { type: "get_state" }),
 			"Pilo runtime has been shut down",
 		);
 	}
@@ -221,9 +229,10 @@ async function run() {
 async function shutdownMidTurn() {
 	const fixture = new ChatFixture(false);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		await pilo.startChat({ projectId, sessionKey, noSession: true });
-		await pilo.sendChatCommand(sessionKey, {
+		await hostClient.startChat({ projectId, sessionKey, noSession: true });
+		await hostClient.sendChatCommand(sessionKey, {
 			id: "fixture-shutdown",
 			type: "prompt",
 			message: "Keep the turn open",
@@ -233,7 +242,7 @@ async function shutdownMidTurn() {
 			const response = event.message as { id?: string; success?: boolean };
 			return response.id === "fixture-shutdown" && response.success === true;
 		});
-		const state = (await pilo.chatState(sessionKey)) as {
+		const state = (await hostClient.chatState(sessionKey)) as {
 			activeTurn?: boolean;
 		} | null;
 		if (state?.activeTurn !== true || !fixture.piRunning()) {
@@ -248,7 +257,7 @@ async function shutdownMidTurn() {
 			);
 		}
 		await expectError(
-			pilo.chatState(sessionKey),
+			hostClient.chatState(sessionKey),
 			"Pilo runtime has been shut down",
 		);
 	} finally {

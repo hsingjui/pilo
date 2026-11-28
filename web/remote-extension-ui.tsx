@@ -16,7 +16,7 @@ import { DialogTitle } from "../app/ui/dialog-title";
 import { Input } from "../app/ui/input";
 import { Textarea } from "../app/ui/textarea";
 import { MobileViewport } from "./mobile-viewport";
-import type { WebRemotePiloClient } from "./web-remote-client";
+import type { HostClient } from "@shared/api/host-client";
 
 type Request = Extract<PiloClientEvent, { type: "extension_ui_request" }>;
 type Response =
@@ -59,7 +59,7 @@ export class RemoteExtensionUi {
 
 	constructor(
 		private readonly client: Pick<
-			WebRemotePiloClient,
+			HostClient,
 			"sendChatCommand" | "approveProjectMcpServer"
 		>,
 		private readonly toasts: AppToasts,

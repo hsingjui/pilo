@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("loading next-prompt settings");
 
@@ -23,9 +24,12 @@ async function expectError(promise: Promise<unknown>, message: string) {
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		await pilo.listProjects();
-		const initial = (await pilo.loadNextPromptSettings("local")) as Settings;
+		await hostClient.listProjects();
+		const initial = (await hostClient.loadNextPromptSettings(
+			"local",
+		)) as Settings;
 		if (
 			initial.connectionId !== "local" ||
 			initial.enabled !== false ||
@@ -35,7 +39,9 @@ async function run() {
 			throw new Error(`unexpected defaults: ${JSON.stringify(initial)}`);
 		}
 		fixture.seedNextPromptSettings();
-		const stored = (await pilo.loadNextPromptSettings("local")) as Settings;
+		const stored = (await hostClient.loadNextPromptSettings(
+			"local",
+		)) as Settings;
 		if (
 			stored.connectionId !== "local" ||
 			stored.enabled !== true ||
@@ -46,12 +52,12 @@ async function run() {
 			throw new Error(`unexpected saved settings: ${JSON.stringify(stored)}`);
 		}
 		await expectError(
-			pilo.loadNextPromptSettings("missing"),
+			hostClient.loadNextPromptSettings("missing"),
 			"Connection 'missing' was not found",
 		);
 		await pilo.shutdown();
 		await expectError(
-			pilo.loadNextPromptSettings("local"),
+			hostClient.loadNextPromptSettings("local"),
 			"Pilo runtime has been shut down",
 		);
 	} finally {

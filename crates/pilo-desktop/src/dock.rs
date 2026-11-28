@@ -33,11 +33,33 @@ impl DesktopDock {
         }
     }
 
+    /// Shows `count` on the macOS Dock icon's badge; 0 clears it.
+    pub fn set_badge(count: f64) {
+        let label = badge_label(count);
+        #[cfg(target_os = "macos")]
+        macos::set_badge(label);
+        #[cfg(not(target_os = "macos"))]
+        let _ = label;
+    }
+
     /// Requests foreground activation of the current macOS app bundle.
     pub fn activate() {
         #[cfg(target_os = "macos")]
         macos::activate();
     }
+}
+
+/// The Dock badge text for an unread count: none for 0, `99+` past 99.
+fn badge_label(count: f64) -> Option<String> {
+    if !count.is_finite() || count < 1.0 {
+        return None;
+    }
+    let count = count.floor();
+    Some(if count > 99.0 {
+        "99+".to_owned()
+    } else {
+        format!("{count}")
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -73,6 +95,30 @@ mod macos {
         }
         let app = unsafe { *(symbol.cast::<*mut AnyObject>()) };
         (!app.is_null()).then_some(app)
+    }
+
+    pub(super) fn set_badge(label: Option<String>) {
+        let label = label.and_then(|label| std::ffi::CString::new(label).ok());
+        DispatchQueue::main().exec_async(move || {
+            // SAFETY: Runs on the main queue. `dockTile` returns the app's
+            // `NSDockTile`, and `setBadgeLabel:` takes an `NSString *` or nil.
+            unsafe {
+                let Some(app) = running_ns_application() else {
+                    return;
+                };
+                let tile: *mut AnyObject = msg_send![app, dockTile];
+                if tile.is_null() {
+                    return;
+                }
+                let text: *mut AnyObject = match &label {
+                    Some(label) => {
+                        msg_send![class!(NSString), stringWithUTF8String: label.as_ptr()]
+                    }
+                    None => std::ptr::null_mut(),
+                };
+                let _: () = msg_send![tile, setBadgeLabel: text];
+            }
+        });
     }
 
     pub(super) fn activate() {
@@ -251,6 +297,16 @@ mod macos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn badge_label_hides_zero_and_caps_large_counts() {
+        assert_eq!(badge_label(0.0), None);
+        assert_eq!(badge_label(-1.0), None);
+        assert_eq!(badge_label(f64::NAN), None);
+        assert_eq!(badge_label(3.0).as_deref(), Some("3"));
+        assert_eq!(badge_label(99.0).as_deref(), Some("99"));
+        assert_eq!(badge_label(100.0).as_deref(), Some("99+"));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

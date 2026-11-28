@@ -4,8 +4,10 @@ use std::{
         Arc, Mutex as StdMutex, PoisonError,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::{
@@ -15,18 +17,100 @@ use tokio::{
 
 use pilo_domain::Project;
 
-use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
+use super::{
+    host_api::Principal,
+    server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
+};
 
 static TERMINAL_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// Maximum buffered terminal payload kept per subscriber before dropping the oldest event.
 pub const TERMINAL_QUEUE_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum recent PTY output retained per terminal for reconnect catch-up snapshots.
+pub const TERMINAL_SNAPSHOT_MAX_BYTES: usize = 64 * 1024;
+/// How long a remote-owned PTY stays alive after its owner disconnects before closing.
+pub const TERMINAL_DISCONNECT_RETENTION: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TerminalOwner {
+    Local,
+    Device(String),
+}
+
+impl TerminalOwner {
+    pub(crate) fn from_principal(principal: &Principal) -> Self {
+        match principal {
+            Principal::Local => Self::Local,
+            Principal::Device { id, .. } => Self::Device(id.clone()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TerminalAccessError {
+    NotFound(String),
+    Forbidden(String),
+    Internal(String),
+}
+
+impl TerminalAccessError {
+    pub fn into_message(self) -> String {
+        match self {
+            Self::NotFound(message) | Self::Forbidden(message) | Self::Internal(message) => message,
+        }
+    }
+}
+
+#[derive(Default)]
+struct OutputRingBuffer {
+    bytes: VecDeque<u8>,
+    end_offset: u64,
+}
+
+impl OutputRingBuffer {
+    fn push(&mut self, data: &[u8]) -> u64 {
+        let start_offset = self.end_offset;
+        self.end_offset += data.len() as u64;
+        if data.is_empty() {
+            return start_offset;
+        }
+        if data.len() >= TERMINAL_SNAPSHOT_MAX_BYTES {
+            self.bytes.clear();
+            let start = data.len() - TERMINAL_SNAPSHOT_MAX_BYTES;
+            self.bytes.extend(&data[start..]);
+            return start_offset;
+        }
+        let overflow = (self.bytes.len() + data.len()).saturating_sub(TERMINAL_SNAPSHOT_MAX_BYTES);
+        if overflow > 0 {
+            self.bytes.drain(..overflow);
+        }
+        self.bytes.extend(data);
+        start_offset
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.bytes.len());
+        let (front, back) = self.bytes.as_slices();
+        out.extend_from_slice(front);
+        out.extend_from_slice(back);
+        out
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSnapshot {
+    pub terminal_id: String,
+    pub data: String,
+    pub end_offset: u64,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TerminalEvent {
     Output {
         terminal_id: String,
         data: Vec<u8>,
+        start_offset: u64,
     },
     Exit {
         terminal_id: String,
@@ -40,7 +124,9 @@ pub enum TerminalEvent {
 impl TerminalEvent {
     fn approx_bytes(&self) -> usize {
         match self {
-            Self::Output { terminal_id, data } => 64 + terminal_id.len() + data.len(),
+            Self::Output {
+                terminal_id, data, ..
+            } => 64 + terminal_id.len() + data.len(),
             Self::Exit { terminal_id } => 64 + terminal_id.len(),
             Self::Error {
                 terminal_id,
@@ -207,13 +293,21 @@ pub struct TerminalInfo {
 pub(crate) struct TerminalSession {
     id: String,
     project_id: String,
+    title: String,
+    owner: TerminalOwner,
     client: Arc<ServerClient>,
     task: JoinHandle<()>,
     ended: Arc<AtomicBool>,
+    output_buffer: Arc<StdMutex<OutputRingBuffer>>,
+    ws_subscribers: usize,
+    disconnect_timer: Option<JoinHandle<()>>,
 }
 
 impl TerminalSession {
-    pub(crate) async fn close(self) -> Result<(), String> {
+    pub(crate) async fn close(mut self) -> Result<(), String> {
+        if let Some(timer) = self.disconnect_timer.take() {
+            timer.abort();
+        }
         self.ended.store(true, Ordering::Release);
         self.task.abort();
         self.client
@@ -221,16 +315,82 @@ impl TerminalSession {
             .await
             .map(|_| ())
     }
+
+    fn info(&self) -> TerminalInfo {
+        TerminalInfo {
+            id: self.id.clone(),
+            project_id: self.project_id.clone(),
+            title: self.title.clone(),
+        }
+    }
 }
 
 #[derive(Default)]
+struct TerminalState {
+    sessions: HashMap<String, TerminalSession>,
+    device_connections: HashMap<String, usize>,
+}
+
+#[derive(Clone)]
 pub struct TerminalManager {
-    sessions: Arc<StdMutex<HashMap<String, TerminalSession>>>,
+    state: Arc<StdMutex<TerminalState>>,
+    retention_duration: Arc<StdMutex<Duration>>,
     /// Serializes only short metadata/project-removal transitions without holding locks across RPCs.
-    project_gate: AsyncMutex<()>,
+    project_gate: Arc<AsyncMutex<()>>,
+    #[cfg(test)]
+    open_barrier: Arc<StdMutex<Option<Arc<tokio::sync::Barrier>>>>,
+}
+
+impl Default for TerminalManager {
+    fn default() -> Self {
+        Self {
+            state: Arc::new(StdMutex::new(TerminalState::default())),
+            retention_duration: Arc::new(StdMutex::new(TERMINAL_DISCONNECT_RETENTION)),
+            project_gate: Arc::new(AsyncMutex::new(())),
+            #[cfg(test)]
+            open_barrier: Arc::new(StdMutex::new(None)),
+        }
+    }
 }
 
 impl TerminalManager {
+    #[cfg(test)]
+    pub(crate) fn set_disconnect_retention(&self, duration: Duration) {
+        *self
+            .retention_duration
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = duration;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_open_barrier(&self, barrier: Option<Arc<tokio::sync::Barrier>>) {
+        *self
+            .open_barrier
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = barrier;
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn wait_open_barrier(&self) {
+        let barrier = self
+            .open_barrier
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn session_count(&self) -> usize {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .sessions
+            .len()
+    }
+
     pub(crate) async fn start(
         &self,
         servers: Arc<ServerManager>,
@@ -238,6 +398,7 @@ impl TerminalManager {
         project: &Project,
         cols: u16,
         rows: u16,
+        owner: TerminalOwner,
     ) -> Result<(TerminalInfo, TerminalSession), String> {
         let client = servers.client(&project.connection).await?;
         let terminal_id = format!(
@@ -248,9 +409,11 @@ impl TerminalManager {
         let mut events = client.subscribe(&terminal_id);
         let event_terminal_id = terminal_id.clone();
         let event_client = Arc::clone(&client);
-        let sessions = Arc::clone(&self.sessions);
+        let state = Arc::clone(&self.state);
         let ended = Arc::new(AtomicBool::new(false));
         let event_ended = Arc::clone(&ended);
+        let output_buffer = Arc::new(StdMutex::new(OutputRingBuffer::default()));
+        let event_buffer = Arc::clone(&output_buffer);
         let task = tokio::spawn(async move {
             loop {
                 let Some(event) = events.recv().await else {
@@ -283,9 +446,14 @@ impl TerminalManager {
                 match event.event.as_str() {
                     "terminal.output" => {
                         let data = event.binary.into_iter().next().unwrap_or_default();
+                        let start_offset = event_buffer
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .push(&data);
                         terminal_events.publish(TerminalEvent::Output {
                             terminal_id: event_terminal_id.clone(),
                             data,
+                            start_offset,
                         });
                     }
                     "terminal.exit" => {
@@ -310,10 +478,15 @@ impl TerminalManager {
                 }
             }
             event_ended.store(true, Ordering::Release);
-            sessions
+            if let Some(mut removed) = state
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .remove(&event_terminal_id);
+                .sessions
+                .remove(&event_terminal_id)
+                && let Some(timer) = removed.disconnect_timer.take()
+            {
+                timer.abort();
+            }
         });
         if let Err(error) = client
             .request(
@@ -339,40 +512,77 @@ impl TerminalManager {
         let session = TerminalSession {
             id: terminal_id,
             project_id: project.id.clone(),
+            title: project.name.clone(),
+            owner,
             client,
             task,
             ended,
+            output_buffer,
+            ws_subscribers: 0,
+            disconnect_timer: None,
         };
         Ok((info, session))
     }
 
     /// Commits a started terminal if `check` succeeds; returns the session back for closing on error.
-    pub(crate) async fn commit_if<F>(
+    pub(crate) async fn commit_if<F, E>(
         &self,
-        session: TerminalSession,
+        mut session: TerminalSession,
         check: F,
-    ) -> Result<(), (String, TerminalSession)>
+    ) -> Result<(), (E, Box<TerminalSession>)>
     where
-        F: FnOnce() -> Result<(), String>,
+        F: FnOnce() -> Result<(), E>,
     {
         let _gate = self.project_gate.lock().await;
         if let Err(error) = check() {
-            return Err((error, session));
+            return Err((error, Box::new(session)));
         }
-        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        let retention = *self
+            .retention_duration
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let has_ws_connection = match &session.owner {
+            TerminalOwner::Local => true,
+            TerminalOwner::Device(device_id) => {
+                state
+                    .device_connections
+                    .get(device_id)
+                    .copied()
+                    .unwrap_or(0)
+                    > 0
+            }
+        };
         if !session.ended.load(Ordering::Acquire) {
-            sessions.insert(session.id.clone(), session);
+            if !has_ws_connection {
+                session.disconnect_timer = Some(Self::spawn_disconnect_timer(
+                    Arc::clone(&self.state),
+                    session.id.clone(),
+                    retention,
+                ));
+            }
+            state.sessions.insert(session.id.clone(), session);
         }
         Ok(())
     }
 
-    pub async fn write(&self, terminal_id: &str, data: &[u8]) -> Result<(), String> {
+    pub async fn write(
+        &self,
+        owner: &TerminalOwner,
+        terminal_id: &str,
+        data: &[u8],
+    ) -> Result<(), TerminalAccessError> {
         let client = {
-            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-            sessions
-                .get(terminal_id)
-                .map(|session| Arc::clone(&session.client))
-                .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?
+            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let session = state.sessions.get(terminal_id).ok_or_else(|| {
+                TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
+            })?;
+            if &session.owner != owner {
+                return Err(TerminalAccessError::Forbidden(format!(
+                    "terminal '{terminal_id}' is owned by another principal"
+                )));
+            }
+            Arc::clone(&session.client)
         };
         client
             .request_with_binary(
@@ -382,15 +592,27 @@ impl TerminalManager {
             )
             .await
             .map(|_| ())
+            .map_err(TerminalAccessError::Internal)
     }
 
-    pub async fn resize(&self, terminal_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+    pub async fn resize(
+        &self,
+        owner: &TerminalOwner,
+        terminal_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), TerminalAccessError> {
         let client = {
-            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-            sessions
-                .get(terminal_id)
-                .map(|session| Arc::clone(&session.client))
-                .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?
+            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let session = state.sessions.get(terminal_id).ok_or_else(|| {
+                TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
+            })?;
+            if &session.owner != owner {
+                return Err(TerminalAccessError::Forbidden(format!(
+                    "terminal '{terminal_id}' is owned by another principal"
+                )));
+            }
+            Arc::clone(&session.client)
         };
         client
             .request(
@@ -399,18 +621,264 @@ impl TerminalManager {
             )
             .await
             .map(|_| ())
+            .map_err(TerminalAccessError::Internal)
     }
 
-    pub async fn close(&self, terminal_id: &str) -> Result<(), String> {
-        let Some(session) = self
-            .sessions
+    pub async fn close(
+        &self,
+        owner: &TerminalOwner,
+        terminal_id: &str,
+    ) -> Result<(), TerminalAccessError> {
+        let session = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            match state.sessions.get(terminal_id) {
+                None => return Ok(()),
+                Some(session) if &session.owner != owner => {
+                    return Err(TerminalAccessError::Forbidden(format!(
+                        "terminal '{terminal_id}' is owned by another principal"
+                    )));
+                }
+                Some(_) => state.sessions.remove(terminal_id),
+            }
+        };
+        if let Some(session) = session {
+            session
+                .close()
+                .await
+                .map_err(TerminalAccessError::Internal)?;
+        }
+        Ok(())
+    }
+
+    /// Verifies terminal ownership for HTTP `terminal.attach`.
+    /// Only cancels a disconnect retention timer when at least one v2 WS is subscribed to this terminal.
+    pub fn attach(
+        &self,
+        owner: &TerminalOwner,
+        terminal_id: &str,
+    ) -> Result<TerminalInfo, TerminalAccessError> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let session = state.sessions.get_mut(terminal_id).ok_or_else(|| {
+            TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
+        })?;
+        if &session.owner != owner {
+            return Err(TerminalAccessError::Forbidden(format!(
+                "terminal '{terminal_id}' is owned by another principal"
+            )));
+        }
+        if session.ws_subscribers > 0
+            && let Some(timer) = session.disconnect_timer.take()
+        {
+            timer.abort();
+        }
+        Ok(session.info())
+    }
+
+    pub(crate) fn subscribe_ws(
+        &self,
+        owner: &TerminalOwner,
+        terminal_id: &str,
+    ) -> Result<u64, TerminalAccessError> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let session = state.sessions.get_mut(terminal_id).ok_or_else(|| {
+            TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
+        })?;
+        if &session.owner != owner {
+            return Err(TerminalAccessError::Forbidden(format!(
+                "terminal '{terminal_id}' is owned by another principal"
+            )));
+        }
+        session.ws_subscribers += 1;
+        if let Some(timer) = session.disconnect_timer.take() {
+            timer.abort();
+        }
+        Ok(session
+            .output_buffer
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .remove(terminal_id)
-        else {
-            return Ok(());
+            .end_offset)
+    }
+
+    pub(crate) fn unsubscribe_ws(&self, owner: &TerminalOwner, terminal_id: &str) {
+        let retention = *self
+            .retention_duration
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let has_ws = match owner {
+            TerminalOwner::Local => true,
+            TerminalOwner::Device(device_id) => {
+                state
+                    .device_connections
+                    .get(device_id)
+                    .copied()
+                    .unwrap_or(0)
+                    > 0
+            }
         };
-        session.close().await
+        let Some(session) = state.sessions.get_mut(terminal_id) else {
+            return;
+        };
+        if &session.owner != owner {
+            return;
+        }
+        session.ws_subscribers = session.ws_subscribers.saturating_sub(1);
+        if session.ws_subscribers == 0 && !has_ws && session.disconnect_timer.is_none() {
+            session.disconnect_timer = Some(Self::spawn_disconnect_timer(
+                Arc::clone(&self.state),
+                terminal_id.to_owned(),
+                retention,
+            ));
+        }
+    }
+
+    pub fn snapshot(
+        &self,
+        owner: &TerminalOwner,
+        terminal_id: &str,
+    ) -> Result<TerminalSnapshot, TerminalAccessError> {
+        let buffer = {
+            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let session = state.sessions.get(terminal_id).ok_or_else(|| {
+                TerminalAccessError::NotFound(format!("terminal '{terminal_id}' is not running"))
+            })?;
+            if &session.owner != owner {
+                return Err(TerminalAccessError::Forbidden(format!(
+                    "terminal '{terminal_id}' is owned by another principal"
+                )));
+            }
+            Arc::clone(&session.output_buffer)
+        };
+        let (bytes, end_offset) = {
+            let buffer = buffer.lock().unwrap_or_else(PoisonError::into_inner);
+            (buffer.snapshot(), buffer.end_offset)
+        };
+        Ok(TerminalSnapshot {
+            terminal_id: terminal_id.to_owned(),
+            data: BASE64.encode(bytes),
+            end_offset,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn owns(&self, owner: &TerminalOwner, terminal_id: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .sessions
+            .get(terminal_id)
+            .is_some_and(|session| &session.owner == owner)
+    }
+
+    pub(crate) fn on_device_ws_connected(&self, device_id: &str) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        *state
+            .device_connections
+            .entry(device_id.to_owned())
+            .or_insert(0) += 1;
+    }
+
+    pub(crate) fn on_device_ws_disconnected<'a>(
+        &self,
+        device_id: &str,
+        subscribed_terminals: impl IntoIterator<Item = &'a str>,
+    ) {
+        let retention = *self
+            .retention_duration
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let owner = TerminalOwner::Device(device_id.to_owned());
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        for terminal_id in subscribed_terminals {
+            if let Some(session) = state.sessions.get_mut(terminal_id)
+                && session.owner == owner
+            {
+                session.ws_subscribers = session.ws_subscribers.saturating_sub(1);
+            }
+        }
+        let remaining = match state.device_connections.get_mut(device_id) {
+            Some(count) if *count > 1 => {
+                *count -= 1;
+                *count
+            }
+            Some(_) => {
+                state.device_connections.remove(device_id);
+                0
+            }
+            None => 0,
+        };
+        if remaining > 0 {
+            return;
+        }
+        for (terminal_id, session) in state.sessions.iter_mut() {
+            if session.owner != owner || session.disconnect_timer.is_some() {
+                continue;
+            }
+            session.disconnect_timer = Some(Self::spawn_disconnect_timer(
+                Arc::clone(&self.state),
+                terminal_id.clone(),
+                retention,
+            ));
+        }
+    }
+
+    fn spawn_disconnect_timer(
+        state_mutex: Arc<StdMutex<TerminalState>>,
+        id: String,
+        retention: Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            tokio::time::sleep(retention).await;
+            let removed = state_mutex
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .sessions
+                .remove(&id);
+            if let Some(mut session) = removed {
+                // Detach self handle so close() does not abort the currently running timer task.
+                session.disconnect_timer = None;
+                log::info!(target: "terminal", "closing disconnected remote terminal {id} after retention timeout");
+                if let Err(error) = session.close().await {
+                    log::warn!(target: "terminal", "failed to close expired remote terminal {id}: {error}");
+                }
+            }
+        })
+    }
+
+    pub(crate) async fn close_by_device(&self, device_id: &str) {
+        let owner = TerminalOwner::Device(device_id.to_owned());
+        self.close_matching(|session| session.owner == owner).await;
+    }
+
+    pub(crate) async fn close_all_remote(&self) {
+        self.close_matching(|session| matches!(session.owner, TerminalOwner::Device(_)))
+            .await;
+    }
+
+    async fn close_matching(&self, predicate: impl Fn(&TerminalSession) -> bool) {
+        let taken = {
+            let _gate = self.project_gate.lock().await;
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let ids = state
+                .sessions
+                .iter()
+                .filter(|(_, session)| predicate(session))
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>();
+            ids.into_iter()
+                .filter_map(|id| state.sessions.remove(&id))
+                .collect::<Vec<_>>()
+        };
+        let mut tasks = tokio::task::JoinSet::new();
+        for session in taken {
+            tasks.spawn(async move {
+                let id = session.id.clone();
+                if let Err(error) = session.close().await {
+                    log::warn!(target: "terminal", "failed to close terminal {id}: {error}");
+                }
+            });
+        }
+        while tasks.join_next().await.is_some() {}
     }
 
     /// Runs `remove_project` serialized with terminal commits, then closes taken sessions outside locks.
@@ -426,14 +894,15 @@ impl TerminalManager {
             let _gate = self.project_gate.lock().await;
             let result = remove_project()?;
             let taken = {
-                let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-                let ids = sessions
+                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+                let ids = state
+                    .sessions
                     .iter()
                     .filter(|(_, session)| session.project_id == project_id)
                     .map(|(id, _)| id.clone())
                     .collect::<Vec<_>>();
                 ids.into_iter()
-                    .filter_map(|id| sessions.remove(&id))
+                    .filter_map(|id| state.sessions.remove(&id))
                     .collect::<Vec<_>>()
             };
             (result, taken)
@@ -449,9 +918,10 @@ impl TerminalManager {
 
     pub async fn close_all(&self) {
         let taken = self
-            .sessions
+            .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .sessions
             .drain()
             .map(|(_, session)| session)
             .collect::<Vec<_>>();
@@ -477,10 +947,12 @@ mod tests {
             TerminalEvent::Output {
                 terminal_id: "t".into(),
                 data: vec![0, 255, 10],
+                start_offset: 0,
             },
             TerminalEvent::Output {
                 terminal_id: "t".into(),
                 data: vec![],
+                start_offset: 3,
             },
             TerminalEvent::Exit {
                 terminal_id: "t".into(),
@@ -506,16 +978,19 @@ mod tests {
         bus.publish(TerminalEvent::Output {
             terminal_id: "t".into(),
             data: vec![1; 100],
+            start_offset: 0,
         });
         bus.publish(TerminalEvent::Output {
             terminal_id: "t".into(),
             data: vec![2; 100],
+            start_offset: 100,
         });
         assert_eq!(
             stream.next_batch(10).await,
             vec![TerminalEvent::Output {
                 terminal_id: "t".into(),
                 data: vec![2; 100],
+                start_offset: 100,
             }]
         );
     }
@@ -528,5 +1003,23 @@ mod tests {
         tokio::task::yield_now().await;
         bus.close();
         assert!(waiter.await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn output_ring_buffer_keeps_latest_64_kib() {
+        let mut buffer = OutputRingBuffer::default();
+        buffer.push(&vec![b'a'; TERMINAL_SNAPSHOT_MAX_BYTES - 4]);
+        buffer.push(b"12345678");
+        let snapshot = buffer.snapshot();
+        assert_eq!(snapshot.len(), TERMINAL_SNAPSHOT_MAX_BYTES);
+        assert!(snapshot.ends_with(b"12345678"));
+        assert_eq!(snapshot[0], b'a');
+
+        let mut oversize = vec![b'x'; TERMINAL_SNAPSHOT_MAX_BYTES + 128];
+        oversize.extend_from_slice(b"tail");
+        buffer.push(&oversize);
+        let snapshot = buffer.snapshot();
+        assert_eq!(snapshot.len(), TERMINAL_SNAPSHOT_MAX_BYTES);
+        assert!(snapshot.ends_with(b"tail"));
     }
 }

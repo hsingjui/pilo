@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use crate::{Runtime, RuntimeEventBus, host_paths::HostPaths, storage};
-use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice};
+use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteScopes};
 
 use super::{access, api, pairing::PairingSession};
 
@@ -33,6 +33,7 @@ pub struct RemoteHostState {
     pub pairing_expires_at_ms: Option<u64>,
     pub pairing_remaining_uses: usize,
     pub pairing_total_uses: usize,
+    pub pairing_scopes: Option<RemoteScopes>,
     pub last_error: Option<String>,
     pub devices: Vec<RemoteDevice>,
 }
@@ -43,6 +44,7 @@ struct RunningRemoteServer {
     pairing: Arc<PairingSession>,
     shutdown: watch::Sender<bool>,
     auth_generation: watch::Sender<u64>,
+    origins: watch::Sender<Vec<RemoteAccessAddress>>,
     events: RuntimeEventBus,
     task: JoinHandle<()>,
 }
@@ -54,6 +56,7 @@ struct RemoteServerInner {
 }
 
 const MIN_REMOTE_PORT: u16 = 1024;
+const DEFAULT_PAIRING_SCOPES: RemoteScopes = RemoteScopes::ChatWorkspace;
 
 fn next_auth_generation() -> u64 {
     // The auth cache outlives listeners, so starts and revocations share one sequence.
@@ -98,6 +101,7 @@ impl RemoteServerManager {
             config.enabled = true;
         } else {
             self.stop_listener().await;
+            runtime.terminals.close_all_remote().await;
             config.enabled = false;
             storage::clear_remote_pairing(&storage::open_with_paths(&paths)?)?;
         }
@@ -176,6 +180,7 @@ impl RemoteServerManager {
         .map_err(|_| "Remote WebUI address task failed".to_owned())??;
         if was_running {
             self.stop_listener().await;
+            runtime.terminals.close_all_remote().await;
         }
         config.port = port;
         tokio::task::spawn_blocking(move || {
@@ -205,6 +210,7 @@ impl RemoteServerManager {
     pub(crate) async fn regenerate_pairing(
         &self,
         runtime: &Runtime,
+        scopes: RemoteScopes,
     ) -> Result<RemoteHostState, String> {
         let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
@@ -216,7 +222,7 @@ impl RemoteServerManager {
         let lan_base_url = running.lan_base_url.clone();
         tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths, &lan_base_url)?;
-            pairing.regenerate(&paths, access::pairing_addresses(&config))
+            pairing.regenerate(&paths, access::pairing_addresses(&config), scopes)
         })
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
@@ -248,6 +254,10 @@ impl RemoteServerManager {
             .running
             .as_ref()
             .map(|running| running.pairing.clone());
+        let origins = inner
+            .running
+            .as_ref()
+            .map(|running| running.origins.clone());
         tokio::task::spawn_blocking(move || {
             let host = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
             let lan_base_url = lan_base_url.unwrap_or_else(|| {
@@ -259,12 +269,19 @@ impl RemoteServerManager {
             });
             let before = load_access_config(&paths, &lan_base_url)?;
             let changed = access::targets_changed(&before, &config);
+            let scopes = pairing
+                .as_ref()
+                .and_then(|pairing| pairing.snapshot())
+                .map_or(DEFAULT_PAIRING_SCOPES, |(_, info)| info.scopes);
             if changed && let Some(pairing) = &pairing {
                 pairing.invalidate();
             }
             storage::set_remote_access_config(&storage::open_with_paths(&paths)?, &config)?;
+            if let Some(origins) = origins {
+                origins.send_replace(config.addresses.clone());
+            }
             if changed && let Some(pairing) = &pairing {
-                pairing.regenerate(&paths, config.addresses)?;
+                pairing.regenerate(&paths, config.addresses, scopes)?;
             }
             Ok::<_, String>(())
         })
@@ -333,6 +350,7 @@ impl RemoteServerManager {
         if let Some(running) = self.inner.lock().await.running.as_ref() {
             running.auth_generation.send_replace(next_auth_generation());
         }
+        runtime.terminals.close_by_device(device_id).await;
         self.snapshot(runtime).await
     }
 
@@ -350,6 +368,60 @@ impl RemoteServerManager {
                 "Remote device '{device_id}' was not found or already revoked"
             ));
         }
+        self.snapshot(runtime).await
+    }
+
+    pub(crate) async fn set_device_scopes(
+        &self,
+        runtime: &Runtime,
+        device_id: &str,
+        scopes: RemoteScopes,
+    ) -> Result<RemoteHostState, String> {
+        let inner = self.inner.lock().await;
+        let db = storage::open_with_paths(&runtime.paths)?;
+        if !storage::set_remote_device_scopes(&db, device_id, scopes)? {
+            return Err(format!(
+                "Remote device '{device_id}' was not found or already revoked"
+            ));
+        }
+        if let Some(running) = inner.running.as_ref() {
+            running.auth_generation.send_replace(next_auth_generation());
+        }
+        drop(inner);
+        if scopes != RemoteScopes::ChatWorkspace {
+            runtime.terminals.close_by_device(device_id).await;
+        }
+        self.snapshot(runtime).await
+    }
+
+    pub(crate) async fn revoke_all_devices(
+        &self,
+        runtime: &Runtime,
+    ) -> Result<RemoteHostState, String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let inner = self.inner.lock().await;
+        let pairing = inner
+            .running
+            .as_ref()
+            .map(|running| running.pairing.clone());
+        let paths = runtime.paths.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(pairing) = pairing {
+                pairing.invalidate();
+            }
+            let mut db = storage::open_with_paths(&paths)?;
+            let transaction = db.transaction().map_err(|error| error.to_string())?;
+            storage::clear_remote_pairing(&transaction)?;
+            storage::revoke_all_remote_devices(&transaction, storage::now_ms())?;
+            transaction.commit().map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|_| "Remote WebUI revoke task failed".to_owned())??;
+        if let Some(running) = inner.running.as_ref() {
+            running.auth_generation.send_replace(next_auth_generation());
+        }
+        drop(inner);
+        runtime.terminals.close_all_remote().await;
         self.snapshot(runtime).await
     }
 
@@ -425,6 +497,7 @@ impl RemoteServerManager {
                 base_url,
                 public_base_url: host.public_base_url,
                 pairing_expires_at_ms: pairing.as_ref().map(|(_, info)| info.expires_at_ms),
+                pairing_scopes: pairing.as_ref().map(|(_, info)| info.scopes),
                 pairing_remaining_uses: pairing.as_ref().map_or(0, |(_, info)| info.remaining_uses),
                 pairing_total_uses: pairing.as_ref().map_or_else(
                     || access::pairing_addresses(&config).len(),
@@ -489,9 +562,15 @@ impl RemoteServerManager {
         let pairing_for_init = pairing.clone();
         let paths_for_init = paths.clone();
         let lan_for_init = lan_base_url.clone();
-        tokio::task::spawn_blocking(move || {
+        let addresses = tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths_for_init, &lan_for_init)?;
-            pairing_for_init.regenerate(&paths_for_init, access::pairing_addresses(&config))
+            let addresses = access::pairing_addresses(&config);
+            pairing_for_init.regenerate(
+                &paths_for_init,
+                addresses.clone(),
+                DEFAULT_PAIRING_SCOPES,
+            )?;
+            Ok::<_, String>(addresses)
         })
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
@@ -500,6 +579,7 @@ impl RemoteServerManager {
         }
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(next_auth_generation());
+        let (origins, origins_rx) = watch::channel(addresses);
         let mut shutdown_for_task = shutdown.subscribe();
         let events = runtime.events.clone();
         events.set_web_events_enabled(true);
@@ -508,6 +588,7 @@ impl RemoteServerManager {
             pairing.clone(),
             shutdown_rx,
             auth_generation_rx,
+            origins_rx,
         );
         let pairing_for_expiry = pairing.clone();
         let task = tokio::spawn(async move {
@@ -548,6 +629,7 @@ impl RemoteServerManager {
             pairing,
             shutdown,
             auth_generation,
+            origins,
             events,
             task,
         });
@@ -606,7 +688,365 @@ async fn lan_ip() -> IpAddr {
 
 #[cfg(test)]
 mod tests {
-    use super::{effective_base_url, normalize_public_base_url};
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    #[tokio::test]
+    async fn gateway_enforces_configured_origins_and_never_rate_limits_device_tokens() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-requests-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
+        let request = |path, headers: &str| {
+            let request = format!(
+                "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{headers}\r\n"
+            );
+            async move {
+                let socket = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                    .await
+                    .unwrap();
+                let mut socket = BufReader::new(socket);
+                socket.write_all(request.as_bytes()).await.unwrap();
+                let mut line = String::new();
+                tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                line.split_whitespace()
+                    .nth(1)
+                    .unwrap()
+                    .parse::<u16>()
+                    .unwrap()
+            }
+        };
+        let addresses = vec![RemoteAccessAddress {
+            id: "proxy".into(),
+            name: String::new(),
+            base_url: "https://remote.example.com".into(),
+        }];
+        runtime
+            .remote
+            .set_addresses(
+                &runtime,
+                RemoteAccessConfig {
+                    addresses,
+                    entry_address_id: "proxy".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(request("/api/v2/health", "").await, 200);
+        for headers in [
+            "Origin: https://remote.example.com\r\n",
+            "Origin: HTTPS://REMOTE.EXAMPLE.COM\r\n",
+            "Origin: https://remote.example.com:443\r\n",
+        ] {
+            assert_eq!(request("/api/v2/health", headers).await, 200);
+        }
+        for headers in [
+            "Origin: https://remote.example.com:8080\r\n",
+            "Origin: https://remote.example.com.evil.test\r\n",
+            "Origin: https://remote.example.com/\r\n",
+            "Origin: https://user@remote.example.com\r\n",
+            "Origin: https://remote.example.com, https://evil.test\r\n",
+            "Origin: null\r\n",
+            "Origin: https://remote.example.com\r\nOrigin: https://evil.test\r\n",
+        ] {
+            assert_eq!(request("/api/v2/health", headers).await, 403);
+        }
+        // A stale token must keep seeing 401, however often it retries, so the
+        // client knows to pair again instead of waiting out a 429.
+        for _ in 0..8 {
+            assert_eq!(request("/api/v1/auth/device", "").await, 401);
+            assert_eq!(
+                request("/api/v1/auth/device", "Authorization: Bearer invalid\r\n").await,
+                401
+            );
+            assert_eq!(
+                request(
+                    "/api/v1/auth/device",
+                    "Sec-WebSocket-Protocol: pilo, pilo-token.invalid\r\n"
+                )
+                .await,
+                401
+            );
+        }
+        let paired =
+            super::super::auth::create_device(None, "127.0.0.1", RemoteScopes::Chat).unwrap();
+        let db = storage::open_with_paths(&runtime.paths).unwrap();
+        storage::insert_remote_device(
+            &db,
+            &paired.device,
+            &super::super::auth::hash_credential(&paired.token),
+        )
+        .unwrap();
+        drop(db);
+        assert_eq!(
+            request(
+                "/api/v1/auth/device",
+                &format!("Authorization: Bearer {}\r\n", paired.token),
+            )
+            .await,
+            200
+        );
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn disabling_gateway_cancels_an_in_flight_http_call() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-cancel-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
+        let socket = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        let mut socket = BufReader::new(socket);
+        socket.write_all(b"POST /api/v1/auth/pairing HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 30\r\nExpect: 100-continue\r\n\r\n").await.unwrap();
+        let mut line = String::new();
+        tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(line.trim(), "HTTP/1.1 100 Continue");
+        assert!(
+            !runtime
+                .remote
+                .set_enabled(&runtime, false)
+                .await
+                .unwrap()
+                .running
+        );
+        line.clear();
+        tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(line, "\r\n");
+        line.clear();
+        tokio::time::timeout(Duration::from_secs(2), socket.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(line.trim(), "HTTP/1.1 503 Service Unavailable");
+        assert!(
+            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_err()
+        );
+        runtime.remote.start(&runtime, port).await.unwrap();
+        assert!(
+            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_ok()
+        );
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn pair_scope_is_cached_until_runtime_scope_update_and_revocation() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-scopes-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        runtime
+            .remote
+            .regenerate_pairing(&runtime, RemoteScopes::ChatWorkspace)
+            .await
+            .unwrap();
+        let (pairing, generation) = {
+            let inner = runtime.remote.inner.lock().await;
+            let running = inner.running.as_ref().unwrap();
+            (running.pairing.clone(), running.auth_generation.subscribe())
+        };
+        let (secret, info) = pairing.snapshot().unwrap();
+        assert_eq!(info.scopes, RemoteScopes::ChatWorkspace);
+        let paired = pairing
+            .exchange(
+                &runtime.paths,
+                &secret,
+                &info.addresses[0].address.id,
+                &"a".repeat(64),
+                None,
+                "127.0.0.1",
+            )
+            .ok()
+            .unwrap();
+        let authenticate = || {
+            super::super::auth::authenticate_cached(
+                &runtime.paths,
+                &paired.token,
+                *generation.borrow(),
+            )
+            .unwrap()
+        };
+        assert_eq!(authenticate().unwrap().scopes, RemoteScopes::ChatWorkspace);
+        let snapshot = runtime
+            .remote
+            .set_device_scopes(&runtime, &paired.device.id, RemoteScopes::Chat)
+            .await
+            .unwrap();
+        assert!(generation.has_changed().unwrap());
+        assert_eq!(snapshot.devices[0].scopes, RemoteScopes::Chat);
+        assert_eq!(authenticate().unwrap().scopes, RemoteScopes::Chat);
+        runtime.remote.set_enabled(&runtime, false).await.unwrap();
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let current_generation = {
+            let inner = runtime.remote.inner.lock().await;
+            inner.running.as_ref().unwrap().auth_generation.subscribe()
+        };
+        let check_current = || {
+            super::super::auth::authenticate_cached(
+                &runtime.paths,
+                &paired.token,
+                *current_generation.borrow(),
+            )
+            .unwrap()
+        };
+        assert_eq!(check_current().unwrap().scopes, RemoteScopes::Chat);
+        let cleared = runtime.remote.revoke_all_devices(&runtime).await.unwrap();
+        assert!(cleared.running);
+        assert!(cleared.pairing_url.is_none());
+        assert!(
+            cleared
+                .devices
+                .iter()
+                .all(|device| device.revoked_at_ms.is_some())
+        );
+        assert!(check_current().is_none());
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn live_websocket_reauthenticates_after_scope_change_and_closes_on_revocation() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-ws-auth-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let port = runtime.remote.snapshot(&runtime).await.unwrap().port;
+        let paired =
+            super::super::auth::create_device(None, "127.0.0.1", RemoteScopes::ChatWorkspace)
+                .unwrap();
+        let db = storage::open_with_paths(&runtime.paths).unwrap();
+        storage::insert_remote_device(
+            &db,
+            &paired.device,
+            &super::super::auth::hash_credential(&paired.token),
+        )
+        .unwrap();
+
+        let upgrade = format!(
+            "GET /api/v2/events HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
+             Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
+             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+             Sec-WebSocket-Protocol: pilo, pilo-token.{}\r\n\r\n",
+            paired.token
+        );
+        let timeout = Duration::from_secs(3);
+        let connect = || async {
+            let mut socket = BufReader::new(
+                tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                    .await
+                    .unwrap(),
+            );
+            socket.write_all(upgrade.as_bytes()).await.unwrap();
+            let hello = tokio::time::timeout(timeout, async {
+                let mut line = String::new();
+                socket.read_line(&mut line).await.unwrap();
+                assert_eq!(line.trim(), "HTTP/1.1 101 Switching Protocols");
+                loop {
+                    line.clear();
+                    assert_ne!(socket.read_line(&mut line).await.unwrap(), 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let mut header = [0; 2];
+                socket.read_exact(&mut header).await.unwrap();
+                assert_eq!(header[0], 0x81);
+                assert_eq!(header[1], 126);
+                let length = socket.read_u16().await.unwrap();
+                let mut payload = vec![0; usize::from(length)];
+                socket.read_exact(&mut payload).await.unwrap();
+                let hello: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+                assert_eq!(hello["type"], "hello");
+                assert_eq!(hello["deviceId"], paired.device.id);
+                hello
+            })
+            .await
+            .unwrap();
+            (socket, hello)
+        };
+        let (mut socket, hello) = connect().await;
+        assert_eq!(hello["scopes"], "chat,workspace");
+
+        // Only socket reauthentication can touch this timestamp before the 15 s auth tick.
+        db.execute(
+            "UPDATE remote_devices SET last_seen_at_ms = 0 WHERE id = ?1",
+            [&paired.device.id],
+        )
+        .unwrap();
+        runtime
+            .remote
+            .set_device_scopes(&runtime, &paired.device.id, RemoteScopes::Chat)
+            .await
+            .unwrap();
+        tokio::time::timeout(timeout, async {
+            loop {
+                let devices = storage::list_remote_devices(&db).unwrap();
+                assert_eq!(devices[0].scopes, RemoteScopes::Chat);
+                if devices[0].last_seen_at_ms != 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("scope update did not trigger WebSocket reauthentication");
+
+        let mut frame = [0; 2];
+        tokio::time::timeout(timeout, socket.read_exact(&mut frame))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame, [0x88, 0]);
+        let (mut socket, hello) = connect().await;
+        assert_eq!(hello["scopes"], "chat");
+        // An empty masked Ping must get a Pong on the renegotiated stream.
+        socket.write_all(&[0x89, 0x80, 1, 2, 3, 4]).await.unwrap();
+        tokio::time::timeout(timeout, socket.read_exact(&mut frame))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame, [0x8a, 0]);
+        let revoked = runtime.remote.revoke_all_devices(&runtime).await.unwrap();
+        assert!(revoked.running);
+        tokio::time::timeout(timeout, socket.read_exact(&mut frame))
+            .await
+            .expect("revoked WebSocket did not close before the periodic auth tick")
+            .unwrap();
+        assert_eq!(frame, [0x88, 0]);
+        drop(db);
+        runtime.remote.stop().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[tokio::test]
     async fn dropping_runtime_stops_remote_listener_without_shutdown() {
@@ -633,6 +1073,40 @@ mod tests {
         })
         .await
         .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn changing_addresses_keeps_the_pairing_scope() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-address-scope-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        runtime
+            .remote
+            .regenerate_pairing(&runtime, RemoteScopes::ChatWorkspace)
+            .await
+            .unwrap();
+        let state = runtime
+            .remote
+            .set_addresses(
+                &runtime,
+                RemoteAccessConfig {
+                    addresses: vec![RemoteAccessAddress {
+                        id: "proxy".into(),
+                        name: String::new(),
+                        base_url: "https://remote.example.com".into(),
+                    }],
+                    entry_address_id: "proxy".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(state.pairing_scopes, Some(RemoteScopes::ChatWorkspace));
+        runtime.remote.stop().await;
         std::fs::remove_dir_all(root).unwrap();
     }
 

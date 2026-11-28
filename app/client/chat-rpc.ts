@@ -1,7 +1,7 @@
-import type { NshPiloClient } from "./nsh-pilo-client";
+import type { HostClient } from "@shared/api/host-client";
 
 export type PiCommandClient = Pick<
-	NshPiloClient,
+	HostClient,
 	"sendChatCommand" | "connectEvents"
 > & {
 	/** Namespaces RPCs on transports that broadcast replies to other clients. */

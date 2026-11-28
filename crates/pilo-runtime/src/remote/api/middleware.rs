@@ -6,17 +6,71 @@ use std::{
 
 use axum::{
     Json,
-    extract::{ConnectInfo, Extension, MatchedPath, Request},
+    extract::{ConnectInfo, Extension, MatchedPath, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 
-use crate::remote::{auth, pairing::PairingError};
-use pilo_domain::RemoteDevice;
+use crate::{
+    host_api::Principal,
+    remote::{access, auth, pairing::PairingError},
+};
+use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
 use super::{ApiFailureDiagnostic, AuthSession, RemoteHttpState, api_error};
+
+pub(super) async fn cancel_on_shutdown(
+    State(mut shutdown): State<watch::Receiver<bool>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    // Cancellation drops the gateway request; operations already dispatched to the runtime
+    // may complete and are not rolled back.
+    tokio::select! {
+        biased;
+        _ = shutdown.wait_for(|stopped| *stopped) => {
+            api_error(StatusCode::SERVICE_UNAVAILABLE, "remote connections disabled")
+        }
+        response = next.run(request) => response,
+    }
+}
+
+pub(super) async fn enforce_origin(
+    State(addresses): State<watch::Receiver<Vec<RemoteAccessAddress>>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut origins = request.headers().get_all(header::ORIGIN).iter();
+    if let Some(origin) = origins.next()
+        && (origins.next().is_some()
+            || normalized_origin(origin).is_none_or(|origin| {
+                !addresses
+                    .borrow()
+                    .iter()
+                    .any(|address| origin == address.base_url)
+            }))
+    {
+        return api_error(
+            StatusCode::FORBIDDEN,
+            "remote request origin is not configured",
+        );
+    }
+    next.run(request).await
+}
+
+fn normalized_origin(origin: &axum::http::HeaderValue) -> Option<String> {
+    let origin = origin.to_str().ok()?;
+    let (_, authority) = origin.split_once("://")?;
+    if authority.contains(['/', '\\', '?', '#', '@', ','])
+        || origin.bytes().any(|byte| byte.is_ascii_whitespace())
+    {
+        return None;
+    }
+    access::normalize_base_url(origin).ok()
+}
 
 pub(super) async fn log_request_failure(request: Request, next: Next) -> Response {
     static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
@@ -99,10 +153,7 @@ pub(super) async fn pairing_info(
     Json(request): Json<PairingInfoRequest>,
 ) -> Response {
     if state.rate_limiter.is_blocked(address.ip()) {
-        return api_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many authentication attempts",
-        );
+        return auth_rate_limited();
     }
     let pairing = state.pairing.clone();
     let result = tokio::task::spawn_blocking(move || pairing.describe(&request.secret))
@@ -117,10 +168,7 @@ pub(super) async fn pair(
     Json(request): Json<PairRequest>,
 ) -> Response {
     if state.rate_limiter.is_blocked(address.ip()) {
-        return api_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many authentication attempts",
-        );
+        return auth_rate_limited();
     }
     let paths = state.runtime.paths.clone();
     let pairing = state.pairing.clone();
@@ -154,6 +202,13 @@ pub(super) async fn pairing_no_store(request: Request, next: Next) -> Response {
     response
 }
 
+fn auth_rate_limited() -> Response {
+    api_error(
+        StatusCode::TOO_MANY_REQUESTS,
+        "too many authentication attempts",
+    )
+}
+
 fn pairing_response<T: Serialize>(
     state: &RemoteHttpState,
     ip: IpAddr,
@@ -165,8 +220,11 @@ fn pairing_response<T: Serialize>(
             Json(value).into_response()
         }
         Err(PairingError::Unauthorized) => {
-            state.rate_limiter.record_failure(ip);
-            api_error(StatusCode::UNAUTHORIZED, "invalid or expired pairing link")
+            if state.rate_limiter.try_record_failure(ip) {
+                api_error(StatusCode::UNAUTHORIZED, "invalid or expired pairing link")
+            } else {
+                auth_rate_limited()
+            }
         }
         Err(PairingError::InvalidRequest(message)) => api_error(StatusCode::BAD_REQUEST, message),
         Err(PairingError::AlreadyUsed) => {
@@ -231,6 +289,10 @@ pub(super) async fn require_auth(
     .await;
     match result {
         Ok(Ok(Some(device))) => {
+            request.extensions_mut().insert(Principal::Device {
+                id: device.id.clone(),
+                scopes: device.scopes,
+            });
             request
                 .extensions_mut()
                 .insert(AuthSession { device, token });

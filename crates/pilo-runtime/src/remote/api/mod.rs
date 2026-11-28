@@ -22,25 +22,20 @@ use tower_http::timeout::TimeoutLayer;
 use crate::{
     Runtime,
     connection_diagnostics::request_failure_reason,
-    host_paths::HostPaths,
-    storage,
+    host_api::{self, GATEWAY_TIMEOUT, HostApiError, MAX_JSON_REQUEST_BYTES, Principal},
     web_assets::{WebAsset, WebAssets},
 };
-use pilo_domain::{Project, RemoteDevice};
+use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
 use super::pairing::PairingSession;
 
-mod chat;
-mod host;
 mod middleware;
-mod model_settings;
-mod sessions;
-mod validation;
+pub(crate) mod v2;
 mod ws;
 
-const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const AUTH_FAILURE_WINDOW: Duration = Duration::from_secs(60);
 const AUTH_FAILURE_LIMIT: usize = 5;
+const AUTH_FAILURE_MAX_IPS: usize = 4096;
 
 #[derive(Clone)]
 pub(crate) struct HttpState<R> {
@@ -77,49 +72,70 @@ impl FromRequestParts<RemoteRouterState> for RemoteHttpState {
 
 #[derive(Default)]
 struct AuthRateLimiter {
-    failures: StdMutex<HashMap<IpAddr, VecDeque<Instant>>>,
+    failures: StdMutex<AuthFailures>,
+}
+
+#[derive(Default)]
+struct AuthFailures {
+    by_ip: HashMap<IpAddr, VecDeque<Instant>>,
+    insertion_order: VecDeque<IpAddr>,
 }
 
 impl AuthRateLimiter {
     fn is_blocked(&self, ip: IpAddr) -> bool {
-        let now = Instant::now();
         let mut failures = self
             .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(attempts) = failures.get_mut(&ip) else {
+        let Some(attempts) = failures.by_ip.get_mut(&ip) else {
             return false;
         };
-        while attempts
-            .front()
-            .is_some_and(|attempt| now.duration_since(*attempt) > AUTH_FAILURE_WINDOW)
-        {
-            attempts.pop_front();
-        }
+        Self::prune_expired(attempts, Instant::now());
         attempts.len() >= AUTH_FAILURE_LIMIT
     }
 
-    fn record_failure(&self, ip: IpAddr) {
-        let now = Instant::now();
+    fn prune_expired(attempts: &mut VecDeque<Instant>, now: Instant) {
+        while attempts
+            .front()
+            .is_some_and(|attempt| now.duration_since(*attempt) >= AUTH_FAILURE_WINDOW)
+        {
+            attempts.pop_front();
+        }
+    }
+
+    fn try_record_failure(&self, ip: IpAddr) -> bool {
         let mut failures = self
             .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let attempts = failures.entry(ip).or_default();
-        while attempts
-            .front()
-            .is_some_and(|attempt| now.duration_since(*attempt) > AUTH_FAILURE_WINDOW)
-        {
-            attempts.pop_front();
+        if !failures.by_ip.contains_key(&ip) {
+            if failures.by_ip.len() == AUTH_FAILURE_MAX_IPS
+                && let Some(oldest) = failures.insertion_order.pop_front()
+            {
+                failures.by_ip.remove(&oldest);
+            }
+            failures.insertion_order.push_back(ip);
+        }
+        let attempts = failures.by_ip.entry(ip).or_default();
+        let now = Instant::now();
+        Self::prune_expired(attempts, now);
+        if attempts.len() >= AUTH_FAILURE_LIMIT {
+            return false;
         }
         attempts.push_back(now);
+        true
     }
 
     fn clear(&self, ip: IpAddr) {
-        self.failures
+        if let Some(attempts) = self
+            .failures
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&ip);
+            .by_ip
+            .get_mut(&ip)
+        {
+            attempts.clear();
+        }
     }
 }
 
@@ -129,108 +145,72 @@ struct AuthSession {
     token: String,
 }
 
+/// Business handlers get the authenticated identity without handling the token.
+pub(super) struct HostRequest {
+    runtime: Runtime,
+    principal: Principal,
+}
+
+impl FromRequestParts<RemoteRouterState> for HostRequest {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &RemoteRouterState,
+    ) -> Result<Self, Self::Rejection> {
+        let principal = parts
+            .extensions
+            .get::<Principal>()
+            .cloned()
+            .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "authentication required"))?;
+        Ok(Self {
+            runtime: state
+                .runtime
+                .upgrade()
+                .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, &error))?,
+            principal,
+        })
+    }
+}
+
+impl HostRequest {
+    async fn binary(
+        &self,
+        method: &str,
+        params: Value,
+        bytes: Option<&[u8]>,
+    ) -> Result<host_api::BinaryOutput, HostApiError> {
+        host_api::call_binary(&self.runtime, &self.principal, method, params, bytes).await
+    }
+}
+
 pub(crate) fn router(
     runtime: Runtime,
     pairing: Arc<PairingSession>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
+    origins: watch::Receiver<Vec<RemoteAccessAddress>>,
 ) -> Router {
     let state = RemoteRouterState {
         runtime: runtime.downgrade(),
         pairing,
         rate_limiter: Arc::new(AuthRateLimiter::default()),
-        shutdown,
+        shutdown: shutdown.clone(),
         auth_generation,
     };
 
     let protected = Router::new()
-        .route("/api/v1/bootstrap", get(host::bootstrap))
         .route("/api/v1/auth/device", get(middleware::device_auth))
         .route("/api/v1/auth/device/renew", post(middleware::device_renew))
+        .route("/api/v2/call/{method}", post(v2::call))
         .route(
-            "/api/v1/connections/local-pi-resources",
-            post(host::local_pi_resources_set),
+            "/api/v2/upload/{method}",
+            post(v2::upload).layer(DefaultBodyLimit::max(
+                crate::remote_fs::MAX_CHAT_FILE_BYTES.max(pilo_protocol::MAX_BINARY_PAYLOAD_BYTES),
+            )),
         )
-        .route(
-            "/api/v1/preferences",
-            get(host::preferences_get).post(host::preferences_patch),
-        )
-        .route(
-            "/api/v1/theme",
-            get(host::theme_settings).post(host::theme_settings_set),
-        )
-        .route("/api/v1/sessions", get(sessions::sessions))
-        .route(
-            "/api/v1/sessions/read-state",
-            get(sessions::session_read_states).post(sessions::session_mark_read),
-        )
-        .route("/api/v1/sessions/search", get(sessions::sessions_search))
-        .route(
-            "/api/v1/sessions/external-activity",
-            get(sessions::sessions_external_activity),
-        )
-        .route("/api/v1/history", get(sessions::history))
-        .route("/api/v1/history/image", get(sessions::history_image))
-        .route("/api/v1/sessions/title", post(sessions::session_title))
-        .route("/api/v1/sessions/delete", post(sessions::session_delete))
-        .route(
-            "/api/v1/sessions/ui-state",
-            post(sessions::session_ui_state),
-        )
-        .route(
-            "/api/v1/models",
-            get(model_settings::models).post(model_settings::models_set),
-        )
-        .route(
-            "/api/v1/connections/models",
-            get(model_settings::connection_models),
-        )
-        .route(
-            "/api/v1/models/scope",
-            get(model_settings::model_scope_get).post(model_settings::model_scope_set),
-        )
-        .route(
-            "/api/v1/next-prompt/settings",
-            get(model_settings::next_prompt_settings_get)
-                .post(model_settings::next_prompt_settings_set),
-        )
-        .route(
-            "/api/v1/next-prompt/request",
-            post(model_settings::next_prompt_request),
-        )
-        .route(
-            "/api/v1/prompt-enhancement/settings",
-            get(model_settings::prompt_enhancement_settings_get)
-                .post(model_settings::prompt_enhancement_settings_set),
-        )
-        .route(
-            "/api/v1/prompt-enhancement/enhance",
-            post(model_settings::prompt_enhance),
-        )
-        .route(
-            "/api/v1/cache-keep-alive/settings",
-            get(model_settings::cache_keep_alive_settings_list)
-                .post(model_settings::cache_keep_alive_settings_set),
-        )
-        .route(
-            "/api/v1/cache-keep-alive/pause",
-            post(model_settings::cache_keep_alive_pause),
-        )
-        .route("/api/v1/chat/start", post(chat::chat_start))
-        .route("/api/v1/chat/stop", post(chat::chat_stop))
-        .route("/api/v1/chat/state", get(chat::chat_state))
-        .route("/api/v1/chat/transcript", get(chat::chat_transcript))
-        .route("/api/v1/chat/rpc", post(chat::chat_rpc))
-        .route("/api/v1/chat/mcp-approve", post(chat::chat_mcp_approve))
-        .route("/api/v1/files/search", get(chat::files_search))
-        .route("/api/v1/files/image", get(chat::project_image))
-        .route(
-            "/api/v1/chat/files",
-            post(chat::chat_file_upload)
-                .delete(chat::chat_file_remove)
-                .layer(DefaultBodyLimit::max(crate::remote_fs::MAX_CHAT_FILE_BYTES)),
-        )
-        .route("/api/v1/events", get(ws::events))
+        .route("/api/v2/blob/{method}", get(v2::blob))
+        .route("/api/v2/events", get(v2::events))
         .route_layer(from_fn_with_state(state.clone(), middleware::require_auth));
 
     let pairing = Router::new()
@@ -239,26 +219,23 @@ pub(crate) fn router(
         .route_layer(from_fn(middleware::pairing_no_store));
 
     Router::new()
-        .route("/api/v1/health", get(health))
+        .route("/api/v2/health", get(health))
         .merge(pairing)
         .merge(protected)
         .fallback(asset)
-        .layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES))
+        .layer(DefaultBodyLimit::max(MAX_JSON_REQUEST_BYTES))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(45),
+            GATEWAY_TIMEOUT,
         ))
         .layer(from_fn(middleware::log_request_failure))
+        .layer(from_fn_with_state(origins, middleware::enforce_origin))
+        .layer(from_fn_with_state(shutdown, middleware::cancel_on_shutdown))
         .with_state(state)
 }
 
 async fn health() -> Json<Value> {
     Json(json!({ "ok": true, "service": "pilo-remote" }))
-}
-
-fn get_project(paths: &HostPaths, project_id: &str) -> Result<Project, String> {
-    storage::get_project(&storage::open_with_paths(paths)?, project_id)?
-        .ok_or_else(|| format!("Project '{project_id}' was not found"))
 }
 
 fn allows_spa_fallback(path: &str) -> bool {
@@ -466,9 +443,89 @@ fn api_error(status: StatusCode, message: &str) -> Response {
 mod tests {
     use super::*;
 
+    #[test]
+    fn auth_failure_limit_keeps_ips_independent() {
+        let limiter = AuthRateLimiter::default();
+        let first = "192.168.1.1".parse().unwrap();
+        let second = "192.168.1.2".parse().unwrap();
+        for _ in 0..AUTH_FAILURE_LIMIT {
+            assert!(limiter.try_record_failure(first));
+        }
+        assert!(limiter.is_blocked(first));
+        assert!(!limiter.is_blocked(second));
+        limiter.clear(first);
+        assert!(!limiter.is_blocked(first));
+    }
+
+    #[test]
+    fn concurrent_auth_failures_cannot_exceed_the_budget() {
+        let limiter = AuthRateLimiter::default();
+        let barrier = std::sync::Barrier::new(16);
+        let ip = "192.168.1.1".parse().unwrap();
+        let admitted = std::thread::scope(|scope| {
+            (0..16)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        limiter.try_record_failure(ip)
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|thread| thread.join().unwrap())
+                .filter(|admitted| *admitted)
+                .count()
+        });
+        assert_eq!(admitted, AUTH_FAILURE_LIMIT);
+    }
+
+    #[test]
+    fn auth_failure_table_caps_distinct_ips_and_evicts_oldest() {
+        let limiter = AuthRateLimiter::default();
+        for index in 0..=AUTH_FAILURE_MAX_IPS {
+            let ip = IpAddr::V4(std::net::Ipv4Addr::from(index as u32));
+            assert!(limiter.try_record_failure(ip));
+        }
+        let failures = limiter.failures.lock().unwrap();
+        assert_eq!(failures.by_ip.len(), AUTH_FAILURE_MAX_IPS);
+        assert_eq!(failures.insertion_order.len(), AUTH_FAILURE_MAX_IPS);
+        assert!(!failures.by_ip.contains_key(&"0.0.0.0".parse().unwrap()));
+        assert!(failures.by_ip.contains_key(&"0.0.0.1".parse().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn host_request_preserves_the_authenticated_workspace_scope() {
+        let runtime = Runtime::new(crate::host_paths::HostPaths::for_test(
+            std::path::PathBuf::new(),
+        ));
+        let state = RemoteRouterState {
+            runtime: runtime.downgrade(),
+            pairing: Arc::new(PairingSession::default()),
+            rate_limiter: Arc::new(AuthRateLimiter::default()),
+            shutdown: watch::channel(false).1,
+            auth_generation: watch::channel(0).1,
+        };
+        let (mut parts, ()) = axum::http::Request::new(()).into_parts();
+        let Err(response) = HostRequest::from_request_parts(&mut parts, &state).await else {
+            panic!("request without a principal was accepted");
+        };
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let principal = Principal::Device {
+            id: "test-device".into(),
+            scopes: pilo_domain::RemoteScopes::ChatWorkspace,
+        };
+        parts.extensions.insert(principal.clone());
+        let request = HostRequest::from_request_parts(&mut parts, &state)
+            .await
+            .unwrap();
+        assert_eq!(request.principal, principal);
+    }
+
     #[tokio::test]
     async fn request_state_upgrades_only_while_runtime_is_alive() {
-        let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
+        let runtime = Runtime::new(crate::host_paths::HostPaths::for_test(
+            std::path::PathBuf::new(),
+        ));
         let state = RemoteRouterState {
             runtime: runtime.downgrade(),
             pairing: Arc::new(PairingSession::default()),

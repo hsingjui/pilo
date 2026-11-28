@@ -1,5 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { ImageFixture, Pilo, SessionFilesFixture } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("loading image bytes");
 const projectId = "session-files";
@@ -41,23 +42,27 @@ async function run() {
 		}) + "\n";
 	const fixture = new SessionFilesFixture(jsonl);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	const session = fixture.sessionPath();
 	try {
-		expectBytes(await pilo.readProjectImage(projectId, "fixture.png"), png);
 		expectBytes(
-			await pilo.readHistoryImage(projectId, session, "user-image:1"),
+			await hostClient.readProjectImage(projectId, "fixture.png"),
+			png,
+		);
+		expectBytes(
+			await hostClient.readHistoryImage(projectId, session, "user-image:1"),
 			png,
 		);
 		await expectError(
-			pilo.readProjectImage(projectId, "../fixture.png"),
+			hostClient.readProjectImage(projectId, "../fixture.png"),
 			"image path must be relative",
 		);
 		await expectError(
-			pilo.readHistoryImage(projectId, session, "missing:0"),
+			hostClient.readHistoryImage(projectId, session, "missing:0"),
 			"image 'missing:0' was not found",
 		);
 		await expectError(
-			pilo.readHistoryImage(projectId, session, "user-image:1", {
+			hostClient.readHistoryImage(projectId, session, "user-image:1", {
 				fileSize: jsonl.length,
 				fileMtimeNs: "bad",
 			}),
@@ -68,11 +73,11 @@ async function run() {
 		fixture.dispose();
 	}
 	await expectError(
-		pilo.readProjectImage(projectId, "fixture.png"),
+		hostClient.readProjectImage(projectId, "fixture.png"),
 		"Pilo runtime has been shut down",
 	);
 	await expectError(
-		pilo.readHistoryImage(projectId, session, "user-image:1"),
+		hostClient.readHistoryImage(projectId, session, "user-image:1"),
 		"Pilo runtime has been shut down",
 	);
 	status.set("project and transcript image bytes verified");

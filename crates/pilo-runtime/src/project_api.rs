@@ -1,4 +1,5 @@
 use super::{
+    events::{RuntimeEvent, RuntimeEventEnvelope},
     git::{self, GitStatus},
     remote_fs::{self, FsEntry},
     terminal::TerminalInfo,
@@ -7,7 +8,7 @@ use std::sync::Arc;
 
 use pilo_domain::{Project, ProjectModelCache};
 
-use super::{Runtime, project, storage};
+use super::{Runtime, host_api::ImageReadError, project, storage};
 
 pub fn project_list(runtime: &Runtime) -> Result<Vec<Project>, String> {
     project::list(runtime)
@@ -89,6 +90,9 @@ pub async fn project_add(
 ) -> Result<Project, String> {
     let project = project::add(runtime, &runtime.servers, connection_id, path).await?;
     runtime.chat_sessions.open_project(&project.id).await?;
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::ConfigurationChanged,
+    ));
     Ok(project)
 }
 
@@ -117,6 +121,9 @@ pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project
         .remove_project_and_close(&id, || project::remove(runtime, &id))
         .await?;
     crate::session_watcher::SessionWatcherManager::stop(&runtime.session_watchers, &id).await;
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::ConfigurationChanged,
+    ));
     Ok(projects)
 }
 
@@ -141,28 +148,126 @@ pub async fn project_terminal_open(
     cols: u16,
     rows: u16,
 ) -> Result<TerminalInfo, String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    let (info, session) = runtime
-        .terminals
-        .start(
-            Arc::clone(&runtime.servers),
-            runtime.terminal_events.clone(),
-            &project,
-            cols,
-            rows,
-        )
-        .await?;
-    if let Err((error, session)) = runtime
-        .terminals
-        .commit_if(session, || project::get(runtime, &id).map(|_| ()))
-        .await
-    {
-        if let Err(close_error) = session.close().await {
-            log::warn!(target: "terminal", "failed to close terminal {} after project removal: {close_error}", info.id);
-        }
-        return Err(error);
+    project_terminal_open_for_owner(
+        runtime,
+        id,
+        cols,
+        rows,
+        crate::terminal::TerminalOwner::Local,
+    )
+    .await
+    .map_err(|error| error.message)
+}
+
+fn verify_remote_terminal_owner(
+    runtime: &Runtime,
+    owner: &crate::terminal::TerminalOwner,
+) -> Result<(), crate::host_api::HostApiError> {
+    let crate::terminal::TerminalOwner::Device(device_id) = owner else {
+        return Ok(());
+    };
+    let db =
+        crate::storage::open(&runtime.paths).map_err(crate::host_api::HostApiError::internal)?;
+    let host_config = crate::storage::get_remote_host_config(&db)
+        .map_err(crate::host_api::HostApiError::internal)?;
+    if !host_config.enabled {
+        return Err(crate::host_api::HostApiError::new(
+            crate::host_api::ErrorCode::Unavailable,
+            "remote access is disabled",
+        ));
     }
-    Ok(info)
+    match crate::storage::get_active_remote_device_scopes(&db, device_id, crate::storage::now_ms())
+        .map_err(crate::host_api::HostApiError::internal)?
+    {
+        Some(pilo_domain::RemoteScopes::ChatWorkspace) => Ok(()),
+        Some(_) => Err(crate::host_api::HostApiError::new(
+            crate::host_api::ErrorCode::Forbidden,
+            "remote device lacks workspace scope",
+        )),
+        None => Err(crate::host_api::HostApiError::new(
+            crate::host_api::ErrorCode::Forbidden,
+            "remote device is revoked or expired",
+        )),
+    }
+}
+
+struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl CancelOnDrop {
+    fn new() -> (Self, Arc<std::sync::atomic::AtomicBool>) {
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        (Self(Arc::clone(&flag)), flag)
+    }
+
+    fn disarm(self) {
+        std::mem::forget(self);
+    }
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+pub(crate) async fn project_terminal_open_for_owner(
+    runtime: &Runtime,
+    id: String,
+    cols: u16,
+    rows: u16,
+    owner: crate::terminal::TerminalOwner,
+) -> Result<TerminalInfo, crate::host_api::HostApiError> {
+    verify_remote_terminal_owner(runtime, &owner)?;
+    let project = project::ready(runtime, &runtime.servers, &id)
+        .await
+        .map_err(crate::host_api::HostApiError::invalid)?;
+    let (cancel_guard, cancelled) = CancelOnDrop::new();
+    let runtime = runtime.clone();
+    // Run PTY creation + commit + rollback cleanup in a detached task so dropping the HTTP future
+    // (e.g. remote switch turned off mid-open) cannot leave an orphaned PTY on pilo-server.
+    let task = tokio::spawn(async move {
+        let (info, session) = runtime
+            .terminals
+            .start(
+                Arc::clone(&runtime.servers),
+                runtime.terminal_events.clone(),
+                &project,
+                cols,
+                rows,
+                owner.clone(),
+            )
+            .await
+            .map_err(crate::host_api::HostApiError::invalid)?;
+        #[cfg(test)]
+        runtime.terminals.wait_open_barrier().await;
+        if let Err((error, session)) = runtime
+            .terminals
+            .commit_if(session, || {
+                if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                    return Err(crate::host_api::HostApiError::new(
+                        crate::host_api::ErrorCode::Unavailable,
+                        "terminal open request was cancelled",
+                    ));
+                }
+                project::get(&runtime, &id)
+                    .map(|_| ())
+                    .map_err(crate::host_api::HostApiError::invalid)?;
+                verify_remote_terminal_owner(&runtime, &owner)
+            })
+            .await
+        {
+            if let Err(close_error) = session.close().await {
+                log::warn!(target: "terminal", "failed to close terminal {} after rejected commit: {close_error}", info.id);
+            }
+            return Err(error);
+        }
+        Ok(info)
+    });
+    let result = task.await.map_err(|error| {
+        crate::host_api::HostApiError::internal(format!("terminal open task failed: {error}"))
+    })?;
+    cancel_guard.disarm();
+    result
 }
 
 pub async fn terminal_write(
@@ -170,7 +275,11 @@ pub async fn terminal_write(
     terminal_id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    runtime.terminals.write(&terminal_id, &data).await
+    runtime
+        .terminals
+        .write(&crate::terminal::TerminalOwner::Local, &terminal_id, &data)
+        .await
+        .map_err(crate::terminal::TerminalAccessError::into_message)
 }
 
 pub async fn terminal_resize(
@@ -179,11 +288,24 @@ pub async fn terminal_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    runtime.terminals.resize(&terminal_id, cols, rows).await
+    runtime
+        .terminals
+        .resize(
+            &crate::terminal::TerminalOwner::Local,
+            &terminal_id,
+            cols,
+            rows,
+        )
+        .await
+        .map_err(crate::terminal::TerminalAccessError::into_message)
 }
 
 pub async fn terminal_close(runtime: &Runtime, terminal_id: String) -> Result<(), String> {
-    runtime.terminals.close(&terminal_id).await
+    runtime
+        .terminals
+        .close(&crate::terminal::TerminalOwner::Local, &terminal_id)
+        .await
+        .map_err(crate::terminal::TerminalAccessError::into_message)
 }
 
 pub async fn connection_fs_read_dir(
@@ -192,9 +314,6 @@ pub async fn connection_fs_read_dir(
     path: String,
 ) -> Result<Vec<FsEntry>, String> {
     let connection = project::resolve_connection(runtime, &connection_id)?;
-    if matches!(connection.kind, pilo_domain::ConnectionKind::Local) {
-        return Err("local connection should use the native directory picker".to_owned());
-    }
     remote_fs::read_connection_dir(&runtime.servers, &connection, &path).await
 }
 
@@ -204,7 +323,9 @@ pub async fn project_fs_read_image(
     path: String,
 ) -> Result<Vec<u8>, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::read_image(&runtime.servers, &project, &path).await
+    remote_fs::read_image(&runtime.servers, &project, &path)
+        .await
+        .map_err(ImageReadError::into_message)
 }
 
 pub async fn project_chat_file_upload(

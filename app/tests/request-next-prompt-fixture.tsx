@@ -1,5 +1,6 @@
 import { host, mount, signal, Text } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
 import { decodeNextPromptResult } from "@shared/next-prompt";
 
@@ -61,12 +62,13 @@ async function run() {
 	const real = host.params.realPi === true;
 	const fixture = new ChatFixture(real);
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
 		const model = {
 			provider: real ? "relay" : "fixture",
 			id: real ? "deepseek-flash" : "naming",
 		};
-		const settings = (await pilo.saveNextPromptSettings(
+		const settings = (await hostClient.saveNextPromptSettings(
 			"local",
 			true,
 			model,
@@ -80,15 +82,15 @@ async function run() {
 		};
 		if (!real) {
 			await expectError(
-				pilo.requestNextPrompt(request),
+				hostClient.requestNextPrompt(request),
 				"prediction session is not running",
 			);
 			await expectError(
-				pilo.requestNextPrompt({ ...request, requestId: "bad id" }),
+				hostClient.requestNextPrompt({ ...request, requestId: "bad id" }),
 				"invalid next prompt request identity",
 			);
 		}
-		const started = (await pilo.startChat({
+		const started = (await hostClient.startChat({
 			projectId: "chat-fixture",
 			sessionKey,
 			noSession: true,
@@ -98,10 +100,10 @@ async function run() {
 		request.generation = started.generation;
 		if (!real) {
 			await expectError(
-				pilo.requestNextPrompt(request),
+				hostClient.requestNextPrompt(request),
 				"prediction session is no longer idle or available",
 			);
-			await pilo.sendChatCommand(sessionKey, {
+			await hostClient.sendChatCommand(sessionKey, {
 				id: "fixture-next-prompt-ready",
 				type: "get_state",
 			});
@@ -115,14 +117,14 @@ async function run() {
 		}
 
 		if (real) {
-			await pilo.sendChatCommand(sessionKey, {
+			await hostClient.sendChatCommand(sessionKey, {
 				id: "fixture-model",
 				type: "set_model",
 				provider: model.provider,
 				modelId: model.id,
 			});
 			await rpcResponse(pilo, "fixture-model");
-			await pilo.sendChatCommand(sessionKey, {
+			await hostClient.sendChatCommand(sessionKey, {
 				id: "fixture-state",
 				type: "get_state",
 			});
@@ -131,7 +133,7 @@ async function run() {
 			};
 			if (!state.sessionId) throw new Error("Pi did not report a session ID");
 			request.sessionId = state.sessionId;
-			await pilo.sendChatCommand(sessionKey, {
+			await hostClient.sendChatCommand(sessionKey, {
 				id: "fixture-turn",
 				type: "prompt",
 				message:
@@ -146,11 +148,14 @@ async function run() {
 				throw new Error(end.errorMessage);
 		} else {
 			await expectError(
-				pilo.requestNextPrompt({ ...request, revision: request.revision - 1 }),
+				hostClient.requestNextPrompt({
+					...request,
+					revision: request.revision - 1,
+				}),
 				"prediction settings changed",
 			);
 			await expectError(
-				pilo.requestNextPrompt({
+				hostClient.requestNextPrompt({
 					...request,
 					generation: request.generation + 1,
 				}),
@@ -158,7 +163,7 @@ async function run() {
 			);
 		}
 
-		await pilo.requestNextPrompt(request);
+		await hostClient.requestNextPrompt(request);
 		const event = await waitForEvent(
 			pilo,
 			(event) => decodeNextPromptResult(event) !== null,
@@ -182,8 +187,8 @@ async function run() {
 		if (real)
 			return "requestNextPrompt: relay/deepseek-flash published a ready suggestion";
 
-		await pilo.saveNextPromptSettings("local", false, model);
-		await pilo.requestNextPrompt({ ...request, cancel: true });
+		await hostClient.saveNextPromptSettings("local", false, model);
+		await hostClient.requestNextPrompt({ ...request, cancel: true });
 		const cancelled = (await rpcResponse(
 			pilo,
 			"pilo-next-prompt-fixture-predict-true",

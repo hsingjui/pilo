@@ -3,7 +3,7 @@ import { BootstrapFixture, ChatFixture, Pilo } from "app/native";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { ProjectScopedModel } from "@shared/project-model-scope";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("loading models through the client");
 
@@ -24,7 +24,7 @@ async function expectError(promise: Promise<unknown>, message: string) {
 /** The connection catalog comes from the fixture's stand-in for Pi. */
 async function connectionModels() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	try {
 		const models = await client.loadConnectionModels("local");
 		const [model] = models;
@@ -49,7 +49,7 @@ async function connectionModels() {
 
 async function projectCatalogAndScope() {
 	const fixture = new BootstrapFixture();
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	try {
 		const project = (await client.listProjects()).find(
 			({ connection }) => connection.id === "local",
@@ -127,7 +127,7 @@ function sameModels(
 
 async function saveScope() {
 	const fixture = new BootstrapFixture();
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const received: PiloClientEvent[] = [];
 	let wake = () => {};
 	try {

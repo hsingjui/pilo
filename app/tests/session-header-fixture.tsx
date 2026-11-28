@@ -285,6 +285,7 @@ async function run() {
 		catalog: models,
 		forker,
 		projectClient: runtime.client,
+		shell: runtime.shell,
 		openProjectInApp: async () => {},
 		onRenameSession: (projectId, sessionPath, title) =>
 			void runtime.client.updateSessionUiState(

@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo, SessionFilesFixture } from "app/native";
 
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const status = signal("checking session actions through the client");
 const timestamp = "2025-01-02T03:04:05.000Z";
@@ -44,7 +44,7 @@ async function searchAndDelete() {
 		.map((line) => JSON.stringify(line))
 		.join("\n");
 	const fixture = new SessionFilesFixture(`${jsonl}\n`);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	const sessionPath = fixture.sessionPath();
 	try {
 		const matches = await client.searchSessions(projectId, "needle");
@@ -102,7 +102,7 @@ async function searchAndDelete() {
 async function generateTitle() {
 	const projectId = "chat-fixture";
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	try {
 		assert(
 			(await client.generateSessionTitle(projectId, "Repair the parser")) ===

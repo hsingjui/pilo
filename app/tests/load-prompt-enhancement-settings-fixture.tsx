@@ -1,5 +1,6 @@
 import { mount, signal, Text } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
+import { createNativeHostClient } from "../client/native-transport";
 import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
 
 const status = signal("loading prompt enhancement settings");
@@ -17,9 +18,10 @@ async function expectError(promise: Promise<unknown>, message: string) {
 async function run() {
 	const fixture = new BootstrapFixture();
 	const pilo = new Pilo(fixture.dataDir());
+	const hostClient = createNativeHostClient(pilo);
 	try {
-		await pilo.listProjects();
-		const initial = (await pilo.loadPromptEnhancementSettings(
+		await hostClient.listProjects();
+		const initial = (await hostClient.loadPromptEnhancementSettings(
 			"local",
 		)) as PromptEnhancementSettings;
 		if (
@@ -31,7 +33,7 @@ async function run() {
 			throw new Error(`unexpected defaults: ${JSON.stringify(initial)}`);
 		}
 		fixture.seedPromptEnhancementSettings();
-		const stored = (await pilo.loadPromptEnhancementSettings(
+		const stored = (await hostClient.loadPromptEnhancementSettings(
 			"local",
 		)) as PromptEnhancementSettings;
 		if (
@@ -44,12 +46,12 @@ async function run() {
 			throw new Error(`unexpected saved settings: ${JSON.stringify(stored)}`);
 		}
 		await expectError(
-			pilo.loadPromptEnhancementSettings("missing"),
+			hostClient.loadPromptEnhancementSettings("missing"),
 			"Connection 'missing' was not found",
 		);
 		await pilo.shutdown();
 		await expectError(
-			pilo.loadPromptEnhancementSettings("local"),
+			hostClient.loadPromptEnhancementSettings("local"),
 			"Pilo runtime has been shut down",
 		);
 	} finally {

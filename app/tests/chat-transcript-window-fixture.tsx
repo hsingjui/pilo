@@ -4,7 +4,7 @@ import { ChatFixture, Pilo } from "app/native";
 import { sameHistoryFingerprint } from "@shared/chat/chat-history-window-model";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { ConversationReducerContext } from "@shared/chat/conversation-types";
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 
@@ -77,7 +77,7 @@ const elapsed = (since: number) =>
 
 async function run() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	/**
 	 * Each read the store made: what it was, how many saved messages it
 	 * returned to replay, how long the call took, and whether a page came

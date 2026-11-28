@@ -146,7 +146,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Rust unit tests
-        run: cargo test -p pilo-domain -p pilo-runtime
+        run: |
+          cargo build -p pilo-server
+          cargo test -p pilo-domain -p pilo-runtime
 
   desktop-rust:
     name: Desktop Rust checks
@@ -179,4 +181,6 @@ jobs:
         run: cargo clippy --manifest-path crates/pilo-desktop/Cargo.toml --all-targets -- -D warnings
 
       - name: Rust unit tests
-        run: cargo test --manifest-path crates/pilo-desktop/Cargo.toml
+        run: |
+          cargo build -p pilo-server
+          cargo test --manifest-path crates/pilo-desktop/Cargo.toml

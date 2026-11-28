@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
-import { NshPiloClient } from "../client/nsh-pilo-client";
+import { createNativeHostClient } from "../client/native-transport";
 
 const projectId = "chat-fixture";
 const status = signal("rewriting a draft through the client");
@@ -23,7 +23,7 @@ async function expectError(promise: Promise<unknown>, message: string) {
 
 async function run() {
 	const fixture = new ChatFixture(false);
-	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const client = createNativeHostClient(new Pilo(fixture.dataDir()));
 	try {
 		await expectError(
 			client.enhancePrompt(projectId, "rewrite this", null),

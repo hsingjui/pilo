@@ -1,4 +1,12 @@
-import { colorScheme, type JSX, split, token, View } from "nsh";
+import {
+	type Accessor,
+	colorScheme,
+	type JSX,
+	split,
+	Text,
+	token,
+	View,
+} from "nsh";
 import { Button, type ButtonProps } from "nsh/base";
 
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
@@ -7,7 +15,12 @@ import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { createHover } from "../ui/hover";
-import { springTransition, tactileTransition } from "../ui/motion";
+import { Icon, type IconName } from "../ui/icon";
+import {
+	chevronRotateStyle,
+	springTransition,
+	tactileTransition,
+} from "../ui/motion";
 import { t } from "./i18n";
 
 /**
@@ -57,6 +70,65 @@ export const sidebarForeground = () =>
 
 export const sidebarFocusRing = () =>
 	focusRingStyle(token("sidebar-ring"), undefined, undefined, { width: 2 });
+
+/** A connection or recent view header and its actions. */
+export function SidebarSectionHeader(props: {
+	testID: string;
+	icon: IconName;
+	title: Accessor<string>;
+	collapsed: Accessor<boolean>;
+	label: Accessor<string>;
+	disabled?: boolean;
+	onPress: () => void;
+	children?: JSX.Element;
+}) {
+	const hover = createHover();
+	const foreground = () =>
+		token(
+			!props.disabled && hover.hovered()
+				? "sidebar-foreground"
+				: "sidebar-foreground-muted",
+		);
+	const chevron = (collapsed: Accessor<boolean>) => (
+		<View
+			class={`shrink-0 ${collapsed() ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+			style={[
+				tactileTransition("opacity"),
+				chevronRotateStyle(!collapsed(), -90, 0),
+			]}
+		>
+			<Icon name="ChevronDown" size={14} />
+		</View>
+	);
+	return (
+		<View
+			class="group flex-row items-center gap-0.5 rounded-md border border-transparent pr-2"
+			style={{ minHeight: sidebarRowHeight("pilo-sidebar-env-height") }}
+		>
+			<Foreground.Provider value={foreground}>
+				<Button
+					{...hover.props}
+					testID={props.testID}
+					class="min-h-[26px] min-w-0 flex-1 flex-row items-center gap-2 rounded-md border border-transparent px-2"
+					focusVisibleStyle={sidebarFocusRing()}
+					accessibilityLabel={props.label()}
+					disabled={props.disabled}
+					onPress={props.onPress}
+				>
+					<Icon name={props.icon} size={14} class="shrink-0 opacity-80" />
+					<Text
+						class="min-w-0 shrink truncate font-sans font-medium"
+						style={{ ...sidebarText("sm"), color: foreground() }}
+					>
+						{props.title}
+					</Text>
+					{chevron(props.collapsed)}
+				</Button>
+			</Foreground.Provider>
+			{props.children}
+		</View>
+	);
+}
 
 export interface SidebarActionProps extends ButtonProps {
 	/** What screen readers say for the icon. */

@@ -13,10 +13,8 @@ import type { Project } from "@shared/api/projects-types";
 import type { SessionDeleteResult } from "@shared/api/sessions-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
-import type {
-	NshPiloClient,
-	NshPiloClientBootstrap,
-} from "../client/nsh-pilo-client";
+import type { HostClient } from "@shared/api/host-client";
+import type { HostBootstrap as DesktopHostBootstrap } from "@shared/api/host-methods";
 import { t } from "../shell/i18n";
 import {
 	type AppAction,
@@ -39,7 +37,7 @@ import type {
 	ChatTranscriptTarget,
 } from "./chat-transcript-store";
 
-export type AppStoreBootstrap = NshPiloClientBootstrap & {
+export type AppStoreBootstrap = DesktopHostBootstrap & {
 	uiState?: {
 		themeSettings: ThemeSettings;
 		sessionReadStates: SessionReadState[];
@@ -48,10 +46,10 @@ export type AppStoreBootstrap = NshPiloClientBootstrap & {
 
 export type AppStoreClient = Partial<
 	// Optional: a client without the probe shows no external Pi turns.
-	Pick<NshPiloClient, "externalSessionActivity">
+	Pick<HostClient, "externalSessionActivity">
 > &
 	Pick<
-		NshPiloClient,
+		HostClient,
 		| "chatState"
 		| "listProjects"
 		| "addProject"
@@ -106,6 +104,8 @@ export class AppStore {
 			: null;
 	});
 
+	/** Whether the window shows this Host; only a shown Host's open chat is marked read. */
+	isShown: () => boolean = () => true;
 	private readonly liveListeners = new Set<
 		(event: PiloClientEvent | null) => void
 	>();
@@ -128,6 +128,7 @@ export class AppStore {
 	private readonly pending: PiloClientEvent[] = [];
 	/** Counts project reads, so a reload superseded by a newer read is dropped. */
 	private projectReads = 0;
+	private projectReloadQueuedFor: object | undefined;
 	private readonly sessionReads = new Map<string, number>();
 	private readonly sessionScans = new Map<string, Promise<void>>();
 	private readonly sessionRefreshes = new Map<
@@ -484,6 +485,7 @@ export class AppStore {
 	 * event.
 	 */
 	acknowledgeOpenSession() {
+		if (!this.isShown()) return;
 		const state = this.current();
 		const opened = state.navigation.session;
 		const { projectId, sessionPath } = opened ?? {};
@@ -623,7 +625,7 @@ export class AppStore {
 			void this.refreshChatSession(event.sessionKey);
 		}
 		if (event.type === "configuration_changed") {
-			void this.reloadProjects();
+			this.queueProjectReload();
 		} else if (
 			event.type === "sessions_indexed" ||
 			event.type === "assistant_message_start" ||
@@ -739,6 +741,19 @@ export class AppStore {
 			// Unknown activity is not proof that external turns ended.
 			console.debug("Reading external Pi activity failed", error);
 		}
+	}
+
+	private queueProjectReload() {
+		const connection = this.connection;
+		if (!connection || this.projectReloadQueuedFor === connection) return;
+		this.projectReloadQueuedFor = connection;
+		const read = this.projectReads;
+		void Promise.resolve().then(() => {
+			if (this.projectReloadQueuedFor !== connection) return;
+			this.projectReloadQueuedFor = undefined;
+			if (this.connection === connection && this.projectReads === read)
+				void this.reloadProjects();
+		});
 	}
 
 	private async reloadProjects() {

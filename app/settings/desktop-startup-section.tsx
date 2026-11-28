@@ -2,12 +2,12 @@ import { cleanup, signal } from "nsh";
 import { Application } from "nsh/desktop";
 
 import { AppToaster, showToast } from "../shell/app-toasts";
-import type { DesktopShell } from "../shell/desktop-shell";
+import type { DesktopWindowShell } from "../shell/desktop-shell";
 import { t } from "../shell/i18n";
 import { Switch } from "../ui/switch";
 import { SettingsRetryInline, SettingsRow, SettingsSection } from "./layout";
 
-export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
+export function DesktopStartupSection(props: { desktop?: DesktopWindowShell }) {
 	const toasts = AppToaster();
 	const enabled = signal<boolean | null>(null);
 	const saving = signal(false);

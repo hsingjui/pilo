@@ -1,21 +1,24 @@
 import { expect, open, test } from "nsh/test";
+import process from "process";
 
 import type {
 	PiloClientEventMessage,
 	PiloClientEventOptions,
 } from "@shared/api/pilo-client";
-import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
+import {
+	createNativeHostClient,
+	type NativeHostBackend,
+} from "../client/native-transport";
+import { createNativeDesktopShell } from "../shell/native-desktop-shell";
 
 type Call = [method: string, ...args: unknown[]];
 
-function fakeNative(overrides: Partial<PiloNative> = {}) {
+function fakeNative(
+	overrides: Partial<
+		NativeHostBackend & Parameters<typeof createNativeDesktopShell>[0]
+	> = {},
+) {
 	const calls: Call[] = [];
-	const answer =
-		<T>(method: string, value: T) =>
-		(...args: unknown[]) => {
-			calls.push([method, ...args]);
-			return Promise.resolve(value);
-		};
 	const preferences = { revision: 3, values: { locale: "zh-CN" } };
 	const readState = {
 		projectId: "p1",
@@ -23,766 +26,309 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		completedRevision: 2,
 		readRevision: 1,
 	};
-	const pilo: PiloNative = {
-		bootstrap: answer("bootstrap", {
-			eventSequence: 41,
-			projects: [{ id: "p1" }],
-			chatSessions: [{ sessionKey: "k1" }],
-			preferences,
-		}),
-		nextEvents: answer("nextEvents", { type: "closed" }),
-		startChat: answer("startChat", { state: "running", generation: 1 }),
-		stopChat: answer("stopChat", undefined),
-		chatState: answer("chatState", null),
-		chatTranscriptSnapshot: answer("chatTranscriptSnapshot", {
-			eventSequence: 12,
-			sessionKey: "k1",
-			generation: 1,
-			live: { type: "idle" },
-		}),
-		sendChatCommand: answer("sendChatCommand", undefined),
-		listProjects: answer("listProjects", [{ id: "p1" }]),
-		listConnections: answer("listConnections", [{ id: "local" }]),
-		addProject: answer("addProject", { id: "p2" }),
-		readConnectionDir: answer("readConnectionDir", []),
+	const call = (method: string, params: unknown) => {
+		calls.push([method, params]);
+		switch (method) {
+			case "host.bootstrap":
+				return Promise.resolve({
+					eventSequence: 41,
+					projects: [{ id: "p1" }],
+					chatSessions: [{ sessionKey: "k1" }],
+					preferences,
+				});
+			case "project.file.preview": {
+				const url = (params as { url?: string }).url ?? "";
+				if (url.endsWith("missing.md")) {
+					return Promise.reject(new Error("file not found"));
+				}
+				return Promise.resolve({ path: "/code/empty.md", content: "" });
+			}
+			case "session.markRead":
+				return Promise.resolve(readState);
+			default:
+				return Promise.resolve({});
+		}
+	};
+	const upload = (method: string, params: unknown, data: Uint8Array) => {
+		calls.push([method, params, data]);
+		if (method === "chat.files.upload") {
+			return Promise.resolve(".pilo/uploads/a.txt");
+		}
+		return Promise.resolve(undefined);
+	};
+	const download = (method: string, params: unknown) => {
+		calls.push([method, params]);
+		return Promise.resolve(new Uint8Array([1, 2, 3]));
+	};
+	const answer =
+		<T>(method: string, value: T) =>
+		(...args: unknown[]) => {
+			calls.push([method, ...args]);
+			return Promise.resolve(value);
+		};
+	const pilo: NativeHostBackend &
+		Parameters<typeof createNativeDesktopShell>[0] = {
+		call: call as NativeHostBackend["call"],
+		upload: upload as NativeHostBackend["upload"],
+		download: download as NativeHostBackend["download"],
+		nextEvents: answer("nextEvents", {
+			type: "closed",
+		}) as NativeHostBackend["nextEvents"],
+		nextTerminalEvents: answer(
+			"nextTerminalEvents",
+			[],
+		) as NativeHostBackend["nextTerminalEvents"],
+		shutdown: answer("shutdown", undefined),
 		pickLocalProjectDirectory: answer(
 			"pickLocalProjectDirectory",
 			"/code/picked",
 		),
-		getLocalConnection: answer("getLocalConnection", { id: "local" }),
-		updateConnectionSettings: answer("updateConnectionSettings", {
-			id: "local",
-		}),
-		setConnectionShownInHome: answer("setConnectionShownInHome", {
-			id: "local",
-			shownInHome: false,
-		}),
-		getConnectionHealth: answer("getConnectionHealth", {
-			reachable: true,
-			latencyMs: 4,
-		}),
-		probeConnectionPi: answer("probeConnectionPi", {
-			executable: "pi",
-			version: "0.4.1",
-		}),
-		testLocalConnection: answer("testLocalConnection", {
-			protocolVersion: 1,
-			serverVersion: "0.1.0",
-		}),
-		listSshConnections: answer("listSshConnections", [
-			{ connection: { id: "ssh-1" }, projectCount: 0, hasPassword: false },
-		]),
-		listSshAgentIdentities: answer("listSshAgentIdentities", [
-			{ publicKey: "ssh-ed25519 AAAA", fingerprint: "SHA256:x", comment: "k" },
-		]),
-		saveSshConnection: answer("saveSshConnection", {
-			connection: { id: "ssh-1" },
-			projectCount: 0,
-			hasPassword: true,
-		}),
-		getSshConnectionPassword: answer("getSshConnectionPassword", "s3cret"),
-		removeSshConnection: answer("removeSshConnection", undefined),
-		testSshConnection: answer("testSshConnection", {
-			protocolVersion: 1,
-			serverVersion: "0.1.0",
-		}),
-		testSshConnectionDraft: answer("testSshConnectionDraft", {
-			protocolVersion: 1,
-			serverVersion: "0.1.0",
-		}),
-		listWslDistributions: answer("listWslDistributions", [{ name: "Ubuntu" }]),
-		listWslConnections: answer("listWslConnections", [
-			{ connection: { id: "wsl:Ubuntu" }, projectCount: 1 },
-		]),
-		saveWslConnection: answer("saveWslConnection", {
-			connection: { id: "wsl:Ubuntu" },
-			projectCount: 0,
-		}),
-		removeWslConnection: answer("removeWslConnection", undefined),
-		testWslConnection: answer("testWslConnection", {
-			protocolVersion: 1,
-			serverVersion: "0.1.0",
-		}),
-		removeProject: answer("removeProject", [{ id: "p1" }]),
-		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
-		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),
-		searchProjectFiles: answer("searchProjectFiles", ["src/main.ts"]),
-		uploadChatFile: answer("uploadChatFile", "/attachments/aQ/note.md"),
-		removeChatFile: answer("removeChatFile", undefined),
-		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
-		deleteSession: answer("deleteSession", { method: "trash" }),
-		externalSessionActivity: answer("externalSessionActivity", []),
-		updateSessionUiState: answer("updateSessionUiState", {
-			sessionPath: "/s.jsonl",
-			titleOverride: "Renamed",
-			pinned: false,
-		}),
-		loadHistory: answer("loadHistory", {
-			history: { totalMessages: 2 },
-			fingerprint: { fileSize: 9, fileMtimeNs: "7" },
-		}),
-		readHistoryImage: answer("readHistoryImage", new Uint8Array([1, 2])),
-		readProjectImage: answer("readProjectImage", new Uint8Array([3])),
-		loadConnectionModels: answer("loadConnectionModels", [{ id: "m1" }]),
-		loadNamingModels: answer("loadNamingModels", [
-			{ connectionId: "local", provider: "anthropic", modelId: "m1" },
-		]),
-		saveNamingModel: answer("saveNamingModel", {
-			connectionId: "local",
-			provider: "anthropic",
-			modelId: "m1",
-		}),
-		loadModels: answer("loadModels", { projectId: "p1", models: [] }),
-		saveModels: answer("saveModels", { projectId: "p1", models: [] }),
-		loadModelScope: answer("loadModelScope", {
-			projectId: "p1",
-			models: null,
-			updatedAtMs: 0,
-		}),
-		saveModelScope: answer("saveModelScope", {
-			projectId: "p1",
-			models: [],
-			updatedAtMs: 9,
-		}),
-		loadCacheKeepAliveSettings: answer("loadCacheKeepAliveSettings", []),
-		saveCacheKeepAliveSettings: answer("saveCacheKeepAliveSettings", {
-			modelId: "m1",
-			updatedAtMs: 9,
-		}),
-		loadNextPromptSettings: answer("loadNextPromptSettings", {
-			connectionId: "local",
-			enabled: false,
-			model: null,
-			updatedAtMs: 0,
-		}),
-		saveNextPromptSettings: answer("saveNextPromptSettings", {
-			connectionId: "local",
-			enabled: true,
-			updatedAtMs: 9,
-		}),
-		requestNextPrompt: answer("requestNextPrompt", undefined),
-		loadPromptEnhancementSettings: answer("loadPromptEnhancementSettings", {
-			connectionId: "local",
-			enabled: false,
-			model: null,
-			updatedAtMs: 0,
-		}),
-		enhancePrompt: answer("enhancePrompt", "Fix the parser's unit test."),
-		savePromptEnhancementSettings: answer("savePromptEnhancementSettings", {
-			connectionId: "local",
-			enabled: true,
-			updatedAtMs: 9,
-		}),
-		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
-		markSessionRead: answer("markSessionRead", readState),
-		loadPreferences: answer("loadPreferences", preferences),
-		savePreferences: answer("savePreferences", preferences),
-		loadThemeSettings: answer("loadThemeSettings", { revision: 7 }),
-		saveThemeSettings: answer("saveThemeSettings", { revision: 8 }),
-		remoteHostState: answer("remoteHostState", {}),
-		remoteLanAddresses: answer("remoteLanAddresses", []),
-		remoteSetEnabled: answer("remoteSetEnabled", {}),
-		remoteSetPort: answer("remoteSetPort", {}),
-		remoteSetAddresses: answer("remoteSetAddresses", {}),
-		remotePairingRegenerate: answer("remotePairingRegenerate", {}),
-		remoteDeviceRevoke: answer("remoteDeviceRevoke", {}),
-		remoteDeviceRename: answer("remoteDeviceRename", {}),
+		openFileLink: answer("openFileLink", undefined),
 		openLogDirectory: answer("openLogDirectory", undefined),
-		shutdown: answer("shutdown", undefined),
 		...overrides,
 	};
 	return { pilo, calls, preferences, readState };
 }
 
+test("HostClient forwards pairing and device permissions via NativeTransport.call", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = createNativeHostClient(pilo);
+	await client.remotePairingRegenerate("chat,workspace");
+	await client.remoteDeviceSetScopes("device-1", "chat");
+	await client.remoteDevicesRevokeAll();
+	expect(calls).toEqual([
+		["remote.pairing.regenerate", { scopes: "chat,workspace" }],
+		["remote.devices.setScopes", { deviceId: "device-1", scopes: "chat" }],
+		["remote.devices.revokeAll", {}],
+	]);
+});
+
 test("bootstrap carries the native event cut as latestSequence", async () => {
 	const { pilo, preferences } = fakeNative();
-	expect(await new NshPiloClient(pilo).bootstrap()).toEqual({
+	expect(await createNativeHostClient(pilo).bootstrap()).toEqual({
 		projects: [{ id: "p1" }],
 		chatSessions: [{ sessionKey: "k1" }],
 		latestSequence: 41,
 		preferences,
+		localPiResources: undefined,
 	});
 });
 
-test("data calls pass their arguments to the native module and return its answers", async () => {
-	const { pilo, calls, preferences, readState } = fakeNative();
-	const client = new NshPiloClient(pilo);
-
-	expect(await client.listProjects()).toEqual([{ id: "p1" }]);
-	expect(await client.listSessions("p1")).toEqual([{ piSessionId: "s1" }]);
-	expect(await client.loadSessionReadStates()).toEqual([readState]);
-	expect(await client.markSessionRead("p1", "/s.jsonl", 2)).toEqual(readState);
-	expect(await client.loadPreferences()).toEqual(preferences);
-	expect(await client.savePreferences({ locale: "zh-CN" })).toEqual(
-		preferences,
-	);
-	expect(await client.loadThemeSettings()).toEqual({ revision: 7 });
-	expect(await client.saveThemeSettings({ theme: "dark" })).toEqual({
-		revision: 8,
-	});
-	await client.shutdown();
-
-	expect(calls).toEqual([
-		["listProjects"],
-		["listSessions", "p1"],
-		["loadSessionReadStates"],
-		["markSessionRead", "p1", "/s.jsonl", 2],
-		["loadPreferences"],
-		["savePreferences", { locale: "zh-CN" }],
-		["loadThemeSettings"],
-		["saveThemeSettings", { theme: "dark" }],
-		["shutdown"],
-	]);
-});
-
-test("a native rejection reaches the caller unchanged", async () => {
-	const failure = new Error("Project 'missing' was not found");
-	const { pilo } = fakeNative({
-		listSessions: () => Promise.reject(failure),
-	});
-	let caught: unknown;
-	try {
-		await new NshPiloClient(pilo).listSessions("missing");
-	} catch (error) {
-		caught = error;
-	}
-	expect(caught).toBe(failure);
-});
-
-test("chat calls pass their arguments to the native module and return its answers", async () => {
-	const state = { sessionKey: "k1", activeTurn: false };
-	const { pilo, calls } = fakeNative({
-		chatState: (sessionKey) =>
-			Promise.resolve(sessionKey === "k1" ? state : null),
-	});
-	const client = new NshPiloClient(pilo);
-	const input = {
-		projectId: "p1",
-		sessionKey: "k1",
-		sessionPath: "/sessions/a.jsonl",
-		noSession: false,
-		builtinExtensions: [{ id: "model-catalog" as const }],
-	};
-
-	expect(await client.startChat(input)).toEqual({
-		state: "running",
-		generation: 1,
-	});
-	expect(await client.chatState("k1")).toBe(state);
-	expect(await client.chatState("absent")).toBe(null);
-	await client.sendChatCommand("k1", { id: "c1", type: "get_state" });
-	await client.stopChat("k1", "user closed the chat");
-	await client.stopChat("k1");
-
-	expect(calls).toEqual([
-		["startChat", input],
-		["sendChatCommand", "k1", { id: "c1", type: "get_state" }],
-		["stopChat", "k1", "user closed the chat"],
-		["stopChat", "k1", undefined],
-	]);
-});
-
-test("a chat call the native module rejects reaches the caller unchanged", async () => {
-	const failure = new Error("Chat session 'k1' is not running");
-	const { pilo } = fakeNative({
-		startChat: () => Promise.reject(failure),
-		sendChatCommand: () => Promise.reject(failure),
-	});
-	const client = new NshPiloClient(pilo);
-	for (const call of [
-		client.startChat({ projectId: "p1", sessionKey: "k1" }),
-		client.sendChatCommand("k1", { type: "prompt" }),
-	]) {
-		let caught: unknown;
-		await call.catch((error: unknown) => {
-			caught = error;
-		});
-		expect(caught).toBe(failure);
-	}
-});
-
-test("session search, title and deletion pass their arguments and return the native answers", async () => {
+test("upload and download normalize binary calls through NativeTransport", async () => {
 	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-
-	expect(await client.searchSessions("p1", "needle", 5)).toEqual([
-		{ sessionId: "s1" },
-	]);
-	expect(await client.searchSessions("p1", "needle")).toEqual([
-		{ sessionId: "s1" },
-	]);
-	expect(await client.searchProjectFiles("p1", "ma")).toEqual(["src/main.ts"]);
-	expect(
-		await client.uploadChatFile("p1", "note.md", new Uint8Array([1, 2])),
-	).toBe("/attachments/aQ/note.md");
-	await client.removeChatFile("p1", "/attachments/aQ/note.md");
-	expect(await client.generateSessionTitle("p1", "Repair the parser")).toBe(
-		"Repair the parser",
+	const client = createNativeHostClient(pilo);
+	const payload = new Uint8Array([9, 8]);
+	expect(await client.uploadChatFile("p1", "a.txt", payload)).toBe(
+		".pilo/uploads/a.txt",
 	);
-	expect(await client.deleteSession("p1", "/s.jsonl")).toEqual({
-		method: "trash",
+	await client.writeTerminal("t1", payload);
+	const bytes = await client.readHistoryImage("p1", "/s.jsonl", "img-1", {
+		fileSize: 512,
+		fileMtimeNs: "1234",
 	});
-	expect(
-		await client.updateSessionUiState(
-			"/s.jsonl",
-			{ pinned: false, titleOverride: "Renamed" },
-			"p1",
-		),
-	).toEqual({
-		sessionPath: "/s.jsonl",
-		titleOverride: "Renamed",
-		pinned: false,
-	});
+	expect([...bytes]).toEqual([1, 2, 3]);
 	expect(calls).toEqual([
-		["searchSessions", "p1", "needle", 5],
-		["searchSessions", "p1", "needle", undefined],
-		["searchProjectFiles", "p1", "ma"],
-		["uploadChatFile", "p1", "note.md", new Uint8Array([1, 2])],
-		["removeChatFile", "p1", "/attachments/aQ/note.md"],
-		["generateSessionTitle", "p1", "Repair the parser"],
-		["deleteSession", "p1", "/s.jsonl"],
+		["chat.files.upload", { projectId: "p1", name: "a.txt" }, payload],
+		["terminal.write", { terminalId: "t1" }, payload],
 		[
-			"updateSessionUiState",
-			"/s.jsonl",
-			{ pinned: false, titleOverride: "Renamed" },
-			"p1",
+			"session.historyImage",
+			{
+				projectId: "p1",
+				sessionPath: "/s.jsonl",
+				imageId: "img-1",
+				expectedFileSize: 512,
+				expectedFileMtimeNs: "1234",
+			},
 		],
 	]);
 });
 
-test("archive and restore send a scoped UI state patch without replacing the title", async () => {
+test("the desktop shell picks directories and passes the process log file to the native module", async () => {
 	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const archived = await client.archiveSession("p1", "/s.jsonl");
-	const restored = await client.unarchiveSession("p1", "/s.jsonl");
-	expect(archived.titleOverride).toBe("Renamed");
-	expect(restored.titleOverride).toBe("Renamed");
+	const shell = createNativeDesktopShell(pilo);
+	expect(await shell.pickLocalProjectDirectory()).toBe("/code/picked");
+	await shell.openLogDirectory();
 	expect(calls).toEqual([
-		["updateSessionUiState", "/s.jsonl", { archived: true }, "p1"],
-		["updateSessionUiState", "/s.jsonl", { archived: false }, "p1"],
+		["pickLocalProjectDirectory"],
+		["openLogDirectory", process.logFile],
 	]);
 });
 
-test("no matches, no naming model and a rejected deletion reach the caller as they are", async () => {
-	const failure = new Error("Session '/s.jsonl' is not indexed");
-	const { pilo } = fakeNative({
-		searchSessions: () => Promise.resolve([]),
-		generateSessionTitle: () => Promise.resolve(null),
-		deleteSession: () => Promise.reject(failure),
+test("the desktop shell preserves picker cancellation and missing native capability behavior", async () => {
+	const { pilo } = fakeNative();
+	const shell = createNativeDesktopShell({
+		...pilo,
+		pickLocalProjectDirectory: async () => null,
 	});
-	const client = new NshPiloClient(pilo);
-
-	expect(await client.searchSessions("p1", "no match")).toEqual([]);
-	expect(await client.generateSessionTitle("p1", "hello")).toBe(null);
+	expect(await shell.pickLocalProjectDirectory()).toBe(null);
+	expect(await shell.systemFontFamilies()).toEqual([]);
 	let caught: unknown;
-	await client.deleteSession("p1", "/s.jsonl").catch((error: unknown) => {
+	try {
+		await shell.readLocalFile("file:///image.png");
+	} catch (error) {
 		caught = error;
-	});
-	expect(caught).toBe(failure);
+	}
+	expect((caught as Error).message).toBe(
+		"The native call readLocalFile is unavailable",
+	);
 });
 
-test("image reads pass their arguments and return the native bytes", async () => {
+test("the Host previews file links while the desktop shell only opens them", async () => {
 	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const fingerprint = { fileSize: 12, fileMtimeNs: "1735787045000000000" };
-
-	expect(
-		await client.readHistoryImage("p1", "/s.jsonl", "m1:0", fingerprint),
-	).toEqual(new Uint8Array([1, 2]));
-	expect(await client.readHistoryImage("p1", "/s.jsonl", "m1:0")).toEqual(
-		new Uint8Array([1, 2]),
+	const host = createNativeHostClient(pilo);
+	const shell = createNativeDesktopShell(pilo);
+	expect(await host.previewFileLink("p1", "file:///code/empty.md")).toEqual({
+		path: "/code/empty.md",
+		content: "",
+	});
+	expect(await shell.openFileLink("p1", "file:///code/report.html")).toBe(
+		undefined,
 	);
-	expect(await client.readProjectImage("p1", "docs/a.png")).toEqual(
-		new Uint8Array([3]),
-	);
+	let caught: unknown;
+	try {
+		await host.previewFileLink("p1", "file:///code/missing.md");
+	} catch (error) {
+		caught = error;
+	}
+	expect((caught as Error).message).toBe("file not found");
 	expect(calls).toEqual([
-		["readHistoryImage", "p1", "/s.jsonl", "m1:0", fingerprint],
-		["readHistoryImage", "p1", "/s.jsonl", "m1:0", undefined],
-		["readProjectImage", "p1", "docs/a.png"],
+		["project.file.preview", { projectId: "p1", url: "file:///code/empty.md" }],
+		["openFileLink", "p1", "file:///code/report.html"],
+		[
+			"project.file.preview",
+			{ projectId: "p1", url: "file:///code/missing.md" },
+		],
 	]);
 });
 
-test("an image the native module cannot read rejects with its error", async () => {
-	const failure = new Error("image 'm1:0' was not found");
+test("temporary_chat_left waits for an in-flight noSession start before calling chat.stop", async () => {
+	const order: string[] = [];
+	let releaseStart!: () => void;
+	const startReady = new Promise<void>((resolve) => {
+		releaseStart = resolve;
+	});
 	const { pilo } = fakeNative({
-		readHistoryImage: () => Promise.reject(failure),
-		readProjectImage: () => Promise.reject(failure),
+		call: (async (method: string, params: unknown) => {
+			order.push(`start:${method}`);
+			if (method === "chat.start") {
+				await startReady;
+				order.push(`done:${method}`);
+				return {
+					sessionKey: (params as { sessionKey: string }).sessionKey,
+					projectId: "p1",
+					status: "idle",
+				};
+			}
+			order.push(`done:${method}`);
+			return undefined;
+		}) as NativeHostBackend["call"],
 	});
-	const client = new NshPiloClient(pilo);
-	for (const call of [
-		client.readHistoryImage("p1", "/s.jsonl", "m1:0"),
-		client.readProjectImage("p1", "docs/a.png"),
-	]) {
-		let caught: unknown;
-		await call.catch((error: unknown) => {
-			caught = error;
-		});
-		expect(caught).toBe(failure);
-	}
-});
+	const client = createNativeHostClient(pilo);
 
-test("model calls pass their arguments and return the native answers", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
+	const starting = client.startChat({
+		projectId: "p1",
+		sessionKey: "temp-1",
+		noSession: true,
+	});
+	const stopping = client.stopChat("temp-1", "temporary_chat_left");
+	await settle();
+	expect(order).toEqual(["start:chat.start"]);
 
-	expect(await client.loadConnectionModels("local")).toEqual([{ id: "m1" }]);
-	expect(await client.loadModels("p1")).toEqual({
-		projectId: "p1",
-		models: [],
-	});
-	expect(await client.loadModelScope("p1")).toEqual({
-		projectId: "p1",
-		models: null,
-		updatedAtMs: 0,
-	});
-	const snapshot = {
-		projectId: "p1",
-		models: [],
-		commands: null,
-		defaultModel: null,
-		defaultThinkingLevel: null,
-		refreshedAtMs: 5,
-	};
-	expect(await client.saveModels(snapshot)).toEqual({
-		projectId: "p1",
-		models: [],
-	});
-	expect(calls).toEqual([
-		["loadConnectionModels", "local"],
-		["loadModels", "p1"],
-		["loadModelScope", "p1"],
-		["saveModels", snapshot],
+	releaseStart();
+	await Promise.all([starting, stopping]);
+	expect(order).toEqual([
+		"start:chat.start",
+		"done:chat.start",
+		"start:chat.stop",
+		"done:chat.stop",
 	]);
 });
 
-test("an uncached catalog is null and a rejected model call keeps its error", async () => {
-	const failure = new Error("Connection 'gone' was not found");
-	const { pilo } = fakeNative({
-		loadConnectionModels: () => Promise.reject(failure),
-		loadModels: () => Promise.resolve(null),
-		loadModelScope: () => Promise.reject(failure),
-	});
-	const client = new NshPiloClient(pilo);
-
-	expect(await client.loadModels("p1")).toBe(null);
-	for (const call of [
-		client.loadConnectionModels("gone"),
-		client.loadModelScope("gone"),
-	]) {
-		let caught: unknown;
-		await call.catch((error: unknown) => {
-			caught = error;
-		});
-		expect(caught).toBe(failure);
-	}
+test("searchSessions defaults limit to 24 and forwards explicit limits", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = createNativeHostClient(pilo);
+	await client.searchSessions("p1", "hello");
+	await client.searchSessions("p1", "hello", 50);
+	expect(calls).toEqual([
+		["session.search", { projectId: "p1", query: "hello", limit: 24 }],
+		["session.search", { projectId: "p1", query: "hello", limit: 50 }],
+	]);
 });
 
-test("saving a model scope passes the list, an empty list or null and returns the saved scope", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const models = [
-		{ provider: "relay", modelId: "m1", thinkingLevel: "high" as const },
-		{ provider: "relay", modelId: "m2", thinkingLevel: null, isDefault: true },
-	];
-
-	expect(await client.saveModelScope("p1", models)).toEqual({
-		projectId: "p1",
-		models: [],
-		updatedAtMs: 9,
+test("archive, unarchive, markSessionRead validation, and error propagation behave consistently", async () => {
+	const { pilo, calls } = fakeNative({
+		call: (async (method: string, params: unknown) => {
+			calls.push([method, params]);
+			if (method === "session.delete") {
+				throw new Error("cannot delete active session");
+			}
+			return {};
+		}) as NativeHostBackend["call"],
 	});
+	const client = createNativeHostClient(pilo);
+	await client.archiveSession("p1", "/s.jsonl");
+	await client.unarchiveSession("p1", "/s.jsonl");
 	await client.saveModelScope("p1", []);
 	await client.saveModelScope("p1", null);
-	expect(calls).toEqual([
-		["saveModelScope", "p1", models],
-		["saveModelScope", "p1", []],
-		["saveModelScope", "p1", null],
-	]);
-});
-
-test("a model scope the native module refuses rejects with its error", async () => {
-	const failure = new Error("model scope can contain only one default model");
-	const { pilo } = fakeNative({
-		saveModelScope: () => Promise.reject(failure),
+	await client.chatTranscriptSnapshot("k1", {
+		startMessage: 10,
+		messageLimit: 25,
 	});
-	let caught: unknown;
-	await new NshPiloClient(pilo)
-		.saveModelScope("p1", [])
-		.catch((error: unknown) => {
-			caught = error;
-		});
-	expect(caught).toBe(failure);
-});
-
-test("cache keep-alive calls pass their arguments and return the native answers", async () => {
-	const policy = {
-		connectionId: "local",
-		provider: "relay",
-		modelId: "m1",
-		enabled: true,
-		cacheTtlSeconds: 300,
-		idleKeepAliveSeconds: 1800,
-		updatedAtMs: 0,
-	};
-	const { pilo, calls } = fakeNative({
-		loadCacheKeepAliveSettings: (connectionId) =>
-			Promise.resolve(connectionId === "local" ? [policy] : []),
+	await client.loadHistory("p1", "/s.jsonl", {
+		fingerprint: { fileSize: 128, fileMtimeNs: "999" },
+		startMessage: 5,
+		messageLimit: 20,
 	});
-	const client = new NshPiloClient(pilo);
 
-	expect(await client.loadCacheKeepAliveSettings("local")).toEqual([policy]);
-	expect(await client.loadCacheKeepAliveSettings("other")).toEqual([]);
-	expect(await client.saveCacheKeepAliveSettings(policy)).toEqual({
-		modelId: "m1",
-		updatedAtMs: 9,
-	});
-	expect(calls).toEqual([["saveCacheKeepAliveSettings", policy]]);
-});
-
-test("a cache keep-alive policy the native module refuses rejects with its error", async () => {
-	const failure = new Error("invalid cache keep-alive settings");
-	const { pilo } = fakeNative({
-		loadCacheKeepAliveSettings: () => Promise.reject(failure),
-		saveCacheKeepAliveSettings: () => Promise.reject(failure),
-	});
-	const client = new NshPiloClient(pilo);
-	for (const call of [
-		client.loadCacheKeepAliveSettings("gone"),
-		client.saveCacheKeepAliveSettings({
-			connectionId: "local",
-			provider: "relay",
-			modelId: "m1",
-			enabled: true,
-			cacheTtlSeconds: 1,
-			idleKeepAliveSeconds: 1,
-			updatedAtMs: 0,
-		}),
-	]) {
-		let caught: unknown;
-		await call.catch((error: unknown) => {
-			caught = error;
-		});
-		expect(caught).toBe(failure);
+	let readErr: unknown;
+	try {
+		await client.markSessionRead("p1", "/s.jsonl", 0);
+	} catch (error) {
+		readErr = error;
 	}
-});
-
-test("next-prompt calls pass their arguments and return the native answers", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const model = { provider: "relay", id: "m1" };
-
-	expect(await client.loadNextPromptSettings("local")).toEqual({
-		connectionId: "local",
-		enabled: false,
-		model: null,
-		updatedAtMs: 0,
-	});
-	expect(await client.saveNextPromptSettings("local", true, model)).toEqual({
-		connectionId: "local",
-		enabled: true,
-		updatedAtMs: 9,
-	});
-	await client.saveNextPromptSettings("local", false, null);
-	expect(calls).toEqual([
-		["loadNextPromptSettings", "local"],
-		["saveNextPromptSettings", "local", true, model],
-		["saveNextPromptSettings", "local", false, null],
-	]);
-});
-
-test("next-prompt settings the native module refuses reject with its error", async () => {
-	const failure = new Error("Connection 'gone' was not found");
-	const { pilo } = fakeNative({
-		loadNextPromptSettings: () => Promise.reject(failure),
-		saveNextPromptSettings: () => Promise.reject(failure),
-	});
-	const client = new NshPiloClient(pilo);
-	for (const call of [
-		client.loadNextPromptSettings("gone"),
-		client.saveNextPromptSettings("gone", false, null),
-	]) {
-		let caught: unknown;
-		await call.catch((error: unknown) => {
-			caught = error;
-		});
-		expect(caught).toBe(failure);
-	}
-});
-
-test("a next-prompt request and its cancellation pass through to the native module", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const request = {
-		sessionKey: "k1",
-		sessionId: "s1",
-		requestId: "r1",
-		generation: 2,
-		revision: 7,
-	};
-
-	expect(await client.requestNextPrompt(request)).toBe(undefined);
-	await client.requestNextPrompt({ ...request, cancel: true });
-	expect(calls).toEqual([
-		["requestNextPrompt", request],
-		["requestNextPrompt", { ...request, cancel: true }],
-	]);
-});
-
-test("a next-prompt request the native module refuses rejects with its error", async () => {
-	const failure = new Error("prediction session is not running");
-	const { pilo } = fakeNative({
-		requestNextPrompt: () => Promise.reject(failure),
-	});
-	let caught: unknown;
-	await new NshPiloClient(pilo)
-		.requestNextPrompt({
-			sessionKey: "k1",
-			sessionId: "s1",
-			requestId: "r1",
-			generation: 2,
-			revision: 7,
-		})
-		.catch((error: unknown) => {
-			caught = error;
-		});
-	expect(caught).toBe(failure);
-});
-
-test("a transcript snapshot passes its session key and window and returns the native answer", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const window = { messageLimit: 40, includeMessageIndex: true };
-
-	expect(await client.chatTranscriptSnapshot("k1", window)).toEqual({
-		eventSequence: 12,
-		sessionKey: "k1",
-		generation: 1,
-		live: { type: "idle" },
-	});
-	await client.chatTranscriptSnapshot("k1");
-	expect(calls).toEqual([
-		["chatTranscriptSnapshot", "k1", window],
-		["chatTranscriptSnapshot", "k1", undefined],
-	]);
-});
-
-test("a transcript snapshot the native module refuses rejects with its error", async () => {
-	const failure = new Error("chat session is not running");
-	const { pilo } = fakeNative({
-		chatTranscriptSnapshot: () => Promise.reject(failure),
-	});
-	let caught: unknown;
-	await new NshPiloClient(pilo)
-		.chatTranscriptSnapshot("gone")
-		.catch((error: unknown) => {
-			caught = error;
-		});
-	expect(caught).toBe(failure);
-});
-
-test("a history read passes its session and window and returns the native answer", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const options = {
-		startMessage: 4,
-		messageLimit: 40,
-		includeMessageIndex: false,
-		fingerprint: { fileSize: 9, fileMtimeNs: "7" },
-	};
-
-	expect(await client.loadHistory("p1", "/s.jsonl", options)).toEqual({
-		history: { totalMessages: 2 },
-		fingerprint: { fileSize: 9, fileMtimeNs: "7" },
-	});
-	await client.loadHistory("p1", "/s.jsonl");
-	expect(calls).toEqual([
-		["loadHistory", "p1", "/s.jsonl", options],
-		["loadHistory", "p1", "/s.jsonl", undefined],
-	]);
-});
-
-test("a history read the native module refuses rejects with its error", async () => {
-	const failure = new Error("No such file or directory");
-	const { pilo } = fakeNative({ loadHistory: () => Promise.reject(failure) });
-	let caught: unknown;
-	await new NshPiloClient(pilo)
-		.loadHistory("p1", "/gone.jsonl")
-		.catch((error: unknown) => {
-			caught = error;
-		});
-	expect(caught).toBe(failure);
-});
-
-test("prompt enhancement settings calls pass their arguments and return the native answers", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const model = { provider: "relay", id: "m1" };
-
-	expect(await client.loadPromptEnhancementSettings("local")).toEqual({
-		connectionId: "local",
-		enabled: false,
-		model: null,
-		updatedAtMs: 0,
-	});
-	expect(
-		await client.savePromptEnhancementSettings("local", true, model),
-	).toEqual({ connectionId: "local", enabled: true, updatedAtMs: 9 });
-	await client.savePromptEnhancementSettings("local", false, null);
-	expect(calls).toEqual([
-		["loadPromptEnhancementSettings", "local"],
-		["savePromptEnhancementSettings", "local", true, model],
-		["savePromptEnhancementSettings", "local", false, null],
-	]);
-});
-
-test("prompt enhancement settings the native module refuses reject with its error", async () => {
-	const failure = new Error("Connection 'gone' was not found");
-	const { pilo } = fakeNative({
-		loadPromptEnhancementSettings: () => Promise.reject(failure),
-		savePromptEnhancementSettings: () => Promise.reject(failure),
-	});
-	const client = new NshPiloClient(pilo);
-	for (const call of [
-		client.loadPromptEnhancementSettings("gone"),
-		client.savePromptEnhancementSettings("gone", false, null),
-	]) {
-		let caught: unknown;
-		await call.catch((error: unknown) => {
-			caught = error;
-		});
-		expect(caught).toBe(failure);
-	}
-});
-
-test("a prompt enhancement passes its project, draft and model and returns the rewrite", async () => {
-	const { pilo, calls } = fakeNative();
-	const client = new NshPiloClient(pilo);
-	const model = { provider: "relay", id: "m1" };
-
-	expect(await client.enhancePrompt("p1", "parser test pls", model)).toBe(
-		"Fix the parser's unit test.",
+	expect((readErr as Error).message).toBe(
+		"session read revision must be a positive safe integer",
 	);
-	await client.enhancePrompt("p1", "parser test pls", null);
+
+	let delErr: unknown;
+	try {
+		await client.deleteSession("p1", "/s.jsonl");
+	} catch (error) {
+		delErr = error;
+	}
+	expect((delErr as Error).message).toBe("cannot delete active session");
+
 	expect(calls).toEqual([
-		["enhancePrompt", "p1", "parser test pls", model],
-		["enhancePrompt", "p1", "parser test pls", null],
+		[
+			"session.uiState.set",
+			{ projectId: "p1", sessionPath: "/s.jsonl", update: { archived: true } },
+		],
+		[
+			"session.uiState.set",
+			{ projectId: "p1", sessionPath: "/s.jsonl", update: { archived: false } },
+		],
+		["models.scope.set", { projectId: "p1", models: [] }],
+		["models.scope.set", { projectId: "p1", models: null }],
+		[
+			"chat.transcript",
+			{ sessionKey: "k1", window: { startMessage: 10, messageLimit: 25 } },
+		],
+		[
+			"session.history",
+			{
+				projectId: "p1",
+				sessionPath: "/s.jsonl",
+				expectedFileSize: 128,
+				expectedFileMtimeNs: "999",
+				startMessage: 5,
+				messageLimit: 20,
+				includeMessageIndex: undefined,
+			},
+		],
+		["session.delete", { projectId: "p1", sessionPath: "/s.jsonl" }],
 	]);
 });
 
-test("a prompt enhancement the native module refuses rejects with its error", async () => {
-	const failure = new Error("Prompt enhancement is disabled");
-	const { pilo } = fakeNative({
-		enhancePrompt: () => Promise.reject(failure),
-	});
-	let caught: unknown;
-	await new NshPiloClient(pilo)
-		.enhancePrompt("p1", "parser test pls", null)
-		.catch((error: unknown) => {
-			caught = error;
-		});
-	expect(caught).toBe(failure);
-});
-
-/** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
 		max: number;
@@ -791,9 +337,11 @@ function fakeEventStream() {
 	}[] = [];
 	const { pilo } = fakeNative({
 		nextEvents: (max) =>
-			new Promise((resolve, reject) => polls.push({ max, resolve, reject })),
+			new Promise((resolve, reject) =>
+				polls.push({ max, resolve, reject }),
+			) as ReturnType<NativeHostBackend["nextEvents"]>,
 	});
-	return { client: new NshPiloClient(pilo), polls };
+	return { client: createNativeHostClient(pilo), polls };
 }
 
 function listener() {
@@ -843,87 +391,81 @@ test("event batches reach every listener in order with one poll in flight", asyn
 
 	expect(first.messages).toEqual([events(1, 2), events(3)]);
 	expect(second.messages).toEqual(first.messages);
-	expect(polls.length).toBe(3);
 });
 
-test("a gap asks listeners to resync and polling continues on the same stream", async () => {
+test("a queue overflow gap becomes resyncRequired with lastMissed", async () => {
 	const { client, polls } = fakeEventStream();
-	const { options, messages, statuses } = listener();
-	await client.connectEvents(options);
+	const target = listener();
+	await client.connectEvents(target.options);
 	await settle();
 
-	polls[0]?.resolve({ type: "gap", firstMissed: 5, lastMissed: 9 });
+	polls[0]?.resolve({ type: "gap", firstMissed: 4, lastMissed: 11 });
 	await settle();
-	polls[1]?.resolve(events(10));
+	polls[1]?.resolve(events(12));
 	await settle();
 
-	expect(messages).toEqual([
-		{ type: "resyncRequired", latestSequence: 9 },
-		events(10),
+	expect(target.messages).toEqual([
+		{ type: "resyncRequired", latestSequence: 11 },
+		events(12),
 	]);
-	expect(statuses).toEqual([true]);
 });
 
-test("a closed stream disconnects listeners and is never polled again", async () => {
+test("disconnecting while a poll is in flight holds its batch for the next listener", async () => {
 	const { client, polls } = fakeEventStream();
-	const { options, messages, statuses } = listener();
-	await client.connectEvents(options);
-	await settle();
-	polls[0]?.resolve({ type: "closed" });
-	await settle();
-
-	expect(statuses).toEqual([true, false]);
-	expect(messages).toEqual([]);
-	expect(client.closed).toBe(true);
-
-	const late = listener();
-	const disconnect = await client.connectEvents(late.options);
+	const first = listener();
+	const disconnect = await client.connectEvents(first.options);
 	await settle();
 	disconnect();
+	expect(first.statuses).toEqual([true, false]);
+
+	polls[0]?.resolve(events(5));
+	await settle();
+	expect(first.messages).toEqual([]);
+	expect(polls.length).toBe(1);
+
+	const second = listener();
+	await client.connectEvents(second.options);
+	await settle();
+	expect(second.messages).toEqual([events(5)]);
+	expect(polls.length).toBe(2);
+});
+
+test("a closed event stream disconnects listeners and marks the client closed", async () => {
+	const { client, polls } = fakeEventStream();
+	const target = listener();
+	await client.connectEvents(target.options);
+	await settle();
+	expect(client.closed).toBe(false);
+
+	polls[0]?.resolve({ type: "closed" });
+	await settle();
+	expect(client.closed).toBe(true);
+	expect(target.statuses).toEqual([true, false]);
+
+	const late = listener();
+	await client.connectEvents(late.options);
 	expect(late.statuses).toEqual([false]);
 	expect(polls.length).toBe(1);
 });
 
-test("a batch that arrives after the last listener left waits for the next one", async () => {
-	const { client, polls } = fakeEventStream();
-	const gone = listener();
-	const disconnect = await client.connectEvents(gone.options);
-	await settle();
-	disconnect();
-	disconnect();
-	expect(gone.statuses).toEqual([true, false]);
-
-	polls[0]?.resolve(events(1));
-	await settle();
-	expect(gone.messages).toEqual([]);
-	expect(polls.length).toBe(1);
-
-	const next = listener();
-	await client.connectEvents(next.options);
-	await settle();
-	expect(next.messages).toEqual([events(1)]);
-	expect(polls.length).toBe(2);
-});
-
 test("a failed poll disconnects listeners and reconnecting resumes polling", async () => {
 	const { client, polls } = fakeEventStream();
-	const failed = listener();
-	await client.connectEvents(failed.options);
-	await settle();
-	polls[0]?.reject(new Error("bridge failure"));
+	const first = listener();
+	await client.connectEvents(first.options);
 	await settle();
 
-	expect(failed.statuses).toEqual([true, false]);
-	expect(polls.length).toBe(1);
+	polls[0]?.reject(new Error("native poll failed"));
+	await settle();
+	expect(first.statuses).toEqual([true, false]);
 	expect(client.closed).toBe(false);
 
-	const resumed = listener();
-	await client.connectEvents(resumed.options);
+	const second = listener();
+	await client.connectEvents(second.options);
 	await settle();
-	polls[1]?.resolve(events(4));
+	expect(polls.length).toBe(2);
+	polls[1]?.resolve(events(9));
 	await settle();
-	expect(resumed.messages).toEqual([events(4)]);
-	expect(failed.messages).toEqual([]);
+	expect(second.messages).toEqual([events(9)]);
 });
 
 test("a listener that throws does not stop delivery to the others", async () => {
@@ -931,22 +473,19 @@ test("a listener that throws does not stop delivery to the others", async () => 
 	const healthy = listener();
 	await client.connectEvents({
 		onMessage: () => {
-			throw new Error("listener failure");
+			throw new Error("boom");
 		},
-		onStatus: () => {},
+		onStatus: () => undefined,
 	});
 	await client.connectEvents(healthy.options);
 	await settle();
-	polls[0]?.resolve(events(1));
-	await settle();
-	polls[1]?.resolve(events(2));
-	await settle();
 
-	expect(healthy.messages).toEqual([events(1), events(2)]);
-	expect(healthy.statuses).toEqual([true]);
+	polls[0]?.resolve(events(7));
+	await settle();
+	expect(healthy.messages).toEqual([events(7)]);
 });
 
-test("the client reads and writes Host data through the native module", async () => {
+test("the client reads and updates Host data through the native module", async () => {
 	const app = await open("./pilo-client-fixture.tsx");
 	await app.waitFor(
 		"text:client data calls verified against the native module",

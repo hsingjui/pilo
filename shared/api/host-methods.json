@@ -1,0 +1,709 @@
+{
+	"methods": [
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "host.bootstrap",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "host.shutdown",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "project.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "project.add",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "project.remove",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "project.file.preview",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "git.status",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "git.diff",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "terminal.open",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "binary_in",
+			"maxBinaryInputBytes": 1048576,
+			"maxRequestBytes": 33554432,
+			"name": "terminal.write",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "terminal.resize",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "terminal.close",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "terminal.attach",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "terminal.snapshot",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.local.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.health",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.models",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.namingModels.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.namingModels.set",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.readDir",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.settings.update",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.shownInHome.set",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.pi.probe",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.local.test",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.localPiResources.set",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.agentIdentities",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.configHosts",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.localKeys",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.save",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.password",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.remove",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.test",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.ssh.testDraft",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.wsl.distributions",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.wsl.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.wsl.save",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.wsl.remove",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "connection.wsl.test",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.state",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.lanAddresses",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.enabled.set",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.port.set",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.addresses.set",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.pairing.regenerate",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.device.revoke",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.device.rename",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.devices.setScopes",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "remote.devices.revokeAll",
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "device.revokeSelf",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "preferences.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "preferences.patch",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "theme.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "theme.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "models.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "models.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "models.scope.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "models.scope.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "nextPrompt.settings.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "nextPrompt.settings.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "nextPrompt.request",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "promptEnhancement.settings.get",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "promptEnhancement.settings.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "promptEnhancement.enhance",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "cacheKeepAlive.settings.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "cacheKeepAlive.settings.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "cacheKeepAlive.pause",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.list",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.search",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.externalActivity",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.history",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "binary_out",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.historyImage",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.title",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.delete",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.uiState.set",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.readStates",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.markRead",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.start",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.stop",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.state",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.transcript",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.rpc",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.mcp.approve",
+			"scope": "workspace",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "files.search",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "binary_out",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "files.image",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "binary_in",
+			"maxBinaryInputBytes": 10485760,
+			"maxRequestBytes": 33554432,
+			"name": "chat.files.upload",
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "chat.files.remove",
+			"scope": "chat",
+			"timeoutMs": 45000
+		}
+	],
+	"protocolVersion": "2.0"
+}
