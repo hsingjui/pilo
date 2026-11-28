@@ -1,16 +1,22 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use pilo_domain::RemoteScopes;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
 };
 
-use super::*;
+use super::{capabilities::methods_hash, *};
 use crate::{
     Runtime,
     events::{EventBatch, EventQueueLimits, PiProcessState, RuntimeEvent, RuntimeEventEnvelope},
+    host_api::{self, ErrorCode},
     host_paths::HostPaths,
-    initialize_local_server_binary,
+    initialize_local_server_binary, storage,
+    terminal::TerminalOwner,
 };
 
 struct TestHost {
