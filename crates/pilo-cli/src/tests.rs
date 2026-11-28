@@ -185,14 +185,19 @@ fn open_targets_resolve_against_the_callers_cwd() {
         open_target(&words(&["--session", "0198-ab"])).unwrap(),
         OpenTarget::Session("0198-ab".into())
     );
-    let cwd = std::path::Path::new("/work/some dir");
+    let (cwd, abs) = if cfg!(windows) {
+        (r"C:\work\some dir", r"D:\abs")
+    } else {
+        ("/work/some dir", "/abs")
+    };
+    let cwd = std::path::Path::new(cwd);
     assert_eq!(
         resolve_directory(cwd, "my project").unwrap(),
-        std::path::PathBuf::from("/work/some dir/my project")
+        cwd.join("my project")
     );
     assert_eq!(
-        resolve_directory(cwd, "/abs").unwrap(),
-        std::path::PathBuf::from("/abs")
+        resolve_directory(cwd, abs).unwrap(),
+        std::path::PathBuf::from(abs)
     );
     for bad in [
         &["a", "b"][..],
