@@ -156,7 +156,7 @@ export class HttpTransport implements HostTransport {
 			options.createWebSocket ?? defaultCreateWebSocket();
 		this.scheduler = options.scheduler ?? defaultScheduler();
 		this.createAbortController =
-			options.createAbortController ?? defaultCreateAbortController();
+			options.createAbortController ?? (() => defaultCreateAbortController()());
 		this.expectedMajor =
 			options.expectedMajorVersion ??
 			parseMajorVersion(HOST_API_PROTOCOL_VERSION) ??
