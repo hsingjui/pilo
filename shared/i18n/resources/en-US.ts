@@ -1044,6 +1044,7 @@ const enUS = {
 		archivedSessions: "Archived sessions",
 		unarchive: "Unarchive",
 		undoArchive: "Undo",
+		sessionJustNow: "Just now",
 		noArchivedSessions: "No archived sessions",
 		loadArchivedFailed: "Couldn't load archived sessions",
 		moveDown: "Move down",

@@ -50,6 +50,10 @@ import {
 	sessionRowKey,
 	sidebarSessions,
 } from "./sidebar-projects";
+import {
+	createSessionAgeClock,
+	SidebarSessionClock,
+} from "./sidebar-session-age";
 import { SessionGlide } from "./sidebar-session-glide";
 import { SessionRow } from "./sidebar-session-row";
 import type { SidebarSettingsStore } from "./sidebar-settings";
@@ -75,12 +79,22 @@ export interface SidebarProps {
 }
 
 const SECTION = "mb-3 w-full min-w-0 overflow-hidden last:mb-0";
+
+export function Sidebar(props: SidebarProps) {
+	const now = createSessionAgeClock();
+	return (
+		<SidebarSessionClock.Provider value={now}>
+			<SidebarContents {...props} />
+		</SidebarSessionClock.Provider>
+	);
+}
+
 /**
  * The sidebar's list in the saved view, as the WebUI `SidebarTree`: the
  * projects by connection, each with its latest sessions once expanded, the
  * sessions of one project, or every project's latest sessions as one list.
  */
-export function Sidebar(props: SidebarProps) {
+function SidebarContents(props: SidebarProps) {
 	const { hosts } = props;
 	// A Host switch remounts the sidebar. The reveal needs a closed layout first.
 	const awaitingHostLayout = signal(

@@ -998,6 +998,7 @@ const zhCN = {
 		archivedSessions: "已归档会话",
 		unarchive: "取消归档",
 		undoArchive: "撤销",
+		sessionJustNow: "刚刚",
 		noArchivedSessions: "暂无已归档会话",
 		loadArchivedFailed: "无法加载已归档会话",
 		moveDown: "下移",
