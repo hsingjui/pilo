@@ -145,7 +145,8 @@ fn same_user(stream: &NamedPipeServer, user: &TokenSid) -> bool {
     if !opened {
         return false;
     }
-    let peer = TokenSid::of_token(token);
+    // SAFETY: the token was opened with TOKEN_QUERY above.
+    let peer = unsafe { TokenSid::of_token(token) };
     unsafe { CloseHandle(token) };
     peer.is_ok_and(|peer| peer.same_user(user))
 }

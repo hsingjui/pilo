@@ -158,7 +158,10 @@ pub mod windows {
     pub struct TokenSid(Vec<u8>);
 
     impl TokenSid {
-        pub fn of_token(token: HANDLE) -> Result<Self, String> {
+        /// # Safety
+        ///
+        /// `token` must be a valid access token handle opened with `TOKEN_QUERY`.
+        pub unsafe fn of_token(token: HANDLE) -> Result<Self, String> {
             let mut length = 0_u32;
             // SAFETY: a null buffer queries the required length.
             unsafe { GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut length) };
@@ -188,7 +191,8 @@ pub mod windows {
             if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
                 return Err("failed to open the current Windows process token".to_owned());
             }
-            let sid = Self::of_token(token);
+            // SAFETY: the token was opened with TOKEN_QUERY above.
+            let sid = unsafe { Self::of_token(token) };
             // SAFETY: the token was opened above.
             unsafe { CloseHandle(token) };
             sid
