@@ -8,6 +8,8 @@ mod chat_sessions;
 mod connection_diagnostics;
 mod connection_models;
 pub mod connections;
+// No caller until the Pilo CLI migration takes over these handlers.
+#[allow(dead_code)]
 mod control;
 mod credentials;
 pub mod debug_trace;

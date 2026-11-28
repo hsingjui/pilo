@@ -36,7 +36,7 @@ impl WeakRuntime {
         self.0
             .upgrade()
             .map(Runtime)
-            .ok_or_else(|| "Pilo Host control is unavailable".to_owned())
+            .ok_or_else(|| "Pilo Host is unavailable".to_owned())
     }
 }
 
@@ -105,7 +105,7 @@ impl Runtime {
             core: super::PiloRuntime::default(),
             remote: super::RemoteServerManager::default(),
         }));
-        runtime.servers.initialize_control(&runtime);
+        runtime.servers.initialize_runtime(&runtime);
         runtime
     }
 
@@ -229,29 +229,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agent_control_resolves_the_same_runtime_without_retaining_it() {
+    async fn server_manager_resolves_the_same_runtime_without_retaining_it() {
         let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
         let servers = runtime.servers.clone();
-        let shared = servers.control_runtime().unwrap();
+        let shared = servers.host_runtime().unwrap();
         assert!(Arc::ptr_eq(&runtime.0, &shared.0));
         let weak = runtime.downgrade();
         drop(shared);
         drop(runtime);
         assert!(weak.upgrade().is_err());
-        assert!(servers.control_runtime().is_err());
+        assert!(servers.host_runtime().is_err());
         assert!(
             super::super::server_client::ServerManager::default()
-                .control_runtime()
+                .host_runtime()
                 .is_err()
         );
     }
 
     #[tokio::test]
-    async fn empty_runtime_shutdown_revokes_control_and_is_repeatable() {
+    async fn empty_runtime_shutdown_releases_host_runtime_and_is_repeatable() {
         let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
-        assert!(runtime.servers.control_runtime().is_ok());
+        assert!(runtime.servers.host_runtime().is_ok());
         runtime.shutdown().await;
-        assert!(runtime.servers.control_runtime().is_err());
+        assert!(runtime.servers.host_runtime().is_err());
         runtime.shutdown().await;
     }
 

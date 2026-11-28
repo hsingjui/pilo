@@ -53,9 +53,7 @@ pub use target::initialize_server_resource_dir;
 
 #[cfg(test)]
 pub(super) use target::{ServerArch, installed_server_candidates};
-pub(super) use target::{
-    ServerPlatform, ServerTarget, local_server_binary, parse_target_probe, server_binary,
-};
+pub(super) use target::{ServerPlatform, ServerTarget, parse_target_probe, server_binary};
 
 struct ServerArtifact {
     path: PathBuf,

@@ -4,7 +4,6 @@ use std::{
 };
 
 use pilo_domain::{ConnectionKind, SessionIndexEntry, SessionUiStateUpdate};
-use pilo_protocol::ControlCommand;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
@@ -15,7 +14,7 @@ use crate::{
     runtime_api, session_api, storage,
 };
 
-use super::{encode, required};
+use super::{ControlCommand, encode, required};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -144,7 +143,7 @@ pub(super) async fn execute(
                 None,
             )
             .await?;
-            if history.len() >= pilo_protocol::CONTROL_MAX_BYTES - 1024 {
+            if history.len() >= super::CONTROL_MAX_BYTES - 1024 {
                 return Err(
                     "session history exceeds the CLI byte limit; request a smaller page".to_owned(),
                 );

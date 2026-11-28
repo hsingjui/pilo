@@ -1,4 +1,4 @@
-use pilo_protocol::ControlCommand;
+use super::ControlCommand;
 use serde_json::{Value, json};
 
 use super::{changed, decode, encode, required};

@@ -162,5 +162,5 @@ pub(super) fn catalog() -> Value {
             }
         }
     });
-    json!({ "hostPlatform": std::env::consts::OS, "settings": entries, "connectionsSave": { "stdinOnly": true, "schema": connection_schema, "secret": ["password"], "passwordReadback": false }, "target": "connection/project scoped commands require --connection/--project; paths use the target environment", "limitBytes": pilo_protocol::CONTROL_MAX_BYTES })
+    json!({ "hostPlatform": std::env::consts::OS, "settings": entries, "connectionsSave": { "stdinOnly": true, "schema": connection_schema, "secret": ["password"], "passwordReadback": false }, "target": "connection/project scoped commands require --connection/--project; paths use the target environment", "limitBytes": super::CONTROL_MAX_BYTES })
 }
