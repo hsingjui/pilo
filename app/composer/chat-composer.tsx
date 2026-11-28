@@ -64,6 +64,7 @@ import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import { ComposerActions } from "./composer-actions";
+import { suggestionMenuAction } from "./composer-suggestion-keys";
 import type { ComposerAssistance } from "./composer-assistance";
 import { ComposerContextUsage } from "./composer-context-usage";
 import {
@@ -438,10 +439,6 @@ export function ChatComposer(props: ChatComposerProps) {
 	) => {
 		const active = query();
 		if (!active || !menuOpen()) return;
-		if (key === "Escape") {
-			dismissSuggestions();
-			return;
-		}
 		const list = items();
 		const count = list.length;
 		const onTabs = categoryFocused();
@@ -453,22 +450,26 @@ export function ChatComposer(props: ChatComposerProps) {
 			}
 			return;
 		}
-		if (key === "Enter") {
-			if (count) pick(list[onTabs ? 0 : index()]);
+		if (
+			key === "ArrowUp" &&
+			active.trigger === "@" &&
+			!onTabs &&
+			index() === 0
+		) {
+			changeMentionTab(mentionTab());
 			return;
 		}
-		if (key === "ArrowDown" && count) {
+		const action = suggestionMenuAction(key, count);
+		if (action === "dismiss") {
+			dismissSuggestions();
+		} else if (action === "pick") {
+			pick(list[onTabs ? 0 : index()]);
+		} else if (action === "next") {
 			enterCandidates();
 			index.update((i) => (onTabs ? 0 : (i + 1) % count));
-			return;
-		}
-		if (key === "ArrowUp") {
-			if (active.trigger === "@" && !onTabs && index() === 0) {
-				changeMentionTab(mentionTab());
-			} else if (count) {
-				enterCandidates();
-				index.update((i) => (onTabs ? count - 1 : (i - 1 + count) % count));
-			}
+		} else if (action === "prev") {
+			enterCandidates();
+			index.update((i) => (onTabs ? count - 1 : (i - 1 + count) % count));
 		}
 	};
 

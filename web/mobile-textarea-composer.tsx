@@ -1,3 +1,4 @@
+import { suggestionMenuAction } from "../app/composer/composer-suggestion-keys";
 import {
 	cleanup,
 	computed,
@@ -405,24 +406,22 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 					if (state().composing) return;
 					if (menuOpen()) {
 						const entries = suggestionItems();
-						if (event.key === "Escape") {
+						const action = suggestionMenuAction(event.key, entries.length);
+						if (action === "dismiss") {
 							dismissedQuery.set(queryKey());
 							return;
 						}
-						if (event.key === "ArrowDown" && entries.length > 0) {
+						if (action === "next") {
 							selectedIndex.update((i) => (i + 1) % entries.length);
 							return;
 						}
-						if (event.key === "ArrowUp" && entries.length > 0) {
+						if (action === "prev") {
 							selectedIndex.update(
 								(i) => (i - 1 + entries.length) % entries.length,
 							);
 							return;
 						}
-						if (
-							(event.key === "Tab" || event.key === "Enter") &&
-							entries.length > 0
-						) {
+						if (action === "pick") {
 							pickSuggestion(entries[selectedIndex()]);
 							return;
 						}
