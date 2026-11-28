@@ -698,6 +698,7 @@ export function AppShell(props: AppShellProps) {
 				titleBar={() => ({ height: barHeight(), left: titleBar().left })}
 				onSearch={() => paletteOpen.set(true)}
 				onNewChat={newChat}
+				newChatShortcut={() => shortcuts()["new-chat"]}
 				onSelectChat={showChat}
 				onOpenSettings={client ? () => settingsOpen.set(true) : undefined}
 				update={update}

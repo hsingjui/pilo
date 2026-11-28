@@ -30,8 +30,10 @@ import { textTooltip } from "../ui/tooltip";
 import type { DesktopUpdate } from "./desktop-update";
 import type { ArchiveView } from "./archived-sessions";
 import { t } from "./i18n";
+import { PiLogo } from "./pi-logo";
 import { Sidebar, type SidebarProps } from "./Sidebar";
 import type { SidebarLayout } from "./sidebar-layout";
+import { APP_SHORTCUTS, nshAppShortcut } from "../shortcuts";
 import { createHover } from "../ui/hover";
 import {
 	SidebarAction,
@@ -59,6 +61,8 @@ export interface SidebarPanelProps extends Omit<
 	titleBar: Accessor<{ height: number; left: number }>;
 	onSearch: () => void;
 	onNewChat: () => void;
+	/** Shortcut string for creating a new session, shown as a subtle hint. */
+	newChatShortcut?: Accessor<string | undefined>;
 	onOpenSettings?: () => void;
 	/** Desktop updater state; renders the footer update trigger when an update is available. */
 	update?: DesktopUpdate;
@@ -227,6 +231,11 @@ export function sidebarTitleBarMarginTop(
 	return os === "macos" ? -card.paddingTop : -card.top;
 }
 
+/** Subtle borderless tinted fill harmonized with the sidebar's own surface. */
+function sidebarSoftSurface(hovered = false) {
+	return `color-mix(in srgb, ${token("sidebar-foreground")} ${hovered ? 12 : 7}%, transparent)`;
+}
+
 /**
  * The sidebar as the WebUI `AppSidebar` draws it: the header with the app's
  * name and its actions, a new session (or the project's sessions' back
@@ -248,10 +257,8 @@ export function SidebarPanel(props: SidebarPanelProps) {
 		return view?.projectId !== undefined && !archiveProject() ? null : view;
 	});
 	const card = computed(sidebarSurface);
-	// Center the visible Latin glyphs vertically against the title-bar icons.
-	const titleTextStyle = {
-		transform: [{ translateY: platform.os === "macos" ? -1 : 1 }],
-	};
+	const hasTrafficLights = () => props.titleBar().left > 0;
+	const brandScale = () => token("pilo-ui-text-sm") / 14;
 	// A view of sessions of a project that is gone closes.
 	const viewedProject = computed(() => {
 		const id = projectView();
@@ -309,20 +316,54 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<View class="min-w-0 flex-1 flex-row items-center px-2">
+					<View class="min-w-0 flex-1 flex-row items-center gap-2 pl-2 pr-1">
+						<View
+							accessible={false}
+							class="shrink-0 items-center justify-center"
+							style={{
+								width: hasTrafficLights() ? 21 : 24,
+								height: hasTrafficLights() ? 21 : 24,
+								borderRadius: hasTrafficLights() ? 5.5 : 6.5,
+								backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 8%, transparent)`,
+							}}
+						>
+							<PiLogo
+								size={hasTrafficLights() ? 11 : 13}
+								trim
+								color={token("sidebar-selection-foreground")}
+							/>
+						</View>
 						<Text
-							class={`min-w-0 shrink truncate font-sans text-xl text-(length:--pilo-ui-text-xl) font-semibold leading-none tracking-tight ${
-								appInfo().development
-									? "text-primary"
-									: "text-sidebar-foreground"
-							}`}
-							style={titleTextStyle}
+							class="min-w-0 shrink truncate font-sans font-bold leading-none tracking-tight"
+							style={{
+								fontSize: (hasTrafficLights() ? 17 : 19) * brandScale(),
+								color: token("sidebar-selection-foreground"),
+							}}
 						>
 							Pilo
 						</Text>
+						{() =>
+							appInfo().development ? (
+								<View
+									testID="sidebar-dev-badge"
+									accessible={false}
+									class="shrink-0 items-center justify-center rounded px-1.5 py-0.5"
+									style={{
+										backgroundColor: `color-mix(in srgb, ${token("primary")} 14%, transparent)`,
+									}}
+								>
+									<Text
+										class="font-sans text-[10px] font-bold leading-none tracking-wider"
+										style={{ color: token("primary") }}
+									>
+										DEV
+									</Text>
+								</View>
+							) : null
+						}
 					</View>
 					<View
-						class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2"
+						class="mr-[13px] h-7 shrink-0 flex-row items-center gap-0.5"
 						style={[
 							tactileTransition("opacity"),
 							layout.collapsed() || layout.settledCollapsed()
@@ -346,7 +387,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						</SidebarAction>
 					</View>
 				</View>
-				<View class="-mt-1 shrink-0 gap-1 px-1.5">
+				<View class="mt-1 shrink-0 gap-1 px-2.5">
 					{() => {
 						if (archiveView()) {
 							const project = archiveProject();
@@ -374,7 +415,10 @@ export function SidebarPanel(props: SidebarPanelProps) {
 								}}
 							/>
 						) : (
-							<NewChatButton onPress={props.onNewChat} />
+							<NewChatButton
+								onPress={props.onNewChat}
+								shortcut={props.newChatShortcut}
+							/>
 						);
 					}}
 				</View>
@@ -519,16 +563,20 @@ export function StartupSidebar(
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<View class="min-w-0 flex-1 flex-row items-center px-2">
+					<View class="min-w-0 flex-1 flex-row items-center gap-2 pl-2 pr-1">
+						<Skeleton strong class="size-6 shrink-0 rounded-md" />
 						<Skeleton strong class="h-5 w-11" />
 					</View>
-					<View class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2">
+					<View class="mr-[13px] h-7 shrink-0 flex-row items-center gap-0.5">
 						{titleAction()}
 						{titleAction()}
 					</View>
 				</View>
-				<View class="-mt-1 shrink-0 px-1.5">
-					<View class="h-8 flex-row items-center gap-1.5 px-2">
+				<View class="mt-1 shrink-0 px-2.5">
+					<View
+						class="h-8 flex-row items-center gap-2 rounded-lg px-2.5"
+						style={{ backgroundColor: sidebarSoftSurface() }}
+					>
 						<Skeleton class="size-4 shrink-0" />
 						<Skeleton class="h-3 w-16" />
 					</View>
@@ -614,15 +662,70 @@ function SidebarToolbarRow(props: {
 	);
 }
 
-function NewChatButton(props: { onPress: () => void }) {
+function NewChatButton(props: {
+	onPress: () => void;
+	shortcut?: Accessor<string | undefined>;
+}) {
+	const hover = createHover();
+	const pointerBlur = blurOnPointerPress();
+	const iconForeground = () =>
+		token(
+			hover.hovered() ? "sidebar-hover-foreground" : "sidebar-foreground-muted",
+		);
+	const shortcutLabel = () => {
+		const raw = props.shortcut?.() ?? APP_SHORTCUTS.newChat;
+		const normalized = nshAppShortcut(raw, platform.os === "macos");
+		return normalized ? keymap.label(normalized) : "";
+	};
 	return (
 		<View class="flex-row items-center gap-1">
-			<SidebarToolbarRow
-				testID="sidebar-new-chat"
-				icon="SquarePen"
-				label={() => t("sidebar.newSession")}
-				onPress={props.onPress}
-			/>
+			<Foreground.Provider value={iconForeground}>
+				<BaseButton
+					{...hover.props}
+					ref={pointerBlur.ref}
+					onMouseUp={pointerBlur.onMouseUp}
+					testID="sidebar-new-chat"
+					class="group h-8 min-w-0 flex-1 flex-row items-center gap-2 rounded-lg px-2.5"
+					style={[
+						tactileTransition("background-color"),
+						{ backgroundColor: sidebarSoftSurface(hover.hovered()) },
+					]}
+					focusVisibleStyle={sidebarFocusRing()}
+					onPress={props.onPress}
+				>
+					<View class="size-4 shrink-0 items-center justify-center">
+						<Icon name="SquarePen" size={15} />
+					</View>
+					<Text
+						class="min-w-0 flex-1 truncate font-sans font-medium"
+						style={{
+							...sidebarText("sm"),
+							color: token(
+								hover.hovered()
+									? "sidebar-hover-foreground"
+									: "sidebar-selection-foreground",
+							),
+						}}
+					>
+						{() => t("sidebar.newSession")}
+					</Text>
+					{() => {
+						const label = shortcutLabel();
+						return label ? (
+							<Text
+								accessible={false}
+								class="shrink-0 font-sans text-[11px] font-medium"
+								style={{
+									color: token("sidebar-foreground-muted"),
+									opacity: 0.72,
+								}}
+							>
+								{label}
+							</Text>
+						) : null;
+					}}
+				</BaseButton>
+			</Foreground.Provider>
 		</View>
 	);
 }
