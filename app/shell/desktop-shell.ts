@@ -19,6 +19,61 @@ export type ProjectNativeApp =
 	| "explorer"
 	| "powershell";
 
+/** What the CLI page knows about the `pilo` entry on the terminal PATH. */
+export type DesktopCliState =
+	| "unavailable"
+	| "not_installed"
+	| "ready"
+	| "not_in_path"
+	| "stale"
+	| "conflict";
+
+export interface DesktopCliStatus {
+	/** `pilo` or `pilo-dev`, with `.exe` on Windows. */
+	command: string;
+	state: DesktopCliState;
+	/** Why a `stale` entry needs repair. */
+	reason:
+		| "missing"
+		| "moved"
+		| "other_app"
+		| "outdated"
+		| "path_removed"
+		| null;
+	bundledPath: string | null;
+	/** The bundled CLI's `version` output; `null` when it could not run. */
+	bundledVersion: string | null;
+	entryPath: string | null;
+	entryTarget: string | null;
+	installedVersion: string | null;
+	/** The directory that has to be on PATH for the entry to run. */
+	pathDir: string | null;
+	/** An earlier PATH match that runs instead of Pilo's CLI. */
+	shadowedBy: string | null;
+	/** A file Pilo did not create, left untouched. */
+	conflictPath: string | null;
+	installation: {
+		source: "installed" | "portable" | "appimage";
+		path: string;
+	} | null;
+	/** Set by actions. */
+	outcome:
+		| "installed"
+		| "fallback"
+		| "conflict"
+		| "uninstalled"
+		| "canceled"
+		| null;
+}
+
+/** Installs the CLI bundled with this desktop app (absent on the WebUI). */
+export interface DesktopCliApi {
+	status(): Promise<DesktopCliStatus>;
+	install(): Promise<DesktopCliStatus>;
+	repair(): Promise<DesktopCliStatus>;
+	uninstall(): Promise<DesktopCliStatus>;
+}
+
 export interface DesktopShell {
 	openExternal(url: string): Promise<unknown>;
 	pickLocalProjectDirectory?(): Promise<string | null>;
@@ -36,6 +91,8 @@ export interface DesktopShell {
 	dock?: DesktopDockApi;
 	settings?: DesktopSettingsClient;
 	createUpdate?(options: DesktopUpdateOptions): DesktopUpdate;
+	/** The bundled CLI installer; desktop only. */
+	cli?: DesktopCliApi;
 }
 
 export type DesktopSettingsClient = {

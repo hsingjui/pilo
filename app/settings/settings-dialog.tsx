@@ -32,6 +32,7 @@ import type { DesktopUpdate } from "../shell/desktop-update";
 import { t } from "../shell/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
+import { CliPane } from "./cli-pane";
 import { ConnectionsPane, type ConnectionsPaneProps } from "./connections-pane";
 import { FontsPane } from "./fonts-pane";
 import { SETTINGS_SM_WIDTH } from "./layout";
@@ -98,7 +99,11 @@ export interface SettingsDialogProps {
 	desktop?: DesktopWindowShell;
 	shell?: Pick<
 		DesktopShell,
-		"systemFontFamilies" | "openLogDirectory" | "openExternal" | "notifications"
+		| "systemFontFamilies"
+		| "openLogDirectory"
+		| "openExternal"
+		| "notifications"
+		| "cli"
 	>;
 	update?: DesktopUpdate;
 	/** A remote Host's connections, which only that Host edits. */
@@ -119,6 +124,7 @@ export type SettingsTabId =
 	| "prompt-enhancement"
 	| "cache-keep-alive"
 	| "session-naming"
+	| "cli"
 	| "about";
 
 type SettingsTab = {
@@ -190,6 +196,12 @@ const SETTINGS_TABS: SettingsTab[] = [
 		icon: "Tag",
 	},
 	{
+		id: "cli",
+		section: "other",
+		labelKey: "settings.cli",
+		icon: "SquareTerminal",
+	},
+	{
 		id: "about",
 		section: "other",
 		labelKey: "settings.about",
@@ -217,8 +229,11 @@ const CONTENT_MAX_WIDTH = 1024; // max-w-5xl
  */
 export function SettingsDialog(props: SettingsDialogProps) {
 	const active = signal<SettingsTabId>("preferences");
+	// Only the desktop app bundles a CLI to install.
 	const shownTabs = SETTINGS_TABS.filter(
-		(tab) => !props.hiddenTabs?.includes(tab.id),
+		(tab) =>
+			!props.hiddenTabs?.includes(tab.id) &&
+			(tab.id !== "cli" || props.shell?.cli !== undefined),
 	);
 	const dialog = useMountedDialog(props.open);
 	let contentScroll: ScrollRef | undefined;
@@ -477,6 +492,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
 															desktop={props.desktop}
 														/>
 													);
+												case "cli":
+													return props.shell?.cli ? (
+														<CliPane cli={props.shell.cli} />
+													) : null;
 												case "about":
 													return (
 														<AboutPane

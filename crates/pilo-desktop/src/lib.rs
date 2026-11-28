@@ -4,6 +4,7 @@
 
 use nsh_core::prelude::*;
 
+mod cli_install;
 mod dock;
 mod editor_links;
 mod notifications;
@@ -25,6 +26,7 @@ fn native(registry: &mut Registry) {
     registry.module::<editor_links::DesktopEditorLinks>();
     registry.module::<notifications::DesktopNotifications>();
     registry.module::<updater::DesktopUpdates>();
+    registry.module::<cli_install::DesktopCli>();
     registry.class::<pilo::Pilo>();
     registry.module::<pilo::remote_proxy::RemoteProxy>();
     registry.class::<pilo::remote_proxy::RemoteProxyRequest>();
