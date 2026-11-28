@@ -140,6 +140,23 @@ async fn hello_then_local_calls_dispatch_with_full_scope() {
 }
 
 #[tokio::test]
+async fn stopping_ipc_closes_connected_idle_clients() {
+    let scratch = Scratch::new();
+    let runtime = scratch.runtime();
+    let endpoint = scratch.endpoint();
+    let server = start(&runtime, &endpoint).await.unwrap();
+    let (mut stream, reply) = hello(&endpoint.path, PROTOCOL_VERSION).await;
+    assert_eq!(reply["protocol"], PROTOCOL_VERSION);
+
+    server.stop().await;
+    assert!(!endpoint.path.exists());
+    let eof = tokio::time::timeout(Duration::from_secs(1), read_frame(&mut stream))
+        .await
+        .expect("stopping local IPC must close a connected idle client");
+    assert!(eof.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn rejects_incompatible_major_versions_and_malformed_hello() {
     let scratch = Scratch::new();
     let runtime = scratch.runtime();

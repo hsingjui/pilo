@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{Semaphore, mpsc, watch},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 
 use crate::{
@@ -177,7 +177,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     let (mut reader, mut writer) = tokio::io::split(stream);
     let (left, caller_left) = watch::channel(false);
     let (frames, mut incoming) = mpsc::channel::<Result<Value, FrameError>>(1);
-    let read = tokio::spawn(async move {
+    let mut readers = JoinSet::new();
+    readers.spawn(async move {
         loop {
             let frame = read_frame(&mut reader).await;
             let end = !matches!(frame, Ok(Some(_)));
@@ -206,7 +207,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
             break;
         }
     }
-    read.abort();
+    readers.shutdown().await;
 }
 
 async fn respond(shared: &Shared, frame: Value, caller_left: watch::Receiver<bool>) -> Value {
