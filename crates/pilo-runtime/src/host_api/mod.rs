@@ -123,6 +123,9 @@ pub struct HostApiError {
     pub code: ErrorCode,
     pub message: String,
     pub retryable: bool,
+    /// Gateways answer with 413 Payload Too Large.
+    #[serde(skip)]
+    pub too_large: bool,
 }
 
 impl HostApiError {
@@ -131,6 +134,14 @@ impl HostApiError {
             code,
             message: message.into(),
             retryable: matches!(code, ErrorCode::Unavailable | ErrorCode::Timeout),
+            too_large: false,
+        }
+    }
+
+    pub(crate) fn too_large(message: impl Into<String>) -> Self {
+        Self {
+            too_large: true,
+            ..Self::invalid(message)
         }
     }
 
@@ -144,6 +155,34 @@ impl HostApiError {
 
     pub(crate) fn internal(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Internal, message)
+    }
+}
+
+/// Reading an image failed, or the image is over its size limit.
+#[derive(Debug)]
+pub(crate) enum ImageReadError {
+    TooLarge(String),
+    Failed(String),
+}
+
+impl ImageReadError {
+    pub(crate) fn into_host_error(self, failed: fn(String) -> HostApiError) -> HostApiError {
+        match self {
+            Self::TooLarge(message) => HostApiError::too_large(message),
+            Self::Failed(message) => failed(message),
+        }
+    }
+
+    pub(crate) fn into_message(self) -> String {
+        match self {
+            Self::TooLarge(message) | Self::Failed(message) => message,
+        }
+    }
+}
+
+impl From<String> for ImageReadError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
     }
 }
 
@@ -252,7 +291,7 @@ async fn execute(
         } else {
             format!("'{method}' binary input exceeds {limit} bytes")
         };
-        return Err(HostApiError::invalid(message));
+        return Err(HostApiError::too_large(message));
     }
     handlers::dispatch(rt, who, spec.name, params, bytes).await
 }

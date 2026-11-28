@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use pilo_domain::{Project, ProjectModelCache};
 
-use super::{Runtime, project, storage};
+use super::{Runtime, host_api::ImageReadError, project, storage};
 
 pub fn project_list(runtime: &Runtime) -> Result<Vec<Project>, String> {
     project::list(runtime)
@@ -323,7 +323,9 @@ pub async fn project_fs_read_image(
     path: String,
 ) -> Result<Vec<u8>, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::read_image(&runtime.servers, &project, &path).await
+    remote_fs::read_image(&runtime.servers, &project, &path)
+        .await
+        .map_err(ImageReadError::into_message)
 }
 
 pub async fn project_chat_file_upload(

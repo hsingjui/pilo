@@ -386,7 +386,7 @@ register! {
     "files.image": Chat BinaryOut |rt, _who| (project_id: String, path: String) {
         let project = ready_project(rt, &project_id).await?;
         remote_fs::read_image(&rt.servers, &project, &path).await
-            .map(Output::Bytes).map_err(HostApiError::invalid)
+            .map(Output::Bytes).map_err(|error| error.into_host_error(HostApiError::invalid))
     }
     "chat.files.upload": Chat BinaryIn(MAX_CHAT_FILE_BYTES) |rt, _who, data| (project_id: String, name: String) {
         let project = ready_project(rt, &project_id).await?;

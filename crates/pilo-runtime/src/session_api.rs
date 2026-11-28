@@ -553,7 +553,7 @@ pub(crate) async fn read_session_history_image(
         expected_fingerprint,
     )
     .await
-    .map_err(HostApiError::not_found)
+    .map_err(|error| error.into_host_error(HostApiError::not_found))
 }
 
 fn expected_session_fingerprint(

@@ -5,7 +5,7 @@ use serde_json::json;
 
 use pilo_domain::{Connection, Project};
 
-use super::server_client::ServerManager;
+use super::{host_api::ImageReadError, server_client::ServerManager};
 
 pub async fn read_connection_dir(
     servers: &ServerManager,
@@ -93,6 +93,10 @@ pub(crate) async fn remove_chat_file(
 
 const MAX_PROJECT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
+fn project_image_too_large() -> ImageReadError {
+    ImageReadError::TooLarge("project image exceeds the 10 MB limit".to_owned())
+}
+
 fn project_image_mime_type(path: &str) -> Result<&'static str, String> {
     if path.is_empty()
         || path.len() > 4096
@@ -118,9 +122,9 @@ fn project_image_mime_type(path: &str) -> Result<&'static str, String> {
     }
 }
 
-fn validate_image_bytes(bytes: &[u8], mime_type: &str) -> Result<(), String> {
+fn validate_image_bytes(bytes: &[u8], mime_type: &str) -> Result<(), ImageReadError> {
     if bytes.len() > MAX_PROJECT_IMAGE_BYTES {
-        return Err("project image exceeds the 10 MB limit".to_owned());
+        return Err(project_image_too_large());
     }
     let valid = match mime_type {
         "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
@@ -130,7 +134,9 @@ fn validate_image_bytes(bytes: &[u8], mime_type: &str) -> Result<(), String> {
         _ => false,
     };
     if !valid {
-        return Err("project image content does not match its format".to_owned());
+        return Err("project image content does not match its format"
+            .to_owned()
+            .into());
     }
     Ok(())
 }
@@ -141,14 +147,14 @@ pub async fn read_image(
     servers: &ServerManager,
     project: &Project,
     path: &str,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ImageReadError> {
     let mime_type = project_image_mime_type(path)?;
     let entry = stat(servers, project, path).await?;
     if entry.kind != FsEntryKind::File {
-        return Err("project image must be a regular file".to_owned());
+        return Err("project image must be a regular file".to_owned().into());
     }
     if entry.size > MAX_PROJECT_IMAGE_BYTES as u64 {
-        return Err("project image exceeds the 10 MB limit".to_owned());
+        return Err(project_image_too_large());
     }
     let bytes = read_file(servers, project, path).await?;
     validate_image_bytes(&bytes, mime_type)?;

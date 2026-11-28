@@ -140,7 +140,11 @@ fn status_for_code(code: ErrorCode) -> StatusCode {
 }
 
 fn v2_error(error: HostApiError) -> Response {
-    let status = status_for_code(error.code);
+    let status = if error.too_large {
+        StatusCode::PAYLOAD_TOO_LARGE
+    } else {
+        status_for_code(error.code)
+    };
     (status, Json(json!({ "ok": false, "error": error }))).into_response()
 }
 
@@ -212,11 +216,7 @@ pub(super) async fn upload(
             } else {
                 format!("'{method}' binary input exceeds {limit} bytes")
             };
-            return (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                Json(json!({ "ok": false, "error": HostApiError::invalid(message) })),
-            )
-                .into_response();
+            return v2_error(HostApiError::too_large(message));
         }
     };
     let params = match query_to_json(query) {
@@ -253,17 +253,12 @@ pub(super) async fn blob(
         Err(error) => return v2_error(error),
     };
     match host.binary(&method, params, None).await {
-        Ok(BinaryOutput::Bytes(bytes)) if bytes.len() > host_api::MAX_BLOB_OUTPUT_BYTES => (
-            StatusCode::PAYLOAD_TOO_LARGE,
-            Json(json!({
-                "ok": false,
-                "error": HostApiError::invalid(format!(
-                    "'{method}' binary output exceeds {} bytes",
-                    host_api::MAX_BLOB_OUTPUT_BYTES
-                )),
-            })),
-        )
-            .into_response(),
+        Ok(BinaryOutput::Bytes(bytes)) if bytes.len() > host_api::MAX_BLOB_OUTPUT_BYTES => {
+            v2_error(HostApiError::too_large(format!(
+                "'{method}' binary output exceeds {} bytes",
+                host_api::MAX_BLOB_OUTPUT_BYTES
+            )))
+        }
         Ok(BinaryOutput::Bytes(bytes)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/octet-stream")
@@ -274,11 +269,6 @@ pub(super) async fn blob(
         Ok(BinaryOutput::Json(_)) => {
             v2_error(HostApiError::internal("expected binary output from blob"))
         }
-        Err(error) if error.message.contains("exceeds the 10 MB limit") => (
-            StatusCode::PAYLOAD_TOO_LARGE,
-            Json(json!({ "ok": false, "error": HostApiError::invalid(error.message) })),
-        )
-            .into_response(),
         Err(error) => v2_error(error),
     }
 }
