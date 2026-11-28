@@ -25,6 +25,7 @@ mod credentials;
 mod encode;
 mod host;
 mod objects;
+pub(crate) mod remote_proxy;
 mod shell;
 
 use encode::{encode_event_batch, encode_terminal_events, positive_count};
