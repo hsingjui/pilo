@@ -735,8 +735,8 @@ function MacBrandToolbar(props: {
 }
 
 /**
- * Windows / Linux / WebUI split action bar aligned to the sidebar list's
- * exact width: soft-fill New Session button beside a matching Search button.
+ * Windows / Linux / WebUI split action bar. The 5pt right inset aligns
+ * the 32pt Search button's center with the sidebar's 24pt row actions.
  */
 function NewChatActionBar(props: {
 	onNewChat: () => void;
@@ -761,7 +761,7 @@ function NewChatActionBar(props: {
 		);
 	const shortcutLabel = () => resolveShortcutLabel(props.shortcut);
 	return (
-		<View class="flex-row items-center gap-1.5">
+		<View class="flex-row items-center gap-1.5 pr-[5px]">
 			<Foreground.Provider value={newIconForeground}>
 				<BaseButton
 					{...newHover.props}
