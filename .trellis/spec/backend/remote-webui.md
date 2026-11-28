@@ -443,9 +443,7 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   generates a new one without clearing devices. The desktop pins the entry to the
   `lan` address when one exists and no longer exposes entry or name editing;
   legacy `name` values stay in storage but are neither edited nor shown. Desktop
-  writes through `remote_set_addresses`. The separate `pilo ctl` setting
-  `remote.publicBaseUrl` still reads the legacy field and edits only the `public`
-  entry; it is not an `app/native` operation.
+  writes through `remote_set_addresses`.
   The saved-address editor and WebUI pairing choices share
   `sortRemoteAddresses` from `shared/remote-addresses.ts`: RFC1918 IPv4 origins
   appear before public/custom origins, preserving order within each group.

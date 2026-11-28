@@ -1,170 +1,158 @@
-# Built-in Agent Control
+# Pilo CLI (Local Host Client)
+
+> Status: contract for `.trellis/tasks/11-27-pilo-cli`. The CLI itself, the
+> local IPC endpoint and the desktop "CLI" settings page are implemented in
+> separate steps; this file is the source of truth for their contracts. The
+> former `pilo-server ctl` agent control path has been removed.
 
 ## Scope and ownership
 
-Interactive Pi sessions can query and change Pilo settings, add an existing
-project, and manage sessions in the calling project through `pilo-server ctl`.
-This is not an arbitrary Tauri/SQL bridge and
-does not create a second daemon. Host owns authorization, target resolution and
-business operations; Server forwards bounded control messages only.
+`pilo` (`crates/pilo-cli`) is a short-lived Rust client and the third Host
+client beside the desktop UI and Remote WebUI. It never opens SQLite, starts
+Pi or creates a `Runtime`. The desktop process still owns the single embedded
+Host. Desktop `NativeTransport`, remote `HttpTransport` and CLI IPC dispatch to
+the same Host API v2 method table and handlers in
+`crates/pilo-runtime/src/host_api/`. Remote WebUI HTTP/WS, device pairing and
+scopes are unchanged.
 
-Implementation: `crates/pilo-protocol/src/control.rs`,
-`crates/pilo-server/src/control.rs`, `runtime/control.rs` and
-`runtime/control/{catalog,settings}.rs`.
+The former session/settings handlers in `runtime/control/{sessions,settings,catalog}.rs`
+are business code only; the CLI migration reuses or replaces them. They must
+not depend on a lease or a calling Pi session to resolve targets.
 
-Control resolves Host state through the shared `Runtime`, not shell-managed
-state. Server managers, idle dispatchers and control leases retain weak Runtime
-handles so they cannot keep their owning sessions alive. Each executing request
-upgrades its handle for the duration of that operation. Native desktop settings
-delegate through `HostShell`; the nsh shell adapter (`desktop/src/pilo/shell.rs`)
-keeps the existing OS registration behavior and errors.
+## Instances
 
-## Contract
+- The default instance is compiled in from `PILO_CLI_APP_ID` (`option_env!`):
+  release packages ship `pilo` with `app.hsingjui.pilo`; dev packages ship
+  `pilo-dev` with `app.hsingjui.pilo.dev`. Unset (local builds) means
+  `app.hsingjui.pilo.dev`. `--dev` overrides to the dev instance.
+- Never infer the instance from `argv[0]` or `debug_assertions`, and never fall
+  back to the other instance after a connection failure.
 
-- No arguments still starts the stdio Server. `--version` / `--fingerprint`
-  retain their behavior. `ctl` runs once, prints JSON to stdout and diagnostics
-  to stderr, and exits nonzero on failure. `--json` is accepted; output is
-  always JSON. A missing Host/context is an error, not a daemon startup.
-- Commands: `status`, `settings list/get/set/reset`, `connections list/save`,
-  `projects list/add`. `settings set KEY JSON` accepts one JSON argument or
-  `--stdin`; `connections save` requires `--stdin` even for nonsecret edits.
-  Cache-policy reset also needs explicit provider/model identity as JSON.
-- `settings list` describes keys, defaults, constraints, scope, read-only or
-  action behavior, platform and the connection-save input schema. Never infer
-  a setter from a key or expose arbitrary `invoke`/Pi configuration files.
-- Connection/project settings require explicit `--connection` / `--project`.
-  `projects add PATH --connection ID` interprets PATH in the target environment.
-  It uses `project::add` inspection/upsert followed by `open_project` and a
-  Runtime change event. It never creates directories or copies source code.
-- Connection save reuses SSH/WSL setters and the home-visibility setter; Local
-  retains reserved ID `local` and workspace runtime. An existing connection
-  cannot change its kind. Saved credential readback is only `hasPassword`.
-  Connection removal is not exposed: its existing implementation cascades
-  project removal, which is outside this control API's scope.
-- Native settings invoke the existing autostart/tray/shortcut/remote manager
-  implementation. Return native errors, not synthetic success. Notifications
-  report a saved preference; OS/browser permission is still required.
-  Remote pairing URLs/tokens are never returned as ordinary settings.
+## Local IPC
 
-## Session CLI
+- No TCP port, token, pairing or confirmation; the OS user boundary is the
+  authorization. Host verifies the peer OS identity and grants
+  `Principal::Local`; clients cannot claim a principal. The Remote WebUI switch
+  does not affect IPC.
+- Endpoints (Host and CLI derive the same path; no discovery file):
+  - macOS: `~/Library/Application Support/<app id>/pilo.sock`
+  - Linux: `$XDG_RUNTIME_DIR/pilo/<app id>.sock`
+  - Unix fallback when the path exceeds 100 bytes or Linux has no
+    `XDG_RUNTIME_DIR`: `/tmp/pilo-<uid>/<app id>.sock`. Socket mode `0600`,
+    fallback directory `0700`; Host verifies it is owned by the current user and
+    is not a symlink. Only a stale own socket that refuses connections may be
+    rebound; never delete a live endpoint.
+  - Windows: `\\.\pipe\pilo-<app id>-<user SID>`, ACL current user only,
+    remote clients rejected.
+- Host creates and removes the endpoint; a real app exit closes it, hiding the
+  window does not.
 
-1. **Scope:** `pilo-server ctl sessions` uses the existing Host session index,
-   Pi runtime and history readers. The lease binds the source runtime key as
-   well as the project; `status` reports `sourceSessionKey` and `sourceProjectId`.
-2. **Signatures:** All session commands take `--project ID`. `list` accepts
-   optional stdin JSON `{offset?,limit?}`. `create --stdin` requires
-   `{message,title?}`. `send ID --stdin` requires `{message}`; `update ID --stdin`
-   accepts `{title?,pinned?}`. `history ID` accepts optional stdin JSON
-   `{startMessage?,messageLimit?}`. `get|abort|stop|resume|delete ID` take no JSON.
-3. **Contracts:** `ID` is a runtime key or a saved Pi session ID, not an arbitrary
-   file path. Resolve both under the calling project. New sessions dispatch a
-   first prompt and return a runtime key after the correlated Pi response, not
-   after generation completes. `accepted` means Pi acknowledged the command;
-   `disposition` can be `handled` if an input handler consumed it. Sending to
-   a saved session can resume it. Runtime state and bounded history are separate
-   reads; Pi JSONL remains the source of conversation data. `abort` interrupts
-   a turn; `stop` closes a Host-managed Pi process and preserves its history.
-4. **Validation / errors:** Reject mismatched project scope, blank or slash-command
-   messages, busy targets, and self-send/abort/stop/delete. Do not opt into Pi's
-   follow-up queue. Changes preserve omitted title/pin fields. Delete only
-   indexed files without a Host-managed owner; require explicit `sessions stop`
-   before trashing a managed file. Use `session.trash`, never unlink. If the
-   calling file identity is unknown, fail closed on deletion. On `create`, stop
-   the newly launched process if the first message was not sent or Pi explicitly
-   rejected it. If delivery is uncertain, preserve the process and include its
-   runtime key in the error. Do not automatically retry an uncertain write.
-5. **Good / base / bad:** Create with a prompt, poll `get`, then read a bounded
-   `history` page. Existing Desktop/WebUI delete and queue behavior is unchanged.
-   Cross-project IDs, external Pi ownership and missing trash support must not
-   silently mutate another session or unlink its file.
-6. **Checks pending:** In a managed session, assert empty create does not launch
-   a process, the first message is submitted once, busy send does not queue,
-   abort differs from stop and resume preserves history. Verify a rejected
-   first message stops its new process while a lost reply does not. Verify
-   managed delete does not interrupt Pi and self-delete or missing-trash errors
-   preserve the JSONL file. Cover Local/WSL/SSH routing.
-7. **Wrong vs correct:** Do not report a transport write as a completed response,
-   or let an old Server ignore a trash-only flag on `session.delete`. Correlate
-   the Pi response and use a separate RPC that old versions reject.
+### Frames and handshake
 
-## CLI argument and single-field validation
+- Frame: 4-byte big-endian unsigned length + UTF-8 JSON. Length counts JSON
+  bytes only, max 16 MiB; reject oversized declarations before reading the body.
+- Hello (5 s limit): CLI sends
+  `{"protocol":"2.0","client":"pilo-cli","version":"<cli version>"}`; Host
+  replies `{hostId, appVersion, capabilities, installation:{source,path}}`.
+  Incompatible major protocol is an explicit error; same-major patch drift is
+  accepted. `installation.source` is `installed`, `portable` or `appimage`;
+  `path` is the canonical app path (macOS `.app`, app directory, or the original
+  AppImage file). `hostId` cannot distinguish installed vs portable copies.
+- Request `{id, method, params}` mirrors `/api/v2/call`; response is
+  `{id, result}` or `{id, error:{code,message}}`. Default request timeout 60 s,
+  `--timeout` overrides it (not the hello limit). `{event}` frames are reserved
+  for a future `sessions send --wait` and are not sent. Never replay a
+  submitted write after a disconnect; retries happen only during connect/hello.
 
-- Scope / trigger: validate CLI grammar in `pilo-server::control::run_cli` and
-  field semantics in Host `runtime/control/settings.rs`, before persistence.
-  Do not tighten the shared `ThemeSettingsUpdate` patch API to fix CLI inputs.
-- Signatures: `ctl ... --connection ID --project ID`; `settings set KEY JSON`
-  or `--stdin`; ordinary `settings reset KEY` takes no JSON. Only
-  `settings reset connection.cacheKeepAlive JSON` (or `--stdin`) takes an
-  identity payload containing `provider` and `modelId`.
-- Contract: target IDs cannot be blank or start with `-`; a following option
-  must not be consumed as an ID. All theme field/action writes require non-null
-  values. Host also rejects non-null ordinary-reset payloads from raw control
-  commands, even if the CLI grammar is bypassed.
-- Validation / error matrix: missing/option-like ID, extra ordinary-reset JSON
-  (including `null` or stdin), and null theme values exit nonzero with stderr
-  and no stdout. They must not save a no-op or advance a revision.
-- Good / base / bad: cache reset with explicit identity succeeds; ordinary
-  preference and theme resets keep their defaults; `status --connection --json`,
-  `settings set theme.theme null` and `settings reset preferences.uiFontSize false`
-  fail. A partial theme patch remains valid outside this CLI setter.
-- Tests / assertions: real managed-session probes passed the original 223
-  negative/security checks plus 20 additional boundary/positive checks. Assert
-  unchanged preference/theme snapshots **including revisions** after rejected
-  commands, positional and stdin cache resets, restored effective values after
-  successful writes, and invalid capability after stopping the test session.
-  Rust formatting, workspace check and all-target/all-feature Clippy passed.
-  No repository test-suite source was changed.
-- Wrong vs correct: treating `Option<T>` deserialization as validation of a
-  required single field permits false success for null. Check the required
-  CLI value before constructing the existing patch object instead.
+## Commands
 
-## Identity and transport
+| Command | Host API / semantics |
+| --- | --- |
+| `settings get\|patch`, `settings theme get\|set` | `preferences.get/patch`, `theme.get/set`; field-level patches, never file writes. |
+| `projects list\|add\|remove` | `project.list/add/remove`; add uses the connection's path validation and workspace lifecycle. |
+| `sessions list\|get\|history` | `session.list/history`, `chat.state`; IDs resolve within a project, never arbitrary JSONL paths; bounded pagination. |
+| `sessions status <id>` | One snapshot from `chat.state` + `chat.transcript` / `session.history`; never starts Pi. |
+| `sessions create\|send\|abort\|stop` | `chat.start/rpc/stop` with the shared create/first-prompt semantics. |
+| `sessions archive\|restore\|delete\|update` | `session.uiState.set` with `archived: true/false`; update patches title/pin without rewriting omitted fields; delete uses Host trash, never unlink. |
+| `open [path]`, `open --session <id>`, `version`, `--help` | OS open/activate; navigation only with a target; `version`/`--help` need no Host. |
 
-- Each managed Server binds an ephemeral IPv4 loopback TCP endpoint. Frames are
-  newline-delimited JSON with a 1 MiB limit; there is no public HTTP management
-  listener. The existing WebUI HTTP API keeps its pairing middleware.
-- Host subscribes to a unique control stream before registering a 256-bit
-  random token. The stream identifies the source using Host project storage,
-  not caller-provided source IDs. Only explicitly controlled interactive
-  launches receive `PILO_CTL`, `PILO_CONTROL_ENDPOINT`, `PILO_CONTROL_TOKEN`.
-  Model-catalog and other background launches do not receive a capability;
-  inherited control variables are removed before spawning Pi.
-- `control.request` uses a dedicated subscription, never the Pi event stream's
-  single receiver. Host dispatches off the transport reader, so a setter can
-  call the same Server without deadlocking.
-- Registration/respond/revoke are synchronous protocol state operations handled
-  in input order. In particular, cancellation must not allow a queued revoke
-  to run before registration and leave a live capability behind.
-- Bounds: 256 contexts/Server, 32 accepted sockets, 64 pending requests/Server,
-  16 executing requests/Host control stream, five seconds to read the initial
-  authenticated frame and 60 seconds for a Server call. Host execution times
-  out at 55 seconds; the CLI waits at most 65 seconds for the result.
-- A pending-request guard removes requests on disconnect, timeout or cancellation.
-  Process exit and `pi.stop` revoke the local context; Host lease cleanup also
-  revokes mixed-SSH contexts. Dropping the Host dispatcher aborts its work.
-  Server/Host exit invalidates contexts. No writes are automatically replayed;
-  timeout/disconnect can mean the write outcome is unknown.
+- `create`/`send` read stdin JSON (`{"message":"…","title":"…"}`, `title` only
+  for create). Reject blank messages, slash commands and busy targets; never
+  queue silently. `create` reports acceptance only after Pi's correlated reply
+  to the first prompt, not after generation. Explicit non-submission/rejection
+  stops the new process; an unknown outcome keeps the session and returns a
+  queryable key. `send` can resume a saved session. `abort` interrupts a turn;
+  `stop` closes the managed process and keeps history. `archive` is not
+  `delete`; delete never implicitly stops a managed session.
+- Output: success prints exactly one JSON value on stdout and exits 0; errors
+  exit nonzero with diagnostics on stderr. `--help` is text. `version` prints
+  `{"cli":"<version>","appId":"<app id>"}`. Error classes distinguish offline,
+  incompatible protocol, invalid input, explicit rejection and unknown write
+  outcome (suggest querying, not retrying).
+- First-release `settings` covers preferences and theme only. Desktop-native
+  settings (exit behavior, global shortcuts, autostart) stay in the desktop
+  native bridge. No generic `pilo api`/invoke; never print credentials.
 
-## Local / WSL / SSH
+### `sessions status`
 
-Use the managed Server deployment and connection pool, never a globally installed
-CLI or guessed localhost instance. Multiple instances/dev-release builds get
-different endpoints and tokens. Windows debug GUI processes cannot supply a
-console CLI, so Windows development needs an adjacent console `pilo-server.exe`;
-the nsh Windows launch for this is not set up yet. Release uses its bundled
-console Server.
+Resolves the session through the Host index and reads existing Host state only:
+no Pi start/resume, no subscription, no JSONL tailing. Fields are always present:
 
-For local Pi with an SSH workspace, Host also registers a lease on the workspace's
-managed remote Server. `PILO_REMOTE_CONTROL` reaches the built-in SSH extension;
-its wrapper exports the remote executable and capability in the remote bash.
-The script travels over SSH stdin (`bash -s`), not SSH/shell argv. Strip control
-environment variables from the local SSH subprocess environment. Remote Pi is
-not required for this path.
+| Field | Meaning |
+| --- | --- |
+| `sessionId` | Resolved full session ID. |
+| `state` | `idle`, `running`, `compacting`, `not_running`, `error`. Process failure → `error`; no managed/stopped process → `not_running`; compacting wins over an active turn; active turn or starting Pi → `running`; otherwise `idle`. |
+| `turn` | `idle`, `active`, `truncated` or `null` (`chat.transcript.live.type`; `null` without a snapshot). |
+| `runningTools` | Tool names matched by call ID in the full current turn; `[]` when known idle; `null` when truncated/unavailable. Never guess. |
+| `lastAssistantMessage` | Text of the latest completed assistant message from history, or `null`. |
 
-Tokens must not appear in normal output, trace events, process arguments or
-connection queries. Passwords enter through stdin and the existing system
-credential store. This is instance/session binding, not a promise of isolation
-from malicious processes running as the same OS user.
+`state: "error"` is a successful query of a failed session. Host offline,
+unknown session or query failure are command errors, not `not_running`.
+
+## Open and launch
+
+- `pilo open` starts or activates the app associated with the PATH entry, waits
+  for hello and compares `installation` with that entry. A missing target asks
+  for repair; another running copy with the same app ID must be quit first.
+  Never navigate, report success or fall back to another copy on mismatch.
+- `pilo open <path>` resolves relative to the caller's cwd; Host canonicalizes
+  and matches Local projects, adding unregistered directories via
+  `project.add`. `pilo open --session <id>` accepts a full ID or unique prefix,
+  lists candidates when ambiguous, rejects JSONL paths and cannot be combined
+  with a path. Navigation is sent over IPC after the installation check, not via
+  `secondInstance` arguments (macOS does not emit that event).
+- Other commands never start the app unless `--launch` is given; then they wait
+  a bounded time for hello, verify the installation and execute exactly once.
+  Offline without `--launch` prints a hint to run `pilo open`.
+
+## Installation
+
+The CLI ships inside the app (`Contents/Resources/bin/` on macOS, `bin/` beside
+the executable on Windows/Linux; never mixed with `runtime/pilo-server-*`) and
+updates with it. The desktop-only "Settings → Other → CLI" page installs,
+uninstalls and repairs it: macOS `/usr/local/bin/pilo` symlink with one admin
+authorization (fallback `~/.local/bin` on cancel), Linux `~/.local/bin` (AppImage
+links to a persistent copy in `~/.local/share/pilo/bin/`), Windows adds the app's
+`bin` directory to the user PATH (no `pilo.cmd`). Install/uninstall/repair are
+idempotent, verify ownership, never overwrite third-party entries and report
+PATH shadowing. Remote WebUI never shows this page.
+
+## Removed: `pilo-server ctl`
+
+- There is no `ctl` subcommand, no `control.register/respond/revoke` protocol
+  messages or capabilities, no loopback control listener, no Host control
+  lease/dispatcher, no Pi system-prompt hint and no `PILO_CTL` /
+  `PILO_CONTROL_*` / `PILO_REMOTE_CONTROL` injection (including the SSH
+  workspace bash wrapper). Any positional first argument, including `ctl`,
+  exits 2 with `unknown pilo-server command` on stderr; there is no
+  compatibility entry.
+- stdio Server, `--version`, `--fingerprint`, `--ssh-bridge`/`--ssh-daemon`
+  and Pi session behavior are unchanged.
+- Pi running inside SSH/WSL loses Host self-control and no forwarding is
+  provided. Local Pi can run the PATH `pilo` with the same permissions as the
+  user's terminal. The local CLI still manages Host-managed SSH/WSL projects.
+- Wrong: reintroduce per-session capabilities, env-var tokens or a remote
+  forwarding shim. Correct: call the local Host only through the CLI IPC.
 
 ## Shared preferences and events
 
@@ -212,7 +200,7 @@ Only legacy import replaces an invalid binding with an empty (unbound) string;
 Host-initialized fields still win. A successful reload restores readiness only for
 the same transport binding, without replaying failed writes. Read current application
 bindings and reject global conflicts inside the setter's immediate transaction,
-before changing OS registration; CLI must not substitute an earlier preflight.
+before changing OS registration; the CLI must not substitute an earlier preflight.
 
 ### 4. Validation / error matrix
 
@@ -245,53 +233,3 @@ Wrong: use native key-code parsing as the only application validator or keep a C
 conflict preflight outside the setter. Correct: support printable application keys,
 sanitize legacy entries individually, recover readiness from successful reloads,
 and enforce the conflict invariant inside the shared write transaction.
-
-## Verification status and required cases
-
-With user authorization, the Windows debug Host and Linux debug Server were
-built and connected through WSL. A temporary `noSession` Pi session executed the
-real injected CLI (no direct database writes or substitute control dispatcher).
-Live verification covered 32 settings and 47 distinct checks:
-
-- All 17 preferences and four theme fields: CLI write/readback, desktop WebView
-  state, and an authenticated headless WebUI at 390×844. Locale, UI/code font
-  sizing and theme mode also changed the live DOM/CSS without a reload. Plugin
-  notifications were checked on desktop only. Custom theme CSS was additionally
-  checked as applied computed style on desktop.
-- Desktop autostart/exit-on-close/global-shortcut settings, four connection
-  settings, project model scope and three remote settings: CLI readback and
-  desktop `configuration_changed` delivery. Remote port changes and stop/start
-  were checked against the live HTTP health endpoint. A cleared naming model
-  reads back as JSON null, not an object with nullable fields.
-- Invalid font size, locale, boolean type, shortcut command, theme enum, reserved
-  remote port, missing target and shortcut collision were rejected; preference
-  reset returned its default. Mobile WebUI had no horizontal overflow.
-- All effective setting values were restored (revision/update metadata naturally
-  advance on writes). The temporary Pi session was stopped and only the browser
-  device created for this verification was revoked. Existing devices and the
-  installed release instance were not modified.
-
-Frontend type-check/build, `pnpm check`, Rust formatting, Linux Server build,
-Windows dev startup and the 21 existing conversation-reducer tests passed.
-The lint follow-up fixed the WebUI callback dependency and preference accumulator;
-intentional external refresh dependencies use the existing narrowly scoped,
-explained `react/exhaustive-effect-dependencies` exception pattern. Global lint
-rules remain enabled. That follow-up did not rerun interactive UI verification.
-No test-suite source files were changed. Diagnostic logs are under `logs/` and
-local probe artifacts under `.tmp/cli-settings-check/` (both ignored).
-
-This does not verify notification delivery/permission, a real login/autostart,
-global-shortcut key delivery, actual model responses, or every open settings
-panel. Additional authorized negative checks covered malformed/oversized frames,
-unavailable Host, invalid/revoked capabilities, and native CLI timeout without
-retry. Remaining cases include old startup/version/fingerprint; actual
-wrong-instance capabilities; bounded
-concurrency and cancellation; four runtime modes including mixed SSH without Pi;
-cross-connection project addition with stable IDs; CLI-first and desktop-first
-migration; nested concurrent patches; reconnect and stale revisions; actual
-native errors/notification permission; and absence of secrets in argv/events.
-
-Wrong: copy full browser preference snapshots on reconnect, replay a timed-out
-write, use Pi's stream subscriber for reverse control, or return pairing tokens.
-Correct: load Host snapshots, submit only changed fields, use independent control
-streams, and retain existing native/system authentication boundaries.

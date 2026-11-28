@@ -272,7 +272,7 @@ consumed pending item's ID so the reducer and transport confirm the same message
   notification and developer-mode controls remain desktop-only. Preserve existing
   mobile font/layout rules, touch targets and safe-area behavior.
 - Contract and unexecuted regression cases:
-  [Built-in Agent Control](../backend/agent-control.md).
+  [Pilo CLI & Shared Host Preferences](../backend/agent-control.md).
 
 ## Shared Theme Preferences
 
