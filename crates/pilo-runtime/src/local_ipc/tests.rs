@@ -86,7 +86,8 @@ async fn hello_then_local_calls_dispatch_with_full_scope() {
     let server = start(&runtime, &endpoint).await.unwrap();
 
     let (mut stream, reply) = hello(&endpoint.path, "2.3").await;
-    let hello = &reply["result"];
+    assert!(reply.get("result").is_none(), "{reply}");
+    let hello = &reply;
     assert_eq!(hello["protocol"], "2.0");
     assert_eq!(hello["appVersion"], "9.9.9");
     assert!(hello["hostId"].as_str().is_some_and(|id| !id.is_empty()));
@@ -193,7 +194,7 @@ async fn closes_silent_clients_after_the_hello_timeout_and_survives_disconnects(
     assert!(waited >= Duration::from_millis(4500), "{waited:?}");
 
     let (_stream, reply) = hello(&endpoint.path, "2.0").await;
-    assert!(reply["result"].is_object());
+    assert!(reply["hostId"].is_string(), "{reply}");
 }
 
 #[tokio::test]

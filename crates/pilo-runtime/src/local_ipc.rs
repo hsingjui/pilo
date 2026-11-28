@@ -137,42 +137,35 @@ impl Runtime {
 
 /// Runs the hello exchange and then answers requests in order until EOF.
 async fn serve<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, shared: Arc<Shared>) {
-    let hello = tokio::time::timeout(HELLO_TIMEOUT, read_frame(&mut stream)).await;
-    let reply = match hello {
-        Err(_) => return,
-        Ok(Ok(None)) => return,
-        Ok(Err(error)) => {
-            let _ = write_frame(&mut stream, &frame_error(None, &error)).await;
-            return;
-        }
+    // Reading the client hello and writing the reply share one deadline.
+    let deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
+    let hello = tokio::time::timeout_at(deadline, read_frame(&mut stream)).await;
+    let (reply, accepted) = match hello {
+        Err(_) | Ok(Ok(None)) => return,
+        Ok(Err(error)) => (frame_error(None, &error), false),
         Ok(Ok(Some(frame))) => match serde_json::from_value::<ClientHello>(frame) {
-            Err(error) => {
-                let _ = write_frame(
-                    &mut stream,
-                    &error_frame(None, "invalid_params", &format!("invalid hello: {error}")),
-                )
-                .await;
-                return;
-            }
+            Err(error) => (
+                error_frame(None, "invalid_params", &format!("invalid hello: {error}")),
+                false,
+            ),
             Ok(hello) if !protocol_compatible(PROTOCOL_VERSION, &hello.protocol) => {
                 let message = format!(
                     "Host speaks protocol {PROTOCOL_VERSION}, client '{}' {} speaks {}",
                     hello.client, hello.version, hello.protocol
                 );
-                let _ = write_frame(
-                    &mut stream,
-                    &error_frame(None, error_code::INCOMPATIBLE_PROTOCOL, &message),
+                (
+                    error_frame(None, error_code::INCOMPATIBLE_PROTOCOL, &message),
+                    false,
                 )
-                .await;
-                return;
             }
-            Ok(_) => json!({ "result": shared.hello }),
+            Ok(_) => match serde_json::to_value(&shared.hello) {
+                Ok(hello) => (hello, true),
+                Err(_) => return,
+            },
         },
     };
-    if tokio::time::timeout(HELLO_TIMEOUT, write_frame(&mut stream, &reply))
-        .await
-        .map_or(true, |result| result.is_err())
-    {
+    let written = tokio::time::timeout_at(deadline, write_frame(&mut stream, &reply)).await;
+    if !accepted || !matches!(written, Ok(Ok(()))) {
         return;
     }
     loop {

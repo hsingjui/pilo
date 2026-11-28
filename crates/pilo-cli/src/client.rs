@@ -67,7 +67,7 @@ impl Client {
         if let Some(error) = reply.get("error") {
             return Err(CliError::from_host(error, false));
         }
-        let hello: HostHello = serde_json::from_value(reply["result"].clone())
+        let hello: HostHello = serde_json::from_value(reply)
             .map_err(|error| CliError::incompatible(format!("unexpected hello reply: {error}")))?;
         if !pilo_ipc::protocol_compatible(PROTOCOL_VERSION, &hello.protocol) {
             return Err(CliError::incompatible(format!(
