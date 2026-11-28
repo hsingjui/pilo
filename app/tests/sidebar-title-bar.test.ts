@@ -59,18 +59,20 @@ test("docked themes keep the standard macOS title bar with default traffic light
 	);
 });
 
-test("Windows and Linux align floating sidebar headers with the window title bar", () => {
+test("Windows and Linux align floating sidebar headers with the window title bar midpoint", () => {
 	for (const os of ["windows", "linux"]) {
 		const floating = windowTitleBarOptions(lodyCard, os);
 		expect(floating).toEqual({
 			style: "hidden",
-			height: TITLE_BAR_HEIGHT,
+			height: 54,
 			controlsOffset: null,
 		});
-		expect(sidebarTitleBarHeight(floating.height, lodyCard, os)).toBe(
-			TITLE_BAR_HEIGHT,
+		const rowHeight = sidebarTitleBarHeight(floating.height, lodyCard, os);
+		expect(rowHeight).toBe(36);
+		expect(lodyCard.frameTop + rowHeight / 2).toBe(floating.height / 2);
+		expect(lodyCard.top + sidebarTitleBarMarginTop(lodyCard, os)).toBe(
+			lodyCard.frameTop,
 		);
-		expect(lodyCard.top + sidebarTitleBarMarginTop(lodyCard, os)).toBe(0);
 
 		const docked = windowTitleBarOptions(dockedCard, os);
 		expect(docked).toEqual({
