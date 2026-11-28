@@ -672,7 +672,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
 			{() =>
 				mounted() ? (
 					<Overlay
-						onCancel={close}
+						onCancel={() => {
+							if (!props.open()) return;
+							if (archiveView()) showArchive(null);
+							else close();
+						}}
 						class="absolute inset-0"
 						style={{
 							zIndex: 80,

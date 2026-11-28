@@ -1,8 +1,11 @@
 import {
 	type Accessor,
 	appInfo,
+	cleanup,
 	computed,
+	effect,
 	type JSX,
+	keymap,
 	platform,
 	signal,
 	Text,
@@ -51,6 +54,7 @@ export interface SidebarPanelProps extends Omit<
 	layout: SidebarLayout;
 	/** The list shows once the app and the sidebar's settings are ready. */
 	listState: Accessor<"loading" | "ready" | "hidden">;
+	shortcutsPaused: Accessor<boolean>;
 	/** The system's title bar: its height and the room its controls take. */
 	titleBar: Accessor<{ height: number; left: number }>;
 	onSearch: () => void;
@@ -256,6 +260,21 @@ export function SidebarPanel(props: SidebarPanelProps) {
 			props.store.state().projects.find((project) => project.id === id) ?? null
 		);
 	});
+	const goBack = () => {
+		if (archiveView()) archived.set(null);
+		else projectView.set(null);
+	};
+	effect(() => {
+		if (
+			layout.collapsed() ||
+			props.listState() !== "ready" ||
+			props.shortcutsPaused() ||
+			(!archiveView() && !viewedProject())
+		) {
+			return;
+		}
+		cleanup(keymap.bind("escape", goBack, { when: "notEditing" }));
+	});
 	return (
 		<View
 			ref={(node: ViewRef) => layout.bindAside(node)}
@@ -340,7 +359,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 											? `${t("sidebar.archivedSessions")} · ${sidebarProjectName(project)}`
 											: t("sidebar.archivedSessions")
 									}
-									onPress={() => archived.set(null)}
+									onPress={goBack}
 								/>
 							);
 						}
@@ -348,7 +367,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						return project ? (
 							<ProjectSessionsToolbar
 								name={sidebarProjectName(project)}
-								onBack={() => projectView.set(null)}
+								onBack={goBack}
 								onNewChat={() => {
 									props.onSelectChat?.(project.id);
 									props.store.selectProject(project.id);

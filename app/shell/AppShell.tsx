@@ -343,8 +343,8 @@ export function AppShell(props: AppShellProps) {
 	const shortcuts = computed(
 		() => store.state().preferences?.values.keyboardShortcuts ?? defaults,
 	);
-	const sessionShortcuts = () =>
-		modalOpen() || paletteOpen() ? null : shortcuts();
+	const shortcutsPaused = () => modalOpen() || paletteOpen();
+	const sessionShortcuts = () => (shortcutsPaused() ? null : shortcuts());
 	const sidebarSettings = props.sidebarSettings ?? new SidebarSettingsStore();
 	if (!sidebarSettings.loaded()) void sidebarSettings.load();
 	const sidebarLayout = createSidebarLayout(sidebarSettings);
@@ -684,6 +684,7 @@ export function AppShell(props: AppShellProps) {
 				store={store}
 				settings={sidebarSettings}
 				layout={sidebarLayout}
+				shortcutsPaused={shortcutsPaused}
 				listState={() => {
 					switch (status().type) {
 						case "starting":
