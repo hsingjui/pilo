@@ -26,15 +26,18 @@ type App = Awaited<ReturnType<typeof openSidebar>>;
 
 /**
  * The sidebar list's texts: after the title bar and the 「新会话」 row, before
- * the archive footer.
+ * the workspace pane.
  */
 function sidebar(app: App) {
 	const texts = app.texts();
-	const end = texts.indexOf("Archived");
-	return texts.slice(
-		texts.indexOf("New session") + 1,
-		end < 0 ? undefined : end,
+	let start = texts.indexOf("New session") + 1;
+	if (texts[start] === "⌘N") start += 1;
+	const end = texts.findIndex(
+		(text, index) =>
+			index >= start &&
+			(text === "Archived" || text === "What would you like to work on today?"),
 	);
+	return texts.slice(start, end < 0 ? undefined : end);
 }
 
 async function openRecent(storage: Record<string, string> = {}) {

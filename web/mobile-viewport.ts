@@ -77,6 +77,7 @@ type HostVisualViewport = {
 
 type HostElement = {
 	closest?(selector: string): HostElement | null;
+	blur?(): void;
 };
 
 type HostTouchPressEvent = {
@@ -250,6 +251,7 @@ export function installMobileViewportSync(): MobileViewportState {
 	let disposed = false;
 	let lastViewportWidth = host.innerWidth;
 	let keyboardBaselineHeight = 0;
+	let composerHadSoftKeyboard = false;
 
 	const clearBlurShrinkHold = () => {
 		blurShrinkHoldUntil = null;
@@ -266,7 +268,17 @@ export function installMobileViewportSync(): MobileViewportState {
 			),
 		);
 
+	const focusedComposer = () => {
+		const active = host.document?.activeElement;
+		return active?.closest?.('[data-testid="mobile-textarea-input"]')
+			? active
+			: null;
+	};
+
 	const applyLayout = (layout: MobileViewportLayout) => {
+		if (!composerHadSoftKeyboard && layout.keyboardOpen && focusedComposer()) {
+			composerHadSoftKeyboard = true;
+		}
 		appliedLayout = layout;
 		const nextKey = layout.override
 			? `${layout.top}:${layout.height}`
@@ -391,25 +403,34 @@ export function installMobileViewportSync(): MobileViewportState {
 		sync();
 	};
 
-	const keepComposerFocus = (event: HostTouchPressEvent) => {
+	const handleFocusOut = () => {
+		composerHadSoftKeyboard = false;
+		scheduleSync();
+	};
+
+	const handleComposerTouch = (event: HostTouchPressEvent) => {
 		if (!event.cancelable) return;
 		if (event.type === "pointerdown" && event.pointerType === "mouse") return;
-		if (
-			event.target?.closest?.(
-				'[data-testid="chat-scroll-latest"], [data-testid="chat-composer-send"]',
-			) &&
-			host.document?.activeElement?.closest?.(
-				'[data-testid="mobile-textarea-input"]',
-			)
+		const composer = focusedComposer();
+		if (event.target?.closest?.('[data-testid="chat-scroll-latest"]')) {
+			// A dismissed soft keyboard can leave focus behind. A hardware keyboard
+			// never shrinks the viewport, so do not blur unless we saw a soft keyboard.
+			if (composerHadSoftKeyboard && !keyboardOpen() && height() > 0) {
+				composer?.blur?.();
+			}
+		} else if (
+			!composer ||
+			!event.target?.closest?.('[data-testid="chat-composer-send"]')
 		) {
-			// Keep native tap focus changes out of the way; nsh presses on pointerup.
-			event.preventDefault();
+			return;
 		}
+		// Suppress native tap focus changes; nsh still presses on pointerup.
+		event.preventDefault();
 	};
 	const touchCapture = { capture: true, passive: false };
-	app.addEventListener("pointerdown", keepComposerFocus, touchCapture);
+	app.addEventListener("pointerdown", handleComposerTouch, touchCapture);
 	// Some iOS WebKit versions still synthesize mouse events after a canceled pointerdown.
-	app.addEventListener("touchend", keepComposerFocus, touchCapture);
+	app.addEventListener("touchend", handleComposerTouch, touchCapture);
 
 	sync();
 	// Update #app before nsh measures its insets. Offset-only changes don't
@@ -419,7 +440,7 @@ export function installMobileViewportSync(): MobileViewportState {
 	host.addEventListener?.("resize", sync, true);
 	host.addEventListener?.("orientationchange", scheduleSync);
 	host.document?.addEventListener("focusin", scheduleSync);
-	host.document?.addEventListener("focusout", scheduleSync);
+	host.document?.addEventListener("focusout", handleFocusOut);
 
 	cleanup(() => {
 		disposed = true;
@@ -433,9 +454,9 @@ export function installMobileViewportSync(): MobileViewportState {
 		host.removeEventListener?.("resize", sync, true);
 		host.removeEventListener?.("orientationchange", scheduleSync);
 		host.document?.removeEventListener("focusin", scheduleSync);
-		host.document?.removeEventListener("focusout", scheduleSync);
-		app.removeEventListener("pointerdown", keepComposerFocus, true);
-		app.removeEventListener("touchend", keepComposerFocus, true);
+		host.document?.removeEventListener("focusout", handleFocusOut);
+		app.removeEventListener("pointerdown", handleComposerTouch, true);
+		app.removeEventListener("touchend", handleComposerTouch, true);
 		app.style.top = "";
 		app.style.bottom = "";
 		app.style.height = "";

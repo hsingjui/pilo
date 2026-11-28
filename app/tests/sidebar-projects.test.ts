@@ -230,6 +230,16 @@ test("the hover archive closes the open session and Undo restores it", async () 
 test("archive views load collapsed projects and support scoped restore and confirmed delete", async () => {
 	const app = await openSidebar({ "pilo.test.seedArchive": "true" });
 	await app.waitFor("id:sidebar-archived");
+	expect(app.shows("text:Archived")).toBe(false);
+	const archivedButton = app.layout("id:sidebar-archived");
+	const themeButton = app.layout("id:sidebar-theme");
+	const settingsButton = app.layout("id:sidebar-settings");
+	if (!archivedButton || !themeButton || !settingsButton) {
+		throw new Error("Expected archive, theme, and settings buttons");
+	}
+	expect(archivedButton.width).toBe(archivedButton.height);
+	expect(archivedButton.x).toBeLessThan(themeButton.x);
+	expect(themeButton.x).toBeLessThan(settingsButton.x);
 	await app.press("id:sidebar-archived");
 	await app.waitFor("id:session:s8");
 	await app.waitFor("id:session:s4");
@@ -239,7 +249,9 @@ test("archive views load collapsed projects and support scoped restore and confi
 	expect(app.texts().indexOf("Deploy the build box")).toBeLessThan(
 		app.texts().indexOf("Resize the sidebar"),
 	);
-	await app.press("id:sidebar-archived-back");
+	// Pressing the footer archive icon again toggles back to the session list.
+	await app.press("id:sidebar-archived");
+	await app.waitFor("id:sidebar-archived-sessions", { state: "gone" });
 	await app.hover("id:ws:pilo:select");
 	await app.press("id:ws:pilo:menu");
 	await app.press("id:ws:pilo:menu:archived");

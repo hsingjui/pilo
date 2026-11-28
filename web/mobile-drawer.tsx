@@ -31,6 +31,7 @@ import {
 import { connectionLabel } from "../app/shell/connection-label";
 import { deleteSessionWithToast } from "../app/shell/delete-session";
 import { t } from "../app/shell/i18n";
+import { PiLogo } from "../app/shell/pi-logo";
 import {
 	recentSessions,
 	sessionRowKey,
@@ -672,7 +673,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
 			{() =>
 				mounted() ? (
 					<Overlay
-						onCancel={close}
+						onCancel={() => {
+							if (!props.open()) return;
+							if (archiveView()) showArchive(null);
+							else close();
+						}}
 						class="absolute inset-0"
 						style={{
 							zIndex: 80,
@@ -703,10 +708,25 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								}}
 							>
 								{/* Header */}
-								<View class="min-h-14 shrink-0 flex-row items-center pl-5 pr-3">
-									<Text class="min-w-0 flex-1 truncate font-sans text-lg text-(length:--pilo-ui-text-lg) leading-snug font-semibold tracking-tight text-sidebar-foreground">
-										Pilo
-									</Text>
+								<View class="min-h-14 shrink-0 flex-row items-center pl-4 pr-3">
+									<View class="min-w-0 flex-1 flex-row items-center gap-2.5">
+										<View
+											accessible={false}
+											class="size-7 shrink-0 items-center justify-center rounded-[7px]"
+											style={{
+												backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 8%, transparent)`,
+											}}
+										>
+											<PiLogo
+												size={15}
+												trim
+												color={token("sidebar-selection-foreground")}
+											/>
+										</View>
+										<Text class="min-w-0 shrink truncate font-sans text-xl text-(length:--pilo-ui-text-xl) leading-none font-bold tracking-tight text-sidebar-selection-foreground">
+											Pilo
+										</Text>
+									</View>
 									{props.onOpenSearch ? (
 										<Button
 											testID="mobile-drawer-search"
@@ -765,10 +785,13 @@ export function MobileDrawer(props: MobileDrawerProps) {
 									) : (
 										<>
 											{/* New Session button */}
-											<View class="shrink-0 px-3 pb-1">
+											<View class="shrink-0 px-3 pb-2">
 												<BaseButton
 													testID="mobile-drawer-new-session"
-													class={`min-h-11 w-full flex-row items-center gap-2 ${ROW_RADIUS_CLASS} px-2 hover:bg-sidebar-hover active:bg-sidebar-hover`}
+													class={`min-h-11 w-full flex-row items-center gap-2.5 ${ROW_RADIUS_CLASS} px-3 active:bg-sidebar-hover`}
+													style={{
+														backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 7%, transparent)`,
+													}}
 													accessibilityLabel={t("sidebar.newSession")}
 													onPress={() => startNewChat()}
 												>
@@ -776,9 +799,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 														name="SquarePen"
 														size={16}
 														strokeWidth={1.5}
-														color={token("sidebar-foreground")}
+														color={token("sidebar-foreground-muted")}
 													/>
-													<Text class="truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight text-sidebar-foreground">
+													<Text class="truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-sidebar-selection-foreground">
 														{() => t("sidebar.newSession")}
 													</Text>
 												</BaseButton>

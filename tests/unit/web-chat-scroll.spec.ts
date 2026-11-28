@@ -267,3 +267,75 @@ test("minor touch jitter without dragging does not leave scrollingUp stuck", () 
 	);
 	assert.equal(follower.isFollowing(), true);
 });
+
+test("keeps messages above the keyboard when a drag ends at the bottom before scrollEnd", () => {
+	const follower = createWebChatScrollFollower(metrics(1300, 2000), false);
+
+	follower.onTouchStart(400, 100);
+	follower.onDragChange(true, metrics(1300, 2000));
+	follower.onTouchMove(250, metrics(1380, 2000), 100);
+	follower.onScroll(metrics(1400, 2000), 1000);
+	follower.onTouchMove(256, metrics(1400, 2000), 100);
+	follower.onTouchEnd(metrics(1400, 2000));
+	follower.onDragChange(false, metrics(1400, 2000));
+
+	assert.equal(
+		follower.onViewportShrinkIntent(metrics(1400, 2000), 1010).scrollTop,
+		null,
+	);
+	assert.equal(follower.isFollowing(), true);
+	assert.equal(
+		follower.onViewportShrinkIntent(metrics(1400, 2000, 320), 1030, true)
+			.scrollTop,
+		1680,
+	);
+	assert.equal(
+		follower.onResize(metrics(1680, 2000, 320), 1030).scrollTop,
+		null,
+	);
+	follower.onScrollEnd(metrics(1680, 2000, 320));
+	assert.equal(follower.isFollowing(), true);
+});
+
+test("recovers following if the final touch release is the first event to see the bottom", () => {
+	const follower = createWebChatScrollFollower(metrics(1396, 2000), true);
+
+	follower.onTouchStart(250, 100);
+	follower.onDragChange(true, metrics(1396, 2000));
+	follower.onTouchMove(256, metrics(1396, 2000), 100);
+	follower.onDragChange(false, metrics(1396, 2000));
+	follower.onTouchEnd(metrics(1400, 2000));
+
+	assert.equal(follower.isFollowing(), true);
+	assert.equal(
+		follower.onResize(metrics(1400, 2000, 320), 1030).scrollTop,
+		1680,
+	);
+});
+
+test("does not repin on keyboard open after an upward drag away from the bottom", () => {
+	const follower = createWebChatScrollFollower(metrics(1400, 2000), true);
+
+	follower.onTouchStart(250, 100);
+	follower.onDragChange(true, metrics(1400, 2000));
+	follower.onTouchMove(256, metrics(1400, 2000), 100);
+	follower.onScroll(metrics(1394, 2000), 1000);
+	follower.onTouchEnd(metrics(1394, 2000));
+	follower.onDragChange(false, metrics(1394, 2000));
+
+	assert.equal(
+		follower.onViewportShrinkIntent(metrics(1394, 2000), 1010).scrollTop,
+		null,
+	);
+	assert.equal(
+		follower.onViewportShrinkIntent(metrics(1394, 2000, 320), 1030, true)
+			.scrollTop,
+		null,
+	);
+	assert.equal(
+		follower.onResize(metrics(1394, 2000, 320), 1030).scrollTop,
+		null,
+	);
+	follower.onScrollEnd(metrics(1394, 2000, 320));
+	assert.equal(follower.isFollowing(), false);
+});

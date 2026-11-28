@@ -1,8 +1,11 @@
 import {
 	type Accessor,
-	type JSX,
 	appInfo,
+	cleanup,
 	computed,
+	effect,
+	type JSX,
+	keymap,
 	platform,
 	signal,
 	Text,
@@ -15,6 +18,7 @@ import { Button as BaseButton } from "nsh/base";
 
 import type { Theme } from "@shared/theme-settings-types";
 import { Button } from "../ui/button";
+import { classNames } from "../ui/class-names";
 import { blurOnPointerPress } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon, type IconName } from "../ui/icon";
@@ -22,12 +26,14 @@ import { MOTION, tactileTransition, viewTransition } from "../ui/motion";
 import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
-import { Tooltip } from "../ui/tooltip";
+import { textTooltip } from "../ui/tooltip";
 import type { DesktopUpdate } from "./desktop-update";
 import type { ArchiveView } from "./archived-sessions";
 import { t } from "./i18n";
+import { PiLogo } from "./pi-logo";
 import { Sidebar, type SidebarProps } from "./Sidebar";
 import type { SidebarLayout } from "./sidebar-layout";
+import { APP_SHORTCUTS, nshAppShortcut } from "../shortcuts";
 import { createHover } from "../ui/hover";
 import {
 	SidebarAction,
@@ -50,10 +56,13 @@ export interface SidebarPanelProps extends Omit<
 	layout: SidebarLayout;
 	/** The list shows once the app and the sidebar's settings are ready. */
 	listState: Accessor<"loading" | "ready" | "hidden">;
+	shortcutsPaused: Accessor<boolean>;
 	/** The system's title bar: its height and the room its controls take. */
 	titleBar: Accessor<{ height: number; left: number }>;
 	onSearch: () => void;
 	onNewChat: () => void;
+	/** Shortcut string for creating a new session, shown as a subtle hint. */
+	newChatShortcut?: Accessor<string | undefined>;
 	onOpenSettings?: () => void;
 	/** Desktop updater state; renders the footer update trigger when an update is available. */
 	update?: DesktopUpdate;
@@ -222,6 +231,11 @@ export function sidebarTitleBarMarginTop(
 	return os === "macos" ? -card.paddingTop : -card.top;
 }
 
+/** Subtle borderless tinted fill harmonized with the sidebar's own surface. */
+function sidebarSoftSurface(hovered = false) {
+	return `color-mix(in srgb, ${token("sidebar-foreground")} ${hovered ? 12 : 7}%, transparent)`;
+}
+
 /**
  * The sidebar as the WebUI `AppSidebar` draws it: the header with the app's
  * name and its actions, a new session (or the project's sessions' back
@@ -243,10 +257,8 @@ export function SidebarPanel(props: SidebarPanelProps) {
 		return view?.projectId !== undefined && !archiveProject() ? null : view;
 	});
 	const card = computed(sidebarSurface);
-	// Center the visible Latin glyphs vertically against the title-bar icons.
-	const titleTextStyle = {
-		transform: [{ translateY: platform.os === "macos" ? -1 : 1 }],
-	};
+	const hasTrafficLights = () => props.titleBar().left > 0;
+	const brandScale = () => token("pilo-ui-text-sm") / 14;
 	// A view of sessions of a project that is gone closes.
 	const viewedProject = computed(() => {
 		const id = projectView();
@@ -254,6 +266,21 @@ export function SidebarPanel(props: SidebarPanelProps) {
 		return (
 			props.store.state().projects.find((project) => project.id === id) ?? null
 		);
+	});
+	const goBack = () => {
+		if (archiveView()) archived.set(null);
+		else projectView.set(null);
+	};
+	effect(() => {
+		if (
+			layout.collapsed() ||
+			props.listState() !== "ready" ||
+			props.shortcutsPaused() ||
+			(!archiveView() && !viewedProject())
+		) {
+			return;
+		}
+		cleanup(keymap.bind("escape", goBack, { when: "notEditing" }));
 	});
 	return (
 		<View
@@ -289,20 +316,54 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<View class="min-w-0 flex-1 flex-row items-center px-2">
+					<View class="min-w-0 flex-1 flex-row items-center gap-2 pl-2 pr-1">
+						<View
+							accessible={false}
+							class="shrink-0 items-center justify-center"
+							style={{
+								width: hasTrafficLights() ? 21 : 24,
+								height: hasTrafficLights() ? 21 : 24,
+								borderRadius: hasTrafficLights() ? 5.5 : 6.5,
+								backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 8%, transparent)`,
+							}}
+						>
+							<PiLogo
+								size={hasTrafficLights() ? 11 : 13}
+								trim
+								color={token("sidebar-selection-foreground")}
+							/>
+						</View>
 						<Text
-							class={`min-w-0 shrink truncate font-sans text-xl text-(length:--pilo-ui-text-xl) font-semibold leading-none tracking-tight ${
-								appInfo().development
-									? "text-primary"
-									: "text-sidebar-foreground"
-							}`}
-							style={titleTextStyle}
+							class="min-w-0 shrink truncate font-sans font-bold leading-none tracking-tight"
+							style={{
+								fontSize: (hasTrafficLights() ? 17 : 19) * brandScale(),
+								color: token("sidebar-selection-foreground"),
+							}}
 						>
 							Pilo
 						</Text>
+						{() =>
+							appInfo().development ? (
+								<View
+									testID="sidebar-dev-badge"
+									accessible={false}
+									class="shrink-0 items-center justify-center rounded px-1.5 py-0.5"
+									style={{
+										backgroundColor: `color-mix(in srgb, ${token("primary")} 14%, transparent)`,
+									}}
+								>
+									<Text
+										class="font-sans text-[10px] font-bold leading-none tracking-wider"
+										style={{ color: token("primary") }}
+									>
+										DEV
+									</Text>
+								</View>
+							) : null
+						}
 					</View>
 					<View
-						class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2"
+						class="mr-[13px] h-7 shrink-0 flex-row items-center gap-0.5"
 						style={[
 							tactileTransition("opacity"),
 							layout.collapsed() || layout.settledCollapsed()
@@ -326,7 +387,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						</SidebarAction>
 					</View>
 				</View>
-				<View class="-mt-1 shrink-0 gap-1 px-1.5">
+				<View class="mt-1 shrink-0 gap-1 px-2.5">
 					{() => {
 						if (archiveView()) {
 							const project = archiveProject();
@@ -339,7 +400,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 											? `${t("sidebar.archivedSessions")} · ${sidebarProjectName(project)}`
 											: t("sidebar.archivedSessions")
 									}
-									onPress={() => archived.set(null)}
+									onPress={goBack}
 								/>
 							);
 						}
@@ -347,14 +408,17 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						return project ? (
 							<ProjectSessionsToolbar
 								name={sidebarProjectName(project)}
-								onBack={() => projectView.set(null)}
+								onBack={goBack}
 								onNewChat={() => {
 									props.onSelectChat?.(project.id);
 									props.store.selectProject(project.id);
 								}}
 							/>
 						) : (
-							<NewChatButton onPress={props.onNewChat} />
+							<NewChatButton
+								onPress={props.onNewChat}
+								shortcut={props.newChatShortcut}
+							/>
 						);
 					}}
 				</View>
@@ -393,34 +457,23 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						}
 					}}
 					<View class="relative shrink-0 flex-row items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
-						{props.onOpenSettings ? (
-							<Button
-								testID="sidebar-settings"
-								variant="ghost"
-								size="icon"
-								accessibilityLabel={t("settings.title")}
-								tooltip={
-									<Tooltip>
-										<Text class="font-sans">{() => t("settings.title")}</Text>
-									</Tooltip>
-								}
-								onPress={props.onOpenSettings}
-							>
-								<Icon name="Settings" />
-							</Button>
-						) : null}
 						{() =>
 							props.listState() === "ready" && (
-								<Button
+								<SidebarFooterButton
 									testID="sidebar-archived"
-									variant="ghost"
-									size="sm"
-									accessibilityLabel={t("sidebar.archived")}
-									onPress={() => archived.set({})}
+									label={() => t("sidebar.archived")}
+									active={() => archiveView() !== null}
+									onPress={() =>
+										archived.set(
+											archiveView() !== null &&
+												archiveView()?.projectId === undefined
+												? null
+												: {},
+										)
+									}
 								>
-									<Icon name="Archive" size={14} />
-									<Text class="font-sans">{() => t("sidebar.archived")}</Text>
-								</Button>
+									<Icon name="Archive" />
+								</SidebarFooterButton>
 							)
 						}
 						{() =>
@@ -432,6 +485,15 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							{props.remote ? <RemoteButton {...props.remote} /> : null}
 							{props.onTheme ? (
 								<ThemeCycleButton theme={props.theme} onTheme={props.onTheme} />
+							) : null}
+							{props.onOpenSettings ? (
+								<SidebarFooterButton
+									testID="sidebar-settings"
+									label={() => t("settings.title")}
+									onPress={props.onOpenSettings}
+								>
+									<Icon name="Settings" />
+								</SidebarFooterButton>
 							) : null}
 						</View>
 					</View>
@@ -503,16 +565,20 @@ export function StartupSidebar(
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<View class="min-w-0 flex-1 flex-row items-center px-2">
+					<View class="min-w-0 flex-1 flex-row items-center gap-2 pl-2 pr-1">
+						<Skeleton strong class="size-6 shrink-0 rounded-md" />
 						<Skeleton strong class="h-5 w-11" />
 					</View>
-					<View class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2">
+					<View class="mr-[13px] h-7 shrink-0 flex-row items-center gap-0.5">
 						{titleAction()}
 						{titleAction()}
 					</View>
 				</View>
-				<View class="-mt-1 shrink-0 px-1.5">
-					<View class="h-8 flex-row items-center gap-1.5 px-2">
+				<View class="mt-1 shrink-0 px-2.5">
+					<View
+						class="h-8 flex-row items-center gap-2 rounded-lg px-2.5"
+						style={{ backgroundColor: sidebarSoftSurface() }}
+					>
 						<Skeleton class="size-4 shrink-0" />
 						<Skeleton class="h-3 w-16" />
 					</View>
@@ -521,6 +587,7 @@ export function StartupSidebar(
 				<View class="shrink-0 flex-row items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
 					{footerButton()}
 					<View class="ml-auto flex-row items-center gap-1">
+						{footerButton()}
 						{footerButton()}
 						{footerButton()}
 					</View>
@@ -597,15 +664,70 @@ function SidebarToolbarRow(props: {
 	);
 }
 
-function NewChatButton(props: { onPress: () => void }) {
+function NewChatButton(props: {
+	onPress: () => void;
+	shortcut?: Accessor<string | undefined>;
+}) {
+	const hover = createHover();
+	const pointerBlur = blurOnPointerPress();
+	const iconForeground = () =>
+		token(
+			hover.hovered() ? "sidebar-hover-foreground" : "sidebar-foreground-muted",
+		);
+	const shortcutLabel = () => {
+		const raw = props.shortcut?.() ?? APP_SHORTCUTS.newChat;
+		const normalized = nshAppShortcut(raw, platform.os === "macos");
+		return normalized ? keymap.label(normalized) : "";
+	};
 	return (
 		<View class="flex-row items-center gap-1">
-			<SidebarToolbarRow
-				testID="sidebar-new-chat"
-				icon="SquarePen"
-				label={() => t("sidebar.newSession")}
-				onPress={props.onPress}
-			/>
+			<Foreground.Provider value={iconForeground}>
+				<BaseButton
+					{...hover.props}
+					ref={pointerBlur.ref}
+					onMouseUp={pointerBlur.onMouseUp}
+					testID="sidebar-new-chat"
+					class="group h-8 min-w-0 flex-1 flex-row items-center gap-2 rounded-lg px-2.5"
+					style={[
+						tactileTransition("background-color"),
+						{ backgroundColor: sidebarSoftSurface(hover.hovered()) },
+					]}
+					focusVisibleStyle={sidebarFocusRing()}
+					onPress={props.onPress}
+				>
+					<View class="size-4 shrink-0 items-center justify-center">
+						<Icon name="SquarePen" size={15} />
+					</View>
+					<Text
+						class="min-w-0 flex-1 truncate font-sans font-medium"
+						style={{
+							...sidebarText("sm"),
+							color: token(
+								hover.hovered()
+									? "sidebar-hover-foreground"
+									: "sidebar-selection-foreground",
+							),
+						}}
+					>
+						{() => t("sidebar.newSession")}
+					</Text>
+					{() => {
+						const label = shortcutLabel();
+						return label ? (
+							<Text
+								accessible={false}
+								class="shrink-0 font-sans text-[11px] font-medium"
+								style={{
+									color: token("sidebar-foreground-muted"),
+									opacity: 0.72,
+								}}
+							>
+								{label}
+							</Text>
+						) : null;
+					}}
+				</BaseButton>
+			</Foreground.Provider>
 		</View>
 	);
 }
@@ -636,7 +758,52 @@ function ProjectSessionsToolbar(props: {
 }
 
 /**
- * Footer update trigger beside the settings gear, matching Tauri's
+ * An icon button in the sidebar footer: muted at rest so it yields to the
+ * session list, brightens on hover, and carries an active or accent state.
+ */
+function SidebarFooterButton(props: {
+	testID: string;
+	label: () => string;
+	tooltip?: () => string;
+	active?: () => boolean;
+	accent?: () => boolean;
+	onPress: () => void;
+	children: JSX.Element;
+}) {
+	const hover = createHover();
+	const active = () => props.active?.() ?? false;
+	const foreground = () => {
+		if (props.accent?.()) return token("primary");
+		if (active()) return token("pilo-sidebar-selected-foreground");
+		return token(
+			hover.hovered() ? "sidebar-hover-foreground" : "sidebar-foreground-muted",
+		);
+	};
+	return (
+		<Button
+			{...hover.props}
+			testID={props.testID}
+			variant="ghost"
+			size="icon"
+			selected={props.active ? active() : undefined}
+			class={classNames(
+				"hover:bg-sidebar-hover",
+				active() && "bg-(--pilo-sidebar-selected-background)",
+			)}
+			focusVisibleStyle={sidebarFocusRing()}
+			accessibilityLabel={props.label()}
+			tooltip={textTooltip(props.tooltip ?? props.label)}
+			onPress={props.onPress}
+		>
+			<Foreground.Provider value={foreground}>
+				{props.children}
+			</Foreground.Provider>
+		</Button>
+	);
+}
+
+/**
+ * Footer update trigger beside the archived toggle, matching Tauri's
  * `SidebarFooter` update button: opens the update dialog to view release notes
  * or active download progress without taking extra vertical space.
  */
@@ -682,13 +849,10 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 			testID="sidebar-update"
 			variant="ghost"
 			size="sm"
-			class="h-(--pilo-button-icon-size) gap-1.5 px-2.5 text-xs tabular-nums"
+			class="h-(--pilo-button-icon-size) min-w-0 shrink gap-1.5 px-2 text-xs tabular-nums hover:bg-sidebar-hover"
+			focusVisibleStyle={sidebarFocusRing()}
 			accessibilityLabel={detail()}
-			tooltip={
-				<Tooltip>
-					<Text class="font-sans">{detail}</Text>
-				</Tooltip>
-			}
+			tooltip={textTooltip(detail)}
 			onPress={() => update.setDialogOpen(true)}
 		>
 			{() => {
@@ -700,7 +864,7 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 				return <Icon name="Download" size={14} color={color} />;
 			}}
 			<Text
-				class="font-sans text-xs font-medium tabular-nums"
+				class="min-w-0 shrink truncate font-sans text-xs font-medium tabular-nums"
 				style={{ color: token(colorToken()) }}
 			>
 				{label}
@@ -715,26 +879,14 @@ function RemoteButton(props: {
 	onOpen: () => void;
 }) {
 	return (
-		<Button
+		<SidebarFooterButton
 			testID="sidebar-remote"
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={t("settings.remote")}
-			tooltip={
-				<Tooltip>
-					<Text class="font-sans">{() => t("settings.remote")}</Text>
-				</Tooltip>
-			}
+			label={() => t("settings.remote")}
+			accent={props.running}
 			onPress={props.onOpen}
 		>
-			{() =>
-				props.running() ? (
-					<Icon name="Smartphone" color={token("primary")} />
-				) : (
-					<Icon name="Smartphone" />
-				)
-			}
-		</Button>
+			<Icon name="Smartphone" />
+		</SidebarFooterButton>
 	);
 }
 
@@ -743,25 +895,19 @@ function ThemeCycleButton(props: {
 	theme: Accessor<Theme>;
 	onTheme: (theme: Theme) => void;
 }) {
-	const label = () =>
+	const tooltip = () =>
 		`${t("settings.theme")}: ${t(THEME_LABELS[props.theme()])}`;
 	return (
-		<Button
+		<SidebarFooterButton
 			testID="sidebar-theme"
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={t("settings.theme")}
-			tooltip={
-				<Tooltip>
-					<Text class="font-sans">{label}</Text>
-				</Tooltip>
-			}
+			label={() => t("settings.theme")}
+			tooltip={tooltip}
 			onPress={() => {
 				const index = THEME_CYCLE.indexOf(props.theme());
 				props.onTheme(THEME_CYCLE[(index + 1) % THEME_CYCLE.length]);
 			}}
 		>
 			{() => <Icon name={THEME_ICONS[props.theme()]} />}
-		</Button>
+		</SidebarFooterButton>
 	);
 }

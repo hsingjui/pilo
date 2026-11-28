@@ -1,7 +1,7 @@
 {
 	"name": "Pilo",
 	"id": "app.hsingjui.pilo.web",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"icon": "assets/pilo-512.png",
 	"theme": "../theme/theme.json",
 	"web": {
