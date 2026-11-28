@@ -121,13 +121,31 @@ pub(crate) struct Record {
     pub installation: Option<Installation>,
 }
 
-/// Removes the one PATH entry spelled exactly as Pilo inserted it, keeping
-/// equivalent entries the user added themselves.
+/// The PATH value's `;`-separated segments exactly as written, empty ones included.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn remove_path_entry(entries: &mut Vec<String>, raw: &str) -> bool {
-    match entries.iter().position(|entry| entry == raw) {
+pub(crate) fn path_segments(value: &str) -> Vec<String> {
+    if value.is_empty() {
+        return Vec::new();
+    }
+    value.split(';').map(str::to_owned).collect()
+}
+
+/// Appends `raw`, keeping a trailing `;` where it was.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn insert_path_entry(segments: &mut Vec<String>, raw: &str) {
+    match segments.last() {
+        Some(last) if last.is_empty() => segments.insert(segments.len() - 1, raw.to_owned()),
+        _ => segments.push(raw.to_owned()),
+    }
+}
+
+/// Removes the one segment spelled exactly as Pilo inserted it, keeping
+/// equivalent entries the user added themselves and every other segment as is.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn remove_path_entry(segments: &mut Vec<String>, raw: &str) -> bool {
+    match segments.iter().position(|segment| segment == raw) {
         Some(index) => {
-            entries.remove(index);
+            segments.remove(index);
             true
         }
         None => false,
@@ -311,6 +329,15 @@ fn read_record(path: &Path) -> Option<Record> {
 
 /// Writes through a sibling temporary file and a rename, so readers see the old or new file.
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8], executable: bool) -> Result<(), String> {
+    let temporary = write_temporary(path, bytes, executable)?;
+    std::fs::rename(&temporary, path).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        format!("replacing {path:?} failed: {error}")
+    })
+}
+
+/// Writes `bytes` to a temporary file beside `path`.
+fn write_temporary(path: &Path, bytes: &[u8], executable: bool) -> Result<PathBuf, String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("{path:?} has no parent directory"))?;
@@ -330,13 +357,29 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8], executable: bool) -> R
         }
         #[cfg(not(unix))]
         let _ = executable;
-        std::fs::rename(&temporary, path)
-            .map_err(|error| format!("replacing {path:?} failed: {error}"))
+        Ok(())
     })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
+    match result {
+        Ok(()) => Ok(temporary),
+        Err(error) => {
+            let _ = std::fs::remove_file(&temporary);
+            Err(error)
+        }
     }
-    result
+}
+
+/// Writes `bytes` to `path` only if nothing is there: a sibling temporary file
+/// is hard-linked into place, which fails instead of replacing. `Ok(false)`
+/// means something already exists at `path`.
+pub(crate) fn write_new(path: &Path, bytes: &[u8], executable: bool) -> Result<bool, String> {
+    let temporary = write_temporary(path, bytes, executable)?;
+    let placed = std::fs::hard_link(&temporary, path);
+    let _ = std::fs::remove_file(&temporary);
+    match placed {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(format!("placing {path:?} failed: {error}")),
+    }
 }
 
 /// Runs `<cli> version` and returns its `cli` field; `None` when it fails or prints something else.

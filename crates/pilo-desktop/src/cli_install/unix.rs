@@ -9,7 +9,7 @@ use std::{
 
 use super::{
     ElevateError, Fingerprint, Installer, Record, Status, cli_version, run_with_timeout, same_path,
-    write_atomically,
+    write_atomically, write_new,
 };
 
 const PATH_MARKER: &str = "__PILO_PATH__";
@@ -161,10 +161,11 @@ impl Installer {
                 return;
             }
         }
+        // Without a record, an existing entry is not Pilo's, even one that
+        // already points at the bundled CLI.
         let link = self.default_link();
-        let target = self.desired_target();
-        let expected: Vec<&Path> = target.iter().map(PathBuf::as_path).collect();
-        if occupant(&link, &expected) == Occupant::Foreign {
+        if std::fs::symlink_metadata(&link).is_ok() {
+            status.entry_target = std::fs::read_link(&link).ok();
             status.state = "conflict";
             status.conflict_path = Some(link);
         }
@@ -257,14 +258,19 @@ impl Installer {
         let written = record
             .filter(|record| record.copy.as_deref() == Some(copy.as_path()))
             .and_then(|record| record.copy_fingerprint.as_ref());
-        if copy_occupant(&copy, written) == Occupant::Foreign {
+        let occupied = copy_occupant(&copy, written);
+        if occupied == Occupant::Foreign {
             return Err(Err(copy));
         }
         std::fs::create_dir_all(dir)
             .map_err(|error| Ok(format!("creating {dir:?} failed: {error}")))?;
         let bytes = std::fs::read(bundled)
             .map_err(|error| Ok(format!("reading {bundled:?} failed: {error}")))?;
-        write_atomically(&copy, &bytes, true).map_err(Ok)?;
+        if occupied == Occupant::Ours {
+            write_atomically(&copy, &bytes, true).map_err(Ok)?;
+        } else if !write_new(&copy, &bytes, true).map_err(Ok)? {
+            return Err(Err(copy));
+        }
         Ok(Some((copy, Fingerprint::of_bytes(&bytes))))
     }
 
@@ -289,21 +295,21 @@ impl Installer {
             Err(error) if error.kind() == ErrorKind::AlreadyExists => Err(LinkError::Conflict),
             Err(error) if error.kind() == ErrorKind::PermissionDenied => {
                 let parent = link.parent().unwrap_or(Path::new("/"));
-                let script = match replace {
-                    Some(expected) => format!(
-                        "{} && ln -sfn {} {}",
-                        expect_link(link, expected),
-                        shell_quote(target),
-                        shell_quote(link)
-                    ),
-                    // Without -f, ln fails if anything is already there.
+                let (quoted_link, quoted_target) = (shell_quote(link), shell_quote(target));
+                let prepare = match replace {
+                    Some(expected) => expect_link(link, expected),
+                    // Anything there, even a directory ln would link into, is a conflict.
                     None => format!(
-                        "mkdir -p {} && if ! ln -s {} {}; then echo {CONFLICT_MARKER} >&2; exit 3; fi",
-                        shell_quote(parent),
-                        shell_quote(target),
-                        shell_quote(link)
+                        "mkdir -p {} && if [ -e {quoted_link} ] || [ -L {quoted_link} ]; then echo {CONFLICT_MARKER} >&2; exit 3; fi",
+                        shell_quote(parent)
                     ),
                 };
+                let force = if replace.is_some() { "f" } else { "" };
+                // -n never follows an existing link; the result is checked at the exact path.
+                let script = format!(
+                    "{prepare} && if ! ln -sn{force} {quoted_target} {quoted_link}; then echo {CONFLICT_MARKER} >&2; exit 3; fi && {}",
+                    expect_link(link, target)
+                );
                 (self.elevate)(&script).map_err(LinkError::from)
             }
             Err(error) => Err(LinkError::Failed(format!(
@@ -368,12 +374,16 @@ impl Installer {
         }
         for (index, link) in candidates.iter().enumerate() {
             let current = std::fs::read_link(link).ok();
-            let recorded = record
+            // Only a recorded entry is Pilo's; without a record anything already
+            // there, even a link to the bundled CLI, is left alone.
+            let owned = match record
                 .as_ref()
-                .and_then(|record| record.link_target.as_deref());
-            let mut expected: Vec<&Path> = recorded.into_iter().collect();
-            expected.push(&target);
-            if occupant(link, &expected) == Occupant::Foreign {
+                .and_then(|record| record.link_target.as_deref())
+            {
+                Some(recorded) => occupant(link, &[recorded, &target]) != Occupant::Foreign,
+                None => std::fs::symlink_metadata(link).is_err(),
+            };
+            if !owned {
                 return Ok(self.conflict(link.clone()));
             }
             let copy = match self.write_copy(&bundled, record.as_ref()) {

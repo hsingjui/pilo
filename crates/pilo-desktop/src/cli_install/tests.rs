@@ -6,7 +6,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::{ElevateError, Installation, Installer, command_name, remove_path_entry};
+use super::{
+    ElevateError, Installation, Installer, command_name, insert_path_entry, path_segments,
+    remove_path_entry, write_new,
+};
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -406,13 +409,85 @@ fn appimage_never_runs_replaces_or_removes_a_changed_copy() {
 }
 
 #[test]
-fn path_removal_drops_only_the_entry_pilo_inserted() {
-    let mut entries = vec![
-        r"C:\Apps\Pilo\bin\".to_owned(),
-        r"C:\Tools".to_owned(),
-        r"C:\Apps\Pilo\bin".to_owned(),
-    ];
-    assert!(remove_path_entry(&mut entries, r"C:\Apps\Pilo\bin"));
-    assert_eq!(entries, [r"C:\Apps\Pilo\bin\", r"C:\Tools"]);
-    assert!(!remove_path_entry(&mut entries, r"C:\Apps\Pilo\bin"));
+fn path_edits_touch_only_the_segment_pilo_inserted() {
+    let value = r" C:\Tools ;;C:\Apps\Pilo\bin\;";
+    let mut segments = path_segments(value);
+    insert_path_entry(&mut segments, r"C:\Apps\Pilo\bin");
+    assert_eq!(
+        segments.join(";"),
+        r" C:\Tools ;;C:\Apps\Pilo\bin\;C:\Apps\Pilo\bin;"
+    );
+    assert!(remove_path_entry(&mut segments, r"C:\Apps\Pilo\bin"));
+    assert_eq!(segments.join(";"), value);
+    assert!(!remove_path_entry(&mut segments, r"C:\Apps\Pilo\bin"));
+    assert!(path_segments("").is_empty());
+}
+
+fn locked_install_meets(fixture: &Fixture, occupy: fn(&Path, &Path)) {
+    stand_in(&fixture.bundled("Pilo.app"), "0.5.2");
+    let link = fixture.system_link();
+    let elsewhere = fixture.root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let installer = fixture.elevating_installer("Pilo.app", move || {
+        std::fs::set_permissions(
+            link.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        occupy(&link, &elsewhere);
+    });
+    fixture.lock_system(true);
+    let status = installer.install(false).unwrap();
+    fixture.lock_system(false);
+    assert_eq!(status.outcome, Some("conflict"));
+    assert!(installer.load_record().is_none());
+}
+
+#[test]
+fn authorized_install_never_links_into_a_directory_created_meanwhile() {
+    let fixture = Fixture::new();
+    locked_install_meets(&fixture, |link, _| std::fs::create_dir(link).unwrap());
+    assert_eq!(std::fs::read_dir(fixture.system_link()).unwrap().count(), 0);
+}
+
+#[test]
+fn authorized_install_never_follows_a_directory_link_created_meanwhile() {
+    let fixture = Fixture::new();
+    locked_install_meets(&fixture, |link, elsewhere| {
+        std::os::unix::fs::symlink(elsewhere, link).unwrap()
+    });
+    let elsewhere = fixture.root.join("elsewhere");
+    assert_eq!(
+        std::fs::read_link(fixture.system_link()).unwrap(),
+        elsewhere
+    );
+    assert_eq!(std::fs::read_dir(elsewhere).unwrap().count(), 0);
+}
+
+#[test]
+fn an_existing_link_to_the_bundled_cli_is_not_claimed() {
+    let fixture = Fixture::new();
+    stand_in(&fixture.bundled("Pilo.app"), "0.5.2");
+    std::fs::create_dir_all(fixture.root.join("system")).unwrap();
+    std::os::unix::fs::symlink(fixture.bundled("Pilo.app"), fixture.system_link()).unwrap();
+    let installer = fixture.installer("Pilo.app", false, false);
+
+    assert_eq!(installer.status().state, "conflict");
+    assert_eq!(installer.install(false).unwrap().outcome, Some("conflict"));
+    assert!(installer.load_record().is_none());
+    installer.uninstall().unwrap();
+    assert_eq!(
+        std::fs::read_link(fixture.system_link()).unwrap(),
+        fixture.bundled("Pilo.app")
+    );
+}
+
+#[test]
+fn new_files_are_placed_without_replacing_anything() {
+    let fixture = Fixture::new();
+    let path = fixture.root.join("copy");
+    assert!(write_new(&path, b"first", true).unwrap());
+    assert!(!write_new(&path, b"second", true).unwrap());
+    assert_eq!(std::fs::read(&path).unwrap(), b"first");
+    assert_eq!(std::fs::read_dir(&fixture.root).unwrap().count(), 1);
 }

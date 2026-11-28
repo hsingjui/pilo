@@ -16,7 +16,10 @@ use windows_sys::Win32::{
     },
 };
 
-use super::{Installer, Record, Status, cli_version, remove_path_entry, same_path};
+use super::{
+    Installer, Record, Status, cli_version, insert_path_entry, path_segments, remove_path_entry,
+    same_path,
+};
 
 const USER_ENVIRONMENT: &str = "Environment";
 const SYSTEM_ENVIRONMENT: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
@@ -158,8 +161,11 @@ fn entries(value: &str) -> Vec<String> {
         .collect()
 }
 
+/// Compares a PATH segment with `dir` after normalizing whitespace, quotes and `%VAR%`s.
 fn matches(entry: &str, dir: &Path) -> bool {
-    same_path(Path::new(expand(entry).trim_matches('"')), dir)
+    let entry = expand(entry.trim());
+    let entry = entry.trim_matches('"');
+    !entry.is_empty() && same_path(Path::new(entry), dir)
 }
 
 fn system_path() -> String {
@@ -240,7 +246,7 @@ impl Installer {
             KEY_QUERY_VALUE | KEY_SET_VALUE,
         )?;
         let (value, kind) = read_path(&key)?;
-        let mut user = entries(&value);
+        let mut user = path_segments(&value);
         let mut changed = false;
         // A moved or re-extracted app drops only the entry Pilo itself added.
         if let Some(record) = &record
@@ -272,7 +278,7 @@ impl Installer {
             None
         } else {
             let raw = bin.to_string_lossy().into_owned();
-            user.push(raw.clone());
+            insert_path_entry(&mut user, &raw);
             changed = true;
             Some(raw)
         };
@@ -325,7 +331,7 @@ impl Installer {
                 KEY_QUERY_VALUE | KEY_SET_VALUE,
             )?;
             let (value, kind) = read_path(&key)?;
-            let mut user = entries(&value);
+            let mut user = path_segments(&value);
             if remove_path_entry(&mut user, raw) {
                 write_path(&key, &user.join(";"), kind)?;
                 broadcast_environment_change();
