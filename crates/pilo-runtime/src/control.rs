@@ -1,175 +1,39 @@
+//! Session/settings business handlers from the removed `pilo-server ctl` path.
+//! The transport, lease and capability injection are gone; the Pilo CLI
+//! migration (`.trellis/tasks/11-27-pilo-cli/implement.md` step 2) reuses or
+//! replaces these handlers.
+
 mod catalog;
 mod sessions;
 mod settings;
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use catalog::catalog;
 use settings::settings;
-use std::sync::Arc;
 
-use pilo_protocol::{ControlCommand, ControlContext, ControlReply, ControlRequest};
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use tokio::task::{JoinHandle, JoinSet};
 
 use super::{
     Runtime,
     events::{RuntimeEvent, RuntimeEventEnvelope},
-    handle::WeakRuntime,
-    project, project_api,
-    server_client::{SERVER_DISCONNECTED_EVENT, ServerClient},
-    storage,
+    project, project_api, storage,
 };
 use pilo_domain::ConnectionKind;
 
-pub(crate) struct ControlLease {
-    client: Arc<ServerClient>,
-    stream: String,
-    task: JoinHandle<()>,
-    runtime: WeakRuntime,
-    source_project: String,
-    source_connection: String,
-    source_session: String,
-}
+pub(crate) const CONTROL_MAX_BYTES: usize = 1024 * 1024;
 
-impl ControlLease {
-    pub(crate) fn rebind(&mut self, previous: &Arc<ServerClient>, client: &Arc<ServerClient>) {
-        if Arc::ptr_eq(&self.client, previous) {
-            self.task.abort();
-            self.task = spawn_dispatcher(
-                self.runtime.clone(),
-                client.clone(),
-                &self.stream,
-                self.source_project.clone(),
-                self.source_connection.clone(),
-                self.source_session.clone(),
-            );
-            self.client = client.clone();
-        }
-    }
-}
-
-impl Drop for ControlLease {
-    fn drop(&mut self) {
-        self.task.abort();
-        let client = self.client.clone();
-        let stream = self.stream.clone();
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(async move {
-                let _ = client
-                    .request("control.revoke", json!({ "streamId": stream }))
-                    .await;
-            });
-        }
-    }
-}
-
-pub(crate) async fn attach(
-    runtime: &Runtime,
-    client: Arc<ServerClient>,
-    stream: String,
-    project_id: &str,
-    session_key: &str,
-    local: bool,
-) -> Result<(ControlContext, ControlLease), String> {
-    // Resolve from Host storage, never from a caller-supplied source identity.
-    let source = project::get(runtime, project_id)?;
-    let task = spawn_dispatcher(
-        runtime.downgrade(),
-        client.clone(),
-        &stream,
-        source.id.clone(),
-        source.connection.id.clone(),
-        session_key.to_owned(),
-    );
-    let lease = ControlLease {
-        client: client.clone(),
-        stream: stream.clone(),
-        task,
-        runtime: runtime.downgrade(),
-        source_project: source.id,
-        source_connection: source.connection.id,
-        source_session: session_key.to_owned(),
-    };
-    // On Windows, ctl needs the console runtime, not the GUI host executable.
-    let executable = if local && cfg!(windows) {
-        let path = if cfg!(debug_assertions) {
-            if let Some(binary) = super::server_deploy::local_server_binary() {
-                binary.to_path_buf()
-            } else {
-                std::env::current_exe()
-                    .map_err(|_| "failed to locate Windows ctl runtime".to_owned())?
-                    .with_file_name("pilo-server.exe")
-            }
-        } else {
-            super::server_deploy::server_binary(super::server_deploy::ServerTarget::current()?)?
-        };
-        if !path.is_file() {
-            return Err("Windows ctl runtime is unavailable; build pilo-server first".to_owned());
-        }
-        Some(path.to_string_lossy().into_owned())
-    } else {
-        None
-    };
-    let mut secret = [0_u8; 32];
-    getrandom::fill(&mut secret)
-        .map_err(|_| "failed to generate Pilo control context".to_owned())?;
-    let context = serde_json::from_value(client.request("control.register", json!({ "streamId": stream, "token": URL_SAFE_NO_PAD.encode(secret), "executable": executable })).await?)
-        .map_err(|_| "invalid Pilo control registration response".to_owned())?;
-    Ok((context, lease))
-}
-
-fn spawn_dispatcher(
-    runtime: WeakRuntime,
-    client: Arc<ServerClient>,
-    stream: &str,
-    source_project: String,
-    source_connection: String,
-    source_session: String,
-) -> JoinHandle<()> {
-    let mut events = client.subscribe(stream);
-    let dispatcher = client;
-    tokio::spawn(async move {
-        let mut work = JoinSet::new();
-        loop {
-            tokio::select! {
-                event = events.recv() => {
-                    let Some(event) = event else { break };
-                    if event.event == SERVER_DISCONNECTED_EVENT { break }
-                    if event.event != "control.request" { continue }
-                    let Ok(request) = serde_json::from_value::<ControlRequest>(event.data) else { continue };
-                    let client = dispatcher.clone();
-                    let Ok(runtime) = runtime.upgrade() else { break };
-                    let source_project = source_project.clone();
-                    let source_connection = source_connection.clone();
-                    let source_session = source_session.clone();
-                    if work.len() >= 16 {
-                        let _ = client.request("control.respond", json!({ "id": request.id, "reply": ControlReply { result: None, error: Some("Pilo control capacity exhausted".to_owned()) } })).await;
-                        continue;
-                    }
-                    work.spawn(async move {
-                        // This task is independent of the transport reader and can call the same Server.
-                        let result = tokio::time::timeout(std::time::Duration::from_secs(55), async {
-                            if request.command.method.starts_with("sessions.") {
-                                sessions::execute(&runtime, request.command, &source_project, &source_session).await
-                            } else {
-                                let is_status = request.command.method == "status";
-                                let mut result = execute(&runtime, request.command, &source_project, &source_connection).await?;
-                                if is_status {
-                                    result["sourceSessionKey"] = json!(source_session);
-                                }
-                                Ok(result)
-                            }
-                        }).await
-                            .unwrap_or_else(|_| Err("Pilo control execution timed out; write outcome may be unknown; do not automatically retry".to_owned()));
-                        let reply = match result { Ok(result) => ControlReply { result: Some(result), error: None }, Err(error) => ControlReply { result: None, error: Some(error) } };
-                        let _ = client.request("control.respond", json!({ "id": request.id, "reply": reply })).await;
-                    });
-                }
-                _ = work.join_next(), if !work.is_empty() => {}
-            }
-        }
-    })
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ControlCommand {
+    pub method: String,
+    #[serde(default)]
+    pub key: Option<String>,
+    #[serde(default)]
+    pub connection_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub value: Value,
 }
 
 pub(crate) fn changed(runtime: &Runtime) {

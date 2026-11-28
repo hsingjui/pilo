@@ -450,9 +450,7 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   change: that would pin a detected IP as an explicit address. Address edits
   keep the selected entry if it remains in the list; otherwise use `lan` or the
   first saved address. Legacy address `name` values are retained but not shown or
-  edited in the desktop settings. The separate `pilo ctl` setting
-  `remote.publicBaseUrl` still reads the legacy field and edits only the `public`
-  entry; it is not an `app/native` operation.
+  edited in the desktop settings.
   The saved-address editor and WebUI pairing choices share
   `sortRemoteAddresses` from `shared/remote-addresses.ts`: RFC1918 IPv4 origins
   appear before public/custom origins, preserving order within each group.

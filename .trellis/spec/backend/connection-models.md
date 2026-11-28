@@ -15,7 +15,7 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
 - `PiloClient.loadConnectionModels(connectionId)` uses the same Host service on
   desktop and WebUI. No database catalog, Project ID, or cache-write endpoint.
 - Internal `pi.start` accepts `userScope: boolean` (default false). True requires
-  `noSession: true` and no Agent Control stream.
+  `noSession: true`.
 
 ## 3. Contracts
 
@@ -29,8 +29,8 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
   context files and user extension discovery; the shared `ServerPiSession::spawn`
   also clears explicit user extension sources for all model probes. Extension-only
   providers are intentionally absent from the fast catalog; normal chat extension
-  loading is unchanged. No chat attachment, persisted session, Agent Control
-  capability, or Project record is created.
+  loading is unchanged. No chat attachment, persisted session or Project record
+  is created.
 - Read the correlated `get_available_models` RPC response; malformed results,
   startup errors, process exit, and timeout are errors, not successful empty lists.
   A genuine empty `models` array is valid. One 35-second budget covers startup,

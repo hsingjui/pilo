@@ -36,7 +36,7 @@ impl WeakRuntime {
         self.0
             .upgrade()
             .map(Runtime)
-            .ok_or_else(|| "Pilo Host control is unavailable".to_owned())
+            .ok_or_else(|| "Pilo Host is unavailable".to_owned())
     }
 }
 
@@ -52,6 +52,8 @@ pub struct RuntimeState {
     web_assets: OnceLock<Arc<dyn super::web_assets::WebAssets>>,
     pub(crate) core: super::PiloRuntime,
     pub(crate) remote: super::RemoteServerManager,
+    pub(crate) local_ipc: tokio::sync::Mutex<Option<super::local_ipc::LocalIpcServer>>,
+    pub(crate) navigator: Arc<super::navigation::Navigator>,
 }
 
 impl std::ops::Deref for RuntimeState {
@@ -104,8 +106,10 @@ impl Runtime {
             web_assets: OnceLock::new(),
             core: super::PiloRuntime::default(),
             remote: super::RemoteServerManager::default(),
+            local_ipc: tokio::sync::Mutex::default(),
+            navigator: Arc::default(),
         }));
-        runtime.servers.initialize_control(&runtime);
+        runtime.servers.initialize_runtime(&runtime);
         runtime
     }
 
@@ -139,6 +143,10 @@ impl Runtime {
     }
 
     pub async fn shutdown(&self) {
+        if let Some(server) = self.local_ipc.lock().await.take() {
+            server.stop().await;
+        }
+        self.navigator.close();
         self.events.close_streams();
         self.terminal_events.close();
         self.servers.begin_shutdown();
@@ -229,29 +237,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agent_control_resolves_the_same_runtime_without_retaining_it() {
+    async fn server_manager_resolves_the_same_runtime_without_retaining_it() {
         let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
         let servers = runtime.servers.clone();
-        let shared = servers.control_runtime().unwrap();
+        let shared = servers.host_runtime().unwrap();
         assert!(Arc::ptr_eq(&runtime.0, &shared.0));
         let weak = runtime.downgrade();
         drop(shared);
         drop(runtime);
         assert!(weak.upgrade().is_err());
-        assert!(servers.control_runtime().is_err());
+        assert!(servers.host_runtime().is_err());
         assert!(
             super::super::server_client::ServerManager::default()
-                .control_runtime()
+                .host_runtime()
                 .is_err()
         );
     }
 
     #[tokio::test]
-    async fn empty_runtime_shutdown_revokes_control_and_is_repeatable() {
+    async fn empty_runtime_shutdown_releases_host_runtime_and_is_repeatable() {
         let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
-        assert!(runtime.servers.control_runtime().is_ok());
+        assert!(runtime.servers.host_runtime().is_ok());
         runtime.shutdown().await;
-        assert!(runtime.servers.control_runtime().is_err());
+        assert!(runtime.servers.host_runtime().is_err());
         runtime.shutdown().await;
     }
 

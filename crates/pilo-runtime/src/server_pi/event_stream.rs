@@ -118,7 +118,6 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
                                         if state.get() != PiProcessState::Running {
                                             return;
                                         }
-                                        state.resume_control(&client, &next);
                                         *state
                                             .client
                                             .lock()

@@ -22,8 +22,10 @@ type ShellNative = Pick<
 		>
 	>;
 
-type NativeDesktopShell = Required<Omit<DesktopShell, "dock" | "settings">> &
-	Pick<DesktopShell, "dock" | "settings">;
+type NativeDesktopShell = Required<
+	Omit<DesktopShell, "dock" | "settings" | "cli">
+> &
+	Pick<DesktopShell, "dock" | "settings" | "cli">;
 
 function unavailable(name: string) {
 	return new Error(`The native call ${name} is unavailable`);
@@ -31,7 +33,10 @@ function unavailable(name: string) {
 
 export function createNativeDesktopShell(
 	pilo: ShellNative,
-	options: Pick<DesktopShell, "notifications" | "dock" | "settings"> = {},
+	options: Pick<
+		DesktopShell,
+		"notifications" | "dock" | "settings" | "cli"
+	> = {},
 ): NativeDesktopShell {
 	return {
 		openExternal: openUrl,
@@ -61,5 +66,6 @@ export function createNativeDesktopShell(
 		notifications: options.notifications ?? defaultDesktopNotifications(),
 		dock: options.dock,
 		settings: options.settings,
+		cli: options.cli,
 	};
 }

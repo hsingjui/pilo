@@ -1,12 +1,8 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().nth(1).as_deref() == Some("ctl") {
-        if let Err(error) = pilo_server::control::run_cli(std::env::args().skip(2).collect()).await
-        {
-            eprintln!("{error}");
-            std::process::exit(1);
-        }
-        return Ok(());
+    if let Some(command) = std::env::args().nth(1).filter(|arg| !arg.starts_with('-')) {
+        eprintln!("unknown pilo-server command: {command}");
+        std::process::exit(2);
     }
     #[cfg(unix)]
     if let Some(mode) = std::env::args().nth(1)

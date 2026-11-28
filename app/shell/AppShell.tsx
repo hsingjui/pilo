@@ -185,6 +185,7 @@ export interface AppShellProps {
 		| "openExternal"
 		| "notifications"
 		| "createUpdate"
+		| "cli"
 	>;
 	/** Desktop updater state shared by the sidebar button, About pane, and update dialog. */
 	update?: DesktopUpdate;

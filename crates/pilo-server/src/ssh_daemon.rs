@@ -17,7 +17,7 @@ use tokio::{
     time::{Instant, sleep},
 };
 
-use crate::{ServerState, cleanup, control, serve_connection};
+use crate::{ServerState, cleanup, serve_connection};
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 // A lost Host cannot renew the bridge or cancel a blocked tool/dialog.
@@ -147,14 +147,7 @@ pub async fn serve(scope: &str) -> io::Result<()> {
         Err(error) => return Err(error),
     }
     let state = ServerState::new(true)?;
-    let control = control::listen(state.clone()).await?;
-    let listener = match UnixListener::bind(&path) {
-        Ok(listener) => listener,
-        Err(error) => {
-            control.abort();
-            return Err(error);
-        }
-    };
+    let listener = UnixListener::bind(&path)?;
     let mut idle_since = None;
     let mut disconnected_since = Instant::now();
     let mut replacement = None;
@@ -197,7 +190,6 @@ pub async fn serve(scope: &str) -> io::Result<()> {
     };
     drop(listener);
     let _ = fs::remove_file(&path);
-    control.abort();
     cleanup(state).await;
     result
 }

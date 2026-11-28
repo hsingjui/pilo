@@ -278,6 +278,7 @@ const zhCN = {
 		remoteRevokeAll: "断开并吊销所有设备",
 		remoteRevokeAllDescription:
 			"所有已配对设备将断开，当前配对链接也将失效。设备需要重新配对才能连接。",
+		cli: "CLI",
 		about: "关于",
 		conversation: "对话",
 		developer: "开发调试",
@@ -1220,6 +1221,54 @@ const zhCN = {
 		updateConfigUnavailable: "更新签名配置不可用，请检查发布配置。",
 		updateServiceUnavailable: "无法检查更新，请检查网络后重试。",
 		updateFailed: "检查失败，请稍后重试。",
+	},
+	cli: {
+		title: "命令行工具",
+		status: "状态",
+		command: "命令",
+		version: "版本",
+		versionUnknown: "未知",
+		location: "位置",
+		actions: "操作",
+		refresh: "刷新",
+		install: "安装",
+		repair: "修复",
+		uninstall: "卸载",
+		stateReady: "已安装",
+		stateNotInstalled: "未安装",
+		stateNotInPath: "不在 PATH 中",
+		stateStale: "需要修复",
+		stateConflict: "冲突",
+		stateUnavailable: "不可用",
+		stateShadowed: "被遮蔽",
+		shadowedTitle: "PATH",
+		notInstalledHelp: "安装后即可在终端中运行 {{command}}。",
+		notInPathHelp:
+			"{{dir}} 不在 PATH 中。请在 shell 配置中加入该目录后再运行 {{command}}。",
+		conflictHelp:
+			"{{path}} 已存在且不是 Pilo 创建的，未覆盖。请手动处理后重试。",
+		unavailableHelp: "此 Pilo 构建未包含 CLI。",
+		staleMissing: "{{command}} 入口已被移除，修复即可恢复。",
+		staleMoved: "Pilo 已移动，入口仍指向旧位置。",
+		staleOtherApp: "入口属于另一个 Pilo 副本。",
+		staleOutdated: "已安装的 CLI 与当前 Pilo 版本不一致。",
+		stalePathRemoved: "{{dir}} 已从 PATH 中移除。",
+		shadowed:
+			"PATH 中的 {{path}} 优先，终端执行 {{command}} 不会使用 Pilo CLI。",
+		fallback: "已取消管理员授权，CLI 已安装到 {{dir}}。",
+		canceled: "已取消授权，未做任何更改。",
+		failed: "CLI 操作失败：{{message}}",
+		skillTitle: "Agent Skill",
+		skillUpdate: "更新",
+		skillUninstall: "移除",
+		skillStateOutdated: "有可用更新",
+		skillNotInstalledHelp:
+			"安装 pilo-cli Skill 副本后，支持 ~/.agents/skills 的 Agent 即可了解 Pilo CLI 的用法。",
+		skillOutdatedHelp:
+			"已安装的 Skill 副本与当前 Pilo 版本不一致，点击更新即可同步最新说明。",
+		skillConflictHelp:
+			"{{path}} 已存在且不是 Pilo 写入的副本，未覆盖或删除。请手动处理后重试。",
+		skillFailed: "Skill 操作失败：{{message}}",
 	},
 } as const satisfies TranslationShape<typeof enUS>;
 

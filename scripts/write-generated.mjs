@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export function writeGenerated(file, data, command) {
-	const output = JSON.stringify(data, null, "\t") + "\n";
+	const output =
+		typeof data === "string" ? data : JSON.stringify(data, null, "\t") + "\n";
 	const args = process.argv.slice(2);
 	if (args.length === 0) {
 		writeFileSync(file, output);

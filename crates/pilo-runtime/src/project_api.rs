@@ -4,11 +4,20 @@ use super::{
     remote_fs::{self, FsEntry},
     terminal::TerminalInfo,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use pilo_domain::{Project, ProjectModelCache};
+use serde_json::{Value, json};
+use tokio::sync::mpsc;
 
-use super::{Runtime, host_api::ImageReadError, project, storage};
+use super::{
+    Runtime,
+    host_api::ImageReadError,
+    pi_oneshot::{OneshotEventSink, request},
+    pi_workspace, project,
+    server_pi::{PiLaunchOptions, ServerPiSession},
+    storage,
+};
 
 pub fn project_list(runtime: &Runtime) -> Result<Vec<Project>, String> {
     project::list(runtime)
@@ -54,6 +63,69 @@ pub fn project_model_cache_get(
     project_id: &str,
 ) -> Result<Option<ProjectModelCache>, String> {
     storage::get_project_model_cache(&storage::open(&runtime.paths)?, project_id)
+}
+
+/// Reads Pi's current catalog in the project's runtime without creating a chat.
+pub(crate) async fn project_models_available(
+    runtime: &Runtime,
+    project_id: &str,
+) -> Result<Vec<Value>, String> {
+    let mut session = ServerPiSession::default();
+    tokio::time::timeout(Duration::from_secs(35), async {
+        let _policy = runtime.pi_resource_policy.read().await;
+        let project = project::ready(runtime, &runtime.servers, project_id).await?;
+        let profile = pi_workspace::resolve_checked_pi_runtime_with_paths(
+            &runtime.paths,
+            &project,
+            Vec::new(),
+        )
+        .await?;
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        session
+            .spawn(
+                Arc::clone(&runtime.servers),
+                OneshotEventSink { sender },
+                &profile.project,
+                PiLaunchOptions {
+                    no_session: true,
+                    disable_builtin_tools: true,
+                    disable_extension_discovery: true,
+                    disable_context_files: true,
+                    builtin_extensions: profile.builtin_extensions,
+                    ..PiLaunchOptions::default()
+                },
+            )
+            .await?;
+        let result = request(
+            &session,
+            &mut receiver,
+            json!({"type": "get_available_models"}),
+        )
+        .await;
+        let stopped = session.stop().await;
+        let catalog = result?;
+        stopped?;
+        catalog["models"]
+            .as_array()
+            .ok_or_else(|| "Pi model catalog response is missing models".to_owned())?
+            .iter()
+            .map(|model| {
+                let (Some(provider), Some(id)) = (model["provider"].as_str(), model["id"].as_str())
+                else {
+                    return Err("Pi model catalog contains a model without an identity".to_owned());
+                };
+                // Only expose display metadata, not provider URLs or request headers.
+                Ok(json!({
+                    "provider": provider,
+                    "id": id,
+                    "name": model["name"].as_str().unwrap_or(id),
+                    "reasoning": model["reasoning"].as_bool().unwrap_or(false),
+                }))
+            })
+            .collect()
+    })
+    .await
+    .map_err(|_| "Project model catalog timed out".to_owned())?
 }
 
 pub fn project_model_cache_list(runtime: &Runtime) -> Result<Vec<ProjectModelCache>, String> {

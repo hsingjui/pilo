@@ -111,14 +111,14 @@ pub(crate) fn methods_hash() -> &'static str {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Capabilities<'a> {
+pub(crate) struct Capabilities<'a> {
     platform: &'static str,
     wsl: bool,
     methods: Vec<&'static str>,
     methods_hash: &'a str,
 }
 
-fn host_capabilities() -> Capabilities<'static> {
+pub(crate) fn host_capabilities() -> Capabilities<'static> {
     Capabilities {
         platform: platform_name(),
         wsl: cfg!(target_os = "windows"),
@@ -136,6 +136,8 @@ fn status_for_code(code: ErrorCode) -> StatusCode {
         ErrorCode::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         ErrorCode::Timeout => StatusCode::REQUEST_TIMEOUT,
         ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        ErrorCode::Conflict => StatusCode::CONFLICT,
+        ErrorCode::OutcomeUnknown => StatusCode::BAD_GATEWAY,
     }
 }
 
@@ -1139,6 +1141,23 @@ mod tests {
         .await;
         assert_eq!(status, 403);
         assert_eq!(err["error"]["code"], "forbidden");
+
+        // CLI session methods are local-only: paired devices of any scope are refused.
+        for token in [&token_b_chat, &token_b_ws] {
+            for method in ["session.status", "session.create", "session.trash"] {
+                let (status, err) = http_json(
+                    host_b.port,
+                    "POST",
+                    &format!("/api/v2/call/{method}"),
+                    Some(token),
+                    None,
+                    &json!({ "projectId": "p", "sessionId": "s" }),
+                )
+                .await;
+                assert_eq!(status, 403, "{method}");
+                assert_eq!(err["error"]["code"], "forbidden", "{method}");
+            }
+        }
 
         // Origin enforcement.
         let (status, _) = http_json(

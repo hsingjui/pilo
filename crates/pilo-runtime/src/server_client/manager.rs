@@ -52,7 +52,7 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
 
 #[derive(Default)]
 pub struct ServerManager {
-    control_runtime: std::sync::Mutex<super::super::handle::WeakRuntime>,
+    host_runtime: std::sync::Mutex<super::super::handle::WeakRuntime>,
     clients: Mutex<HashMap<String, CachedServerClient>>,
     connection_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     admission: RwLock<()>,
@@ -66,15 +66,15 @@ struct CachedServerClient {
 }
 
 impl ServerManager {
-    pub(crate) fn initialize_control(&self, runtime: &super::super::Runtime) {
+    pub(crate) fn initialize_runtime(&self, runtime: &super::super::Runtime) {
         *self
-            .control_runtime
+            .host_runtime
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = runtime.downgrade();
     }
 
-    pub(crate) fn control_runtime(&self) -> Result<super::super::Runtime, String> {
-        self.control_runtime
+    pub(crate) fn host_runtime(&self) -> Result<super::super::Runtime, String> {
+        self.host_runtime
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
@@ -132,7 +132,7 @@ impl ServerManager {
 
     fn ssh_target_is_current(&self, connection: &Connection) -> Result<bool, String> {
         use crate::storage;
-        let db = storage::open(&self.control_runtime()?.paths)?;
+        let db = storage::open(&self.host_runtime()?.paths)?;
         Ok(storage::get_connection(&db, &connection.id)?
             .is_some_and(|current| current.kind == connection.kind))
     }
@@ -318,7 +318,7 @@ impl ServerManager {
 
     pub(crate) fn begin_shutdown(&self) {
         *self
-            .control_runtime
+            .host_runtime
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Default::default();
         self.shutdown.store(true, Ordering::Release);

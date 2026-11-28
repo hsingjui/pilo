@@ -77,15 +77,7 @@ function shellQuote(value) {
 }
 
 function sshEnvironment() {
-	const environment = { ...process.env, ...config.sshEnvironment };
-	for (const key of [
-		"PILO_CTL",
-		"PILO_CONTROL_ENDPOINT",
-		"PILO_CONTROL_TOKEN",
-		"PILO_REMOTE_CONTROL",
-	])
-		delete environment[key];
-	return environment;
+	return { ...process.env, ...config.sshEnvironment };
 }
 
 function releaseMuxPath() {
@@ -152,17 +144,6 @@ function sshArgs() {
 
 function remoteSessionExports(env) {
 	const assignments = [];
-	const control = process.env.PILO_REMOTE_CONTROL
-		? JSON.parse(process.env.PILO_REMOTE_CONTROL)
-		: null;
-	if (control) {
-		for (const [key, value] of Object.entries({
-			PILO_CTL: control.executable,
-			PILO_CONTROL_ENDPOINT: control.endpoint,
-			PILO_CONTROL_TOKEN: control.token,
-		}))
-			assignments.push(`${key}=${shellQuote(value)}`);
-	}
 	for (const key of [
 		"PI_SESSION_ID",
 		"PI_PROVIDER",
@@ -918,7 +899,6 @@ function registerLocalTools(pi, cwd) {
 		exposeSessionEnvironment: false,
 		spawnHook(context) {
 			delete context.env.PILO_SSH_WORKSPACE_CONFIG;
-			delete context.env.PILO_REMOTE_CONTROL;
 			return context;
 		},
 	});

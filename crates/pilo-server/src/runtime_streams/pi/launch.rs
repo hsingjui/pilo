@@ -109,23 +109,10 @@ pub(super) fn build_launch_command(
             system_prompt_argument(pi_executable, system_prompt),
         ]);
     }
-    let control = params
-        .control_stream_id
-        .as_deref()
-        .map(|stream| {
-            state
-                .agent_control
-                .context(stream)
-                .ok_or_else(|| "unregistered Pilo control context".to_owned())
-        })
-        .transpose()?;
-    if control.is_some() {
-        args.extend(["--append-system-prompt".to_owned(), "Pilo application control is available through bash: invoke the executable in PILO_CTL with the ctl subcommand (POSIX: \"$PILO_CTL\" ctl; PowerShell: & $env:PILO_CTL ctl). Start with ctl --help and ctl settings list. This controls the running Pilo Host; use explicit --connection/--project for scoped writes. Never print PILO_CONTROL_TOKEN or put credentials in command arguments; use --stdin JSON. Failed writes must not be automatically retried.".to_owned()]);
-    }
     // An empty, Server-owned cwd excludes every workspace's .pi configuration
     // while preserving Pi's user settings, credentials and provider extensions.
     let cwd = if params.user_scope {
-        if !params.no_session || params.control_stream_id.is_some() {
+        if !params.no_session {
             return Err("user model probes require an isolated no-session process".to_owned());
         }
         let cwd = crate::extensions::runtime_directory()
@@ -144,27 +131,6 @@ pub(super) fn build_launch_command(
         .contains(&BuiltinExtension::StreamGuard)
     {
         command.env("PILO_STALL_QUEUE_BARRIER", "1");
-    }
-    for key in [
-        "PILO_CTL",
-        "PILO_CONTROL_ENDPOINT",
-        "PILO_CONTROL_TOKEN",
-        "PILO_REMOTE_CONTROL",
-    ] {
-        command.env_remove(key);
-    }
-    if let Some(control) = control {
-        command
-            .env("PILO_CTL", control.executable)
-            .env("PILO_CONTROL_ENDPOINT", control.endpoint)
-            .env("PILO_CONTROL_TOKEN", control.token);
-    }
-    if let Some(control) = &params.remote_control {
-        command.env(
-            "PILO_REMOTE_CONTROL",
-            serde_json::to_string(control)
-                .map_err(|_| "invalid remote control context".to_owned())?,
-        );
     }
     command
         .current_dir(&cwd)

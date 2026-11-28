@@ -25,7 +25,15 @@ export type NativeHostBackend = Pick<
 	Pilo,
 	"call" | "upload" | "download" | "nextEvents" | "shutdown"
 > &
-	Partial<Pick<Pilo, "nextTerminalEvents">>;
+	Partial<
+		Pick<
+			Pilo,
+			| "nextTerminalEvents"
+			| "nextNavigation"
+			| "navigationCurrent"
+			| "completeNavigation"
+		>
+	>;
 
 /**
  * In-process `HostTransport` backed by the embedded desktop `Pilo` native

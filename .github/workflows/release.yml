@@ -213,6 +213,8 @@ jobs:
 
       - name: Stage app resources
         shell: bash
+        env:
+          NSH_MANIFEST: ${{ needs.preflight.outputs.nsh_manifest }}
         run: |
           set -euo pipefail
           bash scripts/verify-pilo-server-resources.sh
@@ -231,6 +233,9 @@ jobs:
           if [[ "$RUNNER_OS" != "Windows" ]]; then
             chmod +x "$app_resources"/runtime/pilo-server-*
           fi
+          # The CLI connects to the packaged app's ID by default and lives in bin/, not runtime/.
+          app_id=$(python3 -c 'import json, os; print(json.loads(os.environ["NSH_MANIFEST"])["id"])')
+          bash scripts/stage-pilo-cli.sh "$app_resources" "$app_id" "$VERSION"
 
       - name: Archive Windows portable app and compile installer
         if: runner.os == 'Windows'
@@ -285,6 +290,7 @@ jobs:
           app="$out/Pilo.app"
           # The executable in Resources is sealed as data, not verified as nested code.
           codesign --verify --strict "$app/Contents/Resources/runtime/pilo-server-darwin-aarch64"
+          codesign --verify --strict "$app/Contents/Resources/bin/pilo"
           # nsh signs before Pilo stages its resources; seal the finished bundle again.
           codesign --force --sign - --timestamp=none --preserve-metadata=entitlements "$app"
           codesign --verify --deep --strict "$app"
@@ -319,8 +325,12 @@ jobs:
             "$root/usr/share/icons/hicolor/256x256/apps"
           cp -R "$app" "$root/opt/pilo"
           chmod -R u+rwX,go+rX,go-w "$root"
-          ln -s /opt/pilo/Pilo "$root/usr/bin/pilo"
-          sed 's|^Exec=Pilo|Exec=pilo|' "$app/$id.desktop" > "$root/usr/share/applications/$id.desktop"
+          # The GUI gets its own command so /usr/bin never shadows the CLI's `pilo`.
+          launcher=pilo-desktop
+          [[ $id == *.dev ]] && launcher=pilo-desktop-dev
+          ln -s /opt/pilo/Pilo "$root/usr/bin/$launcher"
+          sed "s|^Exec=Pilo|Exec=$launcher|" "$app/$id.desktop" > "$root/usr/share/applications/$id.desktop"
+          grep -qx "Exec=$launcher.*" "$root/usr/share/applications/$id.desktop"
           cp "$app/$id.png" "$root/usr/share/icons/hicolor/256x256/apps/$id.png"
 
           shlibs="$RUNNER_TEMP/pilo-shlibs"
@@ -369,7 +379,7 @@ jobs:
           %files
           %defattr(-,root,root,-)
           /opt/pilo
-          /usr/bin/pilo
+          /usr/bin/$launcher
           /usr/share/applications/$id.desktop
           /usr/share/icons/hicolor/256x256/apps/$id.png
           EOF
@@ -523,6 +533,10 @@ jobs:
           fi
           gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" \
             "${flags[@]}" --notes-file - <<EOF
+          ### CLI 变更
+
+          旧版 \`pilo-server ctl\` 已移除。在 SSH 或 WSL 中运行的 Pi 不再能通过旧命令控制 Pilo；你仍可在运行 Pilo 桌面端的本机使用 \`pilo\` CLI 管理这些 SSH 和 WSL 项目。
+
           ### 下载安装
 
           | 平台 | 文件 | 说明 |

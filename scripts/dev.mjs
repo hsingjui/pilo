@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -55,14 +56,18 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => shutdown(0));
 }
 
-function start(command, args, onExit = shutdown) {
+function start(command, args, onExit = shutdown, onStdoutLine) {
 	const child = spawn(command, args, {
 		cwd: root,
-		stdio: "inherit",
+		stdio: onStdoutLine ? ["inherit", "pipe", "inherit"] : "inherit",
 		detached: process.platform !== "win32",
 	});
 	children.add(child);
-	child.on("exit", (code) => {
+	if (onStdoutLine) {
+		createInterface({ input: child.stdout }).on("line", onStdoutLine);
+	}
+	// Cargo's artifact stream must be drained before using the reported paths.
+	child.on(onStdoutLine ? "close" : "exit", (code) => {
 		children.delete(child);
 		if (!closing) onExit(code ?? 1);
 	});
@@ -130,11 +135,51 @@ try {
 	if (process.argv.includes("--web")) {
 		start("nsh", ["dev", "--target", "web", "web"]);
 	} else {
-		if (!process.env.PILO_SERVER_BINARY) {
+		const cargoArgs = ["build", "--message-format=json-render-diagnostics"];
+		const buildServer = !process.env.PILO_SERVER_BINARY;
+		const buildCli = !process.env.PILO_CLI_BINARY;
+		if (buildServer) cargoArgs.push("-p", "pilo-server");
+		if (buildCli) cargoArgs.push("-p", "pilo-cli");
+		const artifacts = new Map();
+		if (buildServer || buildCli) {
 			const code = await new Promise((resolve) => {
-				start("cargo", ["build", "-p", "pilo-server"], resolve);
+				start("cargo", cargoArgs, resolve, (line) => {
+					let message;
+					try {
+						message = JSON.parse(line);
+					} catch {
+						console.log(line);
+						return;
+					}
+					if (
+						message?.reason === "compiler-artifact" &&
+						message.executable &&
+						message.target.kind.includes("bin")
+					) {
+						artifacts.set(message.target.name, message.executable);
+					}
+				});
 			});
 			if (code !== 0) shutdown(code);
+		}
+		if (buildServer) {
+			const server = artifacts.get("pilo-server");
+			if (!server)
+				throw new Error("Cargo did not report a pilo-server executable");
+			process.env.PILO_SERVER_BINARY = server;
+		}
+		if (buildCli) {
+			let cli = artifacts.get("pilo");
+			if (!cli) throw new Error("Cargo did not report a pilo executable");
+			if (process.platform === "win32") {
+				// The Windows installer adds the CLI's directory to PATH, not a link.
+				const binDir = path.join(root, "target", "debug", "pilo-cli-bin");
+				const staged = path.join(binDir, "pilo-dev.exe");
+				fs.mkdirSync(binDir, { recursive: true });
+				fs.copyFileSync(cli, staged);
+				cli = staged;
+			}
+			process.env.PILO_CLI_BINARY = cli;
 		}
 		startDesktopWithWeb();
 	}

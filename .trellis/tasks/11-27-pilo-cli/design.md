@@ -32,6 +32,7 @@
 
 - create/send 接收 stdin JSON（如 `{"message":"…","title":"…"}`，title 仅 create）；拒绝空消息、slash 命令及忙目标，不偷偷排队。create 仅在 Pi 对首条 prompt 给出关联回执后报告接受，不等待生成结束；明确未提交/被拒绝时回收新启动的 Pi，结果未知时保留会话并返回可查询的 key。send 可恢复已有会话；abort 只中断当前轮，stop 关闭受管进程并保留历史。删除前检查受管进程占用，不隐式停止会话；会话数据仍以 Pi JSONL 为准。
 - 面向 skill / Pi 插件的稳定接口是命令、项目/会话 ID、stdin schema、stdout 单个 JSON 值和稳定错误类别，而不是内部 RPC 拼装细节。成功退出 0；错误退出非 0，诊断走 stderr，不能把人类日志混进 stdout；help 是文本例外，version 至少输出 CLI 版本。错误区分离线、协议不兼容、无效输入、明确拒绝和写入结果未知，未知结果应建议查询而非重试。按命令在公开文档中固定字段、错误和示例。
+- `sessions create` 成功时返回 Pi 的完整 `sessionId`、客户端生成的 `requestId`（`cli-…`）和运行时 `sessionKey`。Host 在提交首条消息前把 `requestId` 与 Pi ID 的项目内映射保存到索引。结果未知时，CLI 仍把客户端生成的 ID 放在 `error.sessionId`，供查询而不是重试。会话已保存后，即使停止 Pi 或重启 Host，Pi ID 和完整 `requestId` 仍可用于会话查询或 `open --session`。没有保存内容的会话在停止后不可恢复。
 - 桌面专有设置（退出行为、系统快捷键等）当前仍由 `crates/pilo-desktop/src/pilo/mod.rs:314` 起的原生桥负责，不假定都在 v2 方法表中；首批 `settings` 合同为偏好和主题。完整本机 Host scope 包括现有 admin 方法（例如 `connection.ssh.password`），所以端点必须以 OS 用户隔离；CLI 命令本身不提供任意 invoke，也不把凭据塞入设置快照或诊断输出。
 
 ### 会话状态

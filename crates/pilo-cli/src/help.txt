@@ -1,0 +1,72 @@
+pilo - command-line client for the running Pilo app
+
+Usage: pilo [--dev] [--launch] [--timeout <seconds>] <command>
+
+pilo talks to the running Pilo app over a private local socket (named pipe on
+Windows) owned by the current user. No token or pairing. Only `open` and
+`--launch` start the app; they use the copy this pilo was installed from and
+refuse another running copy with the same app ID.
+
+Options:
+  --dev                 Connect to the development app (app.hsingjui.pilo.dev)
+  --launch              Start the app when it is not running, then run the command once
+  --timeout <seconds>   Wait for each request up to this long (default 60)
+  -h, --help            Show this help
+  --version             Same as `pilo version`
+
+Commands:
+  version                                   {"cli","appId"}; needs no running app
+  help                                      This text
+
+  open                                      Start or bring forward the app
+  open <directory>                          Show a Local project; relative to the
+                                            current directory, added when new
+  open --session <id>                       Show a session by ID or unique ID
+                                            prefix; ambiguous prefixes list matches
+
+  settings get                              Preferences
+  settings patch                            Field-level patch; stdin: JSON object
+  settings theme get                        Theme settings
+  settings theme set                        stdin: theme settings update object
+
+  projects list
+  projects add --path <path> [--connection <id>]   Connection defaults to "local"
+  projects remove <project id>
+
+  models list --project <id>               Current Pi models; use provider/id below
+
+  sessions list --project <id> [--offset N] [--limit N]   Limit 1-100, default 50
+                                            Lists unsaved CLI chats in "temporary".
+  sessions get <session id> --project <id>
+  sessions history <session id> --project <id> [--start N] [--limit N]
+                                            Saved messages; limit 1-100, default 24
+  sessions status <session id> --project <id>
+                                            {sessionId, state, turn, runningTools,
+                                             lastAssistantMessage}; never starts Pi
+  sessions create --project <id> [--model <provider/id>] [--thinking <level>] [--temporary]
+                                            stdin: {"message": "...", "title"?: "..."}
+                                            Model and thinking apply before the first prompt.
+                                            Levels: off, minimal, low, medium, high, xhigh, max.
+                                            --temporary keeps the session in memory only.
+                                            Returns sessionId and requestId after acceptance.
+                                            outcome_unknown carries requestId in error.sessionId.
+  sessions send <session id> --project <id> stdin: {"message": "..."}; busy sessions
+                                            are refused, not queued
+  sessions abort <session id> --project <id>   Interrupt the current turn only
+  sessions stop <session id> --project <id>    Close the Pi process; keeps history
+  sessions archive <session id> --project <id> Hide from the list; restorable
+  sessions restore <session id> --project <id>
+  sessions update <session id> --project <id>  stdin: {"title"?: "...", "pinned"?: bool}
+  sessions delete <session id> --project <id>  Move to trash; refused while running
+
+Use sessionId, the full CLI requestId or sessionKey after create. Saved
+sessions can be resumed after stopping Pi. Temporary sessions support get,
+status, send, abort and stop only while Pi is running; they have no saved history.
+Messages must be plain text: no slash commands, up to 64 KiB.
+
+Output: one JSON value on stdout, exit 0. Errors: {"error": {"category", "code",
+"message"}} on stderr with exit code
+  2 invalid_input     3 offline           4 incompatible
+  5 rejected          6 outcome_unknown   1 internal
+outcome_unknown means a write may or may not have been applied: query with
+`sessions get` or `sessions status` instead of retrying.

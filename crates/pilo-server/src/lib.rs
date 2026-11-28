@@ -1,6 +1,5 @@
 mod chat_files;
 mod command;
-pub mod control;
 mod environment;
 mod extensions;
 #[cfg(unix)]
@@ -86,7 +85,6 @@ type PiOutputTasks = HashMap<
 struct ServerState {
     writer: ServerWriter,
     retain_pi: bool,
-    agent_control: Arc<control::ControlState>,
     request_slots: Arc<Semaphore>,
     control_slots: Arc<Semaphore>,
     search_slots: Arc<Semaphore>,
@@ -113,7 +111,6 @@ impl ServerState {
         Ok(Self {
             writer: ServerWriter::new(retain_pi),
             retain_pi,
-            agent_control: Arc::new(control::ControlState::default()),
             request_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
             control_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
             search_slots: Arc::new(Semaphore::new(2)),
@@ -134,7 +131,6 @@ impl ServerState {
 
 pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
     let state = ServerState::new(false)?;
-    let control_listener = control::listen(state.clone()).await?;
     let result = serve_connection(
         &state,
         tokio::io::stdin(),
@@ -142,7 +138,6 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
         std::future::pending(),
     )
     .await;
-    control_listener.abort();
     cleanup(state).await;
     result?;
     Ok(())
@@ -241,26 +236,6 @@ async fn serve_connection(
         else {
             continue;
         };
-        // These operations are synchronous state changes. Process them in input
-        // order so a cancelled registration cannot be published after its revoke.
-        if matches!(
-            method.as_str(),
-            "control.register" | "control.respond" | "control.revoke"
-        ) {
-            let response = match dispatch(state, &method, params, binary).await {
-                Ok(reply) => Envelope::response_with_binary(id, reply.value, reply.binary),
-                Err(error) => Envelope::error(id, "request_failed", error),
-            };
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(1),
-                state.writer.send(response),
-            )
-            .await
-            {
-                Ok(Ok(())) => continue,
-                _ => break Ok(()),
-            }
-        }
         let slots = if matches!(
             method.as_str(),
             "pi.stop" | "terminal.close" | "session.watch_stop"
@@ -451,22 +426,6 @@ async fn dispatch(
         ));
     }
     match method {
-        "control.register" => state
-            .agent_control
-            .register(from_params(params)?)
-            .map(ServerReply::json),
-        "control.respond" => Ok(ServerReply::json(
-            state.agent_control.respond(from_params(params)?),
-        )),
-        "control.revoke" => {
-            let stream = params
-                .get("streamId")
-                .and_then(Value::as_str)
-                .ok_or("streamId is required")?;
-            state.agent_control.revoke(stream);
-            Ok(ServerReply::json(serde_json::json!({ "ok": true })))
-        }
-
         "server.ping" => to_value(ServerPing {
             protocol_version: PROTOCOL_VERSION,
             server_version: SERVER_VERSION.to_owned(),

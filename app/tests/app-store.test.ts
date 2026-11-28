@@ -926,3 +926,55 @@ test("the store keeps the chat states current through the native module", async 
 		timeout: 30_000,
 	});
 });
+
+test("navigating to a project the Host just added waits for a reload that lists it", async () => {
+	const { store, emit, projectLists, sessionLists } = await startedStore();
+	const opened = store.navigateTo("p3", "s3");
+	await Promise.resolve();
+	// The add's own change event supersedes the first read.
+	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
+	projectLists[0]?.resolve([project("p1"), project("p2")]);
+	projectLists[1]?.resolve([project("p1"), project("p2"), project("p3")]);
+	await settle();
+	sessionLists[0]?.resolve([session("p3", "s3")]);
+	await opened;
+	expect(openChatTarget(store.state())?.projectId).toBe("p3");
+	expect(store.state().navigation.projectId).toBe("p3");
+
+	let missing: unknown;
+	const failing = store.navigateTo("gone").catch((error) => (missing = error));
+	for (let index = 2; index < 22; index += 1) {
+		await settle();
+		projectLists[index]?.resolve([project("p1")]);
+		await new Promise((resolve) => setTimeout(resolve, 110));
+	}
+	await failing;
+	expect((missing as Error).message).toBe("project gone is not in this window");
+});
+
+test("a navigation is not applied once it expires, and fails when the selection does not land", async () => {
+	const { store, emit, projectLists, sessionLists } = await startedStore();
+	let wanted = true;
+	const expired = store
+		.navigateTo("p1", "s1", () => Promise.resolve(wanted))
+		.catch((error: Error) => error.message);
+	await settle();
+	wanted = false;
+	sessionLists[0]?.resolve([session("p1", "s1")]);
+	expect(await expired).toBe("the navigation expired before it was applied");
+	expect(store.state().navigation).toEqual({ projectId: null, session: null });
+
+	// The project goes away while its sessions load: the selection is ignored.
+	const removed = store
+		.navigateTo("p2", "s2")
+		.catch((error: Error) => error.message);
+	await settle();
+	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
+	projectLists[0]?.resolve([project("p1")]);
+	await settle();
+	sessionLists[1]?.resolve([session("p2", "s2")]);
+	expect(await removed).toBe("the window did not open session s2");
+	expect(store.state().navigation.session).toBeNull();
+});

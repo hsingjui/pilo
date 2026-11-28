@@ -86,10 +86,6 @@ impl ChatSessions {
                 },
                 project,
                 PiLaunchOptions {
-                    agent_control_session: (!session
-                        .builtin_extensions()
-                        .contains(&pilo_protocol::BuiltinExtension::ModelCatalog))
-                    .then(|| session_key.to_owned()),
                     session_path,
                     no_session: process.no_session,
                     extensions: process.extensions.clone(),

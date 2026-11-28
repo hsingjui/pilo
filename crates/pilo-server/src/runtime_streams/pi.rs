@@ -374,10 +374,6 @@ pub(crate) struct PiStartParams {
     stream_id: String,
     project: String,
     #[serde(default)]
-    control_stream_id: Option<String>,
-    #[serde(default)]
-    remote_control: Option<pilo_protocol::ControlContext>,
-    #[serde(default)]
     session_path: Option<String>,
     #[serde(default)]
     no_session: bool,
@@ -666,10 +662,6 @@ pub(crate) async fn pi_check_idle(
 }
 
 pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result<Value, String> {
-    let control_stream = format!("control:{}", params.stream_id);
-    if !params.only_if_idle {
-        state.agent_control.revoke(&control_stream);
-    }
     let pid = state
         .pi
         .lock()
@@ -691,8 +683,5 @@ pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result
         params.only_if_idle,
     )
     .await?;
-    if params.only_if_idle {
-        state.agent_control.revoke(&control_stream);
-    }
     Ok(Value::Null)
 }

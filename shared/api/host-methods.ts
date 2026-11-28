@@ -15,6 +15,7 @@ import type {
 	Connection,
 	PiModel,
 	PiSessionSnapshot,
+	PiThinkingLevel,
 	PiloRuntimeEvent,
 	WslDistribution,
 } from "@shared/api/pi-runtime-types";
@@ -84,7 +85,9 @@ export type HostApiErrorCode =
 	| "invalid_params"
 	| "unavailable"
 	| "timeout"
-	| "internal";
+	| "internal"
+	| "conflict"
+	| "outcome_unknown";
 
 export type HostApiErrorPayload = {
 	code: HostApiErrorCode;
@@ -338,6 +341,13 @@ export type HostApiMethods = {
 		params: { projectId: string };
 		result: ProjectPiModels | null;
 	};
+	"models.available": {
+		params: { projectId: string };
+		result: {
+			projectId: string;
+			models: Pick<PiModel, "provider" | "id" | "name" | "reasoning">[];
+		};
+	};
 	"models.set": { params: { cache: ProjectPiModels }; result: ProjectPiModels };
 	"models.scope.get": {
 		params: { projectId: string };
@@ -441,6 +451,72 @@ export type HostApiMethods = {
 			update: SessionUiStateUpdate;
 		};
 		result: SessionIndexEntry;
+	};
+	"session.resolve": {
+		params: { projectId: string; sessionId: string };
+		result: unknown;
+	};
+	"session.page": {
+		params: { projectId: string; offset?: number; limit?: number };
+		result: unknown;
+	};
+	"session.create": {
+		params: {
+			projectId: string;
+			sessionId: string;
+			message: string;
+			title?: string;
+			model?: string;
+			thinkingLevel?: PiThinkingLevel;
+			temporary?: boolean;
+		};
+		result: unknown;
+	};
+	"session.send": {
+		params: { projectId: string; sessionId: string; message: string };
+		result: unknown;
+	};
+	"session.abort": {
+		params: { projectId: string; sessionId: string };
+		result: unknown;
+	};
+	"session.stop": {
+		params: { projectId: string; sessionId: string };
+		result: unknown;
+	};
+	"session.update": {
+		params: {
+			projectId: string;
+			sessionId: string;
+			title?: string;
+			pinned?: boolean;
+		};
+		result: SessionIndexEntry;
+	};
+	"session.trash": {
+		params: { projectId: string; sessionId: string };
+		result: unknown;
+	};
+	"desktop.open": {
+		params: { path?: string; sessionId?: string };
+		result: {
+			projectId: string;
+			project: string;
+			path: string;
+			added?: boolean;
+			sessionId?: string;
+			sessionPath?: string;
+		};
+	};
+	"session.status": {
+		params: { projectId: string; sessionId: string };
+		result: {
+			sessionId: string;
+			state: "idle" | "running" | "compacting" | "not_running" | "error";
+			turn: "idle" | "active" | "truncated" | null;
+			runningTools: string[] | null;
+			lastAssistantMessage: string | null;
+		};
 	};
 	"session.readStates": { params: EmptyParams; result: SessionReadState[] };
 	"session.markRead": {
@@ -555,6 +631,7 @@ export const HOST_API_METHOD_META: Record<
 	"theme.get": { scope: "chat", kind: "json" },
 	"theme.set": { scope: "chat", kind: "json" },
 	"models.get": { scope: "chat", kind: "json" },
+	"models.available": { scope: "chat", kind: "json" },
 	"models.set": { scope: "chat", kind: "json" },
 	"models.scope.get": { scope: "chat", kind: "json" },
 	"models.scope.set": { scope: "chat", kind: "json" },
@@ -575,6 +652,16 @@ export const HOST_API_METHOD_META: Record<
 	"session.title": { scope: "chat", kind: "json" },
 	"session.delete": { scope: "chat", kind: "json" },
 	"session.uiState.set": { scope: "chat", kind: "json" },
+	"session.resolve": { scope: "admin", kind: "json" },
+	"session.page": { scope: "admin", kind: "json" },
+	"session.create": { scope: "admin", kind: "json" },
+	"session.send": { scope: "admin", kind: "json" },
+	"session.abort": { scope: "admin", kind: "json" },
+	"session.stop": { scope: "admin", kind: "json" },
+	"session.update": { scope: "admin", kind: "json" },
+	"session.trash": { scope: "admin", kind: "json" },
+	"session.status": { scope: "admin", kind: "json" },
+	"desktop.open": { scope: "admin", kind: "json" },
 	"session.readStates": { scope: "chat", kind: "json" },
 	"session.markRead": { scope: "chat", kind: "json" },
 	"chat.start": { scope: "chat", kind: "json" },

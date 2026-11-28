@@ -36,6 +36,7 @@ pub(super) struct PromptStart {
 
 pub(super) struct SessionTurn {
     enabled: bool,
+    in_memory: bool,
     may_be_unwritten: AtomicBool,
     remote: Option<SessionSnapshotReader>,
     state: Mutex<TurnState>,
@@ -46,6 +47,7 @@ enum TurnBase {
     Remote(RemoteTranscriptBase),
     /// Pi had not written the new session file yet, so the turn starts on an empty prefix.
     Unwritten,
+    InMemory,
 }
 
 impl TurnBase {
@@ -53,7 +55,7 @@ impl TurnBase {
         match self {
             Self::Local(base) => base.size,
             Self::Remote(base) => base.size(),
-            Self::Unwritten => 0,
+            Self::Unwritten | Self::InMemory => 0,
         }
     }
 }
@@ -140,6 +142,13 @@ impl SessionTurn {
         history_cache: &tokio::sync::Mutex<SessionHistoryCache>,
         project_id: &str,
     ) -> Result<TranscriptSnapshot, String> {
+        if self.in_memory {
+            return self
+                .snapshot_with_source(events, session_key, window, |_| async {
+                    empty_transcript_history(window)
+                })
+                .await;
+        }
         let Some(reader) = &self.remote else {
             return self
                 .snapshot_with_reader(events, session_key, window, |base| {
@@ -346,6 +355,7 @@ impl SessionTurn {
         }
         Self {
             enabled,
+            in_memory: false,
             may_be_unwritten: AtomicBool::new(false),
             remote: None,
             state: Mutex::new(TurnState {
@@ -362,6 +372,13 @@ impl SessionTurn {
                 expected_users: VecDeque::new(),
                 prompt_id: None,
             }),
+        }
+    }
+
+    pub(super) fn new_in_memory() -> Self {
+        Self {
+            in_memory: true,
+            ..Self::new(true)
         }
     }
 
@@ -440,6 +457,7 @@ impl SessionTurn {
             return;
         };
         let base = match (path, &self.remote) {
+            _ if self.in_memory => Some(TurnBase::InMemory),
             (Some(path), Some(reader)) => match reader.server_client() {
                 // A slow or unavailable history probe must not block sending a prompt.
                 Some(client) => match tokio::time::timeout(

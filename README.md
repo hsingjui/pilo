@@ -65,7 +65,9 @@ pnpm install
 pnpm dev          # starts the nsh desktop app and watches the Host-served WebUI
 ```
 
-`pnpm dev` builds the local debug `pilo-server` and `dist/` before starting the desktop app. Set `PILO_SERVER_BINARY` to the absolute path of a prebuilt server to skip the Cargo build. Desktop UI changes use nsh hot reload. Changes in `web/`, `app/`, `shared/`, or `theme/` rebuild the WebUI and refresh open tabs after a successful build. Open the WebUI from Pilo's Remote WebUI settings to use the same Host for pairing, HTTP, and WebSocket requests. WebUI updates reload the whole page, not individual modules.
+`pnpm dev` builds the local debug `pilo-server`, `pilo-cli`, and WebUI `dist/` before starting the desktop app. Run the CLI from `target/debug/pilo` on macOS/Linux or `target/debug/pilo-cli-bin/pilo-dev.exe` on Windows. Set `PILO_SERVER_BINARY` or `PILO_CLI_BINARY` to the absolute path of a prebuilt executable to skip that binary's build.
+
+Desktop UI changes use nsh hot reload. Changes in `web/`, `app/`, `shared/`, or `theme/` rebuild the WebUI and refresh open tabs after a successful build. Open the WebUI from Pilo's Remote WebUI settings to use the same Host for pairing, HTTP, and WebSocket requests. WebUI updates reload the whole page, not individual modules.
 
 Use `nsh dev` from the repo root for desktop only, or `pnpm dev:web` for the standalone nsh browser dev server. The standalone server does not serve the Pilo Host API.
 

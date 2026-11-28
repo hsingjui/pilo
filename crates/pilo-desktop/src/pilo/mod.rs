@@ -15,7 +15,9 @@ use pilo_runtime::{
     events::{EventQueueLimits, EventStream},
     host_api::{self, BinaryOutput, Principal},
     host_paths::HostPaths,
-    initialize_local_server_binary, initialize_server_resource_dir, project_api,
+    initialize_local_server_binary, initialize_server_resource_dir,
+    local_ipc::{Installation, LocalIpcConfig},
+    project_api,
     project_opener::ProjectApp,
     storage,
 };
@@ -52,6 +54,7 @@ pub struct Pilo {
     executor: &'static Executor,
     event_stream: Arc<Mutex<EventStream>>,
     terminal_events: Arc<TerminalEventStream>,
+    default_launch: bool,
 }
 
 impl Pilo {
@@ -189,7 +192,71 @@ impl Pilo {
             executor,
             event_stream: Arc::new(Mutex::new(event_stream)),
             terminal_events,
+            default_launch,
         })
+    }
+
+    /// Serves the Host to the current user's CLI on the endpoint of `app_id`, the
+    /// packaged `nsh.json` id that also names the bundled CLI's default instance.
+    /// Only the default data directory gets an endpoint.
+    pub async fn start_local_ipc(this: Instance<Self>, app_id: String) -> Result<(), String> {
+        if !this.with(|pilo| pilo.default_launch) {
+            return Err("local IPC is only served for the default data directory".into());
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            let config = LocalIpcConfig {
+                app_id,
+                app_version: env!("CARGO_PKG_VERSION").to_owned(),
+                installation: crate::cli_install::current_installation().map(|installation| {
+                    Installation {
+                        source: installation.source,
+                        path: installation.path.to_string_lossy().into_owned(),
+                    }
+                }),
+            };
+            runtime.start_local_ipc(config).await.map(|_| ())
+        })
+        .await
+    }
+
+    /// Waits for the next navigation a local client (`pilo open`) requested;
+    /// `null` once the runtime closes. Answer each with `completeNavigation`.
+    pub async fn next_navigation(this: Instance<Self>) -> Result<JsonValue, String> {
+        let task = this.with(|pilo| {
+            let host = pilo.host.clone();
+            pilo.executor.spawn(async move {
+                let navigator =
+                    run_with_runtime(host, |runtime| async move { Ok(runtime.navigator()) })
+                        .await?;
+                serde_json::to_value(navigator.next().await).map_err(|error| error.to_string())
+            })
+        });
+        task.await
+            .map_err(|error| format!("Pilo navigation task failed: {error}"))?
+    }
+
+    /// Whether navigation `id` may still be applied: its caller is waiting and
+    /// it has not expired. Check right before applying it.
+    pub async fn navigation_current(this: Instance<Self>, id: f64) -> Result<bool, String> {
+        let id = navigation_id(id)?;
+        Self::with_runtime(this, move |runtime| async move {
+            Ok(runtime.navigator().is_current(id))
+        })
+        .await
+    }
+
+    /// The window's receipt for navigation `id`: `error` is null when it navigated.
+    pub async fn complete_navigation(
+        this: Instance<Self>,
+        id: f64,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        let id = navigation_id(id)?;
+        Self::with_runtime(this, move |runtime| async move {
+            runtime.navigator().complete(id, error);
+            Ok(())
+        })
+        .await
     }
 
     /// Waits for an ordered batch, an inclusive gap, or a closed event stream.
@@ -461,3 +528,13 @@ impl Drop for Pilo {
 
 #[cfg(test)]
 mod tests;
+
+fn navigation_id(id: f64) -> Result<u64, String> {
+    if id.is_finite() && id >= 1.0 && id.fract() == 0.0 && id <= MAX_SAFE_INTEGER {
+        Ok(id as u64)
+    } else {
+        Err(format!("invalid navigation ID: {id}"))
+    }
+}
+
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;

@@ -146,9 +146,16 @@ Dev startup, manual server/extension builds and deployment isolation.
 
 #### 2. Signatures
 
-- `pnpm dev` runs `cargo build -p pilo-server` once before starting the WebUI
-  build and desktop Host, unless `PILO_SERVER_BINARY` selects a prebuilt server.
-  WebUI rebuilds and `pnpm dev:web` do not invoke Cargo.
+- `pnpm dev` builds `pilo-server` and `pilo-cli` in one native Cargo invocation
+  before starting the WebUI build and desktop Host. `PILO_SERVER_BINARY` and
+  `PILO_CLI_BINARY` each skip only the corresponding build. WebUI rebuilds and
+  `pnpm dev:web` do not invoke Cargo.
+- Use the `compiler-artifact.executable` paths from this Cargo invocation for
+  `PILO_SERVER_BINARY` and `PILO_CLI_BINARY` when not already overridden. This
+  respects `CARGO_TARGET_DIR` and `build.target-dir`, including cached artifacts.
+  On Windows, copy that CLI artifact to `target/debug/pilo-cli-bin/pilo-dev.exe`
+  and pass the staged path via `PILO_CLI_BINARY`. The installer adds that
+  directory to PATH on request; never point it at the shared `target/debug`.
 - `pnpm server:build [target]` runs `scripts/build-server.mjs` for manual
   WSL/SSH development builds. There is no separate `:dev` command.
 - Release CI still calls `bash scripts/build-pilo-server.sh [target]` without
@@ -170,7 +177,7 @@ Dev startup, manual server/extension builds and deployment isolation.
   run directly. Default to the build environment's native target. Cross-target
   builds need the target toolchain/linker. Use the workspace’s normal `target/`
   directory for Cargo output, with no `target/pilo-dev` build or staging tree.
-  Dev builds neither copy binaries to resources nor deploy running environments.
+  Dev server builds neither copy binaries to resources nor deploy running environments.
 - Plugins are embedded in server binaries. Startup deploys them into the runtime
   root's `extensions/`; rebuild and restart Pilo/Pi after changes. No reload
   markers or custom backend watcher. Reject release/custom dev profiles to
@@ -187,6 +194,8 @@ Dev startup, manual server/extension builds and deployment isolation.
 #### 4. Validation / Error Matrix
 
 - Local startup build failure: propagate nonzero exit; do not start the Host.
+  A successful build with no requested executable in its artifact stream also
+  fails startup; do not fall back to a potentially stale binary.
 - Manual build failure: propagate nonzero exit; do not deploy or restart Pi.
 - Missing remote debug target: explicit error directing users to `pnpm server:build`.
 - No WSL on Windows: manual remote build fails; Local still builds natively.
@@ -199,9 +208,9 @@ Dev startup, manual server/extension builds and deployment isolation.
 
 #### 6. Tests Required
 
-Pending explicit authorization: standard Cargo output paths, absence of a staging
-copy, build failure propagation,
-Windows WSL paths, missing target errors, plugin deployment on Local/WSL/SSH,
+Pending explicit authorization: standard and custom Cargo output paths, Windows
+CLI staging from the reported artifact, build failure propagation, Windows WSL
+paths, missing target errors, plugin deployment on Local/WSL/SSH,
 production/dev coexistence and source sync isolation.
 `current_platform_resolves_its_server_runtime` checks the Cargo filename in
 Debug, or the exact missing-dev-runtime error when no standalone dev build
