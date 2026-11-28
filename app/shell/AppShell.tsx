@@ -1,5 +1,4 @@
 import {
-	type Accessor,
 	cleanup,
 	computed,
 	effect,
@@ -12,12 +11,9 @@ import {
 	type ViewRef,
 } from "nsh";
 import { currentWindow } from "nsh/desktop";
-
-import type { Project } from "@shared/api/projects-types";
 import { userErrorMessage } from "@shared/app-error";
 import { chatRuntimeShowsActivity } from "@shared/chat/chat-session-runtime-model";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
-
 import { CacheKeepAliveNotice } from "../chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatImageLightbox } from "../chat/chat-image-lightbox";
@@ -36,19 +32,9 @@ import {
 	ConversationColumnLayout,
 } from "../chat/conversation-column";
 import { DEFAULT_CHAT_REM } from "../chat/layout";
-import { ChatComposer, ChatComposerSkeleton } from "../composer/chat-composer";
-import {
-	createComposerAssistance,
-	type ComposerAssistanceClient,
-} from "../composer/composer-assistance";
-import type { ComposerStore } from "../composer/composer-store";
+import { ChatComposer } from "../composer/chat-composer";
+import { createComposerAssistance } from "../composer/composer-assistance";
 import { activeProject, isTemporarySessionId } from "../state/app-state";
-import type { AppStore } from "../state/app-store";
-import type { ChatQueueStore } from "../state/chat-queue-store";
-import type { ChatRunConfigStore } from "../state/chat-run-config";
-import type { ChatTranscriptStore } from "../state/chat-transcript-store";
-import type { ModelCatalogStore } from "../state/model-catalog";
-import type { HostClient } from "@shared/api/host-client";
 import { defaultKeyboardShortcuts } from "@shared/keyboard-shortcuts-core";
 import type {
 	KeyboardShortcutMap,
@@ -56,59 +42,46 @@ import type {
 } from "@shared/keyboard-shortcuts-types";
 import { getNextPiModel } from "@shared/pi-model-selection";
 import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
-import {
-	SettingsDialog,
-	type SettingsClient,
-	type SettingsDialogProps,
-	type SettingsTabId,
-} from "../settings/settings-dialog";
+import { SettingsDialog } from "../settings/settings-dialog";
 import { createRemoteStatus, RemoteDialog } from "../settings/remote-dialog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { MOTION, viewTransition } from "../ui/motion";
-import { ErrorState } from "../ui/state-view";
 import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import { deleteSessionWithToast } from "./delete-session";
-import type { DesktopShell, DesktopWindowShell } from "./desktop-shell";
-import { createDesktopUpdate, type DesktopUpdate } from "./desktop-update";
+import { createDesktopUpdate } from "./desktop-update";
 import { t } from "./i18n";
 import { UpdateDialog } from "./update-dialog";
-import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
+import { AddProjectDialog } from "./add-project-dialog";
 import { FilePreviewLayer } from "./file-preview-view";
-import {
-	GitWorkspaceLayer,
-	type GitWorkspaceClient,
-} from "./git-workspace-view";
+import { GitWorkspaceLayer } from "./git-workspace-view";
 import { SessionLanding } from "./landing";
+import {
+	RuntimeStopped,
+	StartupFailure,
+	StartupLoading,
+} from "./startup-frame";
 import { openChatTarget } from "./open-chat";
 import {
 	canOpenToolFilePath,
 	openMarkdownFileLink,
 	openToolFilePath,
-	type FileLinkOpenContext,
 } from "./open-file-link";
 import { HeaderActions } from "./header-actions";
 import { SessionHeader } from "./session-header";
 import { TerminalLayer } from "./terminal-view";
-import type { ProjectNativeApp } from "./desktop-shell";
-import type { TerminalStore } from "../state/terminal-store";
 import { WorkspaceStore } from "../state/workspace-store";
-import {
-	NOTICE_MS as FORK_NOTICE_MS,
-	type SessionForker,
-} from "./session-fork";
+import { NOTICE_MS as FORK_NOTICE_MS } from "./session-fork";
 import { createSidebarLayout } from "./sidebar-layout";
 import {
 	SidebarPanel,
 	sidebarSurface,
-	StartupSidebar,
 	TITLE_BAR_HEIGHT,
 	windowTitleBarOptions,
 } from "./sidebar-panel";
 import { SidebarSettingsStore } from "./sidebar-settings";
-
 import type { AppShellProps } from "./app-shell-props";
 
 export type { AppShellProps };
@@ -1277,103 +1250,4 @@ export function AppShell(props: AppShellProps) {
 	);
 }
 
-/** The first frame, before the Host theme is available to mount AppShell. */
-export function StartupFrame(props: {
-	/** The saved theme is Claude's, whose conversation column is wider. */
-	claude?: boolean;
-	/** The saved sidebar width; the default one without it. */
-	sidebarWidth?: Accessor<number>;
-}) {
-	const window = currentWindow();
-	const sidebarCard = computed(sidebarSurface);
-	const titleBarOptions = computed(() => windowTitleBarOptions(sidebarCard()));
-	effect(() => {
-		window.set({ titleBar: titleBarOptions() });
-	});
-	const titleBar = () => ({
-		height:
-			window.titleBar().height || titleBarOptions().height || TITLE_BAR_HEIGHT,
-		left: window.titleBar().left,
-	});
-	const narrow = signal(false);
-	const columnLayout = computed(() => ({
-		claude: props.claude ?? false,
-		narrow: narrow(),
-	}));
-	return (
-		<View class="flex-1 flex-row bg-background">
-			<StartupSidebar titleBar={titleBar} width={props.sidebarWidth} />
-			<View
-				class="min-w-0 flex-1"
-				onLayout={({ bounds }) =>
-					narrow.set(bounds.size.width < 40 * DEFAULT_CHAT_REM)
-				}
-			>
-				<View
-					desktop={{ windowDrag: true }}
-					style={{ height: titleBar().height }}
-				/>
-				<View testID="workspace" class="min-h-0 flex-1">
-					<ConversationColumnLayout.Provider value={columnLayout}>
-						<StartupLoading />
-					</ConversationColumnLayout.Provider>
-				</View>
-			</View>
-		</View>
-	);
-}
-
-/**
- * The workspace before the Host answers: the landing and composer the chat
- * page opens with, in their loading forms, as React's loading fallback.
- */
-function StartupLoading() {
-	return (
-		<View
-			testID="startup-loading"
-			role="progressbar"
-			accessible
-			accessibilityLabel={t("common.loading")}
-			class="min-h-0 min-w-0 flex-1"
-		>
-			<View class="min-h-0 flex-1 justify-center">
-				<ConversationColumn>
-					<SessionLanding loading />
-				</ConversationColumn>
-			</View>
-			<View class="relative z-20 -mt-4 w-full shrink-0 pb-4">
-				<ConversationColumn class="relative">
-					<ChatComposerSkeleton showModel />
-				</ConversationColumn>
-			</View>
-		</View>
-	);
-}
-
-/** The runtime shut down under the app; only a new launch starts another. */
-function RuntimeStopped() {
-	return (
-		<ErrorState
-			testID="runtime-stopped"
-			title={() => t("app.runtimeStopped")}
-			description={() => t("app.runtimeStoppedDescription")}
-		/>
-	);
-}
-
-/** Startup did not finish; with `onRetry` the user can run it again. */
-function StartupFailure(props: {
-	message: () => string;
-	onRetry: () => Promise<void>;
-}) {
-	return (
-		<ErrorState
-			testID="startup-failed"
-			title={() => t("common.loadFailed")}
-			description={props.message}
-			onRetry={props.onRetry}
-			retryLabel={() => t("common.retry")}
-			retryTestID="startup-retry"
-		/>
-	);
-}
+export { StartupFrame } from "./startup-frame";
