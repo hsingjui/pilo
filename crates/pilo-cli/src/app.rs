@@ -33,7 +33,7 @@ impl App {
         let exe = std::env::current_exe()
             .map_err(|error| CliError::internal(format!("cannot locate this pilo: {error}")))?;
         let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
-        Self::containing(&exe)
+        Self::containing(&exe, app_id)
             .or_else(|| appimage_of_copy(&exe, app_id))
             .ok_or_else(|| {
                 CliError::rejected(
@@ -48,7 +48,7 @@ impl App {
 
     /// The app whose `bin/` holds `exe`: `X.app/Contents/Resources/bin` on
     /// macOS, `<app dir>/bin` beside the app executable elsewhere.
-    pub fn containing(exe: &Path) -> Option<Self> {
+    pub fn containing(exe: &Path, app_id: &str) -> Option<Self> {
         let bin = exe.parent()?;
         if bin.file_name()? != "bin" {
             return None;
@@ -66,7 +66,13 @@ impl App {
             });
         }
         let dir = bin.parent()?;
-        let launcher = dir.join(format!("Pilo{}", std::env::consts::EXE_SUFFIX));
+        // nsh names the executable after the app name without spaces: "Pilo Dev" ships `PiloDev`.
+        let name = if app_id == pilo_ipc::DEV_APP_ID {
+            "PiloDev"
+        } else {
+            "Pilo"
+        };
+        let launcher = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
         if !launcher.is_file() {
             return None;
         }
@@ -332,5 +338,30 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(answered, 7);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn each_app_id_finds_its_own_executable() {
+        let root = std::env::temp_dir().join(format!("pilo-cli-app-{}", std::process::id()));
+        let exe = std::env::consts::EXE_SUFFIX;
+        let dev = root.join("Pilo Dev");
+        let release = root.join("Pilo");
+        for dir in [&dev, &release] {
+            std::fs::create_dir_all(dir.join("bin")).unwrap();
+        }
+        std::fs::write(dev.join(format!("PiloDev{exe}")), b"").unwrap();
+        std::fs::write(release.join(format!("Pilo{exe}")), b"").unwrap();
+        let dev_cli = dev.join("bin").join(format!("pilo-dev{exe}"));
+        let release_cli = release.join("bin").join(format!("pilo{exe}"));
+
+        let app = App::containing(&dev_cli, pilo_ipc::DEV_APP_ID).unwrap();
+        assert_eq!(app.path, dev);
+        assert_eq!(app.launcher, dev.join(format!("PiloDev{exe}")));
+        let app = App::containing(&release_cli, pilo_ipc::RELEASE_APP_ID).unwrap();
+        assert_eq!(app.launcher, release.join(format!("Pilo{exe}")));
+        assert_eq!(App::containing(&dev_cli, pilo_ipc::RELEASE_APP_ID), None);
+        assert_eq!(App::containing(&release_cli, pilo_ipc::DEV_APP_ID), None);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
