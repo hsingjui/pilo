@@ -26,7 +26,13 @@ export type NativeHostBackend = Pick<
 	"call" | "upload" | "download" | "nextEvents" | "shutdown"
 > &
 	Partial<
-		Pick<Pilo, "nextTerminalEvents" | "nextNavigation" | "completeNavigation">
+		Pick<
+			Pilo,
+			| "nextTerminalEvents"
+			| "nextNavigation"
+			| "navigationCurrent"
+			| "completeNavigation"
+		>
 	>;
 
 /**

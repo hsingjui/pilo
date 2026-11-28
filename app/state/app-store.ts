@@ -276,9 +276,19 @@ export class AppStore {
 
 	/**
 	 * Shows a project, or one of its saved sessions, that may have been added
-	 * or indexed since the last read; fails when the Host does not know it.
+	 * or indexed since the last read; fails when the Host does not know it or
+	 * the window did not end up showing it. `current` is asked after every
+	 * wait: once it answers false nothing is selected.
 	 */
-	async navigateTo(projectId: string, sessionPath?: string) {
+	async navigateTo(
+		projectId: string,
+		sessionPath?: string,
+		current: () => Promise<boolean> = () => Promise.resolve(true),
+	) {
+		const stillWanted = async () => {
+			if (!(await current()))
+				throw new Error("the navigation expired before it was applied");
+		};
 		const known = () =>
 			this.current().projects.some((project) => project.id === projectId);
 		// A project the Host just added also queues a reload that supersedes
@@ -286,14 +296,26 @@ export class AppStore {
 		for (let attempt = 0; !known() && attempt < 20; attempt += 1) {
 			if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 100));
 			await this.reloadProjects();
+			await stillWanted();
 		}
 		if (!known()) throw new Error(`project ${projectId} is not in this window`);
 		if (sessionPath === undefined) {
 			this.selectProject(projectId);
+			if (this.current().navigation.projectId !== projectId)
+				throw new Error(`the window did not open project ${projectId}`);
 			return;
 		}
 		await this.loadSessions(projectId);
+		await stillWanted();
 		this.selectSession(projectId, sessionPath);
+		const opened = this.current().navigation.session;
+		if (
+			opened?.projectId !== projectId ||
+			opened.sessionPath === undefined ||
+			runtimeSessionPathKey(opened.sessionPath) !==
+				runtimeSessionPathKey(sessionPath)
+		)
+			throw new Error(`the window did not open session ${sessionPath}`);
 	}
 
 	/** Opens a new chat in the project, or keeps its already open draft. */

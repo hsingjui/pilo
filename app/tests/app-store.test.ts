@@ -952,3 +952,29 @@ test("navigating to a project the Host just added waits for a reload that lists 
 	await failing;
 	expect((missing as Error).message).toBe("project gone is not in this window");
 });
+
+test("a navigation is not applied once it expires, and fails when the selection does not land", async () => {
+	const { store, emit, projectLists, sessionLists } = await startedStore();
+	let wanted = true;
+	const expired = store
+		.navigateTo("p1", "s1", () => Promise.resolve(wanted))
+		.catch((error: Error) => error.message);
+	await settle();
+	wanted = false;
+	sessionLists[0]?.resolve([session("p1", "s1")]);
+	expect(await expired).toBe("the navigation expired before it was applied");
+	expect(store.state().navigation).toEqual({ projectId: null, session: null });
+
+	// The project goes away while its sessions load: the selection is ignored.
+	const removed = store
+		.navigateTo("p2", "s2")
+		.catch((error: Error) => error.message);
+	await settle();
+	emit(events([11, { type: "configuration_changed" }]));
+	await Promise.resolve();
+	projectLists[0]?.resolve([project("p1")]);
+	await settle();
+	sessionLists[1]?.resolve([session("p2", "s2")]);
+	expect(await removed).toBe("the window did not open session s2");
+	expect(store.state().navigation.session).toBeNull();
+});

@@ -235,17 +235,25 @@ impl Pilo {
             .map_err(|error| format!("Pilo navigation task failed: {error}"))?
     }
 
+    /// Whether navigation `id` may still be applied: its caller is waiting and
+    /// it has not expired. Check right before applying it.
+    pub async fn navigation_current(this: Instance<Self>, id: f64) -> Result<bool, String> {
+        let id = navigation_id(id)?;
+        Self::with_runtime(this, move |runtime| async move {
+            Ok(runtime.navigator().is_current(id))
+        })
+        .await
+    }
+
     /// The window's receipt for navigation `id`: `error` is null when it navigated.
     pub async fn complete_navigation(
         this: Instance<Self>,
         id: f64,
         error: Option<String>,
     ) -> Result<(), String> {
-        if !(id.is_finite() && id >= 1.0 && id.fract() == 0.0) {
-            return Err(format!("invalid navigation ID: {id}"));
-        }
+        let id = navigation_id(id)?;
         Self::with_runtime(this, move |runtime| async move {
-            runtime.navigator().complete(id as u64, error);
+            runtime.navigator().complete(id, error);
             Ok(())
         })
         .await
@@ -520,3 +528,13 @@ impl Drop for Pilo {
 
 #[cfg(test)]
 mod tests;
+
+fn navigation_id(id: f64) -> Result<u64, String> {
+    if id.is_finite() && id >= 1.0 && id.fract() == 0.0 && id <= MAX_SAFE_INTEGER {
+        Ok(id as u64)
+    } else {
+        Err(format!("invalid navigation ID: {id}"))
+    }
+}
+
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;

@@ -8,7 +8,12 @@ type NavigationRequest = {
 	id: number;
 	projectId: string;
 	sessionPath?: string;
+	/** Time left to apply it; a later or cancelled request is not applied. */
+	expiresInMs: number;
 };
+
+const EXPIRED =
+	"the request expired or its caller left before the window applied it";
 
 /**
  * Applies the navigations local clients (`pilo open`) ask the embedded Host
@@ -27,8 +32,8 @@ export async function serveDesktopNavigation(
 		desktop: () => DesktopWindowShell | undefined;
 	},
 ) {
-	const { nextNavigation, completeNavigation } = pilo;
-	if (!nextNavigation || !completeNavigation) return;
+	const { nextNavigation, navigationCurrent, completeNavigation } = pilo;
+	if (!nextNavigation || !navigationCurrent || !completeNavigation) return;
 	for (;;) {
 		let request: NavigationRequest | null;
 		try {
@@ -38,18 +43,25 @@ export async function serveDesktopNavigation(
 			return;
 		}
 		if (!request) return;
+		const { id } = request;
+		const deadline = Date.now() + request.expiresInMs;
+		const current = async () =>
+			(await navigationCurrent.call(pilo, id)) && Date.now() < deadline;
 		let failure: string | null = null;
 		try {
+			if (!(await current())) throw new Error(EXPIRED);
 			registry.activate(LOCAL_HOST_ID);
 			desktop()?.show();
-			await local.store.navigateTo(request.projectId, request.sessionPath);
+			await local.store.navigateTo(
+				request.projectId,
+				request.sessionPath,
+				current,
+			);
 		} catch (error) {
 			failure = error instanceof Error ? error.message : String(error);
 		}
-		await completeNavigation
-			.call(pilo, request.id, failure)
-			.catch((error: unknown) => {
-				console.warn("could not confirm a desktop navigation:", error);
-			});
+		await completeNavigation.call(pilo, id, failure).catch((error: unknown) => {
+			console.warn("could not confirm a desktop navigation:", error);
+		});
 	}
 }
