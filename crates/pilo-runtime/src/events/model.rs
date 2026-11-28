@@ -290,7 +290,18 @@ impl RuntimeEvent {
             | RuntimeEvent::ExtensionUiRequest { generation, .. }
             | RuntimeEvent::RuntimeLog { generation, .. }
             | RuntimeEvent::RuntimeError { generation, .. } => Some(*generation),
-            _ => None,
+            RuntimeEvent::PreferencesChanged { .. }
+            | RuntimeEvent::ConfigurationChanged
+            | RuntimeEvent::ThemeSettingsChanged { .. }
+            | RuntimeEvent::SessionTurnCompleted { .. }
+            | RuntimeEvent::SessionsIndexed { .. }
+            | RuntimeEvent::SessionIndexError { .. }
+            | RuntimeEvent::ExternalSessionActivityChanged { .. }
+            | RuntimeEvent::SessionReadStateChanged { .. }
+            | RuntimeEvent::CacheKeepAliveSettingsChanged { .. }
+            | RuntimeEvent::NextPromptSettingsChanged { .. }
+            | RuntimeEvent::PromptEnhancementSettingsChanged { .. }
+            | RuntimeEvent::ProjectModelScopeChanged { .. } => None,
         }
     }
 }
