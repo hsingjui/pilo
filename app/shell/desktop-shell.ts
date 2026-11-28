@@ -66,12 +66,30 @@ export interface DesktopCliStatus {
 		| null;
 }
 
-/** Installs the CLI bundled with this desktop app (absent on the WebUI). */
+/** What the CLI page knows about the bundled `pilo-cli` agent skill copy. */
+export type DesktopCliSkillState =
+	| "not_installed"
+	| "ready"
+	| "outdated"
+	| "conflict";
+
+export interface DesktopCliSkillStatus {
+	name: string;
+	state: DesktopCliSkillState;
+	path: string;
+	outcome: "installed" | "updated" | "uninstalled" | "conflict" | null;
+}
+
+/** Installs the CLI and agent skill bundled with this desktop app (absent on the WebUI). */
 export interface DesktopCliApi {
 	status(): Promise<DesktopCliStatus>;
 	install(): Promise<DesktopCliStatus>;
 	repair(): Promise<DesktopCliStatus>;
 	uninstall(): Promise<DesktopCliStatus>;
+	skillStatus(): Promise<DesktopCliSkillStatus>;
+	skillInstall(): Promise<DesktopCliSkillStatus>;
+	skillUpdate(): Promise<DesktopCliSkillStatus>;
+	skillUninstall(): Promise<DesktopCliSkillStatus>;
 }
 
 export interface DesktopShell {

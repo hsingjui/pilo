@@ -1319,6 +1319,17 @@ const enUS = {
 			"Administrator authorization was canceled, so the CLI was installed in {{dir}}.",
 		canceled: "Authorization was canceled. Nothing was changed.",
 		failed: "CLI action failed: {{message}}",
+		skillTitle: "Agent Skill",
+		skillUpdate: "Update",
+		skillUninstall: "Remove",
+		skillStateOutdated: "Update available",
+		skillNotInstalledHelp:
+			"Install a copy of the pilo-cli skill so agents reading ~/.agents/skills know how to use the Pilo CLI.",
+		skillOutdatedHelp:
+			"The installed skill copy differs from this Pilo version. Update it to apply the latest CLI reference.",
+		skillConflictHelp:
+			"{{path}} already exists and was not written by this Pilo version, so it was left untouched. Remove or reconcile it manually and try again.",
+		skillFailed: "Skill action failed: {{message}}",
 	},
 } as const;
 

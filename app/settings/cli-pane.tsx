@@ -2,6 +2,8 @@ import { signal, Text, View } from "nsh";
 
 import type {
 	DesktopCliApi,
+	DesktopCliSkillState,
+	DesktopCliSkillStatus,
 	DesktopCliState,
 	DesktopCliStatus,
 } from "../shell/desktop-shell";
@@ -16,6 +18,7 @@ import {
 } from "./layout";
 
 type CliAction = "install" | "repair" | "uninstall";
+type SkillAction = "install" | "update" | "uninstall";
 
 const STATE_ICONS: Record<DesktopCliState, IconName> = {
 	ready: "CheckCircle2",
@@ -25,6 +28,39 @@ const STATE_ICONS: Record<DesktopCliState, IconName> = {
 	conflict: "TriangleAlert",
 	unavailable: "CircleAlert",
 };
+
+const SKILL_STATE_ICONS: Record<DesktopCliSkillState, IconName> = {
+	ready: "CheckCircle2",
+	not_installed: "Download",
+	outdated: "RefreshCw",
+	conflict: "TriangleAlert",
+};
+
+function skillStateLabel(state: DesktopCliSkillState) {
+	switch (state) {
+		case "ready":
+			return t("cli.stateReady");
+		case "not_installed":
+			return t("cli.stateNotInstalled");
+		case "outdated":
+			return t("cli.skillStateOutdated");
+		case "conflict":
+			return t("cli.stateConflict");
+	}
+}
+
+function skillStateHelper(status: DesktopCliSkillStatus) {
+	switch (status.state) {
+		case "not_installed":
+			return t("cli.skillNotInstalledHelp");
+		case "outdated":
+			return t("cli.skillOutdatedHelp");
+		case "conflict":
+			return t("cli.skillConflictHelp", { path: status.path });
+		case "ready":
+			return undefined;
+	}
+}
 
 function stateLabel(state: DesktopCliState) {
 	switch (state) {
@@ -95,6 +131,10 @@ export function CliPane(props: { cli: DesktopCliApi }) {
 	const notice = signal<string | null>(null);
 	const failure = signal<string | null>(null);
 
+	const skillStatus = signal<DesktopCliSkillStatus | null>(null);
+	const skillBusy = signal<SkillAction | "refresh" | null>("refresh");
+	const skillFailure = signal<string | null>(null);
+
 	const run = async (
 		action: CliAction | "refresh",
 		call: () => Promise<DesktopCliStatus>,
@@ -113,7 +153,25 @@ export function CliPane(props: { cli: DesktopCliApi }) {
 			busy.set(null);
 		}
 	};
+
+	const runSkill = async (
+		action: SkillAction | "refresh",
+		call: () => Promise<DesktopCliSkillStatus>,
+	) => {
+		skillBusy.set(action);
+		skillFailure.set(null);
+		try {
+			skillStatus.set(await call());
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			skillFailure.set(t("cli.skillFailed", { message }));
+		} finally {
+			skillBusy.set(null);
+		}
+	};
+
 	void run("refresh", () => props.cli.status());
+	void runSkill("refresh", () => props.cli.skillStatus());
 
 	const actionButton = (
 		action: CliAction,
@@ -127,6 +185,27 @@ export function CliPane(props: { cli: DesktopCliApi }) {
 			onPress={() => void run(action, () => props.cli[action]())}
 		>
 			{busy() === action ? (
+				<Spinner class="size-3.5" />
+			) : (
+				<Icon name={icon} size={14} />
+			)}
+			<Text class="font-sans text-xs">{label()}</Text>
+		</SettingsActionButton>
+	);
+
+	const skillActionButton = (
+		action: SkillAction,
+		icon: IconName,
+		label: () => string,
+		call: () => Promise<DesktopCliSkillStatus>,
+	) => (
+		<SettingsActionButton
+			testID={`settings-cli-skill-${action}`}
+			emphasized={action !== "uninstall"}
+			disabled={skillBusy() !== null}
+			onPress={() => void runSkill(action, call)}
+		>
+			{skillBusy() === action ? (
 				<Spinner class="size-3.5" />
 			) : (
 				<Icon name={icon} size={14} />
@@ -236,6 +315,92 @@ export function CliPane(props: { cli: DesktopCliApi }) {
 									{installed
 										? actionButton("uninstall", "Trash2", () =>
 												t("cli.uninstall"),
+											)
+										: null}
+								</View>
+							</SettingsRow>
+						</View>
+					);
+				}}
+			</SettingsSection>
+			<SettingsSection
+				title={t("cli.skillTitle")}
+				actions={
+					<SettingsActionButton
+						testID="settings-cli-skill-refresh"
+						tooltip={t("cli.refresh")}
+						disabled={skillBusy() !== null}
+						onPress={() =>
+							void runSkill("refresh", () => props.cli.skillStatus())
+						}
+					>
+						<Icon name="RefreshCw" size={14} />
+					</SettingsActionButton>
+				}
+			>
+				{() => {
+					const current = skillStatus();
+					if (!current) {
+						return (
+							<SettingsRow label={t("cli.status")}>
+								<Spinner class="size-3.5" />
+							</SettingsRow>
+						);
+					}
+					const installed =
+						current.state === "ready" || current.state === "outdated";
+					return (
+						<View>
+							<SettingsRow
+								label={t("cli.status")}
+								helper={skillStateHelper(current)}
+							>
+								<View testID="settings-cli-skill-status">
+									<SettingsStatus
+										muted={current.state !== "ready"}
+										icon={SKILL_STATE_ICONS[current.state]}
+									>
+										{skillStateLabel(current.state)}
+									</SettingsStatus>
+								</View>
+							</SettingsRow>
+							<SettingsRow label={t("cli.location")}>
+								<Text
+									testID="settings-cli-skill-location"
+									class="font-mono text-xs text-muted-foreground"
+								>
+									{current.path}
+								</Text>
+							</SettingsRow>
+							<SettingsRow
+								label={t("cli.actions")}
+								helper={skillFailure() ?? undefined}
+								ghostEdge="end"
+							>
+								<View class="flex-row flex-wrap items-center gap-2">
+									{current.state === "not_installed" ||
+									current.state === "conflict"
+										? skillActionButton(
+												"install",
+												"Download",
+												() => t("cli.install"),
+												() => props.cli.skillInstall(),
+											)
+										: null}
+									{current.state === "outdated"
+										? skillActionButton(
+												"update",
+												"RefreshCw",
+												() => t("cli.skillUpdate"),
+												() => props.cli.skillUpdate(),
+											)
+										: null}
+									{installed
+										? skillActionButton(
+												"uninstall",
+												"Trash2",
+												() => t("cli.skillUninstall"),
+												() => props.cli.skillUninstall(),
 											)
 										: null}
 								</View>

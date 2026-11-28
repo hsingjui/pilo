@@ -1258,6 +1258,17 @@ const zhCN = {
 		fallback: "已取消管理员授权，CLI 已安装到 {{dir}}。",
 		canceled: "已取消授权，未做任何更改。",
 		failed: "CLI 操作失败：{{message}}",
+		skillTitle: "Agent Skill",
+		skillUpdate: "更新",
+		skillUninstall: "移除",
+		skillStateOutdated: "有可用更新",
+		skillNotInstalledHelp:
+			"安装 pilo-cli Skill 副本后，支持 ~/.agents/skills 的 Agent 即可了解 Pilo CLI 的用法。",
+		skillOutdatedHelp:
+			"已安装的 Skill 副本与当前 Pilo 版本不一致，点击更新即可同步最新说明。",
+		skillConflictHelp:
+			"{{path}} 已存在且不是 Pilo 写入的副本，未覆盖或删除。请手动处理后重试。",
+		skillFailed: "Skill 操作失败：{{message}}",
 	},
 } as const satisfies TranslationShape<typeof enUS>;
 

@@ -27,4 +27,19 @@ test("the CLI page installs, warns about PATH shadowing and uninstalls", async (
 	await app.press("id:settings-cli-uninstall");
 	await app.waitFor("id:settings-cli-install");
 	expect(app.shows("text:Not installed")).toBe(true);
+
+	await app.waitFor("id:settings-cli-skill-install");
+	expect(app.shows("id:settings-cli-skill-location")).toBe(true);
+
+	await app.press("id:settings-cli-skill-install");
+	await app.waitFor("id:settings-cli-skill-update");
+	expect(app.shows("text:Update available")).toBe(true);
+
+	await app.press("id:settings-cli-skill-update");
+	await app.waitFor("id:settings-cli-skill-uninstall");
+	expect(app.shows("id:settings-cli-skill-update")).toBe(false);
+
+	await app.press("id:settings-cli-skill-uninstall");
+	await app.waitFor("id:settings-cli-skill-install");
+	expect(app.shows("id:settings-cli-skill-uninstall")).toBe(false);
 });

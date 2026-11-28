@@ -1,7 +1,11 @@
 import { mount, Scroll, View } from "nsh";
 
 import { CliPane } from "../settings/cli-pane";
-import type { DesktopCliApi, DesktopCliStatus } from "../shell/desktop-shell";
+import type {
+	DesktopCliApi,
+	DesktopCliSkillStatus,
+	DesktopCliStatus,
+} from "../shell/desktop-shell";
 import { initializeI18n } from "../shell/i18n";
 
 const base: DesktopCliStatus = {
@@ -34,12 +38,46 @@ const installed: DesktopCliStatus = {
 	outcome: "fallback",
 };
 
+const skillBase: DesktopCliSkillStatus = {
+	name: "pilo-cli",
+	state: "not_installed",
+	path: "/Users/me/.agents/skills/pilo-cli/SKILL.md",
+	outcome: null,
+};
+
+let currentSkill: DesktopCliSkillStatus = skillBase;
+
 const cli: DesktopCliApi = {
 	status: () => Promise.resolve({ ...current, outcome: null }),
 	install: () => Promise.resolve((current = installed)),
 	repair: () => Promise.resolve((current = installed)),
 	uninstall: () =>
 		Promise.resolve((current = { ...base, outcome: "uninstalled" })),
+	skillStatus: () => Promise.resolve({ ...currentSkill, outcome: null }),
+	skillInstall: () =>
+		Promise.resolve(
+			(currentSkill = {
+				...skillBase,
+				state: "outdated",
+				outcome: "installed",
+			}),
+		),
+	skillUpdate: () =>
+		Promise.resolve(
+			(currentSkill = {
+				...skillBase,
+				state: "ready",
+				outcome: "updated",
+			}),
+		),
+	skillUninstall: () =>
+		Promise.resolve(
+			(currentSkill = {
+				...skillBase,
+				state: "not_installed",
+				outcome: "uninstalled",
+			}),
+		),
 };
 
 initializeI18n();
