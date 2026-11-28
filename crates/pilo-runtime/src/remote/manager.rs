@@ -268,6 +268,10 @@ impl RemoteServerManager {
             });
             let before = load_access_config(&paths, &lan_base_url)?;
             let changed = access::targets_changed(&before, &config);
+            let scopes = pairing
+                .as_ref()
+                .and_then(|pairing| pairing.snapshot())
+                .map_or(RemoteScopes::Chat, |(_, info)| info.scopes);
             if changed && let Some(pairing) = &pairing {
                 pairing.invalidate();
             }
@@ -276,7 +280,7 @@ impl RemoteServerManager {
                 origins.send_replace(config.addresses.clone());
             }
             if changed && let Some(pairing) = &pairing {
-                pairing.regenerate(&paths, config.addresses, RemoteScopes::Chat)?;
+                pairing.regenerate(&paths, config.addresses, scopes)?;
             }
             Ok::<_, String>(())
         })
@@ -1064,6 +1068,40 @@ mod tests {
         })
         .await
         .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn changing_addresses_keeps_the_pairing_scope() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-address-scope-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        runtime
+            .remote
+            .regenerate_pairing(&runtime, RemoteScopes::ChatWorkspace)
+            .await
+            .unwrap();
+        let state = runtime
+            .remote
+            .set_addresses(
+                &runtime,
+                RemoteAccessConfig {
+                    addresses: vec![RemoteAccessAddress {
+                        id: "proxy".into(),
+                        name: String::new(),
+                        base_url: "https://remote.example.com".into(),
+                    }],
+                    entry_address_id: "proxy".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(state.pairing_scopes, Some(RemoteScopes::ChatWorkspace));
+        runtime.remote.stop().await;
         std::fs::remove_dir_all(root).unwrap();
     }
 
