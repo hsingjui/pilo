@@ -11,8 +11,9 @@ use crate::{
     Runtime, TranscriptWindow, appearance, bootstrap, cache_keep_alive,
     chat_service::{self, ChatSessionRequest},
     connections::{self, ssh, wsl},
-    handle, next_prompt, pi_workspace, preferences, project, project_api, prompt_enhancement,
-    remote, remote_fs, runtime_api, session_api, session_naming, session_ops, storage,
+    handle, navigation, next_prompt, pi_workspace, preferences, project, project_api,
+    prompt_enhancement, remote, remote_fs, runtime_api, session_api, session_naming, session_ops,
+    storage,
 };
 
 use super::{
@@ -83,6 +84,9 @@ register! {
     }
     "project.add": Workspace Json |rt, _who| (connection_id: String, path: String) {
         json(project_api::project_add(rt, connection_id, path).await.map_err(HostApiError::invalid)?)
+    }
+    "desktop.open": Admin Json |rt, _who| (path: Option<String>, session_id: Option<String>) {
+        json(navigation::open(rt, path, session_id).await?)
     }
     "project.remove": Workspace Json |rt, _who| (project_id: String) {
         json(project_api::project_remove(rt, project_id).await.map_err(HostApiError::invalid)?)

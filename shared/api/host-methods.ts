@@ -486,6 +486,17 @@ export type HostApiMethods = {
 		params: { projectId: string; sessionId: string };
 		result: unknown;
 	};
+	"desktop.open": {
+		params: { path?: string; sessionId?: string };
+		result: {
+			projectId: string;
+			project: string;
+			path: string;
+			added?: boolean;
+			sessionId?: string;
+			sessionPath?: string;
+		};
+	};
 	"session.status": {
 		params: { projectId: string; sessionId: string };
 		result: {
@@ -638,6 +649,7 @@ export const HOST_API_METHOD_META: Record<
 	"session.update": { scope: "admin", kind: "json" },
 	"session.trash": { scope: "admin", kind: "json" },
 	"session.status": { scope: "admin", kind: "json" },
+	"desktop.open": { scope: "admin", kind: "json" },
 	"session.readStates": { scope: "chat", kind: "json" },
 	"session.markRead": { scope: "chat", kind: "json" },
 	"chat.start": { scope: "chat", kind: "json" },

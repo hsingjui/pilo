@@ -499,6 +499,7 @@ mod tests {
             "session.update",
             "session.trash",
             "session.status",
+            "desktop.open",
         ]);
         let mut names = HashSet::new();
         for spec in methods() {

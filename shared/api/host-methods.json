@@ -67,6 +67,26 @@
 			"kind": "json",
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
+			"name": "desktop.open",
+			"params": [
+				{
+					"name": "path",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "sessionId",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
+			"scope": "admin",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
 			"name": "project.remove",
 			"params": [
 				{

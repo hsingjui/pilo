@@ -33,6 +33,14 @@ pub const PROJECT_ADD: Method = Method {
     ],
 };
 
+pub const DESKTOP_OPEN: Method = Method {
+    name: "desktop.open",
+    params: &[
+        Param { name: "path", ty: "Option<String>", optional: true },
+        Param { name: "sessionId", ty: "Option<String>", optional: true },
+    ],
+};
+
 pub const PROJECT_REMOVE: Method = Method {
     name: "project.remove",
     params: &[

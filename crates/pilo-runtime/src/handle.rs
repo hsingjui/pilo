@@ -53,6 +53,7 @@ pub struct RuntimeState {
     pub(crate) core: super::PiloRuntime,
     pub(crate) remote: super::RemoteServerManager,
     pub(crate) local_ipc: tokio::sync::Mutex<Option<super::local_ipc::LocalIpcServer>>,
+    pub(crate) navigator: Arc<super::navigation::Navigator>,
 }
 
 impl std::ops::Deref for RuntimeState {
@@ -106,6 +107,7 @@ impl Runtime {
             core: super::PiloRuntime::default(),
             remote: super::RemoteServerManager::default(),
             local_ipc: tokio::sync::Mutex::default(),
+            navigator: Arc::default(),
         }));
         runtime.servers.initialize_runtime(&runtime);
         runtime
@@ -144,6 +146,7 @@ impl Runtime {
         if let Some(server) = self.local_ipc.lock().await.take() {
             server.stop().await;
         }
+        self.navigator.close();
         self.events.close_streams();
         self.terminal_events.close();
         self.servers.begin_shutdown();

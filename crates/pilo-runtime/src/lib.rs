@@ -17,6 +17,7 @@ pub mod handle;
 pub mod host_api;
 pub mod host_paths;
 pub mod local_ipc;
+pub mod navigation;
 pub use handle::Runtime;
 pub mod next_prompt;
 mod pi_event_adapters;
