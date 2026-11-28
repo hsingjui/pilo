@@ -124,6 +124,21 @@ unknown session or query failure are command errors, not `not_running`.
 - Other commands never start the app unless `--launch` is given; then they wait
   a bounded time for hello, verify the installation and execute exactly once.
   Offline without `--launch` prints a hint to run `pilo open`.
+- The CLI's own copy is the `.app` holding `Contents/Resources/bin/`, the app
+  directory holding `bin/` beside `Pilo[.exe]`, or the AppImage recorded for
+  the persistent copy in `<data>/<app id>/cli-install.json`. `--dev` from a
+  release CLI cannot open or launch (it has no dev copy to verify).
+- `desktop.open {path?, sessionId?}` (`Scope::Admin`, local only) resolves the
+  target, queues it for the desktop window and returns only after the window's
+  receipt: `{projectId, project, path, added}` or, for sessions, `{projectId,
+  project, path, sessionId, sessionPath}`. The window waits up to 30 s to start
+  serving navigations and 30 s to answer; requests whose caller gave up are
+  dropped, not applied late. The window switches to the local Host before
+  selecting, never to a remote Host or the Remote WebUI.
+- CLI codes: `app_not_found` / `installation_mismatch` (rejected),
+  `launch_failed` / `launch_timeout` (offline; launch waits 30 s for hello and
+  retries only connect + hello). Ambiguous prefixes are `conflict` listing up
+  to 10 candidates; no match is `not_found`.
 
 ## Installation
 
