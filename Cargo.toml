@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"crates/pilo-domain",
+	"crates/pilo-ipc",
 	"crates/pilo-protocol",
 	"crates/pilo-runtime",
 	"crates/pilo-server",

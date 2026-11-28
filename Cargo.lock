@@ -954,6 +954,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pilo-ipc"
+version = "0.5.2"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "pilo-protocol"
 version = "0.5.2"
 dependencies = [
