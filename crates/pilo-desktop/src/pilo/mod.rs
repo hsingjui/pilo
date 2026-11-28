@@ -15,7 +15,9 @@ use pilo_runtime::{
     events::{EventQueueLimits, EventStream},
     host_api::{self, BinaryOutput, Principal},
     host_paths::HostPaths,
-    initialize_local_server_binary, initialize_server_resource_dir, project_api,
+    initialize_local_server_binary, initialize_server_resource_dir,
+    local_ipc::LocalIpcConfig,
+    project_api,
     project_opener::ProjectApp,
     storage,
 };
@@ -178,6 +180,19 @@ impl Pilo {
         runtime.start_external_activity_poll();
         let host = Arc::new(Mutex::new(Some(runtime.clone())));
         // Restore the saved Remote WebUI listener in the background without blocking startup IPC.
+        if default_launch {
+            let runtime = runtime.clone();
+            executor.spawn(async move {
+                let config = LocalIpcConfig {
+                    app_id: data_identifier(cfg!(debug_assertions)).to_owned(),
+                    app_version: env!("CARGO_PKG_VERSION").to_owned(),
+                    installation: None,
+                };
+                if let Err(error) = runtime.start_local_ipc(config).await {
+                    log::warn!(target: "local-ipc", "local IPC is unavailable: {error}");
+                }
+            });
+        }
         executor.spawn(async move {
             if let Err(error) = runtime.restore_remote().await {
                 eprintln!("failed to restore Remote WebUI: {error}");
