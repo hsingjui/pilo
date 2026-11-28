@@ -291,50 +291,6 @@ impl RemoteServerManager {
         self.snapshot(runtime).await
     }
 
-    pub(crate) async fn set_public_base_url(
-        &self,
-        runtime: &Runtime,
-        public_base_url: &str,
-    ) -> Result<RemoteHostState, String> {
-        let public_base_url = normalize_public_base_url(public_base_url)?;
-        let state = self.snapshot(runtime).await?;
-        let mut addresses = state.addresses;
-        addresses.retain(|address| address.id != "public");
-        if !public_base_url.is_empty()
-            && !addresses
-                .iter()
-                .any(|address| address.base_url == public_base_url)
-        {
-            addresses.push(RemoteAccessAddress {
-                id: "public".to_owned(),
-                name: String::new(),
-                base_url: public_base_url,
-            });
-        }
-        if addresses.is_empty() {
-            addresses.push(RemoteAccessAddress {
-                id: "lan".to_owned(),
-                name: String::new(),
-                base_url: format!("http://{}:{}", lan_ip().await, state.port),
-            });
-        }
-        let entry_address_id = addresses
-            .iter()
-            .find(|address| address.id == state.entry_address_id)
-            .or_else(|| addresses.first())
-            .ok_or("Remote WebUI needs an access address")?
-            .id
-            .clone();
-        self.set_addresses(
-            runtime,
-            RemoteAccessConfig {
-                addresses,
-                entry_address_id,
-            },
-        )
-        .await
-    }
-
     pub(crate) async fn revoke_device(
         &self,
         runtime: &Runtime,
@@ -655,15 +611,6 @@ fn effective_base_url(public_base_url: &str, lan_base_url: &str) -> String {
         lan_base_url.to_owned()
     } else {
         configured.to_owned()
-    }
-}
-
-fn normalize_public_base_url(input: &str) -> Result<String, String> {
-    let trimmed = trim_base_url(input);
-    if trimmed.is_empty() {
-        Ok(String::new())
-    } else {
-        access::normalize_base_url(trimmed)
     }
 }
 
@@ -1127,16 +1074,15 @@ mod tests {
     }
 
     #[test]
-    fn normalize_public_base_url_validates_and_trims() {
-        assert_eq!(normalize_public_base_url("  "), Ok(String::new()));
+    fn access_base_url_validates_and_trims() {
         assert_eq!(
-            normalize_public_base_url("https://dev.example.com/"),
+            access::normalize_base_url("https://dev.example.com/"),
             Ok("https://dev.example.com".to_owned())
         );
         assert_eq!(
-            normalize_public_base_url("http://dev.example.com:8080"),
+            access::normalize_base_url("http://dev.example.com:8080"),
             Ok("http://dev.example.com:8080".to_owned())
         );
-        assert!(normalize_public_base_url("dev.example.com").is_err());
+        assert!(access::normalize_base_url("dev.example.com").is_err());
     }
 }

@@ -307,36 +307,6 @@ pub(crate) async fn send(
     Ok(json!({"sessionKey": target.key, "accepted": true, "disposition": disposition}))
 }
 
-/// Starts Pi for a saved session without sending a prompt.
-pub(crate) async fn resume(
-    runtime: &Runtime,
-    project: &str,
-    id: &str,
-) -> Result<Value, HostApiError> {
-    let target = resolve(runtime, project, id).await?;
-    let snapshot = match target
-        .state
-        .as_ref()
-        .filter(|state| state.initialized && state.snapshot.state == PiProcessState::Running)
-    {
-        Some(state) => state.snapshot.clone(),
-        None => {
-            let path = target
-                .path()
-                .ok_or_else(|| conflict("the session has not been saved yet"))?;
-            start(
-                runtime,
-                project.to_owned(),
-                target.key.clone(),
-                Some(path.to_owned()),
-            )
-            .await
-            .map_err(HostApiError::invalid)?
-        }
-    };
-    Ok(json!({"sessionKey": target.key, "snapshot": snapshot}))
-}
-
 /// Interrupts the current turn; the managed Pi process keeps running.
 pub(crate) async fn abort(
     runtime: &Runtime,
