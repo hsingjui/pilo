@@ -6,6 +6,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    time::Duration,
 };
 
 use pilo_ipc::{Endpoint, endpoint};
@@ -210,6 +211,41 @@ async fn open_navigates_only_the_app_the_cli_belongs_to() {
     runtime.navigator().close();
     let project = opened["projectId"].as_str().unwrap().to_owned();
     assert_eq!(ui.await.unwrap(), vec![project.clone(), project]);
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_caller_that_disconnects_cancels_its_navigation() {
+    let home = Home::new();
+    let (bundle, cli) = bundled_pilo(&home.0, "Pilo Dev");
+    let directory = home.0.join("project");
+    std::fs::create_dir_all(&directory).unwrap();
+    let installation = pilo_ipc::Installation {
+        source: "installed".into(),
+        path: bundle.to_string_lossy().into_owned(),
+    };
+    let (runtime, server) = host_at(&home.0, Some(installation)).await;
+    let navigator = runtime.navigator();
+    // The window takes the request but has not applied it when the CLI gives up.
+    let caller = {
+        let (cli, home, cwd) = (cli.clone(), home.0.clone(), directory.clone());
+        tokio::task::spawn_blocking(move || {
+            run_in(&cli, &home, &cwd, &["--dev", "--timeout", "1", "open", "."])
+        })
+    };
+    let request = navigator.next().await.unwrap();
+    assert!(navigator.is_current(request.id));
+    let (code, _, stderr) = caller.await.unwrap();
+    assert_ne!(code, 0, "{stderr}");
+    let cancelled = async {
+        while navigator.is_current(request.id) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(5), cancelled)
+        .await
+        .expect("the disconnect did not cancel the navigation");
+    navigator.close();
     server.stop().await;
 }
 

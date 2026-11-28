@@ -23,6 +23,26 @@ pub struct Client {
 
 impl Client {
     pub async fn connect(endpoint: &Endpoint, timeout: Duration) -> Result<Self, CliError> {
+        Self::connect_within(endpoint, timeout, HELLO_TIMEOUT).await
+    }
+
+    /// Connects and finishes the hello within `hello_timeout` in total.
+    pub async fn connect_within(
+        endpoint: &Endpoint,
+        timeout: Duration,
+        hello_timeout: Duration,
+    ) -> Result<Self, CliError> {
+        tokio::time::timeout(hello_timeout, Self::open(endpoint, timeout))
+            .await
+            .map_err(|_| {
+                CliError::offline(format!(
+                    "Pilo did not answer the hello within {} ms",
+                    hello_timeout.as_millis()
+                ))
+            })?
+    }
+
+    async fn open(endpoint: &Endpoint, timeout: Duration) -> Result<Self, CliError> {
         let offline = |error: std::io::Error| {
             CliError::offline(format!(
                 "Pilo is not running or not reachable at {endpoint} ({error}); run `pilo open` or pass --launch"

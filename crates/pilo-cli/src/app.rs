@@ -4,11 +4,12 @@
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use pilo_ipc::{Endpoint, HostHello, Installation};
+use pilo_ipc::{Endpoint, HELLO_TIMEOUT, HostHello, Installation};
 use serde_json::Value;
+use tokio::time::Instant;
 
 use crate::{client::Client, error::CliError};
 
@@ -180,26 +181,24 @@ impl App {
         }
         self.launch()?;
         let deadline = Instant::now() + LAUNCH_TIMEOUT;
-        let client = loop {
-            match Client::connect(endpoint, timeout).await {
-                Ok(client) => break client,
-                Err(error) if error.category == crate::error::Category::Offline => {
-                    if Instant::now() >= deadline {
-                        return Err(CliError::offline_code(
-                            "launch_timeout",
-                            format!(
-                                "Pilo was started from {} but did not answer within {} seconds ({}); run `pilo open` and try again",
-                                self.path.display(),
-                                LAUNCH_TIMEOUT.as_secs(),
-                                error.message
-                            ),
-                        ));
-                    }
-                    tokio::time::sleep(RETRY_INTERVAL).await;
-                }
-                Err(error) => return Err(error),
+        let client = retry_until(deadline, |hello_timeout| {
+            Client::connect_within(endpoint, timeout, hello_timeout)
+        })
+        .await
+        .map_err(|error| {
+            if error.category != crate::error::Category::Offline {
+                return error;
             }
-        };
+            CliError::offline_code(
+                "launch_timeout",
+                format!(
+                    "Pilo was started from {} but did not answer within {} seconds ({}); run `pilo open` and try again",
+                    self.path.display(),
+                    LAUNCH_TIMEOUT.as_secs(),
+                    error.message
+                ),
+            )
+        })?;
         self.verify(client.hello())?;
         Ok(client)
     }
@@ -209,6 +208,34 @@ impl App {
             source: self.source.clone(),
             path: self.path.to_string_lossy().into_owned(),
         }
+    }
+}
+
+/// Runs `attempt` until it succeeds, fails other than offline, or `deadline`
+/// passes. Every attempt, its hello (at most 5 s) and the waits between them
+/// share the deadline, so nothing that answers after it is accepted.
+async fn retry_until<T, F, Fut>(deadline: Instant, mut attempt: F) -> Result<T, CliError>
+where
+    F: FnMut(Duration) -> Fut,
+    Fut: Future<Output = Result<T, CliError>>,
+{
+    let expired = || CliError::offline("the deadline passed before Pilo answered");
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(expired());
+        }
+        let last = match tokio::time::timeout_at(deadline, attempt(left.min(HELLO_TIMEOUT))).await {
+            Err(_) => return Err(expired()),
+            Ok(Ok(value)) => return Ok(value),
+            Ok(Err(error)) if error.category == crate::error::Category::Offline => error,
+            Ok(Err(error)) => return Err(error),
+        };
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left <= RETRY_INTERVAL {
+            return Err(last);
+        }
+        tokio::time::sleep(RETRY_INTERVAL).await;
     }
 }
 
@@ -251,4 +278,59 @@ pub fn same_path(left: &Path, right: &Path) -> bool {
         }
     };
     normalize(left) == normalize(right)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn retries_share_one_deadline_and_late_hellos_are_refused() {
+        let start = Instant::now();
+        let deadline = start + Duration::from_millis(450);
+        let limits = Arc::new(Mutex::new(Vec::new()));
+        // Each attempt overruns the hello limit it was given, like a slow Host.
+        let error = retry_until(deadline, |limit| {
+            limits.lock().unwrap().push((Instant::now(), limit));
+            async move {
+                tokio::time::sleep(limit + Duration::from_secs(1)).await;
+                Ok::<_, CliError>(())
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.category, crate::error::Category::Offline);
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_millis(600), "{elapsed:?}");
+        for (started, limit) in limits.lock().unwrap().iter() {
+            assert!(*started < deadline);
+            // `limit` is measured just before `started`.
+            assert!(*limit <= deadline - *started + Duration::from_millis(5));
+            assert!(*limit <= HELLO_TIMEOUT);
+        }
+
+        // Offline attempts are retried, but none starts after the deadline.
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let starts = Arc::new(Mutex::new(Vec::new()));
+        let error = retry_until(deadline, |_| {
+            starts.lock().unwrap().push(Instant::now());
+            async { Err::<(), _>(CliError::offline("refused")) }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.message, "refused");
+        let starts = starts.lock().unwrap().clone();
+        assert!(starts.len() >= 2, "{}", starts.len());
+        assert!(starts.iter().all(|started| *started < deadline));
+        assert!(Instant::now() <= deadline + Duration::from_millis(50));
+
+        let answered = retry_until(Instant::now() + Duration::from_secs(1), |_| async {
+            Ok::<_, CliError>(7)
+        })
+        .await
+        .unwrap();
+        assert_eq!(answered, 7);
+    }
 }
