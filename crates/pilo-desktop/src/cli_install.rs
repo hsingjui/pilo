@@ -18,6 +18,7 @@ use std::{
 use nsh_core::{JsonValue, prelude::*};
 use serde::{Deserialize, Serialize};
 
+mod skill;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -61,6 +62,26 @@ impl DesktopCli {
     /// belongs to this AppImage and its version differs. Returns whether it changed.
     pub async fn sync_on_launch(app_id: String) -> Result<JsonValue, String> {
         run(move || Installer::current(&app_id)?.sync_on_launch()).await
+    }
+
+    /// The bundled `pilo-cli` skill's install state in `~/.agents/skills/pilo-cli/SKILL.md`.
+    pub async fn skill_status(app_id: String) -> Result<JsonValue, String> {
+        run(move || Ok(skill::SkillInstaller::current(&app_id)?.status())).await
+    }
+
+    /// Writes a copy of the bundled `pilo-cli` skill into `~/.agents/skills/pilo-cli/SKILL.md`.
+    pub async fn skill_install(app_id: String) -> Result<JsonValue, String> {
+        run(move || skill::SkillInstaller::current(&app_id)?.install()).await
+    }
+
+    /// Updates an existing Pilo-owned `pilo-cli` skill copy to match the running app.
+    pub async fn skill_update(app_id: String) -> Result<JsonValue, String> {
+        run(move || skill::SkillInstaller::current(&app_id)?.update()).await
+    }
+
+    /// Removes a Pilo-owned `pilo-cli` skill copy without touching user-modified files.
+    pub async fn skill_uninstall(app_id: String) -> Result<JsonValue, String> {
+        run(move || skill::SkillInstaller::current(&app_id)?.uninstall()).await
     }
 }
 
@@ -160,7 +181,6 @@ pub(crate) struct Fingerprint {
     pub sha256: String,
 }
 
-#[cfg_attr(windows, allow(dead_code))]
 impl Fingerprint {
     pub(crate) fn of_bytes(bytes: &[u8]) -> Self {
         use sha2::{Digest, Sha256};
@@ -378,7 +398,6 @@ fn write_temporary(path: &Path, bytes: &[u8], executable: bool) -> Result<PathBu
 /// Writes `bytes` to `path` only if nothing is there: a sibling temporary file
 /// is hard-linked into place, which fails instead of replacing. `Ok(false)`
 /// means something already exists at `path`.
-#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn write_new(path: &Path, bytes: &[u8], executable: bool) -> Result<bool, String> {
     let temporary = write_temporary(path, bytes, executable)?;
     let placed = std::fs::hard_link(&temporary, path);
