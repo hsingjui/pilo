@@ -55,8 +55,6 @@ pub(super) fn spawn_output_tasks(
     let stops = Arc::clone(&state.pi_stops);
     let outputs = Arc::clone(&state.pi_output_tasks);
     let stdout_identity = Weak::clone(stdin_identity);
-    let agent_control = state.agent_control.clone();
-    let control_stream = params.control_stream_id.clone();
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut settle_after_stop = None;
@@ -195,9 +193,6 @@ pub(super) fn spawn_output_tasks(
                 None
             }
         };
-        if let Some(stream) = control_stream {
-            agent_control.revoke(&stream);
-        }
         if let Some(bytes) = settle_after_stop {
             // A failed clear must never leave a process that can replay the old queue.
             let _ = writer
