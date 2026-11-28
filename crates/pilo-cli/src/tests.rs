@@ -216,3 +216,37 @@ fn launch_is_a_global_option() {
     assert!(options.launch);
     assert_eq!(options.command, words(&["projects", "list"]));
 }
+
+#[test]
+fn bundled_skill_documents_all_cli_commands() {
+    let skill = include_str!("../../../skills/pilo-cli/SKILL.md");
+    for command in [
+        "pilo version",
+        "pilo help",
+        "pilo open",
+        "pilo projects list",
+        "pilo projects add",
+        "pilo projects remove",
+        "pilo models list",
+        "pilo sessions list",
+        "pilo sessions get",
+        "pilo sessions history",
+        "pilo sessions status",
+        "pilo sessions create",
+        "pilo sessions send",
+        "pilo sessions abort",
+        "pilo sessions stop",
+        "pilo sessions archive",
+        "pilo sessions update",
+        "pilo sessions delete",
+        "pilo settings get",
+        "pilo settings patch",
+        "pilo settings theme get",
+        "pilo settings theme set",
+    ] {
+        assert!(
+            skill.contains(command),
+            "skills/pilo-cli/SKILL.md is missing `{command}`"
+        );
+    }
+}
