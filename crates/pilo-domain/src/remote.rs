@@ -73,6 +73,9 @@ impl std::str::FromStr for RemoteScopes {
 pub struct RemoteDevice {
     pub id: String,
     pub name: String,
+    /// Pairing-generated label without the address suffix; cleared on rename.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     /// 配对请求的来源 IP;旧记录为空字符串。
     pub pair_ip: String,
     #[serde(default)]

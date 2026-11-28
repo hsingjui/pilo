@@ -20,8 +20,8 @@ test("a running Remote Host shows status, pairing and devices", async () => {
 	expect(app.shows("id:remote-pairing-qr")).toBe(true);
 	expect(app.shows("id:remote-pairing-copy")).toBe(true);
 	expect(app.shows("id:remote-pairing-regenerate")).toBe(true);
-	expect(app.shows("text:Jui's iPhone 192.168.1.20")).toBe(true);
-	expect(app.shows("text:iPad 192.168.1.21")).toBe(true);
+	expect(app.shows("text:Jui's iPhone")).toBe(true);
+	expect(app.shows("text:iPad")).toBe(true);
 	expect(app.shows("text:2 active")).toBe(true);
 	expect(app.enabled("id:remote-device:dev-iphone:revoke")).toBe(true);
 });
@@ -78,8 +78,8 @@ test("revoking a device removes it from the list", async () => {
 	await app.waitFor("text:Confirm revoke");
 	await app.press("id:remote-device:dev-ipad:revoke");
 	await app.waitFor("text:1 active");
-	expect(app.shows("text:iPad 192.168.1.21")).toBe(false);
-	expect(app.shows("text:Jui's iPhone 192.168.1.20")).toBe(true);
+	expect(app.shows("text:iPad")).toBe(false);
+	expect(app.shows("text:Jui's iPhone")).toBe(true);
 	// Revoking the last device shows the empty state.
 	await app.press("id:remote-device:dev-iphone:revoke");
 	await app.waitFor("text:Confirm revoke");

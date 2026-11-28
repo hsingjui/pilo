@@ -422,7 +422,7 @@ index file through the same response path.
 ```text
 remote_host_config(id=1, enabled, port, public_base_url, addresses_json NULL, entry_address_id)
 remote_pairing(id=1, secret_hash, expires_at_ms, consumed_at_ms)
-remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, expires_at_ms, revoked_at_ms)
+remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, expires_at_ms, revoked_at_ms, display_name NULL)
 ```
 
 ---
@@ -558,11 +558,14 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   Remote WebUI sends `describeDevice(navigator.userAgent)`
   (`web/lib/device-name.ts`) — `机型/系统 · 浏览器` — because a raw UA is
   unreadable in the device list. New labels append the pairing address name/URL,
-  using bounded portions (40 device-name + 36 address characters). `pair_ip` is the pairing request's peer IP from
-  `ConnectInfo<SocketAddr>`, not client-supplied.
+  using bounded portions (40 device-name + 36 address characters). New pairings
+  also store the unsuffixed `display_name` (optional `displayName` on the wire)
+  for the device list. Use the full stored `name` if that field is absent; do
+  not infer the suffix from legacy or user-entered names. `pair_ip` is the pairing
+  request's peer IP from `ConnectInfo<SocketAddr>`, not client-supplied.
 - **Device rename**: `remote_device_rename` reuses `auth::normalize_device_name`,
   so the same 80-char bound applies. Renaming requires the device to exist and
-  not be revoked.
+  not be revoked and clears `display_name` in the same update.
 - Native adapters use `host_api::Principal::Local`. Remote middleware inserts
   `Principal::Device { id, scopes }` from the authenticated device. `HostRequest`
   passes this extension to the Registry for JSON and binary operations. Both device

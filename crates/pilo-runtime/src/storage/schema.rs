@@ -353,6 +353,10 @@ fn ensure_remote_device_columns(db: &SqliteConnection) -> Result<(), String> {
         db.execute_batch("ALTER TABLE remote_devices ADD COLUMN pair_ip TEXT NOT NULL DEFAULT '';")
             .map_err(|error| error.to_string())?;
     }
+    if !column_exists(db, "remote_devices", "display_name")? {
+        db.execute_batch("ALTER TABLE remote_devices ADD COLUMN display_name TEXT;")
+            .map_err(|error| error.to_string())?;
+    }
     if !column_exists(db, "remote_devices", "scopes")? {
         db.execute_batch(
             "ALTER TABLE remote_devices ADD COLUMN scopes TEXT NOT NULL DEFAULT 'chat';",

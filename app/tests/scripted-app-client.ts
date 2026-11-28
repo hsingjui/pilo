@@ -830,7 +830,9 @@ export function scriptedClient(script: AppScript = {}) {
 			remoteHost = {
 				...remoteHost,
 				devices: remoteHost.devices.map((device) =>
-					device.id === deviceId ? { ...device, name } : device,
+					device.id === deviceId
+						? { ...device, name, displayName: undefined }
+						: device,
 				),
 			};
 			emit({ type: "configuration_changed" });

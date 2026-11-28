@@ -206,8 +206,8 @@ pub(crate) fn insert_remote_device(
 ) -> Result<(), String> {
     db.execute(
         "INSERT INTO remote_devices(
-           id,name,pair_ip,token_hash,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,scopes
-         ) VALUES(?1,?2,?3,?4,?5,?6,?7,NULL,?8)",
+           id,name,pair_ip,token_hash,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,scopes,display_name
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,NULL,?8,?9)",
         params![
             device.id,
             device.name,
@@ -217,6 +217,7 @@ pub(crate) fn insert_remote_device(
             as_i64(device.last_seen_at_ms, "device last-seen time")?,
             as_i64(device.expires_at_ms, "device expiry")?,
             device.scopes.as_str(),
+            device.display_name,
         ],
     )
     .map_err(|error| format!("failed to persist Remote WebUI device: {error}"))?;
@@ -272,7 +273,7 @@ pub(crate) fn rename_remote_device(
 ) -> Result<bool, String> {
     let changed = db
         .execute(
-            "UPDATE remote_devices SET name=?1 WHERE id=?2 AND revoked_at_ms IS NULL",
+            "UPDATE remote_devices SET name=?1, display_name=NULL WHERE id=?2 AND revoked_at_ms IS NULL",
             params![name, device_id],
         )
         .map_err(|error| format!("failed to rename Remote WebUI device: {error}"))?;
@@ -288,6 +289,7 @@ fn row_to_remote_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<(RemoteDevi
         RemoteDevice {
             id: row.get(0)?,
             name: row.get(1)?,
+            display_name: row.get(9)?,
             pair_ip: row.get(2)?,
             scopes: row
                 .get::<_, String>(8)?
@@ -318,7 +320,7 @@ pub(crate) fn authenticate_remote_device(
 ) -> Result<Option<RemoteDevice>, String> {
     let result = db
         .query_row(
-            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes
+            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes,display_name
              FROM remote_devices
              WHERE token_hash=?1 AND revoked_at_ms IS NULL AND expires_at_ms>=?2",
             params![token_hash, as_i64(now_ms, "authentication time")?],
@@ -387,7 +389,7 @@ pub(crate) fn get_active_remote_device_scopes(
 pub(crate) fn list_remote_devices(db: &SqliteConnection) -> Result<Vec<RemoteDevice>, String> {
     let mut statement = db
         .prepare(
-            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes
+            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes,display_name
              FROM remote_devices
              ORDER BY last_seen_at_ms DESC, created_at_ms DESC",
         )
@@ -563,6 +565,7 @@ mod tests {
         let device = RemoteDevice {
             id: "device-1".to_owned(),
             name: "Phone".to_owned(),
+            display_name: None,
             pair_ip: "192.168.1.20".to_owned(),
             scopes: RemoteScopes::ChatWorkspace,
             created_at_ms: 10,
@@ -595,6 +598,7 @@ mod tests {
         let device = RemoteDevice {
             id: "device-1".to_owned(),
             name: "Phone".to_owned(),
+            display_name: None,
             pair_ip: String::new(),
             scopes: RemoteScopes::ChatWorkspace,
             created_at_ms: 10,
@@ -618,6 +622,7 @@ mod tests {
         let expired = RemoteDevice {
             id: "device-2".to_owned(),
             name: "Old phone".to_owned(),
+            display_name: None,
             pair_ip: String::new(),
             scopes: RemoteScopes::Chat,
             created_at_ms: 1,

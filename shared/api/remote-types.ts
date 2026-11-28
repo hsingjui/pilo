@@ -3,6 +3,7 @@ export type RemoteScopes = "chat" | "chat,workspace";
 export type RemoteDevice = {
 	id: string;
 	name: string;
+	displayName?: string;
 	pairIp: string;
 	scopes: RemoteScopes;
 	createdAtMs: number;

@@ -1,7 +1,8 @@
 import { type Accessor, computed, signal, Text, View } from "nsh";
 
 import type { RemoteDevice } from "@shared/api/remote-types";
-import { appLocale, t } from "../shell/i18n";
+import { formatLocalDateTime } from "@shared/format-date-time";
+import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
@@ -31,7 +32,7 @@ function DeviceNameCell(props: {
 		editing.set(true);
 	};
 	return (
-		<View class="flex-row items-center gap-1.5">
+		<View class="min-w-0 flex-row items-center gap-1.5">
 			{() =>
 				editing() ? (
 					<Input
@@ -52,19 +53,12 @@ function DeviceNameCell(props: {
 					<>
 						<Button
 							variant="ghost"
-							class="h-auto px-0 text-left font-medium leading-tight text-foreground"
+							class="h-auto min-w-0 shrink px-0 text-left font-medium leading-tight text-foreground"
 							tooltip={textTooltip(t("settings.remoteRenameHint"))}
 							onPress={startEditing}
 						>
-							<Text class="font-sans font-medium leading-tight text-foreground">
-								{() => props.device().name}
-								{() =>
-									props.device().pairIp ? (
-										<Text class="ml-2 font-mono text-[10px] font-normal text-muted-foreground">
-											{` ${props.device().pairIp}`}
-										</Text>
-									) : null
-								}
+							<Text class="min-w-0 shrink truncate font-sans font-medium leading-tight text-foreground">
+								{() => props.device().displayName ?? props.device().name}
 							</Text>
 						</Button>
 						<SettingsIconButton
@@ -112,14 +106,16 @@ export function RemoteDevicesSection(props: {
 					<Each of={props.devices()} key={(device) => device.id}>
 						{(device) => {
 							const isConfirming = () => confirmingId() === device().id;
+							const lastSeenLabel = () => {
+								const date = formatLocalDateTime(device().lastSeenAtMs);
+								return date
+									? t("settings.remoteDeviceLastSeen", { date })
+									: undefined;
+							};
 							return (
 								<SettingsRow
 									ghostEdge="both"
-									helper={t("settings.remoteDeviceLastSeen", {
-										date: new Date(device().lastSeenAtMs).toLocaleString(
-											appLocale(),
-										),
-									})}
+									helper={lastSeenLabel()}
 									label={
 										<DeviceNameCell
 											device={device}
