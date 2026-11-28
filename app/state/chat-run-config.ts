@@ -433,7 +433,7 @@ export class ChatRunConfigStore {
 		}
 	}
 
-	/** Session events move compaction state and refresh stats at turn ends. */
+	/** Session events move compaction state and refresh stats during a turn. */
 	private applyEvent(event: PiloClientEvent): void {
 		switch (event.type) {
 			case "compaction_start":
@@ -450,6 +450,10 @@ export class ChatRunConfigStore {
 			case "process_state":
 				if (event.state === "running") void this.refresh();
 				return;
+			// At stream start Pi has the prompt; a snapshot marks a model response
+			// ending, even if the agent is still running tools in the same turn.
+			case "assistant_message_start":
+			case "assistant_text_snapshot":
 			case "assistant_message_end":
 				void this.refreshStats();
 				return;
