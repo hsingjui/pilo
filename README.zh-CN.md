@@ -65,7 +65,9 @@ pnpm install
 pnpm dev          # 启动 nsh 桌面端并监听 WebUI 改动
 ```
 
-`pnpm dev` 在启动桌面端前构建本机 debug 版 `pilo-server` 和 Host 提供 WebUI 用的 `dist/`。将 `PILO_SERVER_BINARY` 设为已有 server 的绝对路径可跳过 Cargo 构建。WebUI 改动只会重建 `dist/`，不会重新编译 server。只跑独立 WebUI 用 `pnpm dev:web`，它不提供 Pilo Host API。
+`pnpm dev` 在启动桌面端前构建本机 debug 版 `pilo-server`、`pilo-cli` 和 WebUI 的 `dist/`。macOS/Linux 可直接运行 `target/debug/pilo`，Windows 可运行 `target/debug/pilo-cli-bin/pilo-dev.exe`。将 `PILO_SERVER_BINARY` 或 `PILO_CLI_BINARY` 设为已有可执行文件的绝对路径，可跳过对应二进制的构建。
+
+WebUI 改动只会重建 `dist/`，不会重新编译 Rust 二进制。只跑独立 WebUI 用 `pnpm dev:web`，它不提供 Pilo Host API。
 
 若直接在仓库根目录运行 `nsh dev`，请先用 `cargo build -p pilo-server` 构建本机 server。WSL/SSH 请先为远程目标构建开发 server，再启动或重启 Pilo：
 
