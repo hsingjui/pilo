@@ -1,15 +1,15 @@
-import { type Signal, signal, Text, View } from "nsh";
+import { cleanup, type Signal, signal, Text, View } from "nsh";
 
 import { userErrorMessage } from "@shared/app-error";
+import type { RemotePairingInfo } from "@shared/remote-pairing";
 import {
 	desktopDeviceName,
-	isPlaintextRemoteAddress,
 	parseDesktopPairingLink,
 	type DesktopPairingLink,
+	type RemoteHostProxy,
 } from "@shared/remote-hosts";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
-import { Checkbox } from "../ui/checkbox";
 import { Dialog } from "../ui/dialog";
 import { DialogDescription } from "../ui/dialog-description";
 import { DialogFooter } from "../ui/dialog-footer";
@@ -19,10 +19,32 @@ import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import type { HostRegistry } from "./host-registry";
 import {
+	createDesktopPairingRequestId,
 	pairDesktop,
 	readDesktopPairingInfo,
-	type DesktopPairingInfo,
+	testDesktopProxy,
 } from "./remote-pairing-client";
+
+export function remoteProxyError(error: unknown): string | null {
+	switch (userErrorMessage(error)) {
+		case "REMOTE_PROXY_INVALID_URL":
+			return t("hosts.proxyInvalidUrl");
+		case "REMOTE_PROXY_NO_ROUTE":
+			return t("hosts.proxyNoRoute");
+		case "REMOTE_PROXY_SYSTEM_FAILED":
+			return t("hosts.proxySystemFailed");
+		case "REMOTE_PROXY_AUTH_FAILED":
+			return t("hosts.proxyAuthFailed");
+		case "REMOTE_PROXY_CREDENTIALS_FAILED":
+			return t("hosts.proxyCredentialsFailed");
+		case "REMOTE_PROXY_REQUEST_FAILED":
+			return t("hosts.proxyRequestFailed");
+		case "REMOTE_PROXY_NOT_PILO":
+			return t("hosts.proxyNotPilo");
+		default:
+			return null;
+	}
+}
 
 /** Pairs this desktop with another machine's Pilo from a pasted pairing link. */
 export function AddRemoteHostDialog(props: {
@@ -33,39 +55,81 @@ export function AddRemoteHostDialog(props: {
 }) {
 	const link = signal("");
 	const parsed = signal<DesktopPairingLink | null>(null);
-	const info = signal<DesktopPairingInfo | null>(null);
+	const info = signal<RemotePairingInfo | null>(null);
 	const addressId = signal<string | null>(null);
 	const busy = signal(false);
 	const error = signal<string | null>(null);
-	/** A plain-http entry outside private networks waits for consent before the secret is sent. */
-	const entryWarning = signal<string | null>(null);
-	const confirmedEntry = signal<string | null>(null);
-	const allowFallbacks = signal(false);
+	const proxyMode = signal<"direct" | RemoteHostProxy["mode"]>("direct");
+	const proxyUrl = signal("");
+	const testingProxy = signal(false);
+	const proxyTestResult = signal<{ error: string | null } | null>(null);
+	const locked = () => busy() || testingProxy();
+	const usesProxy = () => proxyMode() !== "direct";
+	const proxy = (): RemoteHostProxy | undefined => {
+		const mode = proxyMode();
+		if (mode === "custom") return { mode, url: proxyUrl().trim() };
+		if (mode === "system") return { mode };
+		return undefined;
+	};
+	// Keep the original proof so a lost response does not strand an issued token.
+	const requestIds = new Map<string, string>();
 	let version = 0;
-
-	const reset = () => {
+	cleanup(() => {
 		version += 1;
-		link.set("");
+	});
+
+	const clearPairingInfo = () => {
 		parsed.set(null);
 		info.set(null);
 		addressId.set(null);
-		busy.set(false);
 		error.set(null);
-		entryWarning.set(null);
-		confirmedEntry.set(null);
-		allowFallbacks.set(false);
+		proxyTestResult.set(null);
+	};
+	const reset = () => {
+		version += 1;
+		requestIds.clear();
+		link.set("");
+		proxyMode.set("direct");
+		proxyUrl.set("");
+		busy.set(false);
+		testingProxy.set(false);
+		clearPairingInfo();
 	};
 	const selected = () =>
 		info()?.addresses.find((address) => address.id === addressId()) ?? null;
-	const plaintextFallbacks = () => {
-		const target = selected();
-		return (info()?.addresses ?? []).filter(
-			(address) =>
-				address.id !== target?.id && isPlaintextRemoteAddress(address.baseUrl),
-		);
+
+	const testProxy = async () => {
+		const config = proxy();
+		if (!config || locked()) return;
+		let origin: string;
+		try {
+			origin =
+				selected()?.baseUrl ?? parseDesktopPairingLink(link()).entryOrigin;
+		} catch {
+			proxyTestResult.set({ error: t("hosts.invalidLink") });
+			return;
+		}
+		const current = ++version;
+		proxyTestResult.set(null);
+		testingProxy.set(true);
+		try {
+			await testDesktopProxy(origin, props.registry.network(config).fetch);
+			if (current === version) proxyTestResult.set({ error: null });
+		} catch (caught) {
+			if (current === version)
+				proxyTestResult.set({
+					error: remoteProxyError(caught) ?? t("hosts.proxyRequestFailed"),
+				});
+		} finally {
+			if (current === version) testingProxy.set(false);
+		}
 	};
 
+	const pairingError = (caught: unknown) =>
+		`${t("hosts.pairFailed")}: ${remoteProxyError(caught) ?? userErrorMessage(caught)}`;
+
 	const read = async () => {
+		if (locked()) return;
 		let next: DesktopPairingLink;
 		try {
 			next = parseDesktopPairingLink(link());
@@ -73,18 +137,14 @@ export function AddRemoteHostDialog(props: {
 			error.set(t("hosts.invalidLink"));
 			return;
 		}
-		if (
-			isPlaintextRemoteAddress(next.entryOrigin) &&
-			confirmedEntry() !== next.entryOrigin
-		) {
-			entryWarning.set(next.entryOrigin);
-			return;
-		}
 		const current = ++version;
 		busy.set(true);
 		error.set(null);
 		try {
-			const offered = await readDesktopPairingInfo(next);
+			const offered = await readDesktopPairingInfo(
+				next,
+				props.registry.network(proxy()).fetch,
+			);
 			if (current !== version) return;
 			parsed.set(next);
 			info.set(offered);
@@ -93,9 +153,9 @@ export function AddRemoteHostDialog(props: {
 				offered.addresses.find(({ baseUrl }) => baseUrl === next.entryOrigin) ??
 				offered.addresses[0];
 			addressId.set(entry?.id ?? null);
+			if (entry?.baseUrl !== next.entryOrigin) proxyTestResult.set(null);
 		} catch (caught) {
-			if (current === version)
-				error.set(`${t("hosts.pairFailed")}: ${userErrorMessage(caught)}`);
+			if (current === version) error.set(pairingError(caught));
 		} finally {
 			if (current === version) busy.set(false);
 		}
@@ -105,15 +165,21 @@ export function AddRemoteHostDialog(props: {
 		const target = selected();
 		const pairingLink = parsed();
 		const offered = info();
-		if (!target || !pairingLink || !offered) return;
+		if (locked() || !target || !pairingLink || !offered) return;
+		const config = proxy();
 		const current = ++version;
 		busy.set(true);
 		error.set(null);
 		try {
+			const requestId =
+				requestIds.get(target.id) ?? createDesktopPairingRequestId();
+			requestIds.set(target.id, requestId);
 			const paired = await pairDesktop(
 				pairingLink,
 				target,
 				desktopDeviceName(props.machineName()),
+				requestId,
+				props.registry.network(config).fetch,
 			);
 			const record = await props.registry.addPaired({
 				addresses: offered.addresses,
@@ -121,18 +187,14 @@ export function AddRemoteHostDialog(props: {
 				token: paired.token,
 				deviceId: paired.deviceId,
 				scopes: paired.scopes,
-				plaintextAddressIds: [
-					...(isPlaintextRemoteAddress(target.baseUrl) ? [target.id] : []),
-					...(allowFallbacks() ? plaintextFallbacks().map(({ id }) => id) : []),
-				],
+				proxy: config,
 			});
 			if (current !== version) return;
 			props.onPaired(record.name);
 			props.open.set(false);
 			reset();
 		} catch (caught) {
-			if (current === version)
-				error.set(`${t("hosts.pairFailed")}: ${userErrorMessage(caught)}`);
+			if (current === version) error.set(pairingError(caught));
 		} finally {
 			if (current === version) busy.set(false);
 		}
@@ -162,108 +224,115 @@ export function AddRemoteHostDialog(props: {
 					testID="add-remote-host-link"
 					placeholder="http://192.168.1.2:7890/pair#pair=…"
 					value={link()}
-					disabled={busy()}
+					disabled={locked()}
 					onChange={(event) => {
+						requestIds.clear();
 						link.set(event.value);
-						parsed.set(null);
-						info.set(null);
-						error.set(null);
-						entryWarning.set(null);
-						confirmedEntry.set(null);
+						clearPairingInfo();
 					}}
 					onSubmit={() => void read()}
 				/>
 			</View>
-			{() =>
-				entryWarning() && !info() ? (
-					<Text
-						testID="add-remote-host-plaintext-entry"
-						class="font-sans text-xs text-status-danger"
-					>
-						{() => t("hosts.plaintextEntryWarning")}
-					</Text>
-				) : null
-			}
+			<View class="gap-1.5">
+				<Text class="font-sans text-xs font-medium text-muted-foreground">
+					{() => t("hosts.proxy")}
+				</Text>
+				<View class="flex-row items-center gap-2">
+					<Select
+						class="flex-1"
+						size="sm"
+						testID="add-remote-host-proxy"
+						accessibilityLabel={t("hosts.proxy")}
+						items={[
+							{ value: "direct", title: t("hosts.proxyDirect") },
+							{ value: "system", title: t("hosts.proxySystem") },
+							{ value: "custom", title: t("hosts.proxyCustom") },
+						]}
+						value={proxyMode()}
+						disabled={locked()}
+						onChange={({ value }) => {
+							const mode =
+								value === "system" || value === "custom" ? value : "direct";
+							if (mode === proxyMode()) return;
+							proxyMode.set(mode);
+							clearPairingInfo();
+						}}
+					/>
+					{() =>
+						usesProxy() ? (
+							<Button
+								class="shrink-0"
+								variant="outline"
+								size="sm"
+								testID="add-remote-host-test-proxy"
+								disabled={locked() || !link().trim()}
+								onPress={() => void testProxy()}
+							>
+								<Text class="font-sans text-xs">
+									{() =>
+										t(testingProxy() ? "hosts.proxyTesting" : "hosts.proxyTest")
+									}
+								</Text>
+							</Button>
+						) : null
+					}
+				</View>
+				{() =>
+					proxyMode() === "custom" ? (
+						<Input
+							testID="add-remote-host-proxy-url"
+							accessibilityLabel={t("hosts.proxyUrl")}
+							placeholder="http://user:password@proxy.example:8080"
+							value={proxyUrl()}
+							masked
+							autoComplete="off"
+							disabled={locked()}
+							onChange={({ value }) => {
+								proxyUrl.set(value);
+								clearPairingInfo();
+							}}
+						/>
+					) : null
+				}
+				{() => {
+					const result = proxyTestResult();
+					return usesProxy() && result ? (
+						<Text
+							class={
+								result.error
+									? "font-sans text-xs text-status-danger"
+									: "font-sans text-xs text-status-success"
+							}
+						>
+							{result.error ?? t("hosts.proxyTestPassed")}
+						</Text>
+					) : null;
+				}}
+			</View>
 			{() => {
 				const offered = info();
 				if (!offered) return null;
-				const target = selected();
 				return (
-					<View class="gap-2">
-						<View class="gap-1.5">
-							<Text class="font-sans text-xs font-medium text-muted-foreground">
-								{() => t("hosts.address")}
-							</Text>
-							<Select
-								size="sm"
-								testID="add-remote-host-address"
-								items={offered.addresses.map((address) => ({
-									value: address.id,
-									title: address.name
-										? `${address.name} · ${address.baseUrl}`
-										: address.baseUrl,
-								}))}
-								value={addressId() ?? undefined}
-								disabled={busy()}
-								onChange={(event) => addressId.set(event.value ?? null)}
-							/>
-						</View>
-						<Text
-							testID="add-remote-host-scope"
-							class={`font-sans text-xs ${
-								offered.scopes === "chat,workspace"
-									? "text-status-warning"
-									: "text-muted-foreground"
-							}`}
-						>
-							{() =>
-								t(
-									offered.scopes === "chat,workspace"
-										? "hosts.scopeWorkspace"
-										: "hosts.scopeChat",
-								)
-							}
+					<View class="gap-1.5">
+						<Text class="font-sans text-xs font-medium text-muted-foreground">
+							{() => t("hosts.address")}
 						</Text>
-						{target && isPlaintextRemoteAddress(target.baseUrl) ? (
-							<Text
-								testID="add-remote-host-plaintext"
-								class="font-sans text-xs text-status-danger"
-							>
-								{() => t("hosts.plaintextWarning")}
-							</Text>
-						) : null}
-						{() => {
-							const fallbacks = plaintextFallbacks();
-							if (!fallbacks.length) return null;
-							return (
-								<View class="gap-1.5">
-									<Text
-										testID="add-remote-host-plaintext-fallbacks"
-										class="font-sans text-xs text-status-warning"
-									>
-										{() =>
-											t("hosts.plaintextFallbacks", {
-												addresses: fallbacks
-													.map(({ baseUrl }) => baseUrl)
-													.join(", "),
-											})
-										}
-									</Text>
-									<View class="flex-row items-center gap-2">
-										<Checkbox
-											testID="add-remote-host-allow-fallbacks"
-											accessibilityLabel={t("hosts.allowPlaintextFallbacks")}
-											checked={allowFallbacks()}
-											disabled={busy()}
-											onChange={(event) => allowFallbacks.set(event.checked)}
-										/>
-										<Text class="flex-1 font-sans text-xs">
-											{() => t("hosts.allowPlaintextFallbacks")}
-										</Text>
-									</View>
-								</View>
-							);
-						}}
+						<Select
+							size="sm"
+							testID="add-remote-host-address"
+							items={offered.addresses.map((address) => ({
+								value: address.id,
+								title: address.name
+									? `${address.name} · ${address.baseUrl}`
+									: address.baseUrl,
+							}))}
+							value={addressId() ?? undefined}
+							disabled={locked()}
+							onChange={(event) => {
+								addressId.set(event.value ?? null);
+								proxyTestResult.set(null);
+							}}
+						/>
 					</View>
 				);
 			}}
@@ -291,31 +360,27 @@ export function AddRemoteHostDialog(props: {
 					info() ? (
 						<Button
 							testID="add-remote-host-pair"
-							disabled={busy() || !selected()}
+							disabled={locked() || !selected()}
 							onPress={() => void pair()}
 						>
 							<Text class="font-sans">
-								{() => (busy() ? t("hosts.pairing") : t("hosts.pair"))}
+								{() =>
+									busy()
+										? t("hosts.pairing")
+										: requestIds.has(addressId() ?? "")
+											? t("common.retry")
+											: t("hosts.pair")
+								}
 							</Text>
 						</Button>
 					) : (
 						<Button
 							testID="add-remote-host-read"
-							disabled={busy() || !link().trim()}
-							onPress={() => {
-								const pending = entryWarning();
-								if (pending) confirmedEntry.set(pending);
-								void read();
-							}}
+							disabled={locked() || !link().trim()}
+							onPress={() => void read()}
 						>
 							<Text class="font-sans">
-								{() =>
-									busy()
-										? t("hosts.reading")
-										: entryWarning()
-											? t("hosts.continuePlaintext")
-											: t("hosts.readLink")
-								}
+								{() => t(busy() ? "hosts.reading" : "hosts.readLink")}
 							</Text>
 						</Button>
 					)

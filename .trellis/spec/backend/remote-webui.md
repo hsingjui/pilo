@@ -500,7 +500,10 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   the desktop QR; descriptions and original-proof retries remain available
   within the original TTL, but no new authorization can be issued.
 - **Atomic / idempotent exchange**: `requestId` is a 32-byte CSPRNG proof encoded
-  as 64 hex characters, stored in target-origin `sessionStorage` before POST.
+  as 64 hex characters. Before POST, WebUI stores it in target-origin `sessionStorage`;
+  the desktop pairing dialog keeps one proof per address in memory until the link
+  is edited or the dialog closes. Manual retry after an exchange or `hello` timeout
+  must reuse that proof, not generate another one.
   Never use `utils.randomId` / its `Math.random` fallback for this proof.
   The batch mutex covers an immediate SQLite transaction, device insertion,
   exhaustion update and receipt recording, all inside `spawn_blocking` with no

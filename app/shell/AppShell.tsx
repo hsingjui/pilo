@@ -59,6 +59,7 @@ import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
+	type SettingsDialogProps,
 	type SettingsTabId,
 } from "../settings/settings-dialog";
 import { createRemoteStatus, RemoteDialog } from "../settings/remote-dialog";
@@ -203,12 +204,12 @@ export interface AppShellProps {
 	remoteAccess?: boolean;
 	/** The Host's connections are listed but edited only on that Host. */
 	connectionsReadOnly?: boolean;
+	/** Paired desktop Hosts and the local pairing flow. */
+	remoteHostPairing?: SettingsDialogProps["remoteHostPairing"];
 	/** Settings panes the Host does not let this client use. */
 	hiddenSettingsTabs?: readonly SettingsTabId[];
 	/** Add Project browses the Host's folders instead of this machine's picker. */
 	browseHostDirectories?: boolean;
-	/** The Hosts this window can show, above the shown Host's projects. */
-	hostSwitcher?: () => JSX.Element;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -770,7 +771,7 @@ export function AppShell(props: AppShellProps) {
 				}
 				onAddProject={props.projectClient ? openAddProject : undefined}
 				canRemoveProjects={props.canRemoveProjects}
-				hostSwitcher={props.hostSwitcher}
+				hosts={props.remoteHostPairing?.registry}
 				onRemoveConnection={
 					client && !props.connectionsReadOnly
 						? (connection) => {
@@ -1317,6 +1318,7 @@ export function AppShell(props: AppShellProps) {
 								shell={props.shell}
 								update={update}
 								connectionsReadOnly={props.connectionsReadOnly}
+								remoteHostPairing={props.remoteHostPairing}
 								hiddenTabs={props.hiddenSettingsTabs}
 							/>
 						) : null

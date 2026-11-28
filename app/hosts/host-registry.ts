@@ -1,12 +1,14 @@
-import { type Accessor, computed, signal } from "nsh";
+import { type Accessor, batch, computed, signal } from "nsh";
 
 import { HostClient } from "@shared/api/host-client";
 import {
 	type CursorStore,
+	type FetchLike,
 	type HostHelloMessage,
 	HttpTransport,
 	type HostTransportConnectionState,
 	type NetworkSignals,
+	type WebSocketFactory,
 	type WebSocketLike,
 } from "@shared/api/host-transport";
 import type {
@@ -22,6 +24,7 @@ import {
 	resolveRemoteHostStatus,
 	serializeRemoteHostRecords,
 	upsertRemoteHostRecord,
+	type RemoteHostProxy,
 	type RemoteHostRecord,
 	type RemoteHostStatus,
 } from "@shared/remote-hosts";
@@ -41,6 +44,18 @@ export type RemoteHostCredentials = {
 	deleteRemoteHostToken(hostId: string): Promise<void>;
 };
 
+type RemoteHostNetwork = {
+	fetch: FetchLike;
+	createWebSocket: WebSocketFactory;
+};
+
+export type RemoteHostProxyTransport = {
+	connect(proxy: RemoteHostProxy): RemoteHostNetwork;
+	savedUrl(hostId: string): Promise<string | null>;
+	saveUrl(hostId: string, url: string): Promise<void>;
+	deleteUrl(hostId: string): Promise<void>;
+};
+
 type AsyncStorage = {
 	getItem(key: string): Promise<string | null>;
 	setItem(key: string, value: string): Promise<void>;
@@ -54,14 +69,17 @@ export type HostEntry = {
 	name: string;
 	kind: "local" | "remote";
 	status: HostEntryStatus;
+	shownInHome: boolean;
 	session: HostSession | null;
 };
 
 type RemoteConnection = {
 	session: HostSession;
 	addressId: string;
+	network: RemoteHostNetwork;
 	access: Accessor<HostAccess>;
 	state: Accessor<HostTransportConnectionState>;
+	startup: Promise<void>;
 	stop: () => void;
 };
 
@@ -87,6 +105,7 @@ export type HostRegistryOptions = {
 	local: HostSession;
 	shell: DesktopShell;
 	credentials: RemoteHostCredentials;
+	proxy?: RemoteHostProxyTransport;
 	storage: AsyncStorage;
 	fetch?: typeof fetch;
 	createWebSocket?: (url: string, protocols?: string[]) => WebSocketLike;
@@ -168,6 +187,12 @@ export class HostRegistry {
 	);
 	private readonly tick = signal(0);
 	private readonly active = signal(LOCAL_HOST_ID);
+	private readonly revealed = signal<string | null>(null);
+	private readonly activation = signal<{
+		hostId: string;
+		revealProjects: boolean;
+	} | null>(null);
+	private readonly connecting = new Map<string, Promise<void>>();
 	private readonly retryTimers = new Map<
 		string,
 		ReturnType<typeof setTimeout>
@@ -177,23 +202,49 @@ export class HostRegistry {
 	private readonly generations = new Map<string, number>();
 	private readonly rateLimited = signal<ReadonlySet<string>>(new Set());
 	private readonly cursors: StorageCursorStore;
-	private readonly fetchFn: typeof fetch;
-	private readonly createWebSocket: (
-		url: string,
-		protocols?: string[],
-	) => WebSocketLike;
+	private readonly directNetwork: RemoteHostNetwork;
+	private readonly proxyEdits = new Set<string>();
 	private closed = false;
 
 	readonly activeHostId: Accessor<string> = () => this.active();
+	readonly openingHostId: Accessor<string | null> = () =>
+		this.activation()?.hostId ?? null;
+	/** A sidebar click opens the group without overwriting its saved fold state. */
+	readonly revealedHostId: Accessor<string | null> = () => this.revealed();
+
+	clearSidebarReveal(hostId: string) {
+		if (this.revealed() === hostId) this.revealed.set(null);
+	}
 
 	constructor(private readonly options: HostRegistryOptions) {
 		this.local = options.local;
 		this.cursors = new StorageCursorStore(options.storage);
-		this.fetchFn = options.fetch ?? fetch;
-		this.createWebSocket = options.createWebSocket ?? defaultWebSocket;
+		this.directNetwork = {
+			fetch: (options.fetch ?? fetch) as unknown as FetchLike,
+			createWebSocket: options.createWebSocket ?? defaultWebSocket,
+		};
 	}
 
-	/** Every Host, the embedded one first, with its sidebar status. */
+	network(proxy?: RemoteHostProxy): RemoteHostNetwork {
+		if (!proxy) return this.directNetwork;
+		if (!this.options.proxy) throw new Error("REMOTE_PROXY_SYSTEM_FAILED");
+		return this.options.proxy.connect(proxy);
+	}
+
+	private async savedNetwork(
+		record: RemoteHostRecord,
+	): Promise<RemoteHostNetwork> {
+		if (record.proxyMode === "system") return this.network({ mode: "system" });
+		if (record.proxyMode !== "custom") return this.network();
+		if (this.proxyEdits.has(record.hostId))
+			throw new Error("REMOTE_PROXY_CREDENTIALS_FAILED");
+		const url = await this.options.proxy?.savedUrl(record.hostId);
+		if (!url || this.proxyEdits.has(record.hostId))
+			throw new Error("REMOTE_PROXY_CREDENTIALS_FAILED");
+		return this.network({ mode: "custom", url });
+	}
+
+	/** Every Host, the embedded one first, with its connection status. */
 	readonly entries: Accessor<HostEntry[]> = () => {
 		this.tick();
 		const connections = this.connections();
@@ -206,6 +257,7 @@ export class HostRegistry {
 				name: "",
 				kind: "local" as const,
 				status: "connected" as const,
+				shownInHome: true,
 				session: this.local,
 			},
 			...this.records().map((record): HostEntry => {
@@ -225,9 +277,10 @@ export class HostRegistry {
 				}
 				return {
 					hostId: record.hostId,
-					name: record.name,
+					name: record.nameOverride ?? record.name,
 					kind: "remote",
 					status,
+					shownInHome: record.shownInHome ?? true,
 					session: connection?.session ?? null,
 				};
 			}),
@@ -250,6 +303,11 @@ export class HostRegistry {
 
 	record(hostId: string): RemoteHostRecord | null {
 		return this.records().find((record) => record.hostId === hostId) ?? null;
+	}
+
+	displayName(hostId: string): string | undefined {
+		const record = this.record(hostId);
+		return record?.nameOverride ?? record?.name;
 	}
 
 	access(hostId: string): HostAccess {
@@ -282,15 +340,113 @@ export class HostRegistry {
 		}
 	}
 
-	private async saveRecords() {
-		await this.options.storage.setItem(
+	private saveHostRecords() {
+		return this.options.storage.setItem(
 			REMOTE_HOSTS_STORAGE_KEY,
 			serializeRemoteHostRecords(this.records()),
 		);
+	}
+
+	private async saveRecords() {
+		await this.saveHostRecords();
 		await this.options.storage.setItem(
 			`${REMOTE_HOSTS_STORAGE_KEY}.disconnected`,
 			JSON.stringify([...this.disconnected()]),
 		);
+	}
+
+	setShownInHome(hostId: string, shown: boolean): Promise<void> {
+		return this.updatePreference(hostId, "shownInHome", shown);
+	}
+
+	/** undefined keeps the saved proxy; null switches to a direct connection. */
+	async updateConnection(
+		hostId: string,
+		name: string,
+		proxy: RemoteHostProxy | null | undefined,
+	): Promise<void> {
+		const record = this.record(hostId);
+		const trimmed = name.trim();
+		if (!record || !trimmed) return;
+		const nameOverride = trimmed === record.name ? undefined : trimmed;
+		if (proxy === undefined) {
+			await this.updatePreference(hostId, "nameOverride", nameOverride);
+			return;
+		}
+		const credentials = this.options.proxy;
+		if (!credentials || this.proxyEdits.has(hostId))
+			throw new Error("REMOTE_PROXY_CREDENTIALS_FAILED");
+
+		// Do not combine new credentials with an old record's plaintext approvals.
+		this.proxyEdits.add(hostId);
+		try {
+			const previousUrl =
+				record.proxyMode === "custom"
+					? await credentials.savedUrl(hostId)
+					: null;
+			if (proxy?.mode === "custom")
+				await credentials.saveUrl(hostId, proxy.url);
+			else if (previousUrl !== null) await credentials.deleteUrl(hostId);
+			const current = this.record(hostId) ?? record;
+			const previous = {
+				nameOverride: current.nameOverride,
+				proxyMode: current.proxyMode,
+			};
+			this.records.set(
+				upsertRemoteHostRecord(this.records(), {
+					...current,
+					nameOverride,
+					proxyMode: proxy?.mode,
+				}),
+			);
+			try {
+				await this.saveHostRecords();
+			} catch (error) {
+				const latest = this.record(hostId);
+				if (latest?.deviceId === current.deviceId)
+					this.records.set(
+						upsertRemoteHostRecord(this.records(), { ...latest, ...previous }),
+					);
+				if (previousUrl !== null)
+					await credentials.saveUrl(hostId, previousUrl);
+				else if (proxy?.mode === "custom") await credentials.deleteUrl(hostId);
+				throw error;
+			}
+		} finally {
+			this.proxyEdits.delete(hostId);
+		}
+
+		if (this.disconnected().has(hostId)) return;
+		const active = this.active() === hostId;
+		this.bump(hostId);
+		this.close(hostId);
+		if (active) this.activate(hostId);
+		else void this.connect(hostId);
+	}
+
+	private async updatePreference<K extends "shownInHome" | "nameOverride">(
+		hostId: string,
+		key: K,
+		value: RemoteHostRecord[K],
+	): Promise<void> {
+		const record = this.record(hostId);
+		if (!record || record[key] === value) return;
+		const next = { ...record, [key]: value };
+		this.records.set(upsertRemoteHostRecord(this.records(), next));
+		try {
+			await this.saveHostRecords();
+		} catch (error) {
+			const current = this.record(hostId);
+			if (current?.deviceId === record.deviceId && current[key] === value) {
+				this.records.set(
+					upsertRemoteHostRecord(this.records(), {
+						...current,
+						[key]: record[key],
+					}),
+				);
+			}
+			throw error;
+		}
 	}
 
 	private setPending(hostId: string, status: HostEntryStatus | null) {
@@ -301,6 +457,7 @@ export class HostRegistry {
 	}
 
 	private bump(hostId: string): number {
+		this.connecting.delete(hostId);
 		const generation = (this.generations.get(hostId) ?? 0) + 1;
 		this.generations.set(hostId, generation);
 		return generation;
@@ -322,9 +479,10 @@ export class HostRegistry {
 	private async checkToken(
 		address: RemoteAccessAddress,
 		token: string,
+		fetchFn: FetchLike,
 	): Promise<TokenCheck> {
 		try {
-			const response = await this.fetchFn(
+			const response = await fetchFn(
 				`${address.baseUrl}/api/v2/call/preferences.get`,
 				{
 					method: "POST",
@@ -352,23 +510,24 @@ export class HostRegistry {
 	private async findAddress(
 		record: RemoteHostRecord,
 		token: string,
-		generation: number,
+		isCurrent: () => boolean,
+		network: RemoteHostNetwork,
 	): Promise<AddressSearch> {
 		const { hostId } = record;
 		let rateLimited = false;
 		for (const address of remoteHostConnectOrder(record)) {
 			// oxlint-disable-next-line no-await-in-loop -- Addresses are tried in order.
-			const check = await this.checkToken(address, token);
-			if (!this.isCurrent(hostId, generation)) return { kind: "stale" };
+			const check = await this.checkToken(address, token, network.fetch);
+			if (!isCurrent()) return { kind: "stale" };
 			if (check === "unauthorized") return { kind: "unauthorized" };
 			if (check === "rateLimited") rateLimited = true;
 			if (check !== "ok") continue;
 			let hello: HostHelloMessage | null = null;
 			try {
 				// oxlint-disable-next-line no-await-in-loop -- Addresses are tried in order.
-				hello = await this.greet(address, token);
+				hello = await this.greet(address, token, network);
 			} catch (error) {
-				if (!this.isCurrent(hostId, generation)) return { kind: "stale" };
+				if (!isCurrent()) return { kind: "stale" };
 				const code = error instanceof Error ? error.message : "";
 				if (code === "REMOTE_HOST_UNAUTHORIZED")
 					return { kind: "unauthorized" };
@@ -376,7 +535,7 @@ export class HostRegistry {
 					return { kind: "incompatible" };
 				continue;
 			}
-			if (!this.isCurrent(hostId, generation)) return { kind: "stale" };
+			if (!isCurrent()) return { kind: "stale" };
 			if (hello.hostId === hostId) return { kind: "found", address };
 		}
 		return { kind: "unreachable", rateLimited };
@@ -406,10 +565,44 @@ export class HostRegistry {
 		this.retryTimers.delete(hostId);
 	}
 
-	/** Connects to a paired Host: finds an address that answers, then opens its session. */
-	async connect(hostId: string): Promise<void> {
+	/** Tests the saved pairing without opening or switching the window's session. */
+	async test(hostId: string): Promise<HostEntryStatus> {
+		const record = this.record(hostId);
+		if (!record) return "offline";
+		const current = () =>
+			!this.closed && this.record(hostId)?.deviceId === record.deviceId;
+		const token = await this.options.credentials.remoteHostToken(hostId);
+		if (!token) return "unauthorized";
+		const network = await this.savedNetwork(record);
+		if (!current()) return "offline";
+		const found = await this.findAddress(record, token, current, network);
+		if (found.kind === "found") return "connected";
+		if (found.kind === "unauthorized" || found.kind === "incompatible")
+			return found.kind;
+		return found.kind === "unreachable" && found.rateLimited
+			? "rateLimited"
+			: "offline";
+	}
+
+	/** Connects to a paired Host, sharing any address search already in flight. */
+	connect(hostId: string): Promise<void> {
+		const existing = this.connecting.get(hostId);
+		if (existing) return existing;
+		const attempt = this.connectRemote(hostId).finally(() => {
+			if (this.connecting.get(hostId) === attempt)
+				this.connecting.delete(hostId);
+		});
+		this.connecting.set(hostId, attempt);
+		return attempt;
+	}
+
+	private async connectRemote(hostId: string): Promise<void> {
 		const record = this.record(hostId);
 		if (!record || this.connections().has(hostId) || this.closed) return;
+		if (this.proxyEdits.has(hostId)) {
+			this.scheduleRetry(hostId, false);
+			return;
+		}
 		const generation = this.bump(hostId);
 		this.clearRetry(hostId);
 		if (this.disconnected().has(hostId)) {
@@ -427,7 +620,19 @@ export class HostRegistry {
 			this.setPending(hostId, "unauthorized");
 			return;
 		}
-		const found = await this.findAddress(record, token, generation);
+		const network = await this.savedNetwork(record).catch(() => null);
+		if (!this.isCurrent(hostId, generation)) return;
+		if (!network) {
+			this.setPending(hostId, "offline");
+			this.scheduleRetry(hostId, false);
+			return;
+		}
+		const found = await this.findAddress(
+			record,
+			token,
+			() => this.isCurrent(hostId, generation),
+			network,
+		);
 		if (
 			found.kind === "stale" ||
 			!this.isCurrent(hostId, generation) ||
@@ -451,7 +656,7 @@ export class HostRegistry {
 		if (!current) return;
 		this.retryAttempts.delete(hostId);
 		this.setRateLimited(hostId, false);
-		this.open(current, found.address, token, generation);
+		this.open(current, found.address, token, generation, network);
 	}
 
 	/**
@@ -465,6 +670,7 @@ export class HostRegistry {
 	) {
 		const live = () =>
 			this.isCurrent(hostId, generation) &&
+			!this.proxyEdits.has(hostId) &&
 			this.connections().get(hostId) === connection &&
 			connection.state() !== "connected";
 		const record = this.record(hostId);
@@ -472,7 +678,12 @@ export class HostRegistry {
 			.remoteHostToken(hostId)
 			.catch(() => null);
 		if (!record || !token || !live()) return;
-		const found = await this.findAddress(record, token, generation);
+		const found = await this.findAddress(
+			record,
+			token,
+			live,
+			connection.network,
+		);
 		if (found.kind === "stale" || !live()) return;
 		if (found.kind === "unauthorized") {
 			this.close(hostId);
@@ -494,6 +705,7 @@ export class HostRegistry {
 		address: RemoteAccessAddress,
 		token: string,
 		generation: number,
+		network: RemoteHostNetwork,
 	) {
 		const { hostId } = record;
 		const heartbeat = heartbeatSignals(HEARTBEAT_MS);
@@ -504,8 +716,7 @@ export class HostRegistry {
 			foregroundProbeMinHiddenMs: 0,
 			tokens: { getToken: () => token },
 			cursors: this.cursors,
-			fetch: this.fetchFn as never,
-			createWebSocket: this.createWebSocket,
+			...network,
 			...(this.options.reconnectDelaysMs
 				? { reconnectDelaysMs: this.options.reconnectDelaysMs }
 				: {}),
@@ -530,8 +741,12 @@ export class HostRegistry {
 		const connection: RemoteConnection = {
 			session,
 			addressId: address.id,
+			network,
 			access,
 			state,
+			startup: Promise.resolve().then(() => {
+				if (owns()) return session.start();
+			}),
 			stop: () => {
 				heartbeat.stop();
 				if (offlineTimer !== undefined) clearTimeout(offlineTimer);
@@ -617,13 +832,14 @@ export class HostRegistry {
 		next.set(hostId, connection);
 		this.connections.set(next);
 		this.setPending(hostId, null);
-		void session.start().catch((error: unknown) => {
+		void connection.startup.catch((error: unknown) => {
 			console.warn(`Failed to start the session of Host ${hostId}`, error);
 		});
 	}
 
 	/** Disposes the Host's session in this window; the remote Host is not told to stop. */
 	private close(hostId: string) {
+		if (this.openingHostId() === hostId) this.activation.set(null);
 		const connection = this.connections().get(hostId);
 		if (!connection) return;
 		const next = new Map(this.connections());
@@ -632,7 +848,7 @@ export class HostRegistry {
 		connection.stop();
 		connection.session.dispose();
 		this.setRateLimited(hostId, false);
-		if (this.active() === hostId) this.active.set(LOCAL_HOST_ID);
+		if (this.active() === hostId) this.showHost(LOCAL_HOST_ID, false);
 	}
 
 	/** Disconnects this window from the Host, keeping its token for later. */
@@ -655,6 +871,7 @@ export class HostRegistry {
 	async remove(hostId: string): Promise<boolean> {
 		const record = this.record(hostId);
 		if (!record) return true;
+		if (this.openingHostId() === hostId) this.activation.set(null);
 		this.bump(hostId);
 		this.clearRetry(hostId);
 		let revoked = false;
@@ -668,11 +885,16 @@ export class HostRegistry {
 		const token = await this.options.credentials
 			.remoteHostToken(hostId)
 			.catch(() => null);
-		if (!revoked && token) {
+		const network =
+			!revoked && token
+				? (connection?.network ??
+					(await this.savedNetwork(record).catch(() => null)))
+				: null;
+		if (network && token) {
 			for (const address of remoteHostConnectOrder(record)) {
 				try {
 					// oxlint-disable-next-line no-await-in-loop -- Addresses are tried in order.
-					const response = await this.fetchFn(
+					const response = await network.fetch(
 						`${address.baseUrl}/api/v2/call/device.revokeSelf`,
 						{
 							method: "POST",
@@ -697,6 +919,8 @@ export class HostRegistry {
 		this.retryAttempts.delete(hostId);
 		this.close(hostId);
 		this.setPending(hostId, null);
+		if (record.proxyMode === "custom")
+			await this.options.proxy?.deleteUrl(hostId);
 		await this.options.credentials.deleteRemoteHostToken(hostId);
 		this.cursors.forget(hostId);
 		this.records.set(this.records().filter((item) => item.hostId !== hostId));
@@ -711,12 +935,12 @@ export class HostRegistry {
 	private async greet(
 		address: RemoteAccessAddress,
 		token: string,
+		network: RemoteHostNetwork,
 	): Promise<HostHelloMessage> {
 		const transport = new HttpTransport({
 			origin: address.baseUrl,
 			tokens: { getToken: () => token },
-			fetch: this.fetchFn as never,
-			createWebSocket: this.createWebSocket,
+			...network,
 		});
 		try {
 			return await new Promise<HostHelloMessage>((resolve, reject) => {
@@ -752,16 +976,23 @@ export class HostRegistry {
 		token: string;
 		deviceId: string;
 		scopes: RemoteScopes;
-		/** Plain-http addresses outside private networks the user agreed to. */
+		/** Plain-http addresses the user agreed to. */
 		plaintextAddressIds?: string[];
+		proxy?: RemoteHostProxy;
 	}): Promise<RemoteHostRecord> {
 		const preferred =
 			input.addresses.find(({ id }) => id === input.preferredAddressId) ??
 			input.addresses[0];
-		const hello = await this.greet(preferred, input.token);
+		const hello = await this.greet(
+			preferred,
+			input.token,
+			this.network(input.proxy),
+		);
+		const previous = this.record(hello.hostId);
 		const record: RemoteHostRecord = {
 			hostId: hello.hostId,
 			name: hello.hostName,
+			nameOverride: previous?.nameOverride,
 			addresses: input.addresses.map(({ id, name, baseUrl }) => ({
 				id,
 				name,
@@ -772,34 +1003,105 @@ export class HostRegistry {
 			scopes: hello.scopes ?? input.scopes,
 			platform: hello.capabilities?.platform,
 			plaintextAddressIds: input.plaintextAddressIds ?? [],
+			...(input.proxy ? { proxyMode: input.proxy.mode } : {}),
+			shownInHome: previous?.shownInHome,
 		};
-		this.bump(record.hostId);
-		this.close(record.hostId);
-		await this.options.credentials.saveRemoteHostToken(
-			record.hostId,
-			input.token,
-		);
-		this.records.set(upsertRemoteHostRecord(this.records(), record));
-		const disconnected = new Set(this.disconnected());
-		disconnected.delete(record.hostId);
-		this.disconnected.set(disconnected);
-		await this.saveRecords();
-		await this.connect(record.hostId);
+		const { hostId } = record;
+		if (this.proxyEdits.has(hostId))
+			throw new Error("REMOTE_PROXY_CREDENTIALS_FAILED");
+		this.proxyEdits.add(hostId);
+		try {
+			const proxy = input.proxy;
+			const proxyCredentials =
+				proxy?.mode === "custom" ? this.options.proxy : undefined;
+			const previousUrl = proxyCredentials
+				? await proxyCredentials.savedUrl(hostId)
+				: null;
+			if (proxy?.mode === "custom")
+				await proxyCredentials?.saveUrl(hostId, proxy.url);
+			try {
+				await this.options.credentials.saveRemoteHostToken(hostId, input.token);
+			} catch (error) {
+				// The old pairing still owns this Host's credentials and session.
+				if (previousUrl !== null)
+					await proxyCredentials?.saveUrl(hostId, previousUrl);
+				else await proxyCredentials?.deleteUrl(hostId);
+				throw error;
+			}
+			this.bump(hostId);
+			this.close(hostId);
+			this.records.set(upsertRemoteHostRecord(this.records(), record));
+			const disconnected = new Set(this.disconnected());
+			disconnected.delete(hostId);
+			this.disconnected.set(disconnected);
+			await this.saveRecords();
+			if (previous?.proxyMode === "custom" && record.proxyMode !== "custom") {
+				await this.options.proxy?.deleteUrl(hostId).catch(() => undefined);
+			}
+		} finally {
+			this.proxyEdits.delete(hostId);
+		}
+		await this.connect(hostId);
 		return record;
 	}
 
-	/** Shows the Host's session; a remote Host not connected is connected first. */
-	activate(hostId: string) {
-		if (hostId === LOCAL_HOST_ID || this.connections().has(hostId)) {
-			this.active.set(hostId);
+	/** Keeps the current workspace visible until the requested Host has loaded. */
+	activate(hostId: string, { revealProjects = false } = {}) {
+		if (this.closed || this.openingHostId() === hostId) return;
+		if (hostId === this.active()) {
+			this.activation.set(null);
 			return;
 		}
-		void this.connect(hostId);
+		if (hostId === LOCAL_HOST_ID) {
+			this.activation.set(null);
+			this.showHost(hostId, revealProjects);
+			return;
+		}
+		const request = { hostId, revealProjects };
+		this.activation.set(request);
+		void this.activateRemote(request);
+	}
+
+	private showHost(hostId: string, revealProjects: boolean) {
+		batch(() => {
+			this.revealed.set(revealProjects ? hostId : null);
+			this.active.set(hostId);
+		});
+	}
+
+	private async activateRemote(request: {
+		hostId: string;
+		revealProjects: boolean;
+	}) {
+		const { hostId, revealProjects } = request;
+		try {
+			const existing = this.connections().get(hostId);
+			if (!existing) await this.connect(hostId);
+			const connection = this.connections().get(hostId);
+			if (!connection || this.activation() !== request) return;
+			const { store } = connection.session;
+			if (existing === connection && store.state().status.type === "failed") {
+				await store.retry();
+			} else {
+				await connection.startup;
+			}
+			if (
+				this.activation() === request &&
+				this.connections().get(hostId) === connection &&
+				store.state().status.type === "ready"
+			)
+				this.showHost(hostId, revealProjects);
+		} catch (error) {
+			console.warn(`Failed to open the workspace of Host ${hostId}`, error);
+		} finally {
+			if (this.activation() === request) this.activation.set(null);
+		}
 	}
 
 	/** On quit: closes every remote session and shuts down only the embedded Host. */
 	async shutdown(): Promise<void> {
 		this.closed = true;
+		this.activation.set(null);
 		for (const hostId of [...this.retryTimers.keys()]) this.clearRetry(hostId);
 		for (const hostId of [...this.connections().keys()]) this.close(hostId);
 		await this.local.shutdown();

@@ -1,3 +1,4 @@
+import type { FetchLike } from "@shared/api/host-transport";
 import type {
 	RemoteAccessAddress,
 	RemoteScopes,
@@ -9,8 +10,6 @@ import {
 } from "@shared/remote-pairing";
 import type { DesktopPairingLink } from "@shared/remote-hosts";
 
-export type DesktopPairingInfo = RemotePairingInfo & { scopes: RemoteScopes };
-
 export type DesktopPairResult = {
 	token: string;
 	deviceId: string;
@@ -18,14 +17,12 @@ export type DesktopPairResult = {
 	expiresAtMs: number;
 };
 
-type Fetch = typeof fetch;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function postJson(
-	fetchFn: Fetch,
+	fetchFn: FetchLike,
 	url: string,
 	body: unknown,
 ): Promise<unknown> {
@@ -56,23 +53,34 @@ function parseScopes(value: unknown): RemoteScopes {
 	return value === "chat,workspace" ? "chat,workspace" : "chat";
 }
 
-/** Reads the pairing batch a Host's link offers: its addresses and the scopes it grants. */
+/** Reads the access addresses offered by a Host's pairing link. */
 export async function readDesktopPairingInfo(
 	link: DesktopPairingLink,
-	fetchFn: Fetch = fetch,
-): Promise<DesktopPairingInfo> {
+	fetchFn: FetchLike,
+): Promise<RemotePairingInfo> {
 	const value = await postJson(
 		fetchFn,
 		`${link.entryOrigin}/api/v1/auth/pairing`,
 		{ secret: link.secret },
 	);
-	return {
-		...parseRemotePairingInfo(value),
-		scopes: parseScopes(isRecord(value) ? value.scopes : null),
-	};
+	return parseRemotePairingInfo(value);
 }
 
-function randomRequestId(): string {
+/** Tests the chosen route without sending the pairing secret or a device token. */
+export async function testDesktopProxy(
+	origin: string,
+	fetchFn: FetchLike,
+): Promise<void> {
+	const response = await fetchFn(`${origin}/api/v2/health`, {
+		signal: AbortSignal.timeout(10_000),
+	});
+	if (!response.ok) throw new Error("REMOTE_PROXY_REQUEST_FAILED");
+	const value: unknown = await response.json().catch(() => null);
+	if (!isRecord(value) || value.ok !== true || value.service !== "pilo-remote")
+		throw new Error("REMOTE_PROXY_NOT_PILO");
+}
+
+export function createDesktopPairingRequestId(): string {
 	const bytes = new Uint8Array(32);
 	crypto.getRandomValues(bytes);
 	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
@@ -85,12 +93,13 @@ export async function pairDesktop(
 	link: DesktopPairingLink,
 	address: RemoteAccessAddress,
 	deviceName: string,
-	fetchFn: Fetch = fetch,
+	requestId: string,
+	fetchFn: FetchLike,
 ): Promise<DesktopPairResult> {
 	const value = await postJson(fetchFn, `${address.baseUrl}/api/v1/auth/pair`, {
 		secret: link.secret,
 		addressId: address.id,
-		requestId: randomRequestId(),
+		requestId,
 		deviceName,
 	});
 	const { token, expiresAtMs } = parseRemotePairResponse(value);

@@ -1,4 +1,4 @@
-import { computed, effect, mount, signal, Storage, View } from "nsh";
+import { computed, effect, mount, Storage, View } from "nsh";
 import {
 	currentWindow,
 	displays,
@@ -13,13 +13,11 @@ import {
 	createNativeHostClient,
 	type NativeHostBackend,
 } from "../client/native-transport";
-import { AddRemoteHostDialog } from "../hosts/add-remote-host-dialog";
-import { HostList } from "../hosts/host-list";
 import { setHostPerspective } from "../hosts/host-perspective";
 import {
 	HostRegistry,
-	type HostEntry,
 	type RemoteHostCredentials,
+	type RemoteHostProxyTransport,
 } from "../hosts/host-registry";
 import {
 	HostSession,
@@ -86,6 +84,7 @@ export async function launch(
 	shell: DesktopShell,
 	remote?: {
 		credentials: RemoteHostCredentials;
+		proxy?: RemoteHostProxyTransport;
 		machineName: () => string | null;
 		badge?: DesktopBadge;
 	},
@@ -106,6 +105,7 @@ export async function launch(
 		local,
 		shell,
 		storage: Storage,
+		proxy: remote?.proxy,
 		credentials: remote?.credentials ?? {
 			remoteHostToken: () => Promise.resolve(null),
 			saveRemoteHostToken: () =>
@@ -113,7 +113,6 @@ export async function launch(
 			deleteRemoteHostToken: () => Promise.resolve(),
 		},
 	});
-	const addRemoteOpen = signal(false);
 	// The first frame takes the saved theme and sidebar width, so a launch or
 	// reload neither flashes the default theme nor resizes its outline.
 	const [startupTheme] = await Promise.all([
@@ -131,31 +130,9 @@ export async function launch(
 			status.type === "closed"
 		);
 	});
-	const removeHost = (entry: HostEntry) => {
-		const toasts = registry.activeSession().toasts;
-		void registry.remove(entry.hostId).then(
-			(revoked) =>
-				toasts.show({
-					variant: revoked ? "success" : "info",
-					title: t(revoked ? "hosts.removed" : "hosts.removedOffline", {
-						name: entry.name,
-					}),
-				}),
-			(error: unknown) =>
-				toasts.show({
-					variant: "error",
-					title: t("hosts.remove"),
-					description: error instanceof Error ? error.message : String(error),
-				}),
-		);
-	};
-	const hostSwitcher = () => (
-		<HostList
-			registry={registry}
-			onAddRemote={() => addRemoteOpen.set(true)}
-			onRemove={removeHost}
-		/>
-	);
+	const remoteHostPairing = remote
+		? { registry, machineName: remote.machineName }
+		: undefined;
 	/** Follows one Host's session for as long as it is open. */
 	const SessionRuntime = (props: { session: HostSession }) => {
 		const { session } = props;
@@ -216,7 +193,7 @@ export async function launch(
 			}
 			const record = registry.record(session.hostId);
 			setHostPerspective({
-				remoteName: record?.name ?? session.hostId,
+				remoteName: registry.displayName(session.hostId) ?? session.hostId,
 				platform: record?.platform ?? "linux",
 			});
 		});
@@ -280,23 +257,10 @@ export async function launch(
 						<AppShell
 							{...session.shellProps(access, shell)}
 							desktop={desktop}
-							hostSwitcher={remote ? hostSwitcher : undefined}
+							remoteHostPairing={remoteHostPairing}
 						/>
 					);
 				}}
-				{remote ? (
-					<AddRemoteHostDialog
-						open={addRemoteOpen}
-						registry={registry}
-						machineName={remote.machineName}
-						onPaired={(name) =>
-							registry.activeSession().toasts.show({
-								variant: "success",
-								title: t("hosts.paired", { name }),
-							})
-						}
-					/>
-				) : null}
 			</>
 		);
 	});

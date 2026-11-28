@@ -3,7 +3,6 @@ import { signal, Text, View } from "nsh";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
 import { AppToasts, AppToastStack } from "../shell/app-toasts";
-import { connectionLabel } from "../shell/connection-label";
 import { t } from "../shell/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -25,6 +24,7 @@ import type { ConnectionsClient } from "./connections-pane";
 export function createConfigureDialog(deps: {
 	client: ConnectionsClient;
 	refresh: () => Promise<void>;
+	label: (connection: Connection) => string;
 	toasts: AppToasts;
 }) {
 	const client = deps.client;
@@ -94,7 +94,7 @@ export function createConfigureDialog(deps: {
 			toasts.show({
 				variant: "success",
 				title: t("connection.piAvailable", {
-					name: connectionLabel(draft.connection),
+					name: deps.label(draft.connection),
 				}),
 				description: [info.executable, info.version]
 					.filter(Boolean)
@@ -104,7 +104,7 @@ export function createConfigureDialog(deps: {
 			toasts.show({
 				variant: "error",
 				title: t("connection.piUnavailable", {
-					name: connectionLabel(draft.connection),
+					name: deps.label(draft.connection),
 				}),
 				description: userErrorMessage(caught),
 			});

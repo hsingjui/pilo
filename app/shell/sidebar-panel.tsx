@@ -62,8 +62,6 @@ export interface SidebarPanelProps extends Omit<
 	/** The saved theme mode, which the footer's button cycles. */
 	theme: Accessor<Theme>;
 	onTheme?: (theme: Theme) => void;
-	/** The Hosts this window can show, listed above the shown Host's tree. */
-	hostSwitcher?: () => JSX.Element;
 }
 
 /** The WebUI sidebar's theme button order. */
@@ -368,7 +366,6 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						borderBottomRightRadius: card().radius,
 					}}
 				>
-					{props.hostSwitcher?.()}
 					{() => {
 						switch (props.listState()) {
 							case "ready":
@@ -386,6 +383,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 										onAddProject={props.onAddProject}
 										onRemoveConnection={props.onRemoveConnection}
 										canRemoveProjects={props.canRemoveProjects}
+										hosts={props.hosts}
 									/>
 								);
 							case "loading":

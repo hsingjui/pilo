@@ -1,8 +1,9 @@
 import {
 	type Accessor,
+	batch,
 	computed,
-	type JSX,
 	List,
+	reduceMotion,
 	Scroll,
 	signal,
 	Text,
@@ -10,35 +11,31 @@ import {
 	untracked,
 	View,
 } from "nsh";
-import { Button, Collapsible } from "nsh/base";
+import { Collapsible } from "nsh/base";
 
 import { sortSidebarSessionsByRecency } from "@shared/sidebar/session-list";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { AppStore } from "../state/app-store";
 import { chatPx } from "../chat/layout";
-import { Foreground } from "../ui/foreground";
+import { HostList } from "../hosts/host-list";
+import type { HostRegistry } from "../hosts/host-registry";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { MenuSeparator } from "../ui/menu-separator";
-import {
-	chevronRotateStyle,
-	collapsibleRevealProps,
-	tactileTransition,
-} from "../ui/motion";
+import { collapsibleRevealProps } from "../ui/motion";
 import { scrollbarLook, scrollbarTheme } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import { type ArchiveView, useArchivedSessions } from "./archived-sessions";
 import { connectionLabel } from "./connection-label";
 import { t } from "./i18n";
-import { createHover } from "../ui/hover";
 import {
 	MiniSwitch,
 	SidebarAction,
-	sidebarFocusRing,
 	sidebarProjectName,
 	sidebarRowHeight,
+	SidebarSectionHeader,
 	sidebarText,
 } from "./sidebar-parts";
 import { ProjectSection } from "./sidebar-project-section";
@@ -73,22 +70,22 @@ export interface SidebarProps {
 	onRemoveConnection?: (connection: Connection) => void;
 	/** `false` hides removing projects (a Host paired without workspace access). */
 	canRemoveProjects?: boolean;
+	/** Paired desktop Hosts, shown as ordinary connection sections. */
+	hosts?: HostRegistry;
 }
 
-/** A connection's or the recent view's header (`pilo-sidebar-env-*`). */
-const SECTION_HEADER =
-	"group flex-row items-center gap-0.5 rounded-md border border-transparent pr-2";
-const SECTION_TOGGLE =
-	"min-h-[26px] min-w-0 flex-1 flex-row items-center gap-2 rounded-md border border-transparent px-2";
-/** A section of the tree: `mb-3 last:mb-0 space-y-(--pilo-sidebar-row-gap)`. */
-const SECTION =
-	"mb-3 w-full min-w-0 gap-(--pilo-sidebar-row-gap) overflow-hidden last:mb-0";
+const SECTION = "mb-3 w-full min-w-0 overflow-hidden last:mb-0";
 /**
  * The sidebar's list in the saved view, as the WebUI `SidebarTree`: the
  * projects by connection, each with its latest sessions once expanded, the
  * sessions of one project, or every project's latest sessions as one list.
  */
 export function Sidebar(props: SidebarProps) {
+	const { hosts } = props;
+	// A Host switch remounts the sidebar. The reveal needs a closed layout first.
+	const awaitingHostLayout = signal(
+		untracked(() => hosts?.revealedHostId() != null && !reduceMotion()),
+	);
 	// The groups change only with the projects, not with every state change.
 	const projects = computed(() => props.store.state().projects);
 	const groups = computed(() => {
@@ -105,11 +102,22 @@ export function Sidebar(props: SidebarProps) {
 			),
 		}));
 	});
+	const hostGroups = computed(() =>
+		groups().filter((group) => isLocal(group.connection)),
+	);
+	const otherGroups = computed(() =>
+		hosts ? groups().filter((group) => !isLocal(group.connection)) : groups(),
+	);
 	const view = computed(() => props.settings.settings().view);
 	const viewedProjectId = computed(() => props.viewedProject()?.id ?? null);
 	// Only a change of view resets scroll; session rows update by path.
 	return (
-		<View class="mt-2 min-h-0 min-w-0 flex-1">
+		<View
+			class="mt-2 min-h-0 min-w-0 flex-1"
+			onLayout={
+				awaitingHostLayout() ? () => awaitingHostLayout.set(false) : undefined
+			}
+		>
 			{() => {
 				if (props.archiveView()) {
 					return (
@@ -140,10 +148,34 @@ export function Sidebar(props: SidebarProps) {
 						scrollbar={scrollbarTheme({ vertical: scrollbarLook() })}
 					>
 						<View class="min-w-0 pt-1 pr-2.5 pb-3 pl-1.5">
+							{hosts ? (
+								<HostList
+									registry={hosts}
+									sectionClass={SECTION}
+									revealProjects={!recent}
+									renderActive={(hostId) =>
+										recent ? null : (
+											<Each
+												of={hostGroups()}
+												key={(group) => group.connection.id}
+											>
+												{(group) => (
+													<ConnectionSection
+														{...props}
+														group={group}
+														hostId={hostId}
+														awaitingHostLayout={awaitingHostLayout}
+													/>
+												)}
+											</Each>
+										)
+									}
+								/>
+							) : null}
 							{recent ? (
 								<RecentSection {...props} projects={projects} />
 							) : (
-								<Each of={groups()} key={(group) => group.connection.id}>
+								<Each of={otherGroups()} key={(group) => group.connection.id}>
 									{(group) => <ConnectionSection {...props} group={group} />}
 								</Each>
 							)}
@@ -217,60 +249,6 @@ function ViewMenuItems(props: { settings: SidebarSettingsStore }) {
 	);
 }
 
-/** A section's header: its icon and title, a chevron, then its actions. */
-function SectionHeader(props: {
-	section: string;
-	icon: "Monitor" | "Clock";
-	title: Accessor<string>;
-	collapsed: Accessor<boolean>;
-	label: Accessor<string>;
-	onToggle: () => void;
-	children?: JSX.Element;
-}) {
-	const hover = createHover();
-	const foreground = () =>
-		token(hover.hovered() ? "sidebar-foreground" : "sidebar-foreground-muted");
-	return (
-		<View
-			class={SECTION_HEADER}
-			style={{ minHeight: sidebarRowHeight("pilo-sidebar-env-height") }}
-		>
-			<Foreground.Provider value={foreground}>
-				<Button
-					{...hover.props}
-					testID={`${props.section}:toggle`}
-					class={SECTION_TOGGLE}
-					focusVisibleStyle={sidebarFocusRing()}
-					accessibilityLabel={props.label()}
-					onPress={props.onToggle}
-				>
-					<Icon name={props.icon} size={14} class="shrink-0 opacity-80" />
-					<Text
-						class="min-w-0 shrink truncate font-sans font-medium"
-						style={{ ...sidebarText("sm"), color: foreground() }}
-					>
-						{props.title}
-					</Text>
-					<View
-						class={`shrink-0 ${
-							props.collapsed()
-								? "opacity-100"
-								: "opacity-0 group-hover:opacity-100"
-						}`}
-						style={[
-							tactileTransition("opacity"),
-							chevronRotateStyle(!props.collapsed(), -90, 0),
-						]}
-					>
-						<Icon name="ChevronDown" size={14} />
-					</View>
-				</Button>
-			</Foreground.Provider>
-			{props.children}
-		</View>
-	);
-}
-
 /** Every project's latest sessions as one list, the running ones first. */
 function RecentSection(
 	props: SidebarProps & { projects: Accessor<readonly Project[]> },
@@ -320,16 +298,19 @@ function RecentSection(
 			),
 	);
 	return (
-		<View testID={RECENT_SECTION} class={SECTION}>
-			<SectionHeader
-				section={RECENT_SECTION}
+		<View
+			testID={RECENT_SECTION}
+			class={`${SECTION} gap-(--pilo-sidebar-row-gap)`}
+		>
+			<SidebarSectionHeader
+				testID={`${RECENT_SECTION}:toggle`}
 				icon="Clock"
 				title={() => t("sidebar.recentSessions")}
 				collapsed={collapsed}
 				label={() =>
 					collapsed() ? t("sidebar.expandRecent") : t("sidebar.collapseRecent")
 				}
-				onToggle={() =>
+				onPress={() =>
 					void settings.setSectionCollapsed(RECENT_SECTION, !collapsed())
 				}
 			>
@@ -363,7 +344,7 @@ function RecentSection(
 				>
 					<ViewMenuItems settings={settings} />
 				</Menu>
-			</SectionHeader>
+			</SidebarSectionHeader>
 			<Collapsible
 				open={!collapsed()}
 				{...collapsibleRevealProps()}
@@ -475,21 +456,29 @@ function NoSessions(props: { testID: string }) {
 }
 
 function ConnectionSection(
-	props: SidebarProps & { group: Accessor<SidebarGroup> },
+	props: SidebarProps & {
+		group: Accessor<SidebarGroup>;
+		hostId?: string;
+		awaitingHostLayout?: Accessor<boolean>;
+	},
 ) {
 	const connection = () => props.group().connection;
-	const name = () => connectionLabel(connection());
+	const { hosts, hostId } = props;
+	const name = () =>
+		(hostId && hosts?.displayName(hostId)) || connectionLabel(connection());
 	const section = () => connectionSection(connection().id);
 	const collapsed = () =>
-		props.settings.settings().collapsedSections[section()] ?? false;
+		hostId && hosts?.revealedHostId() === hostId
+			? (props.awaitingHostLayout?.() ?? false)
+			: (props.settings.settings().collapsedSections[section()] ?? false);
 	const confirmingRemove = signal(false);
 	const menuOpen = signal(false);
 	const removable = () =>
 		props.onRemoveConnection !== undefined && !isLocal(connection());
 	return (
 		<View testID={section()} class={SECTION}>
-			<SectionHeader
-				section={section()}
+			<SidebarSectionHeader
+				testID={`${section()}:toggle`}
 				icon="Monitor"
 				title={name}
 				collapsed={collapsed}
@@ -498,8 +487,11 @@ function ConnectionSection(
 						? t("sidebar.expandEnvironment")
 						: t("sidebar.collapseEnvironment")
 				}
-				onToggle={() =>
-					void props.settings.setSectionCollapsed(section(), !collapsed())
+				onPress={() =>
+					batch(() => {
+						void props.settings.setSectionCollapsed(section(), !collapsed());
+						if (hostId) hosts?.clearSidebarReveal(hostId);
+					})
 				}
 			>
 				{props.onAddProject ? (
@@ -584,12 +576,19 @@ function ConnectionSection(
 						) : null
 					}
 				</Menu>
-			</SectionHeader>
+			</SidebarSectionHeader>
 			<Collapsible
 				open={!collapsed()}
 				{...collapsibleRevealProps()}
 				content={
-					<View class="w-full min-w-0 gap-(--pilo-sidebar-row-gap)">
+					<View
+						class="w-full min-w-0 gap-(--pilo-sidebar-row-gap)"
+						style={{
+							paddingTop: props.group().projects.length
+								? token("pilo-sidebar-row-gap")
+								: 0,
+						}}
+					>
 						<Each of={props.group().projects} key={(project) => project.id}>
 							{(project) => (
 								<ProjectSection

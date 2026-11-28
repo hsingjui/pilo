@@ -266,7 +266,7 @@ export class HostSession {
 	shellProps(
 		access: HostAccess,
 		shell: DesktopShell,
-	): Omit<AppShellProps, "desktop" | "hostSwitcher"> {
+	): Omit<AppShellProps, "desktop" | "remoteHostPairing"> {
 		const { client, store } = this;
 		const local = this.kind === "local";
 		const offers = (method: string) =>

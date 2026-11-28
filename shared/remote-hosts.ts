@@ -1,10 +1,16 @@
 import type { HostTransportConnectionState } from "./api/host-transport";
 import type { RemoteAccessAddress, RemoteScopes } from "./api/remote-types";
 
-/** A remote Pilo Host this desktop paired with; its token lives in the system credential store. */
+export type RemoteHostProxy =
+	| { mode: "system" }
+	| { mode: "custom"; url: string };
+
+/** A paired remote Pilo; its token and custom proxy URL live in the credential store. */
 export type RemoteHostRecord = {
 	hostId: string;
 	name: string;
+	/** A connection label set by this desktop, independent of the reported name. */
+	nameOverride?: string;
 	addresses: RemoteAccessAddress[];
 	preferredAddressId: string;
 	deviceId: string;
@@ -12,8 +18,10 @@ export type RemoteHostRecord = {
 	scopes: RemoteScopes;
 	/** The Host's platform as its last hello reported (`macos`, `windows`, `linux`). */
 	platform?: string;
-	/** Plain-http addresses outside private networks the user agreed to connect through. */
+	/** Plain-http addresses the user agreed to connect through. */
 	plaintextAddressIds?: string[];
+	proxyMode?: RemoteHostProxy["mode"];
+	shownInHome?: boolean;
 };
 
 export const REMOTE_HOSTS_STORAGE_KEY = "pilo.remoteHosts.v1";
@@ -52,6 +60,13 @@ function parseRecord(value: unknown): RemoteHostRecord | null {
 	) {
 		return null;
 	}
+	const { proxyMode } = value;
+	if (
+		proxyMode !== undefined &&
+		proxyMode !== "system" &&
+		proxyMode !== "custom"
+	)
+		return null;
 	const addresses = value.addresses
 		.map(parseAddress)
 		.filter((address): address is RemoteAccessAddress => address !== null);
@@ -61,14 +76,21 @@ function parseRecord(value: unknown): RemoteHostRecord | null {
 		addresses.some((address) => address.id === value.preferredAddressId)
 			? value.preferredAddressId
 			: addresses[0].id;
+	const nameOverride =
+		typeof value.nameOverride === "string" ? value.nameOverride.trim() : "";
 	return {
 		hostId: value.hostId,
 		name: value.name,
+		...(nameOverride ? { nameOverride } : {}),
 		addresses,
 		preferredAddressId,
 		deviceId: value.deviceId,
 		scopes: value.scopes === "chat,workspace" ? "chat,workspace" : "chat",
 		...(typeof value.platform === "string" ? { platform: value.platform } : {}),
+		...(proxyMode ? { proxyMode } : {}),
+		...(typeof value.shownInHome === "boolean"
+			? { shownInHome: value.shownInHome }
+			: {}),
 		...(Array.isArray(value.plaintextAddressIds)
 			? {
 					plaintextAddressIds: value.plaintextAddressIds.filter(
@@ -175,10 +197,15 @@ export function isPrivateLanHost(hostname: string): boolean {
 }
 
 /** Whether traffic to the address would cross a network in plain text. */
-export function isPlaintextRemoteAddress(baseUrl: string): boolean {
+export function isPlaintextRemoteAddress(
+	baseUrl: string,
+	usesProxy = false,
+): boolean {
 	try {
 		const url = new URL(baseUrl);
-		return url.protocol === "http:" && !isPrivateLanHost(url.hostname);
+		return (
+			url.protocol === "http:" && (usesProxy || !isPrivateLanHost(url.hostname))
+		);
 	} catch {
 		return false;
 	}
@@ -186,13 +213,13 @@ export function isPlaintextRemoteAddress(baseUrl: string): boolean {
 
 /**
  * The addresses to connect through, in order: the preferred one, then the
- * rest, skipping plain-http addresses outside private networks the user did
- * not agree to when pairing.
+ * rest, skipping unapproved plain-http fallback addresses when they leave a
+ * private network or go through a proxy.
  */
 export function remoteHostConnectOrder(
 	record: Pick<
 		RemoteHostRecord,
-		"addresses" | "preferredAddressId" | "plaintextAddressIds"
+		"addresses" | "preferredAddressId" | "plaintextAddressIds" | "proxyMode"
 	>,
 ): RemoteAccessAddress[] {
 	const allowed = new Set(record.plaintextAddressIds ?? []);
@@ -200,7 +227,7 @@ export function remoteHostConnectOrder(
 		(address, index) =>
 			index === 0 ||
 			allowed.has(address.id) ||
-			!isPlaintextRemoteAddress(address.baseUrl),
+			!isPlaintextRemoteAddress(address.baseUrl, Boolean(record.proxyMode)),
 	);
 }
 

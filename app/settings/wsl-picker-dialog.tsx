@@ -11,7 +11,6 @@ import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { useMountedDialog } from "../ui/motion";
 import { Icon } from "../ui/icon";
-import { hostSupportsWsl } from "../hosts/host-perspective";
 import type { ConnectionsClient } from "./connections-pane";
 
 /** The WSL distro picker's controller: distro list + add flow. */
@@ -20,6 +19,7 @@ export function createWslPicker(deps: {
 	refresh: () => Promise<void>;
 	toasts: AppToasts;
 	addedDistros: () => Set<string>;
+	supportsWsl: () => boolean;
 }) {
 	const client = deps.client;
 	const open = signal(false);
@@ -32,7 +32,7 @@ export function createWslPicker(deps: {
 	let loadSeq = 0;
 
 	const loadDistros = () => {
-		if (!hostSupportsWsl()) return;
+		if (!deps.supportsWsl()) return;
 		const seq = ++loadSeq;
 		loading.set(true);
 		distros.set(null);
@@ -57,7 +57,7 @@ export function createWslPicker(deps: {
 		pickerRevision += 1;
 		open.set(true);
 		if (
-			hostSupportsWsl() &&
+			deps.supportsWsl() &&
 			!loading() &&
 			(distros() === null || loadError() !== null)
 		) {

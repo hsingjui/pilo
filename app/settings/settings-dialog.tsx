@@ -32,7 +32,7 @@ import type { DesktopUpdate } from "../shell/desktop-update";
 import { t } from "../shell/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
-import { ConnectionsPane } from "./connections-pane";
+import { ConnectionsPane, type ConnectionsPaneProps } from "./connections-pane";
 import { FontsPane } from "./fonts-pane";
 import { SETTINGS_SM_WIDTH } from "./layout";
 import { NextPromptPane } from "./next-prompt-pane";
@@ -103,6 +103,7 @@ export interface SettingsDialogProps {
 	update?: DesktopUpdate;
 	/** A remote Host's connections, which only that Host edits. */
 	connectionsReadOnly?: boolean;
+	remoteHostPairing?: ConnectionsPaneProps["remoteHostPairing"];
 	/** Panes the shown Host does not let this client use. */
 	hiddenTabs?: readonly SettingsTabId[];
 }
@@ -437,6 +438,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 															state={props.state}
 															client={props.client}
 															readOnly={props.connectionsReadOnly}
+															remoteHostPairing={props.remoteHostPairing}
 														/>
 													);
 												case "next-prompt":
