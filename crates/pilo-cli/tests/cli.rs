@@ -226,17 +226,28 @@ async fn a_caller_that_disconnects_cancels_its_navigation() {
     };
     let (runtime, server) = host_at(&home.0, Some(installation)).await;
     let navigator = runtime.navigator();
-    // The window takes the request but has not applied it when the CLI gives up.
-    let caller = {
-        let (cli, home, cwd) = (cli.clone(), home.0.clone(), directory.clone());
-        tokio::task::spawn_blocking(move || {
-            run_in(&cli, &home, &cwd, &["--dev", "--timeout", "1", "open", "."])
-        })
+    let mut caller = tokio::process::Command::new(cli)
+        .args(["--dev", "open", "."])
+        .env("HOME", &home.0)
+        .current_dir(directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    // Disconnect only after the window has taken the request, without applying it.
+    let request = tokio::select! {
+        request = tokio::time::timeout(Duration::from_secs(10), navigator.next()) => {
+            request.expect("desktop.open did not reach the window").unwrap()
+        }
+        status = caller.wait() => {
+            let stderr = caller.wait_with_output().await.unwrap().stderr;
+            panic!("CLI exited before navigation ({}): {}", status.unwrap(), String::from_utf8_lossy(&stderr));
+        }
     };
-    let request = navigator.next().await.unwrap();
     assert!(navigator.is_current(request.id));
-    let (code, _, stderr) = caller.await.unwrap();
-    assert_ne!(code, 0, "{stderr}");
+    caller.kill().await.unwrap();
     let cancelled = async {
         while navigator.is_current(request.id) {
             tokio::time::sleep(Duration::from_millis(10)).await;

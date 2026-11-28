@@ -16,4 +16,11 @@ tokio = { version = "1", features = ["io-util", "net", "rt", "time"] }
 
 [dev-dependencies]
 pilo-runtime = { path = "../pilo-runtime" }
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }
+tokio = { version = "1", features = [
+	"io-util",
+	"macros",
+	"net",
+	"process",
+	"rt",
+	"time",
+] }
