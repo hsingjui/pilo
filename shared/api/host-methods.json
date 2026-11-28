@@ -5,6 +5,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "host.bootstrap",
+			"params": [
+				{
+					"name": "includePreferences",
+					"optional": true,
+					"type": "Option<bool>"
+				},
+				{
+					"name": "includeUiState",
+					"optional": true,
+					"type": "Option<bool>"
+				},
+				{
+					"name": "includeLocalPiResources",
+					"optional": true,
+					"type": "Option<bool>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -13,6 +30,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "host.shutdown",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -21,6 +39,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "project.list",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -29,6 +48,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "project.add",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "path",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -37,6 +68,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "project.remove",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -45,6 +83,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "project.file.preview",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "url",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -53,6 +103,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "git.status",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -61,6 +118,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "git.diff",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "path",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "staged",
+					"optional": false,
+					"type": "bool"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -69,6 +143,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.open",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "cols",
+					"optional": false,
+					"type": "u16"
+				},
+				{
+					"name": "rows",
+					"optional": false,
+					"type": "u16"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -77,6 +168,13 @@
 			"maxBinaryInputBytes": 1048576,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.write",
+			"params": [
+				{
+					"name": "terminalId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -85,6 +183,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.resize",
+			"params": [
+				{
+					"name": "terminalId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "cols",
+					"optional": false,
+					"type": "u16"
+				},
+				{
+					"name": "rows",
+					"optional": false,
+					"type": "u16"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -93,6 +208,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.close",
+			"params": [
+				{
+					"name": "terminalId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -101,6 +223,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.attach",
+			"params": [
+				{
+					"name": "terminalId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -109,6 +238,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "terminal.snapshot",
+			"params": [
+				{
+					"name": "terminalId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -117,6 +253,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.list",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -125,6 +262,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.local.get",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -133,6 +271,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.health",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -141,6 +286,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.models",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -149,6 +301,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.namingModels.list",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -157,6 +310,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.namingModels.set",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "provider",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "modelId",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -165,6 +335,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.readDir",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "path",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -173,6 +355,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.settings.update",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "name",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "piExecutable",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -181,6 +380,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.shownInHome.set",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "shown",
+					"optional": false,
+					"type": "bool"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -189,6 +400,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.pi.probe",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "executable",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -197,6 +420,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.local.test",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -205,6 +429,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.localPiResources.set",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "enabled",
+					"optional": false,
+					"type": "bool"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -213,6 +449,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.list",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -221,6 +458,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.agentIdentities",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -229,6 +467,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.configHosts",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -237,6 +476,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.localKeys",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -245,6 +485,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.save",
+			"params": [
+				{
+					"name": "request",
+					"optional": false,
+					"type": "ssh::SaveSshConnectionRequest"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -253,6 +500,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.password",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -261,6 +515,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.remove",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -269,6 +530,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.test",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -277,6 +545,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.ssh.testDraft",
+			"params": [
+				{
+					"name": "connection",
+					"optional": false,
+					"type": "Connection"
+				},
+				{
+					"name": "password",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -285,6 +565,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.wsl.distributions",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -293,6 +574,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.wsl.list",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -301,6 +583,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.wsl.save",
+			"params": [
+				{
+					"name": "connection",
+					"optional": false,
+					"type": "Connection"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -309,6 +598,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.wsl.remove",
+			"params": [
+				{
+					"name": "id",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -317,6 +613,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "connection.wsl.test",
+			"params": [
+				{
+					"name": "distro",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -325,6 +628,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.state",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -333,6 +637,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.lanAddresses",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -341,6 +646,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.enabled.set",
+			"params": [
+				{
+					"name": "enabled",
+					"optional": false,
+					"type": "bool"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -349,6 +661,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.port.set",
+			"params": [
+				{
+					"name": "port",
+					"optional": false,
+					"type": "u16"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -357,6 +676,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.addresses.set",
+			"params": [
+				{
+					"name": "addresses",
+					"optional": false,
+					"type": "Vec<RemoteAccessAddress>"
+				},
+				{
+					"name": "entryAddressId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -365,6 +696,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.pairing.regenerate",
+			"params": [
+				{
+					"name": "scopes",
+					"optional": false,
+					"type": "RemoteScopes"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -373,6 +711,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.device.revoke",
+			"params": [
+				{
+					"name": "deviceId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -381,6 +726,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.device.rename",
+			"params": [
+				{
+					"name": "deviceId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "name",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -389,6 +746,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.devices.setScopes",
+			"params": [
+				{
+					"name": "deviceId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "scopes",
+					"optional": false,
+					"type": "RemoteScopes"
+				}
+			],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -397,6 +766,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "remote.devices.revokeAll",
+			"params": [],
 			"scope": "admin",
 			"timeoutMs": 45000
 		},
@@ -405,6 +775,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "device.revokeSelf",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -413,6 +784,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "preferences.get",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -421,6 +793,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "preferences.patch",
+			"params": [
+				{
+					"name": "patch",
+					"optional": false,
+					"type": "Map<String,Value>"
+				},
+				{
+					"name": "initial",
+					"optional": true,
+					"type": "Option<bool>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -429,6 +813,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "theme.get",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -437,6 +822,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "theme.set",
+			"params": [
+				{
+					"name": "update",
+					"optional": false,
+					"type": "ThemeSettingsUpdate"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -445,6 +837,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "models.get",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -453,6 +852,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "models.set",
+			"params": [
+				{
+					"name": "cache",
+					"optional": false,
+					"type": "ProjectModelCache"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -461,6 +867,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "models.scope.get",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -469,6 +882,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "models.scope.set",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "models",
+					"optional": true,
+					"type": "Option<Vec<ProjectScopedModel>>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -477,6 +902,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "nextPrompt.settings.get",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -485,6 +917,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "nextPrompt.settings.set",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "enabled",
+					"optional": false,
+					"type": "bool"
+				},
+				{
+					"name": "model",
+					"optional": true,
+					"type": "Option<NextPromptModel>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -493,6 +942,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "nextPrompt.request",
+			"params": [
+				{
+					"name": "request",
+					"optional": false,
+					"type": "NextPromptRequest"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -501,6 +957,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "promptEnhancement.settings.get",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -509,6 +972,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "promptEnhancement.settings.set",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "enabled",
+					"optional": false,
+					"type": "bool"
+				},
+				{
+					"name": "model",
+					"optional": true,
+					"type": "Option<PromptEnhancementModel>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -517,6 +997,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "promptEnhancement.enhance",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "draft",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "model",
+					"optional": true,
+					"type": "Option<PromptEnhancementModel>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -525,6 +1022,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "cacheKeepAlive.settings.list",
+			"params": [
+				{
+					"name": "connectionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -533,6 +1037,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "cacheKeepAlive.settings.set",
+			"params": [
+				{
+					"name": "settings",
+					"optional": false,
+					"type": "CacheKeepAliveSettings"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -541,6 +1052,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "cacheKeepAlive.pause",
+			"params": [
+				{
+					"name": "sessionKey",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -549,6 +1067,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.list",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "cached",
+					"optional": true,
+					"type": "Option<bool>"
+				},
+				{
+					"name": "unwatchedOnly",
+					"optional": true,
+					"type": "Option<bool>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -557,6 +1092,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.search",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "query",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "limit",
+					"optional": true,
+					"type": "Option<usize>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -565,6 +1117,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.externalActivity",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -573,6 +1132,43 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.history",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionPath",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "expectedFileSize",
+					"optional": true,
+					"type": "Option<u64>"
+				},
+				{
+					"name": "expectedFileMtimeNs",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "startMessage",
+					"optional": true,
+					"type": "Option<usize>"
+				},
+				{
+					"name": "messageLimit",
+					"optional": true,
+					"type": "Option<usize>"
+				},
+				{
+					"name": "includeMessageIndex",
+					"optional": true,
+					"type": "Option<bool>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -581,6 +1177,33 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.historyImage",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionPath",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "imageId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "expectedFileSize",
+					"optional": true,
+					"type": "Option<u64>"
+				},
+				{
+					"name": "expectedFileMtimeNs",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -589,6 +1212,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.title",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "message",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -597,6 +1232,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.delete",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionPath",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -605,6 +1252,228 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.uiState.set",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "sessionPath",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "update",
+					"optional": false,
+					"type": "SessionUiStateUpdate"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.resolve",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.page",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "offset",
+					"optional": true,
+					"type": "Option<usize>"
+				},
+				{
+					"name": "limit",
+					"optional": true,
+					"type": "Option<usize>"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.create",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "message",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "title",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.send",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "message",
+					"optional": false,
+					"type": "String"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.abort",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.stop",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.update",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "title",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "pinned",
+					"optional": true,
+					"type": "Option<bool>"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.trash",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
+			"name": "session.status",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -613,6 +1482,7 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.readStates",
+			"params": [],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -621,6 +1491,23 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "session.markRead",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionPath",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "revision",
+					"optional": false,
+					"type": "u64"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -629,6 +1516,33 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.start",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionKey",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "sessionPath",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "noSession",
+					"optional": true,
+					"type": "Option<bool>"
+				},
+				{
+					"name": "builtinExtensions",
+					"optional": true,
+					"type": "Option<Vec<BuiltinExtension>>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -637,6 +1551,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.stop",
+			"params": [
+				{
+					"name": "sessionKey",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "reason",
+					"optional": true,
+					"type": "Option<String>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -645,6 +1571,13 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.state",
+			"params": [
+				{
+					"name": "sessionKey",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -653,6 +1586,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.transcript",
+			"params": [
+				{
+					"name": "sessionKey",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "window",
+					"optional": true,
+					"type": "Option<TranscriptWindow>"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -661,6 +1606,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.rpc",
+			"params": [
+				{
+					"name": "sessionKey",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "command",
+					"optional": false,
+					"type": "Value"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -669,6 +1626,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.mcp.approve",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "serverName",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "workspace",
 			"timeoutMs": 45000
 		},
@@ -677,6 +1646,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "files.search",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "query",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -685,6 +1666,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "files.image",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "path",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -693,6 +1686,18 @@
 			"maxBinaryInputBytes": 10485760,
 			"maxRequestBytes": 33554432,
 			"name": "chat.files.upload",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "name",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		},
@@ -701,6 +1706,18 @@
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
 			"name": "chat.files.remove",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				},
+				{
+					"name": "path",
+					"optional": false,
+					"type": "String"
+				}
+			],
 			"scope": "chat",
 			"timeoutMs": 45000
 		}

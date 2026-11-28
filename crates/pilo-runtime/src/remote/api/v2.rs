@@ -136,6 +136,8 @@ fn status_for_code(code: ErrorCode) -> StatusCode {
         ErrorCode::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         ErrorCode::Timeout => StatusCode::REQUEST_TIMEOUT,
         ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        ErrorCode::Conflict => StatusCode::CONFLICT,
+        ErrorCode::OutcomeUnknown => StatusCode::BAD_GATEWAY,
     }
 }
 

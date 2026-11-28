@@ -41,6 +41,7 @@ pub mod session_api;
 mod session_history;
 mod session_index;
 pub mod session_naming;
+mod session_ops;
 mod session_snapshot;
 mod session_watcher;
 pub(crate) mod shortcuts;
