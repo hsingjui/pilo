@@ -1,7 +1,7 @@
 use pilo_domain::{
-    CacheKeepAliveSettings, Connection, NextPromptModel, NextPromptRequest, ProjectModelCache,
-    ProjectScopedModel, PromptEnhancementModel, RemoteAccessAddress, RemoteScopes,
-    SessionUiStateUpdate, ThemeSettingsUpdate,
+    CacheKeepAliveSettings, Connection, ModelScopeThinkingLevel, NextPromptModel,
+    NextPromptRequest, ProjectModelCache, ProjectScopedModel, PromptEnhancementModel,
+    RemoteAccessAddress, RemoteScopes, SessionUiStateUpdate, ThemeSettingsUpdate,
 };
 use pilo_protocol::{BuiltinExtension, MAX_CHAT_FILE_BYTES};
 use serde::Deserialize;
@@ -273,6 +273,10 @@ register! {
     "models.get": Chat Json |rt, _who| (project_id: String) {
         json(database(rt, move |rt| project_api::project_model_cache_get(rt, &project_id)).await?)
     }
+    "models.available": Chat Json |rt, _who| (project_id: String) {
+        let models = project_api::project_models_available(rt, &project_id).await.map_err(HostApiError::invalid)?;
+        json(serde_json::json!({"projectId": project_id, "models": models}))
+    }
     "models.set": Chat Json |rt, who| (cache: ProjectModelCache) {
         let from_device = matches!(who, Principal::Device { .. });
         json(save_model_cache(rt, cache, from_device).await?)
@@ -362,8 +366,14 @@ register! {
     "session.page": Admin Json |rt, _who| (project_id: String, offset: Option<usize>, limit: Option<usize>) {
         json(session_ops::page(rt, &project_id, offset, limit).await?)
     }
-    "session.create": Admin Json |rt, _who| (project_id: String, session_id: String, message: String, title: Option<String>) {
-        json(session_ops::create(rt, project_id, session_id, message, title).await?)
+    "session.create": Admin Json |rt, _who| (
+        project_id: String, session_id: String, message: String, title: Option<String>,
+        model: Option<String>, thinking_level: Option<ModelScopeThinkingLevel>, temporary: Option<bool>,
+    ) {
+        let options = session_ops::CreateOptions {
+            title, model, thinking_level, temporary: temporary.unwrap_or(false),
+        };
+        json(session_ops::create(rt, project_id, session_id, message, options).await?)
     }
     "session.send": Admin Json |rt, _who| (project_id: String, session_id: String, message: String) {
         json(session_ops::send(rt, &project_id, &session_id, message).await?)

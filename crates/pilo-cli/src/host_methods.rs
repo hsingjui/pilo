@@ -402,6 +402,13 @@ pub const MODELS_GET: Method = Method {
     ],
 };
 
+pub const MODELS_AVAILABLE: Method = Method {
+    name: "models.available",
+    params: &[
+        Param { name: "projectId", ty: "String", optional: false },
+    ],
+};
+
 pub const MODELS_SET: Method = Method {
     name: "models.set",
     params: &[
@@ -580,6 +587,9 @@ pub const SESSION_CREATE: Method = Method {
         Param { name: "sessionId", ty: "String", optional: false },
         Param { name: "message", ty: "String", optional: false },
         Param { name: "title", ty: "Option<String>", optional: true },
+        Param { name: "model", ty: "Option<String>", optional: true },
+        Param { name: "thinkingLevel", ty: "Option<ModelScopeThinkingLevel>", optional: true },
+        Param { name: "temporary", ty: "Option<bool>", optional: true },
     ],
 };
 

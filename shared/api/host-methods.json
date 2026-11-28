@@ -871,6 +871,21 @@
 			"kind": "json",
 			"maxBinaryInputBytes": null,
 			"maxRequestBytes": 33554432,
+			"name": "models.available",
+			"params": [
+				{
+					"name": "projectId",
+					"optional": false,
+					"type": "String"
+				}
+			],
+			"scope": "chat",
+			"timeoutMs": 45000
+		},
+		{
+			"kind": "json",
+			"maxBinaryInputBytes": null,
+			"maxRequestBytes": 33554432,
 			"name": "models.set",
 			"params": [
 				{
@@ -1362,6 +1377,21 @@
 					"name": "title",
 					"optional": true,
 					"type": "Option<String>"
+				},
+				{
+					"name": "model",
+					"optional": true,
+					"type": "Option<String>"
+				},
+				{
+					"name": "thinkingLevel",
+					"optional": true,
+					"type": "Option<ModelScopeThinkingLevel>"
+				},
+				{
+					"name": "temporary",
+					"optional": true,
+					"type": "Option<bool>"
 				}
 			],
 			"scope": "admin",

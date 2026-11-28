@@ -105,8 +105,9 @@ impl Runtime {
         })
         .await
         .map_err(|error| format!("failed to read the Host ID: {error}"))??;
-        let capabilities = serde_json::to_value(crate::remote::api::v2::host_capabilities())
+        let mut capabilities = serde_json::to_value(crate::remote::api::v2::host_capabilities())
             .map_err(|error| error.to_string())?;
+        capabilities["sessionCreateOptions"] = Value::Bool(true);
         let shared = Arc::new(Shared {
             runtime: self.downgrade(),
             hello: HostHello {

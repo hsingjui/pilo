@@ -10,11 +10,14 @@ use std::{
     time::Duration,
 };
 
-use pilo_domain::{ConnectionKind, SessionIndexEntry, SessionUiStateUpdate};
+use pilo_domain::{
+    ConnectionKind, ModelScopeThinkingLevel, SessionIndexEntry, SessionUiStateUpdate,
+};
 use serde_json::{Value, json};
 
 use crate::{
     Runtime, TranscriptWindow,
+    chat_service::{self, ChatSessionRequest},
     chat_sessions::{ChatSessionState, PiCommandError, same_session_file},
     events::{
         EventBatch, EventQueueLimits, PiProcessState, RuntimeEvent, turn_projection::TurnLive,
@@ -35,6 +38,7 @@ const STATUS_MESSAGE_WINDOW: usize = 32;
 pub(crate) struct Target {
     pub key: String,
     pi_session_id: Option<String>,
+    temporary: bool,
     pub entry: Option<SessionIndexEntry>,
     pub state: Option<ChatSessionState>,
 }
@@ -49,6 +53,9 @@ impl Target {
     }
 
     fn path(&self) -> Option<&str> {
+        if self.temporary {
+            return None;
+        }
         self.entry
             .as_ref()
             .map(|entry| entry.session_path.as_str())
@@ -56,6 +63,9 @@ impl Target {
     }
 
     fn saved(&self) -> Result<&SessionIndexEntry, HostApiError> {
+        if self.temporary {
+            return Err(conflict("temporary sessions are not saved"));
+        }
         self.entry
             .as_ref()
             .ok_or_else(|| conflict("session is not indexed yet"))
@@ -100,18 +110,32 @@ pub(crate) async fn resolve(
     if id.trim().is_empty() {
         return Err(HostApiError::invalid("session ID is required"));
     }
+    let key_id = serde_json::from_str::<[String; 2]>(id)
+        .ok()
+        .filter(|[owner, _]| owner == project)
+        .map_or_else(|| id.to_owned(), |[_, id]| id);
+    if is_cli_session_id(&key_id) {
+        let key = chat_key(project, &key_id);
+        if let Some(state) = runtime.chat_sessions.temporary_state(&key).await
+            && state.project_id == project
+        {
+            return Ok(Target {
+                key,
+                pi_session_id: Some(key_id),
+                temporary: true,
+                entry: None,
+                state: Some(state),
+            });
+        }
+    }
     let states = runtime_states(runtime, project).await;
     let (entries, alias) = blocking(runtime, {
         let project = project.to_owned();
-        let id = serde_json::from_str::<[String; 2]>(id)
-            .ok()
-            .filter(|[owner, _]| owner == &project)
-            .map_or_else(|| id.to_owned(), |[_, id]| id);
         move |runtime| {
             let db = storage::open(&runtime.paths)?;
             Ok((
                 storage::list_sessions(&db, &project)?,
-                storage::cli_session_alias(&db, &project, &id)?,
+                storage::cli_session_alias(&db, &project, &key_id)?,
             ))
         }
     })
@@ -154,6 +178,7 @@ pub(crate) async fn resolve(
     Ok(Target {
         key,
         pi_session_id: alias.map(|(_, pi_id)| pi_id),
+        temporary: false,
         entry: entry.cloned(),
         state: state.cloned(),
     })
@@ -184,9 +209,27 @@ pub(crate) async fn page(
     let total = entries.len();
     let next = offset.saturating_add(limit);
     let saved: Vec<_> = entries.into_iter().skip(offset).take(limit).collect();
+    let temporary: Vec<_> = runtime
+        .chat_sessions
+        .temporary_states(project)
+        .await
+        .into_iter()
+        .filter_map(|state| {
+            let [_, id] = serde_json::from_str::<[String; 2]>(&state.session_key).ok()?;
+            is_cli_session_id(&id).then(|| {
+                json!({
+                    "sessionId": id,
+                    "sessionKey": state.session_key,
+                    "saved": null,
+                    "runtime": state,
+                })
+            })
+        })
+        .collect();
     Ok(json!({
         "saved": saved,
         "runtime": runtime_states(runtime, project).await,
+        "temporary": temporary,
         "total": total,
         "nextOffset": (next < total).then_some(next),
     }))
@@ -200,6 +243,9 @@ pub(crate) async fn history(
     start_message: Option<usize>,
     message_limit: Option<usize>,
 ) -> Result<Vec<u8>, HostApiError> {
+    if target.temporary {
+        return Err(conflict("temporary sessions have no saved history"));
+    }
     let path = target
         .path()
         .ok_or_else(|| conflict("the session has not been saved yet"))?;
@@ -216,43 +262,119 @@ pub(crate) async fn history(
     .await
 }
 
+pub(crate) struct CreateOptions {
+    pub title: Option<String>,
+    pub model: Option<String>,
+    pub thinking_level: Option<ModelScopeThinkingLevel>,
+    pub temporary: bool,
+}
+
 /// Starts a new session and returns once Pi accepted its first prompt.
 pub(crate) async fn create(
     runtime: &Runtime,
     project: String,
     session_id: String,
     message: String,
-    title: Option<String>,
+    options: CreateOptions,
 ) -> Result<Value, HostApiError> {
     require_project(runtime, &project)?;
     validate_message(&message)?;
-    if let Some(title) = &title {
+    if let Some(title) = &options.title {
         validate_title(title)?;
     }
+    let model = options.model.as_deref().map(parse_model).transpose()?;
+    let thinking_level = json!(options.thinking_level);
+    let temporary = options.temporary;
     validate_new_session_id(&session_id)?;
     let key = chat_key(&project, &session_id);
-    if runtime.chat_sessions.state(&key).await.is_some()
-        || resolve(runtime, &project, &session_id).await.is_ok()
-    {
-        return Err(conflict("session ID is already in use; generate a new one"));
-    }
-    start(runtime, project.clone(), key.clone(), None)
+    let duplicate = || conflict("session ID is already in use; generate a new one");
+    let _reservation = runtime
+        .chat_sessions
+        .reserve_cli_create(&key)
         .await
-        .map_err(|error| HostApiError::invalid(format!("{error}; first message was not sent")))?;
-    if let Err(error) = session_api::session_watch_start(runtime, project.clone()).await {
-        log::warn!("failed to watch the project of a CLI-created session: {error}");
+        .ok_or_else(duplicate)?;
+    if resolve(runtime, &project, &session_id).await.is_ok() {
+        return Err(duplicate());
     }
-    let pi_session_id = async {
+    let started = if temporary {
+        // --no-session already starts a new in-memory session. Don't send new_session.
+        chat_service::prepare(
+            &runtime.paths,
+            runtime,
+            runtime.events.clone(),
+            ChatSessionRequest {
+                project_id: project.clone(),
+                session_key: key.clone(),
+                session_path: None,
+                no_session: true,
+                extensions: Vec::new(),
+                builtin_extensions: Vec::new(),
+            },
+        )
+        .await
+    } else {
+        start(runtime, project.clone(), key.clone(), None).await
+    };
+    started
+        .map_err(|error| HostApiError::invalid(format!("{error}; first message was not sent")))?;
+
+    let setup = async {
         let _policy = runtime.pi_resource_policy.read().await;
-        let response = call(runtime, &key, json!({"type": "get_state"}), false)
+        if let Some((provider, id)) = model {
+            call(
+                runtime,
+                &key,
+                json!({"type": "set_model", "provider": provider, "modelId": id}),
+                false,
+            )
             .await
             .map_err(command_error)?;
-        let pi_session_id = response["sessionId"]
+        }
+        if !thinking_level.is_null() {
+            call(
+                runtime,
+                &key,
+                json!({"type": "set_thinking_level", "level": thinking_level}),
+                false,
+            )
+            .await
+            .map_err(command_error)?;
+        }
+        let state = call(runtime, &key, json!({"type": "get_state"}), false)
+            .await
+            .map_err(command_error)?;
+        if let Some((provider, id)) = model
+            && (state["model"]["provider"].as_str() != Some(provider)
+                || state["model"]["id"].as_str() != Some(id))
+        {
+            return Err(conflict(format!("Pi did not select model {provider}/{id}")));
+        }
+        if !thinking_level.is_null() && state["thinkingLevel"] != thinking_level {
+            return Err(conflict(format!(
+                "Pi did not apply thinking level {thinking_level} (effective: {})",
+                state["thinkingLevel"]
+            )));
+        }
+        if let Some(title) = &options.title {
+            call(
+                runtime,
+                &key,
+                json!({"type": "set_session_name", "name": title}),
+                false,
+            )
+            .await
+            .map_err(command_error)?;
+        }
+        if temporary {
+            return Ok(session_id.clone());
+        }
+        let pi_session_id = state["sessionId"]
             .as_str()
             .filter(|id| !id.is_empty())
             .ok_or_else(|| HostApiError::internal("Pi did not report a session ID"))?
             .to_owned();
         blocking(runtime, {
+            let project = project.clone();
             let pi_session_id = pi_session_id.clone();
             let request_id = session_id.clone();
             move |runtime| {
@@ -261,10 +383,10 @@ pub(crate) async fn create(
             }
         })
         .await?;
-        Ok::<_, HostApiError>(pi_session_id)
+        Ok(pi_session_id)
     }
     .await;
-    let pi_session_id = match pi_session_id {
+    let resolved_id = match setup {
         Ok(id) => id,
         Err(error) => {
             if let Err(stop_error) = runtime
@@ -272,7 +394,7 @@ pub(crate) async fn create(
                 .stop(&key, Some("cli_create_failed"))
                 .await
             {
-                log::warn!("could not stop Pi after session identity lookup failed: {stop_error}");
+                log::warn!("could not stop Pi after session setup failed: {stop_error}");
             }
             return Err(conflict(format!(
                 "{}; first message was not sent",
@@ -280,27 +402,10 @@ pub(crate) async fn create(
             )));
         }
     };
-    let result = async {
-        if let Some(title) = title {
-            let _policy = runtime.pi_resource_policy.read().await;
-            call(
-                runtime,
-                &key,
-                json!({"type": "set_session_name", "name": title}),
-                false,
-            )
-            .await
-            .map_err(|error| match error {
-                PiCommandError::NotAccepted(message) => PiCommandError::NotAccepted(format!(
-                    "could not set the session title: {message}; first message was not sent"
-                )),
-                error => error,
-            })?;
-        }
-        send_prompt(runtime, &key, message).await
+    if !temporary && let Err(error) = session_api::session_watch_start(runtime, project).await {
+        log::warn!("failed to watch the project of a CLI-created session: {error}");
     }
-    .await;
-    let disposition = match result {
+    let disposition = match send_prompt(runtime, &key, message, temporary).await {
         Ok(disposition) => disposition,
         // Pi explicitly refused: reclaim the process this call started.
         Err(PiCommandError::NotAccepted(message)) => {
@@ -327,9 +432,10 @@ pub(crate) async fn create(
     };
     let state = runtime.chat_sessions.state(&key).await;
     Ok(json!({
-        "sessionId": pi_session_id,
+        "sessionId": resolved_id,
         "requestId": session_id,
         "sessionKey": key,
+        "temporary": temporary,
         "accepted": true,
         "disposition": disposition,
         "runtime": state,
@@ -350,6 +456,11 @@ pub(crate) async fn send(
         .as_ref()
         .is_some_and(|state| state.initialized && state.snapshot.state == PiProcessState::Running);
     if !running {
+        if target.temporary {
+            return Err(conflict(
+                "temporary session is not running; it cannot be resumed",
+            ));
+        }
         let path = target
             .path()
             .ok_or_else(|| conflict("the session has not been saved yet"))?;
@@ -362,7 +473,7 @@ pub(crate) async fn send(
         .await
         .map_err(HostApiError::invalid)?;
     }
-    let disposition = send_prompt(runtime, &target.key, message)
+    let disposition = send_prompt(runtime, &target.key, message, target.temporary)
         .await
         .map_err(command_error)?;
     Ok(json!({"sessionKey": target.key, "accepted": true, "disposition": disposition}))
@@ -513,6 +624,22 @@ pub(crate) async fn status(
         };
         last_assistant = last_assistant_message(&snapshot.history);
     }
+    if target.temporary && process == Some(PiProcessState::Running) {
+        let _policy = runtime.pi_resource_policy.read().await;
+        if let Ok(reply) = call(
+            runtime,
+            &target.key,
+            json!({"type": "get_last_assistant_text"}),
+            false,
+        )
+        .await
+        {
+            last_assistant = reply["text"]
+                .as_str()
+                .filter(|text| !text.trim().is_empty())
+                .map(str::to_owned);
+        }
+    }
     if last_assistant.is_none()
         && target.path().is_some()
         && let Ok(bytes) =
@@ -639,6 +766,15 @@ pub(crate) fn validate_message(message: &str) -> Result<(), HostApiError> {
     Ok(())
 }
 
+fn parse_model(model: &str) -> Result<(&str, &str), HostApiError> {
+    model
+        .split_once('/')
+        .filter(|(provider, id)| {
+            !provider.is_empty() && !id.is_empty() && !model.chars().any(char::is_whitespace)
+        })
+        .ok_or_else(|| HostApiError::invalid("model must be an exact provider/model-id"))
+}
+
 pub(crate) fn validate_title(title: &str) -> Result<(), HostApiError> {
     if title.trim().is_empty() || title.len() > 512 || title.chars().any(char::is_control) {
         return Err(HostApiError::invalid(
@@ -672,6 +808,7 @@ async fn send_prompt(
     runtime: &Runtime,
     key: &str,
     message: String,
+    temporary: bool,
 ) -> Result<Value, PiCommandError> {
     let _policy = runtime.pi_resource_policy.read().await;
     let response = call(
@@ -683,11 +820,13 @@ async fn send_prompt(
     .await?;
     // Pi can start persisting a draft only after accepting its first prompt.
     // Request the new file identity even when no desktop chat pane is observing it.
-    let _ = tokio::time::timeout(
-        Duration::from_secs(2),
-        call(runtime, key, json!({"type": "get_state"}), false),
-    )
-    .await;
+    if !temporary {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            call(runtime, key, json!({"type": "get_state"}), false),
+        )
+        .await;
+    }
     Ok(response["disposition"].clone())
 }
 

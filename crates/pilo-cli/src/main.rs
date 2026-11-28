@@ -75,7 +75,7 @@ fn parse_timeout(value: &str) -> Result<Duration, CliError> {
         .ok_or_else(|| CliError::invalid("--timeout must be a number of seconds from 0 to 86400"))
 }
 
-/// Positional arguments and `--flag value` pairs after the command words.
+/// Positional arguments and options after the command words.
 struct Args {
     positional: Vec<String>,
     flags: Vec<(String, String)>,
@@ -89,7 +89,13 @@ impl Args {
         while let Some(word) = words.next() {
             if let Some(flag) = word.strip_prefix("--") {
                 let (name, value) = match flag.split_once('=') {
+                    Some(("temporary", _)) if known.contains(&"temporary") => {
+                        return Err(CliError::invalid("--temporary does not take a value"));
+                    }
                     Some((name, value)) => (name.to_owned(), value.to_owned()),
+                    None if flag == "temporary" && known.contains(&flag) => {
+                        (flag.to_owned(), "true".to_owned())
+                    }
                     None => (
                         flag.to_owned(),
                         words.next().cloned().ok_or_else(|| {
@@ -220,7 +226,7 @@ fn host_command(words: &[String]) -> Option<(usize, bool)> {
         ["settings", "theme", "set", ..] => (3, true),
         ["settings", "get", ..] => (2, false),
         ["settings", "patch", ..] => (2, true),
-        ["projects", "list", ..] => (2, false),
+        ["projects" | "models", "list", ..] => (2, false),
         ["projects", "add" | "remove", ..] => (2, true),
         ["sessions", "list" | "get" | "history" | "status", ..] => (2, false),
         [
@@ -240,11 +246,22 @@ async fn run_host(client: &mut Client, words: &[String], write: bool) -> Result<
     let project_flags: &[&str] = match command {
         ("sessions", "list") => &["project", "offset", "limit"],
         ("sessions", "history") => &["project", "start", "limit"],
-        ("sessions", _) => &["project"],
+        ("sessions", "create") => &["project", "model", "thinking", "temporary"],
+        ("sessions", _) | ("models", "list") => &["project"],
         ("projects", "add") => &["connection", "path"],
         _ => &[],
     };
     let args = Args::parse(rest, project_flags)?;
+    if command == ("sessions", "create")
+        && ["model", "thinking", "temporary"]
+            .iter()
+            .any(|option| args.flag(option).is_some())
+        && client.hello().capabilities["sessionCreateOptions"].as_bool() != Some(true)
+    {
+        return Err(CliError::incompatible(
+            "The running Pilo does not support --model, --thinking or --temporary; update Pilo",
+        ));
+    }
     let mut call = async |method: &contract::Method, fields: &[(&str, Value)]| {
         client.call(method, fields, write).await
     };
@@ -291,6 +308,14 @@ async fn run_host(client: &mut Client, words: &[String], write: bool) -> Result<
             let project = args.id("project ID")?;
             call(&m::PROJECT_REMOVE, &[("projectId", json!(project))]).await
         }
+        ("models", "list", _) => {
+            args.none()?;
+            call(
+                &m::MODELS_AVAILABLE,
+                &[("projectId", json!(args.required("project")?))],
+            )
+            .await
+        }
         ("sessions", "list", _) => {
             args.none()?;
             call(
@@ -317,6 +342,9 @@ async fn run_host(client: &mut Client, words: &[String], write: bool) -> Result<
                     ("sessionId", json!(session_id)),
                     ("message", message),
                     ("title", title),
+                    ("model", json!(args.flag("model"))),
+                    ("thinkingLevel", json!(args.flag("thinking"))),
+                    ("temporary", json!(args.flag("temporary").map(|_| true))),
                 ],
             )
             .await

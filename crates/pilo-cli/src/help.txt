@@ -33,18 +33,23 @@ Commands:
   projects add --path <path> [--connection <id>]   Connection defaults to "local"
   projects remove <project id>
 
+  models list --project <id>               Current Pi models; use provider/id below
+
   sessions list --project <id> [--offset N] [--limit N]   Limit 1-100, default 50
+                                            Lists unsaved CLI chats in "temporary".
   sessions get <session id> --project <id>
   sessions history <session id> --project <id> [--start N] [--limit N]
                                             Saved messages; limit 1-100, default 24
   sessions status <session id> --project <id>
                                             {sessionId, state, turn, runningTools,
                                              lastAssistantMessage}; never starts Pi
-  sessions create --project <id>            stdin: {"message": "...", "title"?: "..."}
-                                            Returns once Pi accepts the first prompt,
-                                            with the Pi sessionId and a CLI requestId.
-                                            outcome_unknown carries the CLI request
-                                            ID in error.sessionId.
+  sessions create --project <id> [--model <provider/id>] [--thinking <level>] [--temporary]
+                                            stdin: {"message": "...", "title"?: "..."}
+                                            Model and thinking apply before the first prompt.
+                                            Levels: off, minimal, low, medium, high, xhigh, max.
+                                            --temporary keeps the session in memory only.
+                                            Returns sessionId and requestId after acceptance.
+                                            outcome_unknown carries requestId in error.sessionId.
   sessions send <session id> --project <id> stdin: {"message": "..."}; busy sessions
                                             are refused, not queued
   sessions abort <session id> --project <id>   Interrupt the current turn only
@@ -54,8 +59,9 @@ Commands:
   sessions update <session id> --project <id>  stdin: {"title"?: "...", "pinned"?: bool}
   sessions delete <session id> --project <id>  Move to trash; refused while running
 
-Use the Pi sessionId or full CLI requestId after create, including after
-stopping Pi once the session is saved. Session commands also accept sessionKey.
+Use sessionId, the full CLI requestId or sessionKey after create. Saved
+sessions can be resumed after stopping Pi. Temporary sessions support get,
+status, send, abort and stop only while Pi is running; they have no saved history.
 Messages must be plain text: no slash commands, up to 64 KiB.
 
 Output: one JSON value on stdout, exit 0. Errors: {"error": {"category", "code",

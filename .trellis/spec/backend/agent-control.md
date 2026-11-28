@@ -70,6 +70,7 @@ not depend on a lease or a calling Pi session to resolve targets.
 | --- | --- |
 | `settings get\|patch`, `settings theme get\|set` | `preferences.get/patch`, `theme.get/set`; field-level patches, never file writes. |
 | `projects list\|add\|remove` | `project.list/add/remove`; add uses the connection's path validation and workspace lifecycle. |
+| `models list --project <id>` | `models.available`; reads the live Pi catalog in the project's runtime. |
 | `sessions list\|get\|history` | `session.list/history`, `chat.state`; IDs resolve within a project, never arbitrary JSONL paths; bounded pagination. |
 | `sessions status <id>` | One snapshot from `chat.state` + `chat.transcript` / `session.history`; never starts Pi. |
 | `sessions create\|send\|abort\|stop` | `chat.start/rpc/stop` with the shared create/first-prompt semantics. |
@@ -81,7 +82,10 @@ not depend on a lease or a calling Pi session to resolve targets.
   queue silently. `create` reports acceptance only after Pi's correlated reply
   to the first prompt, not after generation. Explicit non-submission/rejection
   stops the new process; an unknown outcome keeps the session and returns a
-  queryable key. `send` can resume a saved session. `abort` interrupts a turn;
+  queryable key. Host atomically claims the project and request ID before setup
+  and holds it through the first prompt and cleanup. A concurrent create with
+  that key returns `conflict` without reusing or stopping the owner's Pi.
+  `send` can resume a saved session. `abort` interrupts a turn;
   `stop` closes the managed process and keeps history. `archive` is not
   `delete`; delete never implicitly stops a managed session.
 - Output: success prints exactly one JSON value on stdout and exits 0; errors
@@ -93,10 +97,25 @@ not depend on a lease or a calling Pi session to resolve targets.
   settings (exit behavior, global shortcuts, autostart) stay in the desktop
   native bridge. No generic `pilo api`/invoke; never print credentials.
 
+### Session creation options
+
+- **Scope:** Only `sessions create` sets model/thinking or starts a temporary session; `sessions send` keeps the current session configuration.
+- **Signatures:** `pilo sessions create --project <id> [--model <provider/id>] [--thinking <level>] [--temporary]`, with the existing stdin JSON. The admin Host method `session.create` adds optional `model`, `thinkingLevel`, and `temporary` params. `pilo models list --project <id>` calls `models.available {projectId}`.
+- **Contract:** Local IPC hello advertises `capabilities.sessionCreateOptions: true`; without it the CLI must not submit a create request using the new flags. `models.available` starts a bounded throwaway Pi without extension discovery or a session file and returns `{projectId, models: [{provider, id, name, reasoning}]}`. It does not read the UI cache or expose provider transport metadata. Temporary creates return the CLI request ID as `sessionId`; `get`, `status`, `send`, `abort` and `stop` can address it until the process is removed. No saved history or SQLite alias is written.
+- **Validation:** A model must be an exact `provider/id` pair (split on the first `/`); `thinkingLevel` is `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. A malformed value is `invalid_params`. If Pi rejects the model or clamps the requested thinking level, return an explicit rejection before submitting the prompt. Never retry an uncertain prompt.
+- **List contract:** `session.page` adds `temporary: [{sessionId, sessionKey, saved: null, runtime}]` for registered CLI temporary sessions in the requested project. It excludes temporary UI chats and helper probes. Pagination (`total` and `nextOffset`) still counts only saved entries; the live lists are not paginated.
+- **Cases:** No flags preserves Pi defaults; `--model vendor/namespace/model --thinking high` verifies both selections before the first prompt; `--temporary` followed by `stop` leaves no session to reopen. After disconnecting before create replies, find the temporary ID with `sessions list` rather than repeating the write.
+- **Regression assertions:** RPC order is model → thinking → state check → prompt when both are supplied; rejection sends no prompt; an older Host receives no create request with new flags; concurrent same-key creates launch at most one Pi. Temporary IDs are listed and queryable without an index entry and disappear after stop.
+- **Wrong vs. correct:** Do not trust Pi's success response for `set_thinking_level`, which can clamp the level. Verify the actual level via `get_state` after selection and before the first prompt.
+
 ### `sessions status`
 
-Resolves the session through the Host index and reads existing Host state only:
-no Pi start/resume, no subscription, no JSONL tailing. Fields are always present:
+Reads existing Host state without starting or resuming Pi or tailing JSONL.
+A temporary session starts each captured turn on an empty in-memory history
+baseline; missing JSONL is not a reason to truncate it. Tool events use the
+same projection limits as saved sessions. For a running temporary Pi process,
+reads the last assistant text from Pi instead of saved history. Fields are
+always present:
 
 | Field | Meaning |
 | --- | --- |
@@ -104,7 +123,7 @@ no Pi start/resume, no subscription, no JSONL tailing. Fields are always present
 | `state` | `idle`, `running`, `compacting`, `not_running`, `error`. Process failure → `error`; no managed/stopped process → `not_running`; compacting wins over an active turn; active turn or starting Pi → `running`; otherwise `idle`. |
 | `turn` | `idle`, `active`, `truncated` or `null` (`chat.transcript.live.type`; `null` without a snapshot). |
 | `runningTools` | Tool names matched by call ID in the full current turn; `[]` when known idle; `null` when truncated/unavailable. Never guess. |
-| `lastAssistantMessage` | Text of the latest completed assistant message from history, or `null`. |
+| `lastAssistantMessage` | Last assistant text from saved history or the running temporary Pi session, or `null`. |
 
 `state: "error"` is a successful query of a failed session. Host offline,
 unknown session or query failure are command errors, not `not_running`.

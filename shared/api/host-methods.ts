@@ -15,6 +15,7 @@ import type {
 	Connection,
 	PiModel,
 	PiSessionSnapshot,
+	PiThinkingLevel,
 	PiloRuntimeEvent,
 	WslDistribution,
 } from "@shared/api/pi-runtime-types";
@@ -340,6 +341,13 @@ export type HostApiMethods = {
 		params: { projectId: string };
 		result: ProjectPiModels | null;
 	};
+	"models.available": {
+		params: { projectId: string };
+		result: {
+			projectId: string;
+			models: Pick<PiModel, "provider" | "id" | "name" | "reasoning">[];
+		};
+	};
 	"models.set": { params: { cache: ProjectPiModels }; result: ProjectPiModels };
 	"models.scope.get": {
 		params: { projectId: string };
@@ -458,6 +466,9 @@ export type HostApiMethods = {
 			sessionId: string;
 			message: string;
 			title?: string;
+			model?: string;
+			thinkingLevel?: PiThinkingLevel;
+			temporary?: boolean;
 		};
 		result: unknown;
 	};
@@ -620,6 +631,7 @@ export const HOST_API_METHOD_META: Record<
 	"theme.get": { scope: "chat", kind: "json" },
 	"theme.set": { scope: "chat", kind: "json" },
 	"models.get": { scope: "chat", kind: "json" },
+	"models.available": { scope: "chat", kind: "json" },
 	"models.set": { scope: "chat", kind: "json" },
 	"models.scope.get": { scope: "chat", kind: "json" },
 	"models.scope.set": { scope: "chat", kind: "json" },

@@ -101,6 +101,7 @@ struct ChatRegistry {
     usage_sequence: u64,
     idle_since: HashMap<String, (u64, std::time::Instant)>,
     session_file_gates: HashMap<String, Weak<RwLock<()>>>,
+    cli_create_gates: HashMap<String, Weak<Mutex<()>>>,
 }
 
 #[derive(Clone, Default)]
@@ -112,6 +113,18 @@ type InitializationReply = oneshot::Sender<Result<(), String>>;
 
 impl ChatSessions {
     pub async fn state(&self, session_key: &str) -> Option<ChatSessionState> {
+        self.state_inner(session_key, false).await
+    }
+
+    pub(crate) async fn temporary_state(&self, session_key: &str) -> Option<ChatSessionState> {
+        self.state_inner(session_key, true).await
+    }
+
+    async fn state_inner(
+        &self,
+        session_key: &str,
+        temporary_only: bool,
+    ) -> Option<ChatSessionState> {
         let (process, snapshot_reader) = {
             let registry = self.registry.lock().await;
             (
@@ -119,7 +132,7 @@ impl ChatSessions {
                 registry.snapshots.get(session_key).cloned(),
             )
         };
-        if process.closed.load(Ordering::Acquire) {
+        if process.closed.load(Ordering::Acquire) || (temporary_only && !process.no_session) {
             return None;
         }
         let session_path = process
@@ -148,20 +161,25 @@ impl ChatSessions {
     }
 
     pub async fn states(&self) -> Vec<ChatSessionState> {
-        self.states_inner(true).await
+        self.states_inner(|_| true).await
     }
 
     pub(crate) async fn persistent_states(&self) -> Vec<ChatSessionState> {
-        self.states_inner(false).await
+        self.states_inner(|process| !process.no_session).await
     }
 
-    async fn states_inner(&self, include_temporary: bool) -> Vec<ChatSessionState> {
+    pub(crate) async fn temporary_states(&self, project_id: &str) -> Vec<ChatSessionState> {
+        self.states_inner(|process| process.no_session && process.project_id == project_id)
+            .await
+    }
+
+    async fn states_inner(&self, include: impl Fn(&ChatProcess) -> bool) -> Vec<ChatSessionState> {
         let processes = {
             let registry = self.registry.lock().await;
             registry
                 .processes
                 .iter()
-                .filter(|(_, process)| include_temporary || !process.no_session)
+                .filter(|(_, process)| include(process))
                 .map(|(session_key, process)| {
                     (
                         session_key.clone(),
@@ -204,6 +222,30 @@ impl ChatSessions {
             });
         }
         states
+    }
+
+    // Keep the claim through Pi setup, first prompt submission and any cleanup.
+    pub(crate) async fn reserve_cli_create(
+        &self,
+        session_key: &str,
+    ) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let mut registry = self.registry.lock().await;
+        if registry.processes.contains_key(session_key) {
+            return None;
+        }
+        registry
+            .cli_create_gates
+            .retain(|_, gate| gate.strong_count() != 0);
+        let entry = registry
+            .cli_create_gates
+            .entry(session_key.to_owned())
+            .or_default();
+        let gate = entry.upgrade().unwrap_or_else(|| {
+            let gate = Arc::new(Mutex::new(()));
+            *entry = Arc::downgrade(&gate);
+            gate
+        });
+        gate.try_lock_owned().ok()
     }
 
     pub(crate) async fn session_file_gate(&self, project_id: &str) -> Arc<RwLock<()>> {
@@ -261,6 +303,7 @@ impl ChatSessions {
                     .snapshots
                     .insert(session_key.to_owned(), reader.clone());
                 let turn = match project.connection.kind {
+                    _ if launch.no_session => turn_projection::SessionTurn::new_in_memory(),
                     pilo_domain::ConnectionKind::Local => turn_projection::SessionTurn::new(true),
                     _ => turn_projection::SessionTurn::new_remote(reader),
                 };
