@@ -1,30 +1,14 @@
-import {
-	type Accessor,
-	batch,
-	computed,
-	effect,
-	platform,
-	signal,
-	untracked,
-} from "nsh";
+import { type Accessor, batch, computed, effect, signal, untracked } from "nsh";
 import { Storage } from "nsh";
 
-import {
-	hostStorageKey,
-	LOCAL_HOST_ID,
-	readMigratedStorage,
-} from "@shared/host-id";
-import { chatSessionKey } from "@shared/api/chat-session-key";
+import { LOCAL_HOST_ID } from "@shared/host-id";
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
-import { bytesToBase64 } from "@shared/base64";
 import type {
-	PiCommand,
 	PiCompactionResult,
 	PiPromptResult,
 } from "@shared/api/pi-runtime-types";
 import {
 	discardRemovedChatFiles,
-	registerChatFile,
 	retainChatFiles,
 } from "@shared/chat/chat-file-lifecycle";
 import {
@@ -33,29 +17,22 @@ import {
 	removeChatMention,
 } from "@shared/chat/chat-mentions";
 import {
-	CHAT_INPUT_HISTORY_LIMIT,
 	isChatInputHistoryCursorValid,
 	moveChatInputHistory,
 	type ChatInputHistoryDirection,
 } from "@shared/chat/chat-input-history-cursor";
 import {
 	createChatSubmission,
-	formatChatImageSize,
-	resolveChatImageMimeType,
 	summarizeChatImages,
 	toPiImageContents,
 	chatSubmissionHasContent,
 	chatSubmissionMessage,
-	MAX_CHAT_IMAGE_BYTES,
-	MAX_CHAT_IMAGE_COUNT,
-	MAX_CHAT_IMAGE_TOTAL_BYTES,
 	type ChatImageAttachment,
 	type ChatSubmission,
 } from "@shared/chat/chat-submission";
 import {
 	createPiCommandSuggestions,
 	createPiExtensionCommandNames,
-	mergePiCommands,
 	parseSlashCommand,
 } from "@shared/chat/pi-command-suggestions";
 import {
@@ -65,7 +42,6 @@ import {
 	type ComposerSendMode,
 	type PersistedComposerSendMode,
 } from "@shared/chat/send-mode";
-import { piModelSupportsImages } from "@shared/pi-model-selection";
 import type { PiModel } from "@shared/api/pi-runtime-types";
 import {
 	sessionMentionValue,
@@ -78,7 +54,7 @@ import {
 } from "@shared/chat/chat-session-runtime-model";
 import { appLocale, t } from "../shell/i18n";
 import { rememberLocalChatImages } from "../chat/chat-user-image-cache";
-import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
+import { requestPiRpcOutcome } from "../client/chat-rpc";
 import type { HostClient } from "@shared/api/host-client";
 import type { DesktopShell } from "../shell/desktop-shell";
 import {
@@ -88,13 +64,21 @@ import {
 } from "../state/app-state";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
+import { ComposerAttachments } from "./composer-attachments";
+import { ComposerCommandCatalog } from "./composer-command-catalog";
+import {
+	ComposerDraftRepository,
+	EMPTY_DRAFT,
+	type ComposerDraft,
+	type ComposerDraftTextStorage,
+	type ComposerTarget,
+} from "./composer-drafts";
+import { ComposerInputHistory } from "./composer-input-history";
 
-/** The open chat the composer talks to. */
-export type ComposerTarget = {
-	sessionKey: string;
-	projectId: string;
-	sessionPath?: string | null;
-};
+export type {
+	ComposerTarget,
+	ComposerDraftTextStorage,
+} from "./composer-drafts";
 
 export type ComposerClient = Pick<
 	HostClient,
@@ -160,15 +144,6 @@ type PrepareToSend = (
 	inBackground?: boolean,
 ) => Promise<boolean>;
 
-type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
-
-type ComposerDraftTextStorage = {
-	read: (target: ComposerTarget) => string | null;
-	write: (target: ComposerTarget, value: string) => boolean;
-};
-
-const EMPTY_DRAFT: ComposerDraft = { value: "", images: [] };
-
 /** Toast-like feedback emitted by slash commands (e.g. `/compact`). */
 export type ComposerNotice = {
 	variant?: "default" | "success" | "info" | "warning" | "error";
@@ -186,25 +161,9 @@ export type ComposerTranscript = Pick<
 /** How long Pi may take to accept a prompt, as the WebUI waits. */
 const PROMPT_REPLY_TIMEOUT_MS = 120_000;
 
-const INPUT_HISTORY_KEY = "pilo.chatInputHistory.v1";
-const ATTACHMENT_NAME_LIMIT = 80;
-
-let attachmentSequence = 0;
-
-function attachmentName(uri: string): string {
-	try {
-		const path = decodeURIComponent(new URL(uri).pathname);
-		return path.split("/").filter(Boolean).pop() ?? "file";
-	} catch {
-		return "file";
-	}
-}
-
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
-
-type HistoryStore = Record<string, string[]>;
 
 /**
  * Draft text and images are isolated per session (`sessionKey`) to avoid
@@ -239,8 +198,10 @@ export class ComposerStore {
 	private readonly onNewChat?: () => void;
 	private readonly onCompacted?: (result: PiCompactionResult) => void;
 	private readonly onNotice?: (notice: ComposerNotice) => void;
-	private readonly draftTextStorage?: ComposerDraftTextStorage;
-	private readonly drafts = new Map<string, ComposerDraft>();
+	private readonly draftRepo: ComposerDraftRepository;
+	private readonly history: ComposerInputHistory;
+	private readonly commandCatalog: ComposerCommandCatalog;
+	private readonly attachments: ComposerAttachments;
 	private readonly sessionStatuses = new Map<string, string>();
 	private persistedSendMode: PersistedComposerSendMode =
 		DEFAULT_COMPOSER_SEND_MODE;
@@ -261,16 +222,10 @@ export class ComposerStore {
 	private readonly lastSubmissionSignal = signal<{ sessionKey: string } | null>(
 		null,
 	);
-	private readonly sessionCommandsSignal = signal<{
-		sessionKey: string;
-		commands: readonly PiCommand[];
-	} | null>(null);
 	private readonly fileSuggestionsSignal = signal<
 		readonly ComposerSuggestion[]
 	>([]);
 	private draftVersion = 0;
-	private readonly histories: HistoryStore = {};
-	private historiesLoad: Promise<void> | undefined;
 	private readonly removedFilePaths = new Set<string>();
 	private historyCursor: number | null = null;
 	/**
@@ -292,8 +247,6 @@ export class ComposerStore {
 		new Set(),
 	);
 	private fileQueryRequest = 0;
-	private commandsRequest = 0;
-	private sessionCommandsInFlight: string | null = null;
 
 	readonly state: Accessor<ComposerViewState>;
 	readonly target: Accessor<ComposerTarget | null>;
@@ -345,8 +298,29 @@ export class ComposerStore {
 		this.hostId = deps.hostId ?? LOCAL_HOST_ID;
 		this.app = deps.app;
 		this.activeModel = deps.activeModel;
-		this.draftTextStorage = deps.draftTextStorage;
 		this.catalog = deps.catalog;
+		this.draftRepo = new ComposerDraftRepository({
+			draftTextStorage: deps.draftTextStorage,
+			onUnsentDraft: deps.onUnsentDraft,
+		});
+		this.history = new ComposerInputHistory(this.hostId);
+		this.commandCatalog = new ComposerCommandCatalog({
+			client: this.client,
+			target: this.targetSignal,
+			catalog: this.catalog,
+			readOnly: () => this.readOnly(),
+		});
+		this.attachments = new ComposerAttachments({
+			client: this.client,
+			shell: this.shell,
+			activeModel: this.activeModel,
+			removedFilePaths: this.removedFilePaths,
+			target: this.targetSignal,
+			readDraft: (target) => this.draftFor(target),
+			writeDraft: (target, draft) => this.writeDraft(target, draft),
+			resolveTarget: (target) => this.resolveDraftTarget(target),
+			setStatus: (status, sessionKey) => this.setStatus(status, sessionKey),
+		});
 		this.beforeSend = deps.beforeSend;
 		this.waitForStartupApproval = deps.waitForStartupApproval;
 		this.queue = deps.queue;
@@ -360,7 +334,7 @@ export class ComposerStore {
 		this.state = this.stateSignal;
 		this.target = this.targetSignal;
 		this.commands = computed(() =>
-			createPiCommandSuggestions(this.mergedPiCommands()),
+			createPiCommandSuggestions(this.commandCatalog.merged()),
 		);
 		this.fileSuggestions = this.fileSuggestionsSignal;
 		this.appProjects = computed(() => this.app().projects);
@@ -427,7 +401,7 @@ export class ComposerStore {
 				batch(() => {
 					this.targetSignal.set(target);
 					if (!previous.sessionPath && target.sessionPath) {
-						this.adoptDraftPath(previous, target);
+						this.draftRepo.adoptPath(previous, target);
 					}
 				});
 			}
@@ -439,9 +413,7 @@ export class ComposerStore {
 		const draft = target ? this.draftFor(target) : EMPTY_DRAFT;
 		batch(() => {
 			this.clearFileSuggestions();
-			this.commandsRequest++;
-			this.sessionCommandsSignal.set(null);
-			this.sessionCommandsInFlight = null;
+			this.commandCatalog.reset();
 			if (previous?.projectId !== target?.projectId) {
 				this.historyCursor = null;
 			}
@@ -615,7 +587,7 @@ export class ComposerStore {
 				if (!sessionPath || !unsentDrafts.has(sessionKey)) continue;
 				if (this.isIndexedDraftPath(sessionIndexes, projectId, sessionPath)) {
 					untracked(() =>
-						this.adoptDraftPath(
+						this.draftRepo.adoptPath(
 							{ sessionKey, projectId },
 							{ sessionKey, projectId, sessionPath },
 						),
@@ -761,45 +733,12 @@ export class ComposerStore {
 		return this.mentionDraftComputed();
 	}
 
-	private async appendHistory(projectId: string, text: string) {
-		const entry = text.trim();
-		if (!entry) return;
-		await this.loadHistories();
-		const current = this.histories[projectId] ?? [];
-		if (current[current.length - 1] === entry) return;
-		this.histories[projectId] = [...current, entry].slice(
-			-CHAT_INPUT_HISTORY_LIMIT,
-		);
-		void Storage.setItem(
-			hostStorageKey(this.hostId, INPUT_HISTORY_KEY),
-			JSON.stringify(this.histories),
-		).catch(() => {});
+	private appendHistory(projectId: string, text: string) {
+		return this.history.append(projectId, text);
 	}
 
 	loadHistories(): Promise<void> {
-		return (this.historiesLoad ??= readMigratedStorage(
-			Storage,
-			hostStorageKey(this.hostId, INPUT_HISTORY_KEY),
-			this.hostId === LOCAL_HOST_ID ? INPUT_HISTORY_KEY : undefined,
-		)
-			.then((raw) => {
-				if (!raw) return;
-				const parsed: unknown = JSON.parse(raw);
-				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-					return;
-				for (const [projectId, entries] of Object.entries(parsed)) {
-					if (Array.isArray(entries)) {
-						this.histories[projectId] = entries
-							.filter((entry): entry is string => typeof entry === "string")
-							.map((entry) => entry.trim())
-							.filter(Boolean)
-							.slice(-CHAT_INPUT_HISTORY_LIMIT);
-					}
-				}
-			})
-			.catch(() => {
-				// History is a convenience; a corrupt store starts empty.
-			}));
+		return this.history.load();
 	}
 
 	/** 当前是否允许通过上下方向键翻阅历史（草稿为空且无图片，或正处于有效历史条目上）。 */
@@ -810,7 +749,7 @@ export class ComposerStore {
 		if (images.length > 0) return false;
 		if (value.length === 0) return true;
 		if (this.historyCursor === null) return false;
-		const entries = this.histories[target.projectId] ?? [];
+		const entries = this.history.entries(target.projectId);
 		return isChatInputHistoryCursorValid(entries, this.historyCursor, value);
 	}
 
@@ -828,7 +767,7 @@ export class ComposerStore {
 		if (images.length) return { handled: false };
 		const version = this.draftVersion;
 		if (this.historyCursor !== null) {
-			const entries = this.histories[target.projectId] ?? [];
+			const entries = this.history.entries(target.projectId);
 			if (!isChatInputHistoryCursorValid(entries, this.historyCursor, value)) {
 				this.historyCursor = null;
 				return { handled: false };
@@ -838,7 +777,7 @@ export class ComposerStore {
 		}
 		await this.loadHistories();
 		if (this.draftVersion !== version) return { handled: false };
-		const entries = this.histories[target.projectId] ?? [];
+		const entries = this.history.entries(target.projectId);
 		const result = moveChatInputHistory(entries, this.historyCursor, direction);
 		if (!result.handled) {
 			this.historyCursor = null;
@@ -885,27 +824,28 @@ export class ComposerStore {
 		this.fileSuggestionsSignal.set([]);
 	}
 
-	private catalogCommands(): readonly PiCommand[] | null {
-		const target = this.targetSignal();
-		const catalogState = this.catalog?.state();
-		if (!target || catalogState?.catalog?.projectId !== target.projectId) {
-			return null;
-		}
-		return catalogState.catalog.commands ?? null;
-	}
-
-	private currentSessionCommands(): readonly PiCommand[] | null {
-		const target = this.targetSignal();
-		const session = this.sessionCommandsSignal();
-		if (!target || session?.sessionKey !== target.sessionKey) return null;
-		return session.commands;
-	}
-
-	private mergedPiCommands(): PiCommand[] {
-		return mergePiCommands(
-			this.catalogCommands(),
-			this.currentSessionCommands(),
+	/** Inserts files into the requesting draft and returns whether any were attached. */
+	addFiles(
+		files: readonly File[],
+		target?: ComposerTarget,
+		reportFailure?: boolean,
+		collectedErrors?: string[],
+	) {
+		return this.attachments.addFiles(
+			files,
+			target,
+			reportFailure,
+			collectedErrors,
 		);
+	}
+
+	addPastedFiles(files: readonly File[], uris: readonly string[]) {
+		this.attachments.addPastedFiles(files, uris);
+	}
+
+	/** Pasted or dropped `file:` URIs, read natively and attached like picked files. */
+	addUris(uris: readonly string[], clipboardImage?: File) {
+		return this.attachments.addUris(uris, clipboardImage);
 	}
 
 	private notify(notice: ComposerNotice) {
@@ -917,110 +857,18 @@ export class ComposerStore {
 	 * commands (including user extension commands) only when Pi is already running.
 	 */
 	async loadCommands() {
-		const target = this.targetSignal();
-		if (!target) return;
-		const catalogState = this.catalog?.state();
-		if (
-			this.catalog &&
-			catalogState?.projectId === target.projectId &&
-			catalogState.loaded &&
-			!catalogState.refreshing &&
-			(!catalogState.catalog || catalogState.catalog.commands == null)
-		) {
-			void this.catalog.refresh();
-		}
-		if (
-			this.readOnly() ||
-			this.sessionCommandsSignal()?.sessionKey === target.sessionKey ||
-			this.sessionCommandsInFlight === target.sessionKey
-		) {
-			return;
-		}
-		const request = ++this.commandsRequest;
-		this.sessionCommandsInFlight = target.sessionKey;
-		try {
-			const chat = await this.client.chatState(target.sessionKey);
-			if (
-				this.commandsRequest !== request ||
-				this.targetSignal()?.sessionKey !== target.sessionKey
-			) {
-				return;
-			}
-			// Passive `/` completion must never start a stopped Pi process.
-			if (
-				!chat?.initialized ||
-				(chat.snapshot && chat.snapshot.state !== "running")
-			) {
-				return;
-			}
-			const reply = await requestPiRpc<{ commands: PiCommand[] }>(
-				this.client,
-				target.sessionKey,
-				{ type: "get_commands" },
-			);
-			if (
-				this.commandsRequest !== request ||
-				this.targetSignal()?.sessionKey !== target.sessionKey ||
-				!reply?.commands
-			) {
-				return;
-			}
-			this.sessionCommandsSignal.set({
-				sessionKey: target.sessionKey,
-				commands: reply.commands,
-			});
-		} catch {
-			// Keep cached commands and allow retry once Pi is running.
-		} finally {
-			if (this.commandsRequest === request) {
-				this.sessionCommandsInFlight = null;
-			}
-		}
+		return this.commandCatalog.load();
 	}
-
-	private draftKey({ sessionKey, projectId, sessionPath }: ComposerTarget) {
-		return sessionPath
-			? `file:${chatSessionKey(projectId, runtimeSessionPathKey(sessionPath))}`
-			: sessionKey;
-	}
-
-	private adoptDraftPath(previous: ComposerTarget, saved: ComposerTarget) {
-		const key = this.draftKey(previous);
-		const draft = this.draftFor(previous);
-		if (draft !== EMPTY_DRAFT) {
-			this.drafts.set(this.draftKey(saved), draft);
-			this.drafts.delete(key);
-			if (draft.value && this.draftTextStorage?.write(saved, draft.value)) {
-				this.draftTextStorage.write(previous, "");
-			}
-		}
-		this.onUnsentDraft?.(saved, null);
+	private draftKey(target: ComposerTarget) {
+		return this.draftRepo.key(target);
 	}
 
 	private draftFor(target: ComposerTarget): ComposerDraft {
-		const key = this.draftKey(target);
-		const cached = this.drafts.get(key);
-		if (cached) return cached;
-		const value = this.draftTextStorage?.read(target);
-		if (!value) return EMPTY_DRAFT;
-		const restored = { ...EMPTY_DRAFT, value };
-		this.drafts.set(key, restored);
-		return restored;
+		return this.draftRepo.for(target);
 	}
 
-	private cacheDraft(target: ComposerTarget, { value, images }: ComposerDraft) {
-		const key = this.draftKey(target);
-		const previous = this.drafts.get(key)?.value ?? "";
-		// Keep empty drafts in memory when a failed storage write could leave stale text.
-		if (value || images.length || this.draftTextStorage)
-			this.drafts.set(key, { value, images });
-		else this.drafts.delete(key);
-		if (value !== previous) this.draftTextStorage?.write(target, value);
-		if (!target.sessionPath)
-			this.onUnsentDraft?.(
-				target,
-				value.trim() || images.length ? value : null,
-			);
+	private cacheDraft(target: ComposerTarget, draft: ComposerDraft) {
+		this.draftRepo.cache(target, draft);
 	}
 
 	private writeDraft(target: ComposerTarget, draft: ComposerDraft) {
@@ -1064,198 +912,6 @@ export class ComposerStore {
 		return indexes[projectId]?.sessions.some(
 			(entry) => runtimeSessionPathKey(entry.sessionPath) === key,
 		);
-	}
-
-	/** Inserts files into the requesting draft and returns whether any were attached. */
-	async addFiles(
-		files: readonly File[],
-		target = this.targetSignal(),
-		reportFailure = true,
-		collectedErrors?: string[],
-	): Promise<boolean> {
-		if (!target) return false;
-		const { sessionKey, projectId } = target;
-		const errors = collectedErrors ?? [];
-		const rejectFile = (message: string) => {
-			if (reportFailure && !errors.includes(message)) errors.push(message);
-		};
-		let attached = false;
-		if (files.length > MAX_CHAT_IMAGE_COUNT) {
-			rejectFile(t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }));
-		}
-		let batchBytes = 0;
-		for (const file of files.slice(0, MAX_CHAT_IMAGE_COUNT)) {
-			const mime = resolveChatImageMimeType(file);
-			if (mime && !piModelSupportsImages(this.activeModel?.())) {
-				rejectFile(t("chat.imageUnsupported"));
-				continue;
-			}
-			if (file.size > MAX_CHAT_IMAGE_BYTES) {
-				rejectFile(
-					mime
-						? t("chat.imageTooLarge", { name: file.name || "image" })
-						: t("chat.fileTooLarge", {
-								name: file.name || "file",
-								size: formatChatImageSize(MAX_CHAT_IMAGE_BYTES),
-							}),
-				);
-				continue;
-			}
-			batchBytes += file.size;
-			if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {
-				rejectFile(
-					t("chat.filesTooLarge", {
-						size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
-					}),
-				);
-				break;
-			}
-			try {
-				const bytes = new Uint8Array(await file.arrayBuffer());
-				if (mime) {
-					const draft = this.draftFor(this.resolveDraftTarget(target));
-					const { images } = draft;
-					const limit =
-						images.length >= MAX_CHAT_IMAGE_COUNT
-							? t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT })
-							: images.reduce((total, image) => total + image.size, 0) +
-										bytes.length >
-								  MAX_CHAT_IMAGE_TOTAL_BYTES
-								? t("chat.imagesTotalLimit", {
-										size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
-									})
-								: null;
-					if (limit) {
-						rejectFile(limit);
-						continue;
-					}
-					const image: ChatImageAttachment = {
-						id: `img-${++attachmentSequence}`,
-						name: file.name || "image",
-						mimeType: mime,
-						size: bytes.length,
-						data: bytesToBase64(bytes),
-					};
-					this.writeDraft(target, { ...draft, images: [...images, image] });
-				} else {
-					const path = await this.client.uploadChatFile(
-						projectId,
-						file.name || "file",
-						bytes,
-					);
-					this.removedFilePaths.delete(path);
-					registerChatFile(path, () => {
-						this.removedFilePaths.add(path);
-						return this.client.removeChatFile(projectId, path);
-					});
-					const draft = this.draftFor(this.resolveDraftTarget(target));
-					const { value } = draft;
-					const tokenText = fileMentionValue(path);
-					const separator = value.length === 0 || /\s$/.test(value) ? "" : " ";
-					this.writeDraft(target, {
-						...draft,
-						value: `${value}${separator}${tokenText} `,
-					});
-				}
-				attached = true;
-			} catch (error) {
-				rejectFile(
-					`${t("chat.uploadFileFailed", { name: file.name || "file" })}: ${errorMessage(error)}`,
-				);
-			}
-		}
-		if (!collectedErrors) {
-			if (errors.length > 0) {
-				this.setStatus(errors.join(" · "), sessionKey);
-			} else if (attached) {
-				this.setStatus(null, sessionKey);
-			}
-		}
-		return attached;
-	}
-
-	addPastedFiles(files: readonly File[], uris: readonly string[]) {
-		const [file] = files;
-		const [uri] = uris;
-		// Windows nsh can report one image as both a file URI and a clipboard image.
-		if (
-			platform.os === "windows" &&
-			files.length === 1 &&
-			uris.length === 1 &&
-			file &&
-			uri &&
-			((file.name === "image.bmp" && file.type === "image/bmp") ||
-				(file.name === "image.png" && file.type === "image/png")) &&
-			resolveChatImageMimeType({ name: attachmentName(uri), type: "" })
-		) {
-			void this.addUris(uris, file);
-			return;
-		}
-		if (files.length) void this.addFiles(files);
-		if (uris.length) void this.addUris(uris);
-	}
-
-	/** Pasted or dropped `file:` URIs, read natively and attached like picked files. */
-	async addUris(uris: readonly string[], clipboardImage?: File) {
-		const target = this.targetSignal();
-		if (!target) return;
-		// An unsupported clipboard bitmap must not turn an image paste into a file upload.
-		const fallback =
-			clipboardImage && resolveChatImageMimeType(clipboardImage)
-				? clipboardImage
-				: undefined;
-		const errors: string[] = [];
-		const recordError = (message: string) => {
-			if (!errors.includes(message)) errors.push(message);
-		};
-		if (uris.length > MAX_CHAT_IMAGE_COUNT) {
-			recordError(t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }));
-		}
-		let batchBytes = 0;
-		for (const uri of uris.slice(0, MAX_CHAT_IMAGE_COUNT)) {
-			try {
-				if (!this.shell?.readLocalFile) throw new Error("no local file reads");
-				const bytes = await this.shell.readLocalFile(uri);
-				if (bytes.length <= MAX_CHAT_IMAGE_BYTES) {
-					batchBytes += bytes.length;
-					if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {
-						recordError(
-							t("chat.filesTooLarge", {
-								size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
-							}),
-						);
-						break;
-					}
-				}
-				const name = attachmentName(uri);
-				const mime = resolveChatImageMimeType({ name, type: "" });
-				const attached = await this.addFiles(
-					[
-						new File([bytes], name.slice(0, ATTACHMENT_NAME_LIMIT), {
-							type: mime ?? "",
-						}),
-					],
-					target,
-					// With a fallback, report only failure of the final attempt.
-					!fallback,
-					errors,
-				);
-				if (attached) continue;
-			} catch (error) {
-				if (!fallback) {
-					recordError(
-						`${t("chat.uploadFileFailed", { name: attachmentName(uri) })}: ${errorMessage(error)}`,
-					);
-				}
-			}
-			if (fallback) {
-				await this.addFiles([fallback], target);
-				return;
-			}
-		}
-		if (errors.length > 0) {
-			this.setStatus(errors.join(" · "), target.sessionKey);
-		}
 	}
 
 	removeImage(id: string) {
@@ -1351,30 +1007,6 @@ export class ComposerStore {
 			}
 		}
 		return canSend();
-	}
-
-	private async fetchLiveSessionCommands(
-		sessionKey: string,
-	): Promise<readonly PiCommand[] | null> {
-		const existing = this.sessionCommandsSignal();
-		if (existing?.sessionKey === sessionKey) return existing.commands;
-		try {
-			const reply = await requestPiRpc<{ commands: PiCommand[] }>(
-				this.client,
-				sessionKey,
-				{ type: "get_commands" },
-			);
-			if (!reply?.commands) return null;
-			if (this.targetSignal()?.sessionKey === sessionKey) {
-				this.sessionCommandsSignal.set({
-					sessionKey,
-					commands: reply.commands,
-				});
-			}
-			return reply.commands;
-		} catch {
-			return null;
-		}
 	}
 
 	private async executeCompact(
@@ -1524,7 +1156,7 @@ export class ComposerStore {
 		// A compaction takes no message; the composer blocks sending meanwhile.
 		if (running && this.compacting()) return;
 
-		const knownCommands = !running && slash ? this.mergedPiCommands() : [];
+		const knownCommands = !running && slash ? this.commandCatalog.merged() : [];
 		const knownExtensionCommand =
 			!running &&
 			slash !== null &&
@@ -1533,7 +1165,7 @@ export class ComposerStore {
 			!running &&
 			slash !== null &&
 			!knownExtensionCommand &&
-			this.currentSessionCommands() === null &&
+			this.commandCatalog.sessionCommands() === null &&
 			!knownCommands.some(
 				(command) =>
 					command.name === slash.name && command.source !== "extension",
@@ -1712,7 +1344,7 @@ export class ComposerStore {
 				return;
 
 			if (needsExtensionCheck && slash) {
-				const liveCommands = await this.fetchLiveSessionCommands(
+				const liveCommands = await this.commandCatalog.fetchLive(
 					target.sessionKey,
 				);
 				if (
