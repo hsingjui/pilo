@@ -1,7 +1,8 @@
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, TransactionBehavior, params};
 
 use pilo_domain::{
-    RemoteAccessConfig, RemoteDevice, RemoteHostConfig, RemoteScopes, random_remote_port,
+    RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteHostConfig, RemoteScopes,
+    random_remote_port,
 };
 
 fn as_i64(value: u64, field: &str) -> Result<i64, String> {
@@ -86,31 +87,62 @@ pub(crate) fn set_remote_host_config(
     Ok(())
 }
 
+#[derive(Default)]
+pub(crate) struct StoredRemoteAccess {
+    pub addresses: Option<Vec<RemoteAccessAddress>>,
+    pub entry_address_id: String,
+    // NULL for legacy lists, empty for a list without a managed LAN address.
+    pub managed_lan_ip: Option<String>,
+}
+
 pub(crate) fn get_remote_access_config(
     db: &SqliteConnection,
-) -> Result<Option<RemoteAccessConfig>, String> {
+) -> Result<StoredRemoteAccess, String> {
     let row = db
         .query_row(
-            "SELECT addresses_json,entry_address_id FROM remote_host_config WHERE id=1",
+            "SELECT addresses_json,entry_address_id,managed_lan_ip FROM remote_host_config WHERE id=1",
             [],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|error| format!("failed to read Remote WebUI addresses: {error}"))?;
-    let Some((Some(json), entry_address_id)) = row else {
-        return Ok(None);
+    let Some((json, entry_address_id, managed_lan_ip)) = row else {
+        return Ok(StoredRemoteAccess::default());
     };
-    let addresses = serde_json::from_str(&json)
+    let addresses = json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
         .map_err(|error| format!("failed to decode Remote WebUI addresses: {error}"))?;
-    Ok(Some(RemoteAccessConfig {
+    Ok(StoredRemoteAccess {
         addresses,
         entry_address_id,
-    }))
+        managed_lan_ip,
+    })
+}
+
+pub(crate) fn set_remote_entry_address(db: &SqliteConnection, id: &str) -> Result<(), String> {
+    db.execute(
+        "UPDATE remote_host_config SET entry_address_id=?1 WHERE id=1",
+        [id],
+    )
+    .map_err(|error| format!("failed to save Remote WebUI pairing entry: {error}"))?;
+    Ok(())
+}
+
+pub(crate) fn set_remote_managed_lan_ip(db: &SqliteConnection, ip: &str) -> Result<(), String> {
+    db.execute(
+        "UPDATE remote_host_config SET managed_lan_ip=?1 WHERE id=1",
+        [ip],
+    )
+    .map_err(|error| format!("failed to save Remote WebUI LAN provenance: {error}"))?;
+    Ok(())
 }
 
 pub(crate) fn set_remote_access_config(
     db: &SqliteConnection,
     config: &RemoteAccessConfig,
+    managed_lan_ip: &str,
 ) -> Result<(), String> {
     let json = serde_json::to_string(&config.addresses)
         .map_err(|error| format!("failed to encode Remote WebUI addresses: {error}"))?;
@@ -120,8 +152,8 @@ pub(crate) fn set_remote_access_config(
         .find(|address| address.id == "public")
         .map_or("", |address| address.base_url.as_str());
     db.execute(
-        "UPDATE remote_host_config SET addresses_json=?1,entry_address_id=?2,public_base_url=?3 WHERE id=1",
-        params![json, config.entry_address_id, public_base_url],
+        "UPDATE remote_host_config SET addresses_json=?1,entry_address_id=?2,public_base_url=?3,managed_lan_ip=?4 WHERE id=1",
+        params![json, config.entry_address_id, public_base_url, managed_lan_ip],
     )
     .map_err(|error| format!("failed to save Remote WebUI addresses: {error}"))?;
     Ok(())

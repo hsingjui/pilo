@@ -7,6 +7,10 @@ use std::{
     time::Duration,
 };
 
+use pilo_domain::{
+    RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteHostConfig, RemoteScopes,
+};
+use rusqlite::Connection as SqliteConnection;
 use serde::Serialize;
 use tokio::{
     sync::{Mutex, watch},
@@ -14,7 +18,6 @@ use tokio::{
 };
 
 use crate::{Runtime, RuntimeEventBus, host_paths::HostPaths, storage};
-use pilo_domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteScopes};
 
 use super::{access, api, pairing::PairingSession};
 
@@ -40,7 +43,7 @@ pub struct RemoteHostState {
 
 struct RunningRemoteServer {
     port: u16,
-    lan_base_url: String,
+    lan_base_url: Option<String>,
     pairing: Arc<PairingSession>,
     shutdown: watch::Sender<bool>,
     auth_generation: watch::Sender<u64>,
@@ -53,6 +56,7 @@ struct RunningRemoteServer {
 struct RemoteServerInner {
     running: Option<RunningRemoteServer>,
     last_error: Option<String>,
+    last_lan_ip: Option<IpAddr>,
 }
 
 const MIN_REMOTE_PORT: u16 = 1024;
@@ -121,63 +125,46 @@ impl RemoteServerManager {
         }
         let _lifecycle = self.lifecycle.lock().await;
         let paths = runtime.paths.clone();
-        let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
+        let (mut config, stored) = read_host_access(&paths).await?;
         if config.port == port {
             return self.snapshot(runtime).await;
         }
-        let (was_running, running_lan_base_url) = {
-            let inner = self.inner.lock().await;
-            (
-                inner.running.is_some(),
-                inner
-                    .running
-                    .as_ref()
-                    .map(|running| running.lan_base_url.clone()),
-            )
-        };
-        let lan_base_url = match running_lan_base_url {
-            Some(url) => url,
-            None => format!("http://{}:{}", lan_ip().await, config.port),
-        };
-        let paths_for_config = paths.clone();
-        let previous_port = config.port;
-        let access_config = tokio::task::spawn_blocking(move || {
-            let db = storage::open_with_paths(&paths_for_config)?;
-            let Some(mut config) = storage::get_remote_access_config(&db)? else {
-                return Ok(None);
-            };
+        let was_running = self.inner.lock().await.running.is_some();
+        let access_config = if let Some(mut addresses) = stored.addresses {
+            let managed_lan_ip =
+                resolve_managed_lan_ip(&addresses, config.port, stored.managed_lan_ip.as_deref())
+                    .await;
             let mut changed = false;
-            for address in &mut config.addresses {
+            for address in &mut addresses {
                 // Follow only untouched direct LAN URLs, never manually edited or proxy URLs.
-                let previous_url = if address.id == "lan" {
-                    Some(lan_base_url.clone())
+                let ip = if address.id == "lan" {
+                    managed_lan_ip.parse::<Ipv4Addr>().ok()
                 } else {
                     address
                         .id
                         .strip_prefix("lan-")
                         .and_then(|id| id.rsplit_once('-'))
                         .and_then(|(ip, _)| ip.replace('-', ".").parse::<Ipv4Addr>().ok())
-                        .map(|ip| format!("http://{ip}:{previous_port}"))
                 };
-                if previous_url.as_deref() != Some(address.base_url.as_str()) {
-                    continue;
+                if let Some(ip) = ip
+                    && address.base_url == format!("http://{ip}:{}", config.port)
+                {
+                    address.base_url = format!("http://{ip}:{port}");
+                    changed = true;
                 }
-                let mut url = url::Url::parse(&address.base_url).map_err(|error| {
-                    format!("failed to parse Remote WebUI LAN address: {error}")
-                })?;
-                url.set_port(Some(port))
-                    .map_err(|_| "failed to update Remote WebUI LAN port".to_owned())?;
-                address.base_url = url.origin().ascii_serialization();
-                changed = true;
             }
             if changed {
-                access::normalize_config(config).map(Some)
+                let updated = access::normalize_config(RemoteAccessConfig {
+                    addresses,
+                    entry_address_id: stored.entry_address_id,
+                })?;
+                Some((updated, managed_lan_ip))
             } else {
-                Ok(None)
+                None
             }
-        })
-        .await
-        .map_err(|_| "Remote WebUI address task failed".to_owned())??;
+        } else {
+            None
+        };
         if was_running {
             self.stop_listener().await;
             runtime.terminals.close_all_remote().await;
@@ -191,8 +178,8 @@ impl RemoteServerManager {
             // Preserve the existing port-change policy; address edits do not take this path.
             storage::clear_remote_devices(&transaction)?;
             storage::set_remote_host_config(&transaction, &config)?;
-            if let Some(access_config) = access_config {
-                storage::set_remote_access_config(&transaction, &access_config)?;
+            if let Some((access_config, managed_lan_ip)) = access_config {
+                storage::set_remote_access_config(&transaction, &access_config, &managed_lan_ip)?;
             }
             transaction
                 .commit()
@@ -221,7 +208,8 @@ impl RemoteServerManager {
         let pairing = running.pairing.clone();
         let lan_base_url = running.lan_base_url.clone();
         tokio::task::spawn_blocking(move || {
-            let config = load_access_config(&paths, &lan_base_url)?;
+            let db = storage::open_with_paths(&paths)?;
+            let config = load_access_config(&db, lan_base_url.as_deref())?;
             pairing.regenerate(&paths, access::pairing_addresses(&config), scopes)
         })
         .await
@@ -236,38 +224,63 @@ impl RemoteServerManager {
         config: RemoteAccessConfig,
     ) -> Result<RemoteHostState, String> {
         let config = access::normalize_config(config)?;
+        let _lifecycle = self.lifecycle.lock().await;
         let paths = runtime.paths.clone();
-        let fallback_lan_ip = {
-            let needs_fallback = self.inner.lock().await.running.is_none();
-            if needs_fallback {
-                Some(lan_ip().await)
-            } else {
-                None
+        let (host, stored) = read_host_access(&paths).await?;
+        let mut inner = self.inner.lock().await;
+        let port = inner
+            .running
+            .as_ref()
+            .map_or(host.port, |running| running.port);
+        let (before, managed_lan_ip) = match stored.addresses {
+            Some(addresses) => {
+                let managed_lan_ip =
+                    resolve_managed_lan_ip(&addresses, port, stored.managed_lan_ip.as_deref())
+                        .await;
+                (
+                    RemoteAccessConfig {
+                        addresses,
+                        entry_address_id: stored.entry_address_id,
+                    },
+                    managed_lan_ip,
+                )
+            }
+            None => {
+                let lan_base_url = match inner.running.as_ref().and_then(|r| r.lan_base_url.clone())
+                {
+                    Some(url) => url,
+                    None => {
+                        let ip = match inner.last_lan_ip {
+                            Some(ip) => ip,
+                            None => {
+                                let ip = lan_ip().await;
+                                inner.last_lan_ip = Some(ip);
+                                ip
+                            }
+                        };
+                        format!("http://{ip}:{port}")
+                    }
+                };
+                let before = access::default_config(
+                    &lan_base_url,
+                    &host.public_base_url,
+                    &stored.entry_address_id,
+                );
+                let managed_lan_ip = direct_lan_host(&before.addresses, port)
+                    .unwrap_or_default()
+                    .to_owned();
+                (before, managed_lan_ip)
             }
         };
-        let inner = self.inner.lock().await;
-        let lan_base_url = inner
-            .running
-            .as_ref()
-            .map(|running| running.lan_base_url.clone());
-        let pairing = inner
-            .running
-            .as_ref()
-            .map(|running| running.pairing.clone());
-        let origins = inner
-            .running
-            .as_ref()
-            .map(|running| running.origins.clone());
+        let managed_lan_ip =
+            if direct_lan_host(&config.addresses, port) == Some(managed_lan_ip.as_str()) {
+                managed_lan_ip
+            } else {
+                String::new()
+            };
+        let pairing = inner.running.as_ref().map(|r| r.pairing.clone());
+        let origins = inner.running.as_ref().map(|r| r.origins.clone());
         tokio::task::spawn_blocking(move || {
-            let host = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
-            let lan_base_url = lan_base_url.unwrap_or_else(|| {
-                format!(
-                    "http://{}:{}",
-                    fallback_lan_ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                    host.port
-                )
-            });
-            let before = load_access_config(&paths, &lan_base_url)?;
             let changed = access::targets_changed(&before, &config);
             let scopes = pairing
                 .as_ref()
@@ -276,7 +289,11 @@ impl RemoteServerManager {
             if changed && let Some(pairing) = &pairing {
                 pairing.invalidate();
             }
-            storage::set_remote_access_config(&storage::open_with_paths(&paths)?, &config)?;
+            storage::set_remote_access_config(
+                &storage::open_with_paths(&paths)?,
+                &config,
+                &managed_lan_ip,
+            )?;
             if let Some(origins) = origins {
                 origins.send_replace(config.addresses.clone());
             }
@@ -284,6 +301,32 @@ impl RemoteServerManager {
                 pairing.regenerate(&paths, config.addresses, scopes)?;
             }
             Ok::<_, String>(())
+        })
+        .await
+        .map_err(|_| "Remote WebUI address task failed".to_owned())??;
+        drop(inner);
+        self.snapshot(runtime).await
+    }
+
+    pub(crate) async fn set_entry_address(
+        &self,
+        runtime: &Runtime,
+        entry_address_id: String,
+    ) -> Result<RemoteHostState, String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let paths = runtime.paths.clone();
+        let inner = self.inner.lock().await;
+        let running = inner
+            .running
+            .as_ref()
+            .ok_or("Remote WebUI is not running")?;
+        let lan_base_url = running.lan_base_url.clone();
+        tokio::task::spawn_blocking(move || {
+            let db = storage::open_with_paths(&paths)?;
+            let mut config = load_access_config(&db, lan_base_url.as_deref())?;
+            config.entry_address_id = entry_address_id;
+            let config = access::normalize_config(config)?;
+            storage::set_remote_entry_address(&db, &config.entry_address_id)
         })
         .await
         .map_err(|_| "Remote WebUI address task failed".to_owned())??;
@@ -428,91 +471,107 @@ impl RemoteServerManager {
     pub(crate) async fn snapshot(&self, runtime: &Runtime) -> Result<RemoteHostState, String> {
         let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
-        let running = inner.running.as_ref().map(|server| {
-            (
-                server.port,
-                server.lan_base_url.clone(),
-                server.pairing.clone(),
-            )
-        });
+        let running = inner
+            .running
+            .as_ref()
+            .map(|server| (server.port, server.lan_base_url.clone()));
+        let pairing = inner.running.as_ref().map(|server| server.pairing.clone());
         let last_error = inner.last_error.clone();
+        let last_lan_ip = inner.last_lan_ip;
         drop(inner);
-        let fallback_lan_ip = if running.is_none() {
-            Some(lan_ip().await)
-        } else {
-            None
-        };
-        tokio::task::spawn_blocking(move || {
+        let (host, devices, config, pairing) = tokio::task::spawn_blocking(move || {
             let db = storage::open_with_paths(&paths)?;
             let host = storage::get_remote_host_config(&db)?;
             let _ = storage::delete_expired_remote_devices(&db, storage::now_ms());
             let devices = storage::list_remote_devices(&db)?;
-            let lan_base_url = running.as_ref().map_or_else(
-                || {
-                    format!(
-                        "http://{}:{}",
-                        fallback_lan_ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                        host.port
-                    )
-                },
-                |(_, lan, _)| lan.clone(),
-            );
-            let config = load_access_config(&paths, &lan_base_url)?;
-            let address_config_error = access::normalize_config(config.clone()).err();
-            let pairing = running
-                .as_ref()
-                .and_then(|(_, _, pairing)| pairing.snapshot());
-            // Resolve a secret's URL against its own snapshot, never against a concurrently edited URL.
-            let entry = pairing
-                .as_ref()
-                .and_then(|(_, info)| {
-                    info.addresses
-                        .iter()
-                        .find(|address| address.address.id == config.entry_address_id)
-                        .or_else(|| info.addresses.first())
-                        .map(|address| address.address.base_url.clone())
-                })
-                .or_else(|| {
-                    config
-                        .addresses
-                        .iter()
-                        .find(|address| address.id == config.entry_address_id)
-                        .and_then(|address| access::normalize_base_url(&address.base_url).ok())
-                });
-            let base_url = running
-                .as_ref()
-                .map(|_| effective_base_url(entry.as_deref().unwrap_or_default(), &lan_base_url));
-            let pairing_url = pairing
-                .as_ref()
-                .filter(|(_, info)| info.remaining_uses > 0)
-                .and_then(|(secret, _)| {
-                    base_url
-                        .as_ref()
-                        .map(|base| format!("{base}/pair#pair={secret}"))
-                });
-            Ok(RemoteHostState {
-                enabled: host.enabled,
-                running: running.is_some(),
-                port: running.as_ref().map_or(host.port, |(port, _, _)| *port),
-                base_url,
-                public_base_url: host.public_base_url,
-                pairing_expires_at_ms: pairing.as_ref().map(|(_, info)| info.expires_at_ms),
-                pairing_scopes: pairing.as_ref().map(|(_, info)| info.scopes),
-                pairing_remaining_uses: pairing.as_ref().map_or(0, |(_, info)| info.remaining_uses),
-                pairing_total_uses: pairing.as_ref().map_or_else(
-                    || access::pairing_addresses(&config).len(),
-                    |(_, info)| info.addresses.len(),
-                ),
-                pairing_url,
-                addresses: config.addresses,
-                entry_address_id: config.entry_address_id,
-                address_config_error,
-                last_error,
-                devices,
-            })
+            let config = storage::get_remote_access_config(&db)?;
+            let pairing = pairing.and_then(|pairing| pairing.snapshot());
+            Ok::<_, String>((host, devices, config, pairing))
         })
         .await
-        .map_err(|_| "Remote WebUI snapshot task failed".to_owned())?
+        .map_err(|_| "Remote WebUI snapshot task failed".to_owned())??;
+        let port = running.as_ref().map_or(host.port, |(port, _)| *port);
+        let config = match config.addresses {
+            Some(addresses) => RemoteAccessConfig {
+                addresses,
+                entry_address_id: config.entry_address_id,
+            },
+            None => {
+                let lan_base_url = match running.as_ref().and_then(|(_, url)| url.as_ref()) {
+                    Some(url) => url.clone(),
+                    None => {
+                        let ip = match last_lan_ip {
+                            Some(ip) => ip,
+                            None => {
+                                let detected = lan_ip().await;
+                                *self.inner.lock().await.last_lan_ip.get_or_insert(detected)
+                            }
+                        };
+                        format!("http://{ip}:{port}")
+                    }
+                };
+                access::default_config(
+                    &lan_base_url,
+                    &host.public_base_url,
+                    &config.entry_address_id,
+                )
+            }
+        };
+        let address_config_error = access::normalize_config(config.clone()).err();
+        // Resolve a secret's URL against its own snapshot, never against a concurrently edited URL.
+        let entry = pairing
+            .as_ref()
+            .and_then(|(_, info)| {
+                info.addresses
+                    .iter()
+                    .find(|address| address.address.id == config.entry_address_id)
+                    .or_else(|| info.addresses.first())
+                    .map(|address| address.address.base_url.clone())
+            })
+            .or_else(|| {
+                config
+                    .addresses
+                    .iter()
+                    .find(|address| address.id == config.entry_address_id)
+                    .and_then(|address| access::normalize_base_url(&address.base_url).ok())
+            });
+        let base_url = running
+            .as_ref()
+            .and_then(|(_, lan_base_url)| match lan_base_url {
+                Some(lan_base_url) => Some(effective_base_url(
+                    entry.as_deref().unwrap_or_default(),
+                    lan_base_url,
+                )),
+                None => entry,
+            });
+        let pairing_url = pairing
+            .as_ref()
+            .filter(|(_, info)| info.remaining_uses > 0)
+            .and_then(|(secret, _)| {
+                base_url
+                    .as_ref()
+                    .map(|base| format!("{base}/pair#pair={secret}"))
+            });
+        Ok(RemoteHostState {
+            enabled: host.enabled,
+            running: running.is_some(),
+            port,
+            base_url,
+            public_base_url: host.public_base_url,
+            pairing_expires_at_ms: pairing.as_ref().map(|(_, info)| info.expires_at_ms),
+            pairing_scopes: pairing.as_ref().map(|(_, info)| info.scopes),
+            pairing_remaining_uses: pairing.as_ref().map_or(0, |(_, info)| info.remaining_uses),
+            pairing_total_uses: pairing.as_ref().map_or_else(
+                || access::pairing_addresses(&config).len(),
+                |(_, info)| info.addresses.len(),
+            ),
+            pairing_url,
+            addresses: config.addresses,
+            entry_address_id: config.entry_address_id,
+            address_config_error,
+            last_error,
+            devices,
+        })
     }
 
     pub(crate) async fn stop(&self) {
@@ -544,7 +603,6 @@ impl RemoteServerManager {
     }
 
     async fn start(&self, runtime: &Runtime, port: u16) -> Result<(), String> {
-        let detected_lan_ip = lan_ip().await;
         let mut inner = self.inner.lock().await;
         if inner.running.is_some() {
             return Ok(());
@@ -556,20 +614,51 @@ impl RemoteServerManager {
             .local_addr()
             .map_err(|error| format!("failed to read Remote WebUI listener address: {error}"))?
             .port();
-        let lan_base_url = format!("http://{detected_lan_ip}:{actual_port}");
         let paths = runtime.paths.clone();
+        let (host, stored) = read_host_access(&paths).await?;
+        let (config, lan_base_url) = match stored.addresses {
+            Some(addresses) => {
+                // Classify a legacy direct LAN address once, while its startup IP is known.
+                if stored.managed_lan_ip.is_none()
+                    && direct_lan_host(&addresses, actual_port).is_some()
+                {
+                    let ip = resolve_managed_lan_ip(&addresses, actual_port, None).await;
+                    // A mismatch can mean the original interface is temporarily down.
+                    if !ip.is_empty() {
+                        let paths = paths.clone();
+                        tokio::task::spawn_blocking(move || {
+                            storage::set_remote_managed_lan_ip(
+                                &storage::open_with_paths(&paths)?,
+                                &ip,
+                            )
+                        })
+                        .await
+                        .map_err(|_| "Remote WebUI address task failed".to_owned())??;
+                    }
+                }
+                (
+                    RemoteAccessConfig {
+                        addresses,
+                        entry_address_id: stored.entry_address_id,
+                    },
+                    None,
+                )
+            }
+            None => {
+                let ip = lan_ip().await;
+                let url = format!("http://{ip}:{actual_port}");
+                inner.last_lan_ip = Some(ip);
+                (
+                    access::default_config(&url, &host.public_base_url, &stored.entry_address_id),
+                    Some(url),
+                )
+            }
+        };
         let pairing = Arc::new(PairingSession::default());
         let pairing_for_init = pairing.clone();
-        let paths_for_init = paths.clone();
-        let lan_for_init = lan_base_url.clone();
         let addresses = tokio::task::spawn_blocking(move || {
-            let config = load_access_config(&paths_for_init, &lan_for_init)?;
             let addresses = access::pairing_addresses(&config);
-            pairing_for_init.regenerate(
-                &paths_for_init,
-                addresses.clone(),
-                DEFAULT_PAIRING_SCOPES,
-            )?;
+            pairing_for_init.regenerate(&paths, addresses.clone(), DEFAULT_PAIRING_SCOPES)?;
             Ok::<_, String>(addresses)
         })
         .await
@@ -638,11 +727,59 @@ impl RemoteServerManager {
     }
 }
 
-fn load_access_config(paths: &HostPaths, lan_base_url: &str) -> Result<RemoteAccessConfig, String> {
-    let db = storage::open_with_paths(paths)?;
-    let host = storage::get_remote_host_config(&db)?;
-    Ok(storage::get_remote_access_config(&db)?
-        .unwrap_or_else(|| access::default_config(lan_base_url, &host.public_base_url)))
+async fn read_host_access(
+    paths: &HostPaths,
+) -> Result<(RemoteHostConfig, storage::StoredRemoteAccess), String> {
+    let paths = paths.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = storage::open_with_paths(&paths)?;
+        Ok((
+            storage::get_remote_host_config(&db)?,
+            storage::get_remote_access_config(&db)?,
+        ))
+    })
+    .await
+    .map_err(|_| "Remote WebUI address task failed".to_owned())?
+}
+
+fn load_access_config(
+    db: &SqliteConnection,
+    lan_base_url: Option<&str>,
+) -> Result<RemoteAccessConfig, String> {
+    let stored = storage::get_remote_access_config(db)?;
+    if let Some(addresses) = stored.addresses {
+        return Ok(RemoteAccessConfig {
+            addresses,
+            entry_address_id: stored.entry_address_id,
+        });
+    }
+    let lan_base_url = lan_base_url.ok_or("Remote WebUI has no access addresses")?;
+    let host = storage::get_remote_host_config(db)?;
+    Ok(access::default_config(
+        lan_base_url,
+        &host.public_base_url,
+        &stored.entry_address_id,
+    ))
+}
+
+fn direct_lan_host(addresses: &[RemoteAccessAddress], port: u16) -> Option<&str> {
+    let address = addresses.iter().find(|address| address.id == "lan")?;
+    let (host, url_port) = address.base_url.strip_prefix("http://")?.rsplit_once(':')?;
+    (host.parse::<Ipv4Addr>().is_ok() && url_port.parse::<u16>() == Ok(port)).then_some(host)
+}
+
+async fn resolve_managed_lan_ip(
+    addresses: &[RemoteAccessAddress],
+    port: u16,
+    saved_ip: Option<&str>,
+) -> String {
+    match (direct_lan_host(addresses, port), saved_ip) {
+        (Some(host), Some(ip)) if host == ip => ip.to_owned(),
+        (Some(host), None) if host.parse::<IpAddr>().ok() == Some(lan_ip().await) => {
+            host.to_owned()
+        }
+        _ => String::new(),
+    }
 }
 
 fn trim_base_url(input: &str) -> &str {

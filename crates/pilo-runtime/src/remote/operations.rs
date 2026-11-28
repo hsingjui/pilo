@@ -39,6 +39,16 @@ pub async fn remote_set_addresses(
         .await
 }
 
+pub async fn remote_set_entry_address(
+    runtime: &Runtime,
+    entry_address_id: String,
+) -> Result<RemoteHostState, String> {
+    runtime
+        .remote
+        .set_entry_address(runtime, entry_address_id)
+        .await
+}
+
 pub async fn remote_pairing_regenerate(
     runtime: &Runtime,
     scopes: RemoteScopes,

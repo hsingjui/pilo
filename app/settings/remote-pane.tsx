@@ -97,26 +97,8 @@ export function RemotePane(props: {
 			const revision = addressRevision;
 			const next = await client.remoteHostState();
 			if (!alive || savingAddresses || revision !== addressRevision) return;
-			const config = remoteAddressConfig(next.addresses, next.entryAddressId);
-			if (
-				config.entryAddressId !== next.entryAddressId &&
-				!next.addressConfigError
-			) {
-				savingAddresses = true;
-				addressRevision += 1;
-				try {
-					const updated = await client.remoteSetAddresses(
-						next.addresses,
-						config.entryAddressId,
-					);
-					if (alive) state.set(updated);
-				} finally {
-					savingAddresses = false;
-				}
-			} else {
-				state.set(next);
-			}
-			if (alive) error.set(null);
+			state.set(next);
+			error.set(null);
 		} catch (caught) {
 			if (alive) error.set(userErrorMessage(caught));
 		}
@@ -198,40 +180,19 @@ export function RemotePane(props: {
 		await commitPort(port);
 	};
 
-	const saveAddresses = async (
-		draft: RemoteAccessAddress[] = addressDraft() ?? addresses(),
-	): Promise<RemoteAccessAddress[] | null> => {
-		const current = state();
-		if (busy() || savingAddresses || !current) return null;
-		const config = remoteAddressConfig(draft, current.entryAddressId);
-		if (
-			sameAddressList(sortRemoteAddresses(config.addresses), addresses()) &&
-			config.entryAddressId === current.entryAddressId
-		)
-			return draft;
+	const saveAddressConfig = async (
+		list: RemoteAccessAddress[] | undefined,
+		entryAddressId: string,
+	) => {
+		if (busy() || savingAddresses) return null;
 		savingAddresses = true;
 		savingAddressDraft.set(true);
 		addressRevision += 1;
-		const draftRevisionAtStart = draftRevision;
 		try {
-			const next = await client.remoteSetAddresses(
-				config.addresses,
-				config.entryAddressId,
-			);
-			const savedDraft = draft.map(
-				(address) =>
-					next.addresses.find((item) => item.id === address.id) ?? address,
-			);
+			const next = await client.remoteSetAddresses(list, entryAddressId);
 			state.set(next);
-			// A save that overlapped new typing must not clobber the newer draft.
-			if (draftRevision === draftRevisionAtStart)
-				addressDraft.set(
-					savedDraft.some((address) => !address.baseUrl.trim())
-						? savedDraft
-						: null,
-				);
 			error.set(null);
-			return savedDraft;
+			return next;
 		} catch (caught) {
 			fail(caught);
 			return null;
@@ -241,8 +202,54 @@ export function RemotePane(props: {
 		}
 	};
 
+	const saveAddresses = async (
+		draft: RemoteAccessAddress[] = addressDraft() ?? addresses(),
+	): Promise<RemoteAccessAddress[] | null> => {
+		const current = state();
+		if (busy() || savingAddresses || !current) return null;
+		const config = remoteAddressConfig(draft, current.entryAddressId);
+		const entry = config.addresses.find(
+			(address) => address.id === current.entryAddressId,
+		);
+		const entryAddressId = entry?.id ?? config.entryAddressId;
+		if (
+			sameAddressList(sortRemoteAddresses(config.addresses), addresses()) &&
+			entryAddressId === current.entryAddressId
+		)
+			return draft;
+		const draftRevisionAtStart = draftRevision;
+		const next = await saveAddressConfig(config.addresses, entryAddressId);
+		if (!next) return null;
+		const savedDraft = draft.map(
+			(address) =>
+				next.addresses.find((item) => item.id === address.id) ?? address,
+		);
+		// A save that overlapped new typing must not clobber the newer draft.
+		if (draftRevision === draftRevisionAtStart)
+			addressDraft.set(
+				savedDraft.some((address) => !address.baseUrl.trim())
+					? savedDraft
+					: null,
+			);
+		return savedDraft;
+	};
+
+	const selectPairingEntry = (entryAddressId: string | null) => {
+		const current = state();
+		if (
+			!current ||
+			!entryAddressId ||
+			current.addressConfigError ||
+			entryAddressId === current.entryAddressId ||
+			!current.addresses.some((address) => address.id === entryAddressId)
+		)
+			return;
+		// An entry-only write leaves both the targets and their pairing batch untouched.
+		void saveAddressConfig(undefined, entryAddressId);
+	};
+
 	const regenerate = async () => {
-		if (busy()) return;
+		if (busy() || savingAddresses) return;
 		busy.set("pairing");
 		try {
 			state.set(await client.remotePairingRegenerate("chat,workspace"));
@@ -337,6 +344,7 @@ export function RemotePane(props: {
 	};
 
 	const removeAddress = (id: string) => {
+		if (busy() || savingAddresses) return;
 		const next = (addressDraft() ?? addresses()).filter(
 			(item) => item.id !== id,
 		);
@@ -367,6 +375,7 @@ export function RemotePane(props: {
 	};
 
 	const current = () => state() as RemoteHostState;
+	const pairingCopyKey = () => `pairing:${current().entryAddressId}`;
 
 	return (
 		<View class="gap-3">
@@ -395,7 +404,7 @@ export function RemotePane(props: {
 										<Input
 											testID="remote-port-input"
 											size="sm"
-											class="w-18 text-right font-mono text-xs"
+											class="w-18 text-right text-xs"
 											value={portDraft() ?? String(current().port)}
 											disabled={busy() === "port"}
 											accessibilityLabel={t("settings.remotePort")}
@@ -507,7 +516,7 @@ export function RemotePane(props: {
 												testID={`remote-address:${index()}:input`}
 												size="sm"
 												ref={(ref) => addressInputs.set(address().id, ref)}
-												class="min-w-0 flex-1 font-mono text-xs"
+												class="min-w-0 flex-1 text-xs"
 												value={address().baseUrl}
 												placeholder="https://example.com"
 												disabled={Boolean(busy())}
@@ -550,6 +559,7 @@ export function RemotePane(props: {
 												destructive
 												disabled={
 													Boolean(busy()) ||
+													savingAddressDraft() ||
 													(addressDraft() ?? addresses()).length <= 1
 												}
 												accessibilityLabel={`${t("common.remove")} ${address().baseUrl || index() + 1}`}
@@ -602,13 +612,18 @@ export function RemotePane(props: {
 							{...collapsibleRevealProps()}
 							content={
 								<RemotePairingSection
+									addresses={() =>
+										current().addressConfigError ? [] : addresses()
+									}
+									entryAddressId={() => current().entryAddressId}
+									onSelectEntry={selectPairingEntry}
 									hasLink={hasPairingLink}
 									url={() => current().pairingUrl}
 									regenerating={() => busy() === "pairing"}
-									disabled={() => Boolean(busy())}
-									copied={() => copiedKey() === "pairing"}
+									disabled={() => Boolean(busy()) || savingAddressDraft()}
+									copied={() => copiedKey() === pairingCopyKey()}
 									onCopy={() =>
-										void copyToClipboard(current().pairingUrl, "pairing")
+										void copyToClipboard(current().pairingUrl, pairingCopyKey())
 									}
 									onRegenerate={() => void regenerate()}
 								/>

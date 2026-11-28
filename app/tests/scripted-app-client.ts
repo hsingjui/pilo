@@ -775,10 +775,14 @@ export function scriptedClient(script: AppScript = {}) {
 			return Promise.resolve(remoteHost);
 		},
 		remoteSetAddresses(
-			addresses: RemoteAccessAddress[],
+			addresses: RemoteAccessAddress[] | undefined,
 			entryAddressId: string,
 		) {
-			remoteHost = { ...remoteHost, addresses, entryAddressId };
+			remoteHost = {
+				...remoteHost,
+				addresses: addresses ?? remoteHost.addresses,
+				entryAddressId,
+			};
 			emit({ type: "configuration_changed" });
 			return Promise.resolve(remoteHost);
 		},

@@ -219,6 +219,7 @@ const zhCN = {
 		remoteError: "远程访问出错",
 		remoteActionFailed: "远程访问操作失败",
 		remotePairing: "连接设备",
+		remotePairingEntryAddress: "配对入口地址",
 		remotePairingShareWarning:
 			"只与信任的人分享此链接。配对设备可读写项目文件并运行终端命令。",
 		remoteOpenLink: "扫描二维码或打开链接",
