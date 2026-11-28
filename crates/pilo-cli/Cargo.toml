@@ -1,0 +1,19 @@
+[package]
+name = "pilo-cli"
+version.workspace = true
+description = "pilo: command-line client for the running Pilo desktop Host"
+edition = "2024"
+
+[[bin]]
+name = "pilo"
+path = "src/main.rs"
+
+[dependencies]
+getrandom = "0.3"
+pilo-ipc = { path = "../pilo-ipc" }
+serde_json = "1"
+tokio = { version = "1", features = ["io-util", "net", "rt", "time"] }
+
+[dev-dependencies]
+pilo-runtime = { path = "../pilo-runtime" }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }

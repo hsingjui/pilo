@@ -1,0 +1,55 @@
+pilo - command-line client for the running Pilo app
+
+Usage: pilo [--dev] [--timeout <seconds>] <command>
+
+The Pilo app must be running; pilo talks to it over a private local socket
+(named pipe on Windows) owned by the current user. No token or pairing.
+
+Options:
+  --dev                 Connect to the development app (app.hsingjui.pilo.dev)
+  --timeout <seconds>   Wait for each request up to this long (default 60)
+  -h, --help            Show this help
+  --version             Same as `pilo version`
+
+Commands:
+  version                                   {"cli","appId"}; needs no running app
+  help                                      This text
+
+  settings get                              Preferences
+  settings patch                            Field-level patch; stdin: JSON object
+  settings theme get                        Theme settings
+  settings theme set                        stdin: theme settings update object
+
+  projects list
+  projects add --path <path> [--connection <id>]   Connection defaults to "local"
+  projects remove <project id>
+
+  sessions list --project <id> [--offset N] [--limit N]   Limit 1-100, default 50
+  sessions get <session id> --project <id>
+  sessions history <session id> --project <id> [--start N] [--limit N]
+                                            Saved messages; limit 1-100, default 24
+  sessions status <session id> --project <id>
+                                            {sessionId, state, turn, runningTools,
+                                             lastAssistantMessage}; never starts Pi
+  sessions create --project <id>            stdin: {"message": "...", "title"?: "..."}
+                                            Returns once Pi accepted the first prompt;
+                                            outcome_unknown errors carry the new
+                                            sessionId to query
+  sessions send <session id> --project <id> stdin: {"message": "..."}; busy sessions
+                                            are refused, not queued
+  sessions abort <session id> --project <id>   Interrupt the current turn only
+  sessions stop <session id> --project <id>    Close the Pi process; keeps history
+  sessions archive <session id> --project <id> Hide from the list; restorable
+  sessions restore <session id> --project <id>
+  sessions update <session id> --project <id>  stdin: {"title"?: "...", "pinned"?: bool}
+  sessions delete <session id> --project <id>  Move to trash; refused while running
+
+Session IDs are Pi session IDs or the sessionKey returned by create.
+Messages must be plain text: no slash commands, up to 64 KiB.
+
+Output: one JSON value on stdout, exit 0. Errors: {"error": {"category", "code",
+"message"}} on stderr with exit code
+  2 invalid_input     3 offline           4 incompatible
+  5 rejected          6 outcome_unknown   1 internal
+outcome_unknown means a write may or may not have been applied: query with
+`sessions get` or `sessions status` instead of retrying.

@@ -29,6 +29,11 @@ pub fn method_table_json() -> Value {
                 "maxRequestBytes": spec.limits.max_request_bytes,
                 "maxBinaryInputBytes": spec.limits.max_binary_input_bytes,
                 "timeoutMs": u64::try_from(spec.limits.timeout.as_millis()).unwrap_or(u64::MAX),
+                "params": spec.params.iter().map(|param| serde_json::json!({
+                    "name": param.key(),
+                    "type": param.ty.replace(' ', ""),
+                    "optional": param.optional(),
+                })).collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -103,6 +108,38 @@ pub struct MethodSpec {
     pub scope: Scope,
     pub kind: MethodKind,
     pub limits: Limits,
+    /// JSON parameters in declaration order.
+    pub params: &'static [MethodParam],
+}
+
+/// One JSON parameter: its Rust field name and Rust type as written in the registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MethodParam {
+    pub name: &'static str,
+    pub ty: &'static str,
+}
+
+impl MethodParam {
+    /// The camelCase key callers send.
+    pub fn key(&self) -> String {
+        let mut key = String::with_capacity(self.name.len());
+        let mut upper = false;
+        for character in self.name.chars() {
+            if character == '_' {
+                upper = true;
+            } else if upper {
+                key.extend(character.to_uppercase());
+                upper = false;
+            } else {
+                key.push(character);
+            }
+        }
+        key
+    }
+
+    pub fn optional(&self) -> bool {
+        self.ty.replace(' ', "").starts_with("Option<")
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -115,6 +152,10 @@ pub enum ErrorCode {
     Unavailable,
     Timeout,
     Internal,
+    /// The target's current state refuses the request (busy, not running, Pi rejected it).
+    Conflict,
+    /// A write may or may not have taken effect; callers must not retry automatically.
+    OutcomeUnknown,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, thiserror::Error)]
@@ -350,6 +391,25 @@ mod tests {
             id: "workspace".into(),
             scopes: RemoteScopes::ChatWorkspace,
         };
+        for principal in [&chat, &workspace] {
+            for method in ["session.status", "session.create", "session.send"] {
+                assert_eq!(
+                    call(&runtime, principal, method, params())
+                        .await
+                        .unwrap_err()
+                        .code,
+                    ErrorCode::Forbidden,
+                    "{method}"
+                );
+            }
+        }
+        assert_eq!(
+            call(&runtime, &Principal::Local, "session.status", params())
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidParams
+        );
         for (principal, workspace_error, admin_error) in [
             (
                 &Principal::Local,
@@ -430,6 +490,15 @@ mod tests {
             "remote.pairing.regenerate",
             "remote.port.set",
             "remote.state",
+            "session.resolve",
+            "session.page",
+            "session.create",
+            "session.send",
+            "session.abort",
+            "session.stop",
+            "session.update",
+            "session.trash",
+            "session.status",
         ]);
         let mut names = HashSet::new();
         for spec in methods() {

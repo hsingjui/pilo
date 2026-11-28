@@ -15,7 +15,9 @@ use pilo_runtime::{
     events::{EventQueueLimits, EventStream},
     host_api::{self, BinaryOutput, Principal},
     host_paths::HostPaths,
-    initialize_local_server_binary, initialize_server_resource_dir, project_api,
+    initialize_local_server_binary, initialize_server_resource_dir,
+    local_ipc::LocalIpcConfig,
+    project_api,
     project_opener::ProjectApp,
     storage,
 };
@@ -52,6 +54,7 @@ pub struct Pilo {
     executor: &'static Executor,
     event_stream: Arc<Mutex<EventStream>>,
     terminal_events: Arc<TerminalEventStream>,
+    default_launch: bool,
 }
 
 impl Pilo {
@@ -189,7 +192,26 @@ impl Pilo {
             executor,
             event_stream: Arc::new(Mutex::new(event_stream)),
             terminal_events,
+            default_launch,
         })
+    }
+
+    /// Serves the Host to the current user's CLI on the endpoint of `app_id`, the
+    /// packaged `nsh.json` id that also names the bundled CLI's default instance.
+    /// Only the default data directory gets an endpoint.
+    pub async fn start_local_ipc(this: Instance<Self>, app_id: String) -> Result<(), String> {
+        if !this.with(|pilo| pilo.default_launch) {
+            return Err("local IPC is only served for the default data directory".into());
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            let config = LocalIpcConfig {
+                app_id,
+                app_version: env!("CARGO_PKG_VERSION").to_owned(),
+                installation: None,
+            };
+            runtime.start_local_ipc(config).await.map(|_| ())
+        })
+        .await
     }
 
     /// Waits for an ordered batch, an inclusive gap, or a closed event stream.

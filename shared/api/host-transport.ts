@@ -243,7 +243,9 @@ function isErrorCode(value: unknown): value is HostApiErrorCode {
 		value === "invalid_params" ||
 		value === "unavailable" ||
 		value === "timeout" ||
-		value === "internal"
+		value === "internal" ||
+		value === "conflict" ||
+		value === "outcome_unknown"
 	);
 }
 

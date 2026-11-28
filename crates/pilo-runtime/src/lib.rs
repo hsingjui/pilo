@@ -8,9 +8,6 @@ mod chat_sessions;
 mod connection_diagnostics;
 mod connection_models;
 pub mod connections;
-// No caller until the Pilo CLI migration takes over these handlers.
-#[allow(dead_code)]
-mod control;
 mod credentials;
 pub mod debug_trace;
 pub mod events;
@@ -19,6 +16,7 @@ mod git;
 pub mod handle;
 pub mod host_api;
 pub mod host_paths;
+pub mod local_ipc;
 pub use handle::Runtime;
 pub mod next_prompt;
 mod pi_event_adapters;
@@ -42,6 +40,7 @@ pub mod session_api;
 mod session_history;
 mod session_index;
 pub mod session_naming;
+mod session_ops;
 mod session_snapshot;
 mod session_watcher;
 pub(crate) mod shortcuts;

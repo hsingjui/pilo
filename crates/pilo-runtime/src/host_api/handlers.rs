@@ -12,12 +12,12 @@ use crate::{
     chat_service::{self, ChatSessionRequest},
     connections::{self, ssh, wsl},
     handle, next_prompt, pi_workspace, preferences, project, project_api, prompt_enhancement,
-    remote, remote_fs, runtime_api, session_api, session_naming, storage,
+    remote, remote_fs, runtime_api, session_api, session_naming, session_ops, storage,
 };
 
 use super::{
-    CallFuture, HostApiError, Limits, MethodKind, MethodSpec, Output, Principal, Scope, blocking,
-    decode, json, validation,
+    CallFuture, HostApiError, Limits, MethodKind, MethodParam, MethodSpec, Output, Principal,
+    Scope, blocking, decode, json, validation,
 };
 
 macro_rules! register {
@@ -32,6 +32,10 @@ macro_rules! register {
                 scope: Scope::$scope,
                 kind: MethodKind::$kind,
                 limits: register!(@limits $kind $(($limit))?),
+                params: &[$(MethodParam {
+                    name: stringify!($field),
+                    ty: stringify!($ty),
+                }),*],
             }),+];
             METHODS
         }
@@ -343,6 +347,33 @@ register! {
     }
     "session.uiState.set": Chat Json |rt, _who| (project_id: Option<String>, session_path: String, update: SessionUiStateUpdate) {
         json(database_input(rt, move |rt| session_api::session_update_ui_state(rt, session_path, update, project_id)).await?)
+    }
+    "session.resolve": Admin Json |rt, _who| (project_id: String, session_id: String) {
+        json(session_ops::get(rt, &project_id, &session_id).await?)
+    }
+    "session.page": Admin Json |rt, _who| (project_id: String, offset: Option<usize>, limit: Option<usize>) {
+        json(session_ops::page(rt, &project_id, offset, limit).await?)
+    }
+    "session.create": Admin Json |rt, _who| (project_id: String, session_id: String, message: String, title: Option<String>) {
+        json(session_ops::create(rt, project_id, session_id, message, title).await?)
+    }
+    "session.send": Admin Json |rt, _who| (project_id: String, session_id: String, message: String) {
+        json(session_ops::send(rt, &project_id, &session_id, message).await?)
+    }
+    "session.abort": Admin Json |rt, _who| (project_id: String, session_id: String) {
+        json(session_ops::abort(rt, &project_id, &session_id).await?)
+    }
+    "session.stop": Admin Json |rt, _who| (project_id: String, session_id: String) {
+        json(session_ops::stop(rt, &project_id, &session_id).await?)
+    }
+    "session.update": Admin Json |rt, _who| (project_id: String, session_id: String, title: Option<String>, pinned: Option<bool>) {
+        json(session_ops::update(rt, &project_id, &session_id, title, pinned).await?)
+    }
+    "session.trash": Admin Json |rt, _who| (project_id: String, session_id: String) {
+        json(session_ops::trash(rt, &project_id, &session_id).await?)
+    }
+    "session.status": Admin Json |rt, _who| (project_id: String, session_id: String) {
+        json(session_ops::status(rt, &project_id, &session_id).await?)
     }
     "session.readStates": Chat Json |rt, _who| () {
         json(handle::session_read_states(rt).await.map_err(HostApiError::internal)?)
