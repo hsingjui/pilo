@@ -302,7 +302,7 @@ export type HostApiMethods = {
 	};
 	"remote.port.set": { params: { port: number }; result: RemoteHostState };
 	"remote.addresses.set": {
-		params: { addresses: RemoteAccessAddress[]; entryAddressId: string };
+		params: { addresses?: RemoteAccessAddress[]; entryAddressId: string };
 		result: RemoteHostState;
 	};
 	"remote.pairing.regenerate": {

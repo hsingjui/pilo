@@ -59,7 +59,11 @@ pub(crate) fn normalize_config(
     Ok(config)
 }
 
-pub(crate) fn default_config(lan_base_url: &str, public_base_url: &str) -> RemoteAccessConfig {
+pub(crate) fn default_config(
+    lan_base_url: &str,
+    public_base_url: &str,
+    entry_address_id: &str,
+) -> RemoteAccessConfig {
     let mut addresses = vec![RemoteAccessAddress {
         id: "lan".to_owned(),
         name: String::new(),
@@ -77,9 +81,17 @@ pub(crate) fn default_config(lan_base_url: &str, public_base_url: &str) -> Remot
             });
         }
     }
+    let entry_address_id = if addresses
+        .iter()
+        .any(|address| address.id == entry_address_id)
+    {
+        entry_address_id
+    } else {
+        "lan"
+    };
     RemoteAccessConfig {
         addresses,
-        entry_address_id: "lan".to_owned(),
+        entry_address_id: entry_address_id.to_owned(),
     }
 }
 

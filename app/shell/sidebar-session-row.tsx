@@ -36,6 +36,7 @@ import {
 	sidebarRowHeight,
 	sidebarText,
 } from "./sidebar-parts";
+import { sessionAgeText, SidebarSessionClock } from "./sidebar-session-age";
 import { SessionGlideContext } from "./sidebar-session-glide";
 
 /**
@@ -157,12 +158,15 @@ export function SessionRow(props: {
 }) {
 	const { store } = props;
 	const session = props.session;
+	const now = SidebarSessionClock();
+	const age = computed(() => sessionAgeText(session().latestMessageAt, now()));
 	const toasts = AppToaster();
 	const glide = SessionGlideContext();
 	const trackViewportRow = glide?.trackViewportRow;
 	let bounds: Bounds | null = null;
 	const menuOpen = signal(false);
 	const contextOpen = signal(false);
+	const archiveFocused = signal(false);
 	const confirmingDelete = signal(false);
 	const renaming = signal(false);
 	const renameValue = signal("");
@@ -196,6 +200,7 @@ export function SessionRow(props: {
 			renamePending = false;
 			menuOpen.set(false);
 			contextOpen.set(false);
+			archiveFocused.set(false);
 			confirmingDelete.set(false);
 			renaming.set(false);
 		});
@@ -472,10 +477,25 @@ export function SessionRow(props: {
 			}
 		</View>
 	);
+	const ageInArchiveSlotClass = () => {
+		if (!saved()) return "";
+		if (archiveFocused() || menuOpen()) return "opacity-0";
+		return "group-hover:opacity-0";
+	};
+	const ageLabel = (className?: Accessor<string>) => (
+		<Text
+			class={`pointer-events-none shrink-0 whitespace-nowrap font-sans tabular-nums text-sidebar-foreground-muted ${className?.() ?? ""}`}
+			style={sidebarText("xs")}
+		>
+			{age}
+		</Text>
+	);
+
 	const trailing = () =>
 		archived() && saved() ? (
 			<View class="shrink-0 flex-row items-center gap-1">
 				{unreadMarker}
+				{() => (age() ? ageLabel() : null)}
 				<Button
 					testID={`session:${session().id}:unarchive-button`}
 					class={`size-6 items-center justify-center rounded-sm hover:bg-sidebar-foreground/15 ${HOVER_ACTION}`}
@@ -498,7 +518,11 @@ export function SessionRow(props: {
 				/>
 			</View>
 		) : (
-			<View class="relative size-6 shrink-0 items-center justify-center">
+			<View
+				class={`relative h-6 min-w-6 shrink-0 flex-row items-center gap-1 ${age() ? "justify-end" : "justify-center"}`}
+				onFocusIn={() => archiveFocused.set(true)}
+				onFocusOut={() => archiveFocused.set(false)}
+			>
 				{() =>
 					session().active ? (
 						<View
@@ -510,6 +534,7 @@ export function SessionRow(props: {
 						/>
 					) : null
 				}
+				{() => (age() ? ageLabel(ageInArchiveSlotClass) : null)}
 				{() =>
 					saved() ? (
 						<Button
@@ -546,7 +571,9 @@ export function SessionRow(props: {
 				style={rowStyle()}
 				focusVisibleStyle={sidebarFocusRing()}
 				selected={selected()}
-				accessibilityLabel={session().title}
+				accessibilityLabel={
+					age() ? `${session().title}, ${age()}` : session().title
+				}
 				onPress={() => {
 					glide?.dismiss();
 					const { projectId, sessionPath, id } = session();

@@ -10,10 +10,12 @@ import {
 	View,
 } from "nsh";
 
+import type { RemoteAccessAddress } from "@shared/api/remote-types";
 import { t } from "../shell/i18n";
 import { qrMatrix } from "../lib/qr-matrix";
 import { CopyStatusIcon } from "../ui/copy-status-icon";
 import { Icon } from "../ui/icon";
+import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import {
 	isNarrowSettings,
@@ -91,6 +93,9 @@ function PairingUrl(props: { url: Accessor<string | null> }) {
 }
 
 export function RemotePairingSection(props: {
+	addresses: Accessor<RemoteAccessAddress[]>;
+	entryAddressId: Accessor<string>;
+	onSelectEntry: (id: string | null) => void;
 	hasLink: Accessor<boolean>;
 	url: Accessor<string | null>;
 	regenerating: Accessor<boolean>;
@@ -100,8 +105,28 @@ export function RemotePairingSection(props: {
 	onRegenerate: () => void;
 }) {
 	const wide = () => !isNarrowSettings();
+	const hasAddressChoices = computed(() => props.addresses().length > 1);
 	return (
 		<SettingsSection title={t("settings.remotePairing")}>
+			{() =>
+				hasAddressChoices() ? (
+					<SettingsRow label={t("settings.remotePairingEntryAddress")}>
+						<Select
+							size="sm"
+							class="w-64"
+							testID="remote-pairing-entry-address"
+							accessibilityLabel={t("settings.remotePairingEntryAddress")}
+							items={props.addresses().map((address) => ({
+								value: address.id,
+								title: address.baseUrl,
+							}))}
+							value={props.entryAddressId()}
+							disabled={props.disabled()}
+							onChange={(event) => props.onSelectEntry(event.value)}
+						/>
+					</SettingsRow>
+				) : null
+			}
 			{() =>
 				props.hasLink() ? (
 					<View

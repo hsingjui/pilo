@@ -224,8 +224,12 @@ register! {
     "remote.port.set": Admin Json |rt, _who| (port: u16) {
         json(remote::remote_set_port(rt, port).await.map_err(HostApiError::invalid)?)
     }
-    "remote.addresses.set": Admin Json |rt, _who| (addresses: Vec<RemoteAccessAddress>, entry_address_id: String) {
-        json(remote::remote_set_addresses(rt, addresses, entry_address_id).await.map_err(HostApiError::invalid)?)
+    "remote.addresses.set": Admin Json |rt, _who| (addresses: Option<Vec<RemoteAccessAddress>>, entry_address_id: String) {
+        let state = match addresses {
+            Some(addresses) => remote::remote_set_addresses(rt, addresses, entry_address_id).await,
+            None => remote::remote_set_entry_address(rt, entry_address_id).await,
+        };
+        json(state.map_err(HostApiError::invalid)?)
     }
     "remote.pairing.regenerate": Admin Json |rt, _who| (scopes: RemoteScopes) {
         json(remote::remote_pairing_regenerate(rt, scopes).await.map_err(HostApiError::invalid)?)

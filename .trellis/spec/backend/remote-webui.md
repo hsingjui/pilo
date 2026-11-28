@@ -299,6 +299,10 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
 
 `RemoteAccessAddress` (`camelCase`): `{ id: string, name: string, baseUrl: string }`.
 `name` may be empty. `RemoteAccessConfig`: `{ addresses, entryAddressId }`.
+The admin Host method `remote.addresses.set` also accepts `{ entryAddressId }`
+for an entry-only write while the listener is running. Unknown entries or an
+invalid target list are rejected; an empty `addresses` list is not an entry-only
+request and is rejected by the normal list validation.
 
 `RemoteHostState` (`camelCase`): `enabled`, `running`, `port`, `baseUrl?`,
 `publicBaseUrl`, `addresses[]`, `entryAddressId`, `addressConfigError?`,
@@ -420,9 +424,9 @@ index file through the same response path.
 ### Storage (`runtime/storage/remote.rs`)
 
 ```text
-remote_host_config(id=1, enabled, port, public_base_url, addresses_json NULL, entry_address_id)
+remote_host_config(id=1, enabled, port, public_base_url, addresses_json NULL, entry_address_id, managed_lan_ip NULL)
 remote_pairing(id=1, secret_hash, expires_at_ms, consumed_at_ms)
-remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, expires_at_ms, revoked_at_ms)
+remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, expires_at_ms, revoked_at_ms, display_name NULL)
 ```
 
 ---
@@ -435,15 +439,18 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   URLs only; reject credentials, query, fragment and subpath mounts. IDs are
   unique ASCII alphanumeric/hyphen strings (1–80 bytes); optional names are
   trimmed and bounded to 80 characters. Entry ID must exist in the list.
-  Guarded additive columns keep `RemoteHostConfig` / `RemoteDevice` unchanged.
-  `addresses_json IS NULL` projects runtime LAN plus the legacy public address,
-  deduplicates origins and defaults entry to LAN. Once saved, the explicit list
-  is authoritative. Invalid legacy URLs remain editable with an error but are
-  excluded from pairing targets. Editing targets invalidates the old batch and
-  generates a new one without clearing devices. The desktop pins the entry to the
-  `lan` address when one exists and no longer exposes entry or name editing;
-  legacy `name` values stay in storage but are neither edited nor shown. Desktop
-  writes through `remote_set_addresses`.
+  `addresses_json IS NULL` projects runtime LAN plus the legacy public address
+  and deduplicates origins. Use the saved entry ID if present in that projection,
+  otherwise use `lan`. Once saved, the explicit list is authoritative. Invalid
+  legacy URLs remain editable with an error but are excluded from pairing targets.
+  Editing targets renews the pairing batch without clearing devices. The desktop
+  shows an entry selector when multiple valid targets are configured. Switching
+  entry changes only `entry_address_id`, not `addresses_json`, origins, the batch
+  secret, or remaining uses. Do not send the projected list for an entry-only
+  change: that would pin a detected IP as an explicit address. Address edits
+  keep the selected entry if it remains in the list; otherwise use `lan` or the
+  first saved address. Legacy address `name` values are retained but not shown or
+  edited in the desktop settings.
   The saved-address editor and WebUI pairing choices share
   `sortRemoteAddresses` from `shared/remote-addresses.ts`: RFC1918 IPv4 origins
   appear before public/custom origins, preserving order within each group.
@@ -458,10 +465,17 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   heading/close control outside the scroll viewport and use a `minmax(0, 1fr)`
   content row, `min-h-0`, and `overscroll-contain`. Reuse theme scrollbar tokens;
   do not add a Host-management dialog or native APIs to WebUI.
-- **LAN discovery**: desktop-only, on picker open, never part of the 3-second
-  state poll or an HTTP route. `remote/lan.rs` reads Up interfaces through Windows
-  PowerShell/.NET, macOS `ifconfig -u`, or Linux `ip -o -4 addr show up`, with a
-  5-second timeout and child cleanup. Return deduplicated IPv4 literals, preferring
+- **LAN discovery**: the desktop picker discovers current addresses. Listener
+  startup uses the saved address list without discovery except to classify an
+  older direct `lan` entry with missing provenance. An unsaved configuration
+  needs a fresh LAN IP for its default address. State snapshots
+  use the saved list, the running listener's default address, or the last
+  detected IP with the configured port. Only a cold snapshot with neither a
+  saved list nor a known IP needs discovery. Do not enumerate interfaces on
+  shutdown, each state poll, or an HTTP route. `remote/lan.rs` reads Up
+  interfaces through Windows PowerShell/.NET, macOS `ifconfig -u`, or Linux
+  `ip -o -4 addr show up`, with a 5-second timeout and child cleanup.
+  Return deduplicated IPv4 literals, preferring
   Windows physical adapters identified by `Get-NetAdapter -Physical`, then RFC1918
   addresses, then numeric IP order. If adapter classification is unavailable,
   retain all candidates and fall back to RFC1918-first sorting; other platforms
@@ -480,10 +494,13 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   connections; when disabled, it does not listen. Saved access addresses control
   pairing destinations, not the listener bind address.
 - **Port edits**: `remote_set_port` follows a saved `lan` entry only when its
-  URL exactly matches the previous runtime LAN URL (or the current LAN IP with
-  the old port while stopped). It also updates every quick-added LAN entry whose
-  URL still equals `http://<IP encoded in ID>:<old listener port>`. Manually changed
-  hosts, schemes or ports do not follow. Unmarked custom/proxy entries stay unchanged.
+  URL exactly matches `http://<managed_lan_ip>:<old listener port>`. Record the
+  IP when the projected LAN URL is saved unchanged; clear it when that URL is
+  edited or removed. A NULL value denotes a legacy list: infer the IP only if
+  its direct `lan` URL matches the detected primary IP and listener port. Do not
+  replace known provenance with a newly preferred IP. Quick-added entries still
+  follow only if their URLs match `http://<IP encoded in ID>:<old listener port>`.
+  Manually edited and unmarked custom/proxy URLs do not follow.
   Validate the resulting list before stopping; a duplicate origin rejects the
   change. Persist the port, updated LAN URL and the existing device-clearing
   policy in one transaction, then restart so links use the new targets.
@@ -556,11 +573,14 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   Remote WebUI sends `describeDevice(navigator.userAgent)`
   (`web/lib/device-name.ts`) — `机型/系统 · 浏览器` — because a raw UA is
   unreadable in the device list. New labels append the pairing address name/URL,
-  using bounded portions (40 device-name + 36 address characters). `pair_ip` is the pairing request's peer IP from
-  `ConnectInfo<SocketAddr>`, not client-supplied.
+  using bounded portions (40 device-name + 36 address characters). New pairings
+  also store the unsuffixed `display_name` (optional `displayName` on the wire)
+  for the device list. Use the full stored `name` if that field is absent; do
+  not infer the suffix from legacy or user-entered names. `pair_ip` is the pairing
+  request's peer IP from `ConnectInfo<SocketAddr>`, not client-supplied.
 - **Device rename**: `remote_device_rename` reuses `auth::normalize_device_name`,
   so the same 80-char bound applies. Renaming requires the device to exist and
-  not be revoked.
+  not be revoked and clears `display_name` in the same update.
 - Native adapters use `host_api::Principal::Local`. Remote middleware inserts
   `Principal::Device { id, scopes }` from the authenticated device. `HostRequest`
   passes this extension to the Registry for JSON and binary operations. Both device
@@ -840,7 +860,10 @@ Additional multi-address assertion points, pending explicit test authorization
 (no new tests added or run during this implementation):
 
 - Config NULL migration, explicit list persistence, duplicate-origin rejection,
-  invalid legacy URL correction and address edits retaining the batch TTL.
+  and invalid legacy URL correction. An entry-only write leaves NULL addresses
+  implicit even across startup with a new LAN IP and leaves the current batch's
+  TTL and uses intact. The device list shows the stored short label only for
+  generated names; a rename containing ` · ` or a URL displays verbatim.
 - Saved default and multiple quick-added LAN entries follow repeated listener
   port edits, including stopped/restarted hosts and entries filling empty rows.
   Manually edited hosts/schemes/ports and unmarked custom/proxy URLs stay unchanged;

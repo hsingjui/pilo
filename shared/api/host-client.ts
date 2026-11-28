@@ -646,10 +646,15 @@ export class HostClient implements PiloClient {
 	}
 
 	remoteSetAddresses(
-		addresses: RemoteAccessAddress[],
+		addresses: RemoteAccessAddress[] | undefined,
 		entryAddressId: string,
 	): Promise<RemoteHostState> {
-		return this.call("remote.addresses.set", { addresses, entryAddressId });
+		return this.call(
+			"remote.addresses.set",
+			addresses === undefined
+				? { entryAddressId }
+				: { addresses, entryAddressId },
+		);
 	}
 
 	remotePairingRegenerate(scopes: RemoteScopes): Promise<RemoteHostState> {

@@ -223,6 +223,7 @@ const enUS = {
 		remoteError: "Remote WebUI error",
 		remoteActionFailed: "Remote WebUI action failed",
 		remotePairing: "Pair a device",
+		remotePairingEntryAddress: "Pairing link address",
 		remotePairingShareWarning:
 			"Share this link only with people you trust. Paired devices can read and write project files and run terminal commands.",
 		remoteOpenLink: "Scan the QR code or open the link",
@@ -1045,6 +1046,7 @@ const enUS = {
 		archivedSessions: "Archived sessions",
 		unarchive: "Unarchive",
 		undoArchive: "Undo",
+		sessionJustNow: "Just now",
 		noArchivedSessions: "No archived sessions",
 		loadArchivedFailed: "Couldn't load archived sessions",
 		moveDown: "Move down",

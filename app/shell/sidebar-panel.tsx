@@ -1,6 +1,5 @@
 import {
 	type Accessor,
-	appInfo,
 	cleanup,
 	computed,
 	effect,
@@ -28,6 +27,7 @@ import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
 import { textTooltip } from "../ui/tooltip";
 import type { DesktopUpdate } from "./desktop-update";
+import { displayFontFamily } from "./appearance";
 import type { ArchiveView } from "./archived-sessions";
 import { t } from "./i18n";
 import { PiLogo } from "./pi-logo";
@@ -176,23 +176,29 @@ export function sidebarSurface() {
 }
 
 /**
- * Hidden title bar options matched to the sidebar surface: macOS floating cards
- * inset the traffic lights into the card's safe area and center them vertically.
+ * Hidden title bar options matched to the sidebar surface: floating cards keep
+ * the same vertical midpoint between the sidebar header and main header on all
+ * platforms, while macOS also insets the traffic lights inside the card frame.
  */
 export function windowTitleBarOptions(
 	card: SidebarSurfaceFrame,
 	os: string = platform.os,
 ) {
 	const floating = card.frameTop > 0 || card.frameLeft > 0;
-	if (os === "macos" && floating) {
+	if (floating) {
 		const height = card.frameTop * 2 + FLOATING_SIDEBAR_TITLE_BAR_HEIGHT;
 		return {
 			style: "hidden" as const,
 			height,
-			controlsOffset: {
-				x: card.frameLeft + Math.max(card.radius, FLOATING_CONTROLS_MIN_INSET),
-				y: Math.round((height - MACOS_TRAFFIC_LIGHT_HEIGHT) / 2),
-			},
+			controlsOffset:
+				os === "macos"
+					? {
+							x:
+								card.frameLeft +
+								Math.max(card.radius, FLOATING_CONTROLS_MIN_INSET),
+							y: Math.round((height - MACOS_TRAFFIC_LIGHT_HEIGHT) / 2),
+						}
+					: null,
 		};
 	}
 	return {
@@ -203,16 +209,16 @@ export function windowTitleBarOptions(
 }
 
 /**
- * Height of the sidebar's own title row. macOS floating cards keep the row
- * within the top border and aligned with the window title bar's midpoint;
- * other platforms use the full window title bar height.
+ * Height of the sidebar's own title row. Floating cards keep the row inside
+ * the top border and aligned with the window title bar's midpoint; docked
+ * themes use the full window title bar height.
  */
 export function sidebarTitleBarHeight(
 	windowHeight: number,
 	card: SidebarSurfaceFrame,
-	os: string = platform.os,
+	_os: string = platform.os,
 ) {
-	if (card.frameTop <= 0 || os !== "macos") return windowHeight;
+	if (card.frameTop <= 0) return windowHeight;
 	return Math.max(
 		FLOATING_SIDEBAR_TITLE_BAR_HEIGHT,
 		windowHeight - card.frameTop * 2,
@@ -220,15 +226,14 @@ export function sidebarTitleBarHeight(
 }
 
 /**
- * The title row's negative top margin. macOS floating cards keep the row inside
- * the card with their traffic lights; other platforms align it with the window's
- * title bar so the sidebar and main-header actions share one center line.
+ * The title row's negative top margin: keeps the row seated cleanly inside the
+ * card's top border so it never jams into the floating frame edge.
  */
 export function sidebarTitleBarMarginTop(
 	card: SidebarSurfaceFrame & { paddingTop: number; top: number },
-	os: string = platform.os,
+	_os: string = platform.os,
 ) {
-	return os === "macos" ? -card.paddingTop : -card.top;
+	return -card.paddingTop;
 }
 
 /** Subtle borderless tinted fill harmonized with the sidebar's own surface. */
@@ -317,49 +322,22 @@ export function SidebarPanel(props: SidebarPanelProps) {
 					}}
 				>
 					<View class="min-w-0 flex-1 flex-row items-center gap-2 pl-2 pr-1">
-						<View
-							accessible={false}
-							class="shrink-0 items-center justify-center"
-							style={{
-								width: hasTrafficLights() ? 21 : 24,
-								height: hasTrafficLights() ? 21 : 24,
-								borderRadius: hasTrafficLights() ? 5.5 : 6.5,
-								backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 8%, transparent)`,
-							}}
-						>
-							<PiLogo
-								size={hasTrafficLights() ? 11 : 13}
-								trim
-								color={token("sidebar-selection-foreground")}
-							/>
-						</View>
-						<Text
-							class="min-w-0 shrink truncate font-sans font-bold leading-none tracking-tight"
-							style={{
-								fontSize: (hasTrafficLights() ? 17 : 19) * brandScale(),
-								color: token("sidebar-selection-foreground"),
-							}}
-						>
-							Pilo
-						</Text>
 						{() =>
-							appInfo().development ? (
-								<View
-									testID="sidebar-dev-badge"
-									accessible={false}
-									class="shrink-0 items-center justify-center rounded px-1.5 py-0.5"
-									style={{
-										backgroundColor: `color-mix(in srgb, ${token("primary")} 14%, transparent)`,
-									}}
-								>
+							hasTrafficLights() ? null : (
+								<>
+									<PiLogo size={19} trim colorized />
 									<Text
-										class="font-sans text-[10px] font-bold leading-none tracking-wider"
-										style={{ color: token("primary") }}
+										class="min-w-0 shrink truncate font-bold leading-none tracking-tight"
+										style={{
+											fontFamily: displayFontFamily(),
+											fontSize: 20 * brandScale(),
+											color: token("sidebar-selection-foreground"),
+										}}
 									>
-										DEV
+										Pilo
 									</Text>
-								</View>
-							) : null
+								</>
+							)
 						}
 					</View>
 					<View
@@ -371,13 +349,17 @@ export function SidebarPanel(props: SidebarPanelProps) {
 								: { opacity: 1, pointerEvents: "auto" },
 						]}
 					>
-						<SidebarAction
-							testID="sidebar-search"
-							label={t("sidebar.searchSessions")}
-							onPress={props.onSearch}
-						>
-							<Icon name="Search" size={16} />
-						</SidebarAction>
+						{() =>
+							hasTrafficLights() ? (
+								<SidebarAction
+									testID="sidebar-search"
+									label={t("sidebar.searchSessions")}
+									onPress={props.onSearch}
+								>
+									<Icon name="Search" size={16} />
+								</SidebarAction>
+							) : null
+						}
 						<SidebarAction
 							testID="sidebar-collapse"
 							label={t("sidebar.collapseSidebar")}
@@ -387,7 +369,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						</SidebarAction>
 					</View>
 				</View>
-				<View class="mt-1 shrink-0 gap-1 px-2.5">
+				<View class="mt-1 shrink-0 gap-1 pl-1.5 pr-2.5">
 					{() => {
 						if (archiveView()) {
 							const project = archiveProject();
@@ -405,18 +387,28 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							);
 						}
 						const project = viewedProject();
-						return project ? (
-							<ProjectSessionsToolbar
-								name={sidebarProjectName(project)}
-								onBack={goBack}
-								onNewChat={() => {
-									props.onSelectChat?.(project.id);
-									props.store.selectProject(project.id);
-								}}
+						if (project) {
+							return (
+								<ProjectSessionsToolbar
+									name={sidebarProjectName(project)}
+									onBack={goBack}
+									onNewChat={() => {
+										props.onSelectChat?.(project.id);
+										props.store.selectProject(project.id);
+									}}
+								/>
+							);
+						}
+						return hasTrafficLights() ? (
+							<MacBrandToolbar
+								brandScale={brandScale}
+								onNewChat={props.onNewChat}
+								shortcut={props.newChatShortcut}
 							/>
 						) : (
-							<NewChatButton
-								onPress={props.onNewChat}
+							<NewChatActionBar
+								onNewChat={props.onNewChat}
+								onSearch={props.onSearch}
 								shortcut={props.newChatShortcut}
 							/>
 						);
@@ -519,7 +511,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							class={`pointer-events-none absolute top-3 right-[5px] bottom-3 w-[2px] rounded-full ${
 								layout.resizing()
 									? "bg-sidebar-ring/70"
-									: "bg-transparent group-hover:bg-sidebar-ring/50 group-focus:bg-sidebar-ring"
+									: "bg-transparent group-hover:bg-sidebar-ring/50 group-focus-visible:bg-sidebar-ring"
 							}`}
 							style={tactileTransition("background-color")}
 						/>
@@ -574,9 +566,9 @@ export function StartupSidebar(
 						{titleAction()}
 					</View>
 				</View>
-				<View class="mt-1 shrink-0 px-2.5">
+				<View class="mt-1 shrink-0 pl-1.5 pr-2.5">
 					<View
-						class="h-8 flex-row items-center gap-2 rounded-lg px-2.5"
+						class="h-8 flex-row items-center gap-2 rounded-(--pilo-radius-lg) px-2.5"
 						style={{ backgroundColor: sidebarSoftSurface() }}
 					>
 						<Skeleton class="size-4 shrink-0" />
@@ -664,8 +656,19 @@ function SidebarToolbarRow(props: {
 	);
 }
 
-function NewChatButton(props: {
-	onPress: () => void;
+function resolveShortcutLabel(shortcut?: Accessor<string | undefined>) {
+	const raw = shortcut?.() ?? APP_SHORTCUTS.newChat;
+	const normalized = nshAppShortcut(raw, platform.os === "macos");
+	return normalized ? keymap.label(normalized) : "";
+}
+
+/**
+ * macOS signature brand row below the traffic lights: tricolor Pi mark + bold
+ * `Pilo` wordmark on the left, compact theme-radius New Session button on the right.
+ */
+function MacBrandToolbar(props: {
+	brandScale: Accessor<number>;
+	onNewChat: () => void;
 	shortcut?: Accessor<string | undefined>;
 }) {
 	const hover = createHover();
@@ -674,36 +677,114 @@ function NewChatButton(props: {
 		token(
 			hover.hovered() ? "sidebar-hover-foreground" : "sidebar-foreground-muted",
 		);
-	const shortcutLabel = () => {
-		const raw = props.shortcut?.() ?? APP_SHORTCUTS.newChat;
-		const normalized = nshAppShortcut(raw, platform.os === "macos");
-		return normalized ? keymap.label(normalized) : "";
+	const tooltipLabel = () => {
+		const key = resolveShortcutLabel(props.shortcut);
+		return key
+			? `${t("sidebar.newSession")} (${key})`
+			: t("sidebar.newSession");
 	};
 	return (
-		<View class="flex-row items-center gap-1">
+		<View class="flex-row items-center justify-between gap-2 pl-2 pr-0.5 py-0.5">
+			<View class="min-w-0 shrink flex-row items-center gap-2">
+				<PiLogo size={20} trim colorized />
+				<Text
+					class="min-w-0 shrink truncate font-bold leading-none tracking-tight"
+					style={{
+						fontFamily: displayFontFamily(),
+						fontSize: 22 * props.brandScale(),
+						color: token("sidebar-selection-foreground"),
+					}}
+				>
+					Pilo
+				</Text>
+			</View>
 			<Foreground.Provider value={iconForeground}>
 				<BaseButton
 					{...hover.props}
 					ref={pointerBlur.ref}
 					onMouseUp={pointerBlur.onMouseUp}
 					testID="sidebar-new-chat"
-					class="group h-8 min-w-0 flex-1 flex-row items-center gap-2 rounded-lg px-2.5"
+					class="h-7 shrink-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-lg) px-2.5"
 					style={[
 						tactileTransition("background-color"),
 						{ backgroundColor: sidebarSoftSurface(hover.hovered()) },
 					]}
 					focusVisibleStyle={sidebarFocusRing()}
-					onPress={props.onPress}
+					accessibilityLabel={t("sidebar.newSession")}
+					tooltip={textTooltip(tooltipLabel)}
+					onPress={props.onNewChat}
+				>
+					<Icon name="Plus" size={14} />
+					<Text
+						class="font-sans font-medium"
+						style={{
+							...sidebarText("xs"),
+							color: token(
+								hover.hovered()
+									? "sidebar-hover-foreground"
+									: "sidebar-selection-foreground",
+							),
+						}}
+					>
+						{() => t("sidebar.newSession")}
+					</Text>
+				</BaseButton>
+			</Foreground.Provider>
+		</View>
+	);
+}
+
+/**
+ * Windows / Linux / WebUI split action bar. The 5pt right inset aligns
+ * the 32pt Search button's center with the sidebar's 24pt row actions.
+ */
+function NewChatActionBar(props: {
+	onNewChat: () => void;
+	onSearch: () => void;
+	shortcut?: Accessor<string | undefined>;
+}) {
+	const newHover = createHover();
+	const searchHover = createHover();
+	const newBlur = blurOnPointerPress();
+	const searchBlur = blurOnPointerPress();
+	const newIconForeground = () =>
+		token(
+			newHover.hovered()
+				? "sidebar-hover-foreground"
+				: "sidebar-foreground-muted",
+		);
+	const searchIconForeground = () =>
+		token(
+			searchHover.hovered()
+				? "sidebar-hover-foreground"
+				: "sidebar-foreground-muted",
+		);
+	const shortcutLabel = () => resolveShortcutLabel(props.shortcut);
+	return (
+		<View class="flex-row items-center gap-1.5 pr-[5px]">
+			<Foreground.Provider value={newIconForeground}>
+				<BaseButton
+					{...newHover.props}
+					ref={newBlur.ref}
+					onMouseUp={newBlur.onMouseUp}
+					testID="sidebar-new-chat"
+					class="group h-8 min-w-0 flex-1 flex-row items-center gap-2 rounded-(--pilo-radius-lg) px-2.5"
+					style={[
+						tactileTransition("background-color"),
+						{ backgroundColor: sidebarSoftSurface(newHover.hovered()) },
+					]}
+					focusVisibleStyle={sidebarFocusRing()}
+					onPress={props.onNewChat}
 				>
 					<View class="size-4 shrink-0 items-center justify-center">
-						<Icon name="SquarePen" size={15} />
+						<Icon name="Plus" size={15} />
 					</View>
 					<Text
 						class="min-w-0 flex-1 truncate font-sans font-medium"
 						style={{
 							...sidebarText("sm"),
 							color: token(
-								hover.hovered()
+								newHover.hovered()
 									? "sidebar-hover-foreground"
 									: "sidebar-selection-foreground",
 							),
@@ -726,6 +807,25 @@ function NewChatButton(props: {
 							</Text>
 						) : null;
 					}}
+				</BaseButton>
+			</Foreground.Provider>
+			<Foreground.Provider value={searchIconForeground}>
+				<BaseButton
+					{...searchHover.props}
+					ref={searchBlur.ref}
+					onMouseUp={searchBlur.onMouseUp}
+					testID="sidebar-search"
+					class="size-8 shrink-0 items-center justify-center rounded-(--pilo-radius-lg)"
+					style={[
+						tactileTransition("background-color"),
+						{ backgroundColor: sidebarSoftSurface(searchHover.hovered()) },
+					]}
+					focusVisibleStyle={sidebarFocusRing()}
+					accessibilityLabel={t("sidebar.searchSessions")}
+					tooltip={textTooltip(() => t("sidebar.searchSessions"))}
+					onPress={props.onSearch}
+				>
+					<Icon name="Search" size={15} />
 				</BaseButton>
 			</Foreground.Provider>
 		</View>

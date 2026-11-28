@@ -87,6 +87,7 @@ pub(crate) fn create_device(
     let device = RemoteDevice {
         id: random_secret(16)?,
         name: normalize_device_name(device_name),
+        display_name: None,
         pair_ip: pair_ip.trim().to_owned(),
         scopes,
         created_at_ms: now_ms,

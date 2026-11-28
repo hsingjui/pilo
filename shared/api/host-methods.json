@@ -699,8 +699,8 @@
 			"params": [
 				{
 					"name": "addresses",
-					"optional": false,
-					"type": "Vec<RemoteAccessAddress>"
+					"optional": true,
+					"type": "Option<Vec<RemoteAccessAddress>>"
 				},
 				{
 					"name": "entryAddressId",

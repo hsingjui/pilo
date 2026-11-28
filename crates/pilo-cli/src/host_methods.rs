@@ -321,7 +321,7 @@ pub const REMOTE_PORT_SET: Method = Method {
 pub const REMOTE_ADDRESSES_SET: Method = Method {
     name: "remote.addresses.set",
     params: &[
-        Param { name: "addresses", ty: "Vec<RemoteAccessAddress>", optional: false },
+        Param { name: "addresses", ty: "Option<Vec<RemoteAccessAddress>>", optional: true },
         Param { name: "entryAddressId", ty: "String", optional: false },
     ],
 };

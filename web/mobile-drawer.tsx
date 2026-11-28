@@ -30,6 +30,7 @@ import {
 } from "../app/shell/archived-sessions";
 import { connectionLabel } from "../app/shell/connection-label";
 import { deleteSessionWithToast } from "../app/shell/delete-session";
+import { displayFontFamily } from "../app/shell/appearance";
 import { t } from "../app/shell/i18n";
 import { PiLogo } from "../app/shell/pi-logo";
 import {
@@ -38,6 +39,10 @@ import {
 	sidebarGroups,
 	sidebarSessions,
 } from "../app/shell/sidebar-projects";
+import {
+	createSessionAgeClock,
+	sessionAgeText,
+} from "../app/shell/sidebar-session-age";
 import type { WebRemoteConnectionState } from "./web-host-transport";
 import type { AppStore } from "../app/state/app-store";
 import { Button } from "../app/ui/button";
@@ -186,6 +191,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 	const confirmingDeleteKey = signal<string | null>(null);
 	const confirmingSignOut = signal(false);
 	const mounted = signal(false);
+	const sessionAgeNow = createSessionAgeClock(mounted);
 	const segmentWidth = signal(0);
 	const segmentThumbWidth = computed(() => {
 		const width = segmentWidth();
@@ -408,6 +414,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 		const confirming = () => confirmingDeleteKey() === key;
 		const saved = session.sessionPath !== "";
 		const archived = session.archivedAt != null;
+		const age = computed(() =>
+			sessionAgeText(session.latestMessageAt, sessionAgeNow()),
+		);
 		const projectName = showProjectName
 			? projectNameById().get(session.projectId)
 			: undefined;
@@ -493,7 +502,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 					class={`min-w-0 flex-1 flex-row gap-2 ${ROW_RADIUS_CLASS} p-2 hover:bg-sidebar-hover active:bg-sidebar-hover ${
 						projectName ? "min-h-14 items-start" : "min-h-11 items-center"
 					}`}
-					accessibilityLabel={session.title}
+					accessibilityLabel={
+						age() ? `${session.title}, ${age()}` : session.title
+					}
 					onPress={() => selectSession(session)}
 				>
 					{!archived && (
@@ -530,12 +541,19 @@ export function MobileDrawer(props: MobileDrawerProps) {
 							</View>
 						) : null}
 					</View>
-					<View class="h-5 w-4 shrink-0 items-center justify-center">
+					<View class="h-5 shrink-0 flex-row items-center gap-1">
 						{session.active ? (
 							<View class="size-1.5 animate-pulse rounded-full bg-sidebar-primary" />
 						) : archived && unread ? (
 							<View class="size-1.5 rounded-full bg-sidebar-primary" />
 						) : null}
+						{() =>
+							age() ? (
+								<Text class="shrink-0 whitespace-nowrap font-sans text-xs text-(length:--pilo-ui-text-xs) tabular-nums text-sidebar-foreground-muted">
+									{age}
+								</Text>
+							) : null
+						}
 					</View>
 				</BaseButton>
 				{saved && archived ? (
@@ -710,20 +728,11 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								{/* Header */}
 								<View class="min-h-14 shrink-0 flex-row items-center pl-4 pr-3">
 									<View class="min-w-0 flex-1 flex-row items-center gap-2.5">
-										<View
-											accessible={false}
-											class="size-7 shrink-0 items-center justify-center rounded-[7px]"
-											style={{
-												backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 8%, transparent)`,
-											}}
+										<PiLogo size={20} trim colorized />
+										<Text
+											class="min-w-0 shrink truncate text-xl text-(length:--pilo-ui-text-xl) leading-none font-bold tracking-tight text-sidebar-selection-foreground"
+											style={{ fontFamily: displayFontFamily() }}
 										>
-											<PiLogo
-												size={15}
-												trim
-												color={token("sidebar-selection-foreground")}
-											/>
-										</View>
-										<Text class="min-w-0 shrink truncate font-sans text-xl text-(length:--pilo-ui-text-xl) leading-none font-bold tracking-tight text-sidebar-selection-foreground">
 											Pilo
 										</Text>
 									</View>
@@ -788,7 +797,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 											<View class="shrink-0 px-3 pb-2">
 												<BaseButton
 													testID="mobile-drawer-new-session"
-													class={`min-h-11 w-full flex-row items-center gap-2.5 ${ROW_RADIUS_CLASS} px-3 active:bg-sidebar-hover`}
+													class="min-h-11 w-full flex-row items-center gap-2.5 rounded-(--pilo-mobile-radius-lg) px-3 active:bg-sidebar-hover"
 													style={{
 														backgroundColor: `color-mix(in srgb, ${token("sidebar-foreground")} 7%, transparent)`,
 													}}
@@ -796,9 +805,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 													onPress={() => startNewChat()}
 												>
 													<Icon
-														name="SquarePen"
+														name="Plus"
 														size={16}
-														strokeWidth={1.5}
+														strokeWidth={1.75}
 														color={token("sidebar-foreground-muted")}
 													/>
 													<Text class="truncate font-sans text-sm text-(length:--pilo-ui-text-sm) leading-tight font-medium text-sidebar-selection-foreground">

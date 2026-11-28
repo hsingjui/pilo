@@ -1,7 +1,8 @@
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, TransactionBehavior, params};
 
 use pilo_domain::{
-    RemoteAccessConfig, RemoteDevice, RemoteHostConfig, RemoteScopes, random_remote_port,
+    RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteHostConfig, RemoteScopes,
+    random_remote_port,
 };
 
 fn as_i64(value: u64, field: &str) -> Result<i64, String> {
@@ -86,31 +87,62 @@ pub(crate) fn set_remote_host_config(
     Ok(())
 }
 
+#[derive(Default)]
+pub(crate) struct StoredRemoteAccess {
+    pub addresses: Option<Vec<RemoteAccessAddress>>,
+    pub entry_address_id: String,
+    // NULL for legacy lists, empty for a list without a managed LAN address.
+    pub managed_lan_ip: Option<String>,
+}
+
 pub(crate) fn get_remote_access_config(
     db: &SqliteConnection,
-) -> Result<Option<RemoteAccessConfig>, String> {
+) -> Result<StoredRemoteAccess, String> {
     let row = db
         .query_row(
-            "SELECT addresses_json,entry_address_id FROM remote_host_config WHERE id=1",
+            "SELECT addresses_json,entry_address_id,managed_lan_ip FROM remote_host_config WHERE id=1",
             [],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|error| format!("failed to read Remote WebUI addresses: {error}"))?;
-    let Some((Some(json), entry_address_id)) = row else {
-        return Ok(None);
+    let Some((json, entry_address_id, managed_lan_ip)) = row else {
+        return Ok(StoredRemoteAccess::default());
     };
-    let addresses = serde_json::from_str(&json)
+    let addresses = json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
         .map_err(|error| format!("failed to decode Remote WebUI addresses: {error}"))?;
-    Ok(Some(RemoteAccessConfig {
+    Ok(StoredRemoteAccess {
         addresses,
         entry_address_id,
-    }))
+        managed_lan_ip,
+    })
+}
+
+pub(crate) fn set_remote_entry_address(db: &SqliteConnection, id: &str) -> Result<(), String> {
+    db.execute(
+        "UPDATE remote_host_config SET entry_address_id=?1 WHERE id=1",
+        [id],
+    )
+    .map_err(|error| format!("failed to save Remote WebUI pairing entry: {error}"))?;
+    Ok(())
+}
+
+pub(crate) fn set_remote_managed_lan_ip(db: &SqliteConnection, ip: &str) -> Result<(), String> {
+    db.execute(
+        "UPDATE remote_host_config SET managed_lan_ip=?1 WHERE id=1",
+        [ip],
+    )
+    .map_err(|error| format!("failed to save Remote WebUI LAN provenance: {error}"))?;
+    Ok(())
 }
 
 pub(crate) fn set_remote_access_config(
     db: &SqliteConnection,
     config: &RemoteAccessConfig,
+    managed_lan_ip: &str,
 ) -> Result<(), String> {
     let json = serde_json::to_string(&config.addresses)
         .map_err(|error| format!("failed to encode Remote WebUI addresses: {error}"))?;
@@ -120,8 +152,8 @@ pub(crate) fn set_remote_access_config(
         .find(|address| address.id == "public")
         .map_or("", |address| address.base_url.as_str());
     db.execute(
-        "UPDATE remote_host_config SET addresses_json=?1,entry_address_id=?2,public_base_url=?3 WHERE id=1",
-        params![json, config.entry_address_id, public_base_url],
+        "UPDATE remote_host_config SET addresses_json=?1,entry_address_id=?2,public_base_url=?3,managed_lan_ip=?4 WHERE id=1",
+        params![json, config.entry_address_id, public_base_url, managed_lan_ip],
     )
     .map_err(|error| format!("failed to save Remote WebUI addresses: {error}"))?;
     Ok(())
@@ -206,8 +238,8 @@ pub(crate) fn insert_remote_device(
 ) -> Result<(), String> {
     db.execute(
         "INSERT INTO remote_devices(
-           id,name,pair_ip,token_hash,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,scopes
-         ) VALUES(?1,?2,?3,?4,?5,?6,?7,NULL,?8)",
+           id,name,pair_ip,token_hash,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,scopes,display_name
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,NULL,?8,?9)",
         params![
             device.id,
             device.name,
@@ -217,6 +249,7 @@ pub(crate) fn insert_remote_device(
             as_i64(device.last_seen_at_ms, "device last-seen time")?,
             as_i64(device.expires_at_ms, "device expiry")?,
             device.scopes.as_str(),
+            device.display_name,
         ],
     )
     .map_err(|error| format!("failed to persist Remote WebUI device: {error}"))?;
@@ -272,7 +305,7 @@ pub(crate) fn rename_remote_device(
 ) -> Result<bool, String> {
     let changed = db
         .execute(
-            "UPDATE remote_devices SET name=?1 WHERE id=?2 AND revoked_at_ms IS NULL",
+            "UPDATE remote_devices SET name=?1, display_name=NULL WHERE id=?2 AND revoked_at_ms IS NULL",
             params![name, device_id],
         )
         .map_err(|error| format!("failed to rename Remote WebUI device: {error}"))?;
@@ -288,6 +321,7 @@ fn row_to_remote_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<(RemoteDevi
         RemoteDevice {
             id: row.get(0)?,
             name: row.get(1)?,
+            display_name: row.get(9)?,
             pair_ip: row.get(2)?,
             scopes: row
                 .get::<_, String>(8)?
@@ -318,7 +352,7 @@ pub(crate) fn authenticate_remote_device(
 ) -> Result<Option<RemoteDevice>, String> {
     let result = db
         .query_row(
-            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes
+            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes,display_name
              FROM remote_devices
              WHERE token_hash=?1 AND revoked_at_ms IS NULL AND expires_at_ms>=?2",
             params![token_hash, as_i64(now_ms, "authentication time")?],
@@ -387,7 +421,7 @@ pub(crate) fn get_active_remote_device_scopes(
 pub(crate) fn list_remote_devices(db: &SqliteConnection) -> Result<Vec<RemoteDevice>, String> {
     let mut statement = db
         .prepare(
-            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes
+            "SELECT id,name,pair_ip,created_at_ms,last_seen_at_ms,expires_at_ms,revoked_at_ms,token_hash,scopes,display_name
              FROM remote_devices
              ORDER BY last_seen_at_ms DESC, created_at_ms DESC",
         )
@@ -563,6 +597,7 @@ mod tests {
         let device = RemoteDevice {
             id: "device-1".to_owned(),
             name: "Phone".to_owned(),
+            display_name: None,
             pair_ip: "192.168.1.20".to_owned(),
             scopes: RemoteScopes::ChatWorkspace,
             created_at_ms: 10,
@@ -595,6 +630,7 @@ mod tests {
         let device = RemoteDevice {
             id: "device-1".to_owned(),
             name: "Phone".to_owned(),
+            display_name: None,
             pair_ip: String::new(),
             scopes: RemoteScopes::ChatWorkspace,
             created_at_ms: 10,
@@ -618,6 +654,7 @@ mod tests {
         let expired = RemoteDevice {
             id: "device-2".to_owned(),
             name: "Old phone".to_owned(),
+            display_name: None,
             pair_ip: String::new(),
             scopes: RemoteScopes::Chat,
             created_at_ms: 1,

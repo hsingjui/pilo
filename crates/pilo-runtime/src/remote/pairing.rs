@@ -190,16 +190,17 @@ impl PairingSession {
         } else {
             &address.name
         };
+        let display_name: String = auth::normalize_device_name(device_name)
+            .chars()
+            .take(40)
+            .collect();
         let name = format!(
-            "{} · {}",
-            auth::normalize_device_name(device_name)
-                .chars()
-                .take(40)
-                .collect::<String>(),
-            label.chars().take(36).collect::<String>(),
+            "{display_name} · {}",
+            label.chars().take(36).collect::<String>()
         );
-        let paired = auth::create_device(Some(&name), pair_ip, pairing.scopes)
+        let mut paired = auth::create_device(Some(&name), pair_ip, pairing.scopes)
             .map_err(PairingError::Internal)?;
+        paired.device.display_name = Some(display_name.trim_end().to_owned());
         let exhausted = pairing.receipts.len() + 1 == pairing.addresses.len();
         if !storage::insert_remote_pairing_device(
             &mut db,
