@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::{ElevateError, Installation, Installer, command_name};
+use super::{ElevateError, Installation, Installer, command_name, remove_path_entry};
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -71,6 +71,41 @@ impl Fixture {
                 }
             }),
         }
+    }
+
+    /// An installer whose authorization succeeds: `meanwhile` runs while the
+    /// prompt would be open, then the script runs with the system dir writable.
+    fn elevating_installer(
+        &self,
+        app: &str,
+        meanwhile: impl Fn() + Send + Sync + 'static,
+    ) -> Installer {
+        let mut installer = self.installer(app, false, false);
+        let system = self.root.join("system");
+        installer.elevate = Box::new(move |script| {
+            meanwhile();
+            std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let output = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(script)
+                .output()
+                .unwrap();
+            std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o555)).unwrap();
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            match output.status.success() {
+                true => Ok(()),
+                false if stderr.contains("pilo-cli-conflict") => Err(ElevateError::Conflict),
+                false => Err(ElevateError::Failed(stderr.into_owned())),
+            }
+        });
+        installer
+    }
+
+    fn lock_system(&self, locked: bool) {
+        let mode = if locked { 0o555 } else { 0o755 };
+        let system = self.root.join("system");
+        std::fs::create_dir_all(&system).unwrap();
+        std::fs::set_permissions(system, std::fs::Permissions::from_mode(mode)).unwrap();
     }
 
     fn system_link(&self) -> PathBuf {
@@ -265,4 +300,119 @@ fn appimage_links_a_persistent_copy_synced_at_launch() {
 fn dev_and_release_commands_differ() {
     assert_eq!(command_name("app.hsingjui.pilo"), "pilo");
     assert_eq!(command_name("app.hsingjui.pilo.dev"), "pilo-dev");
+}
+
+#[test]
+fn authorized_install_links_through_the_elevated_script() {
+    let fixture = Fixture::new();
+    stand_in(&fixture.bundled("Pilo.app"), "0.5.2");
+    let installer = fixture.elevating_installer("Pilo.app", || {});
+    fixture.lock_system(true);
+    let status = installer.install(false).unwrap();
+    fixture.lock_system(false);
+    assert_eq!(status.outcome, Some("installed"));
+    assert_eq!(
+        std::fs::read_link(fixture.system_link()).unwrap(),
+        fixture.bundled("Pilo.app")
+    );
+}
+
+#[test]
+fn authorized_install_never_overwrites_a_file_created_meanwhile() {
+    let fixture = Fixture::new();
+    stand_in(&fixture.bundled("Pilo.app"), "0.5.2");
+    let link = fixture.system_link();
+    let installer = fixture.elevating_installer("Pilo.app", move || {
+        std::fs::set_permissions(
+            link.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        std::fs::write(&link, "third party").unwrap();
+    });
+    fixture.lock_system(true);
+    let status = installer.install(false).unwrap();
+    fixture.lock_system(false);
+    assert_eq!(status.outcome, Some("conflict"));
+    assert_eq!(
+        std::fs::read_to_string(fixture.system_link()).unwrap(),
+        "third party"
+    );
+    assert!(installer.load_record().is_none());
+}
+
+#[test]
+fn authorized_uninstall_keeps_a_link_repointed_meanwhile() {
+    let fixture = Fixture::new();
+    stand_in(&fixture.bundled("Pilo.app"), "0.5.2");
+    let other = fixture.root.join("elsewhere/pilo");
+    stand_in(&other, "9.9.9");
+    let link = fixture.system_link();
+    let repointed = other.clone();
+    let installer = fixture.elevating_installer("Pilo.app", move || {
+        std::fs::set_permissions(
+            link.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&repointed, &link).unwrap();
+    });
+    installer.install(false).unwrap();
+    fixture.lock_system(true);
+    let status = installer.uninstall().unwrap();
+    fixture.lock_system(false);
+    assert_eq!(status.outcome, Some("conflict"));
+    assert_eq!(std::fs::read_link(fixture.system_link()).unwrap(), other);
+}
+
+#[test]
+fn appimage_never_overwrites_an_unknown_copy() {
+    let fixture = Fixture::new();
+    stand_in(&fixture.bundled("mount"), "0.5.2");
+    let copy = fixture.root.join("home/.local/share/pilo/bin/pilo");
+    std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    std::fs::write(&copy, "someone else").unwrap();
+    let installer = fixture.installer("mount", false, true);
+
+    assert_eq!(installer.status().state, "conflict");
+    let status = installer.install(false).unwrap();
+    assert_eq!(status.outcome, Some("conflict"));
+    assert_eq!(status.conflict_path.as_deref(), Some(copy.as_path()));
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "someone else");
+    assert!(!fixture.system_link().exists());
+}
+
+#[test]
+fn appimage_never_runs_replaces_or_removes_a_changed_copy() {
+    let fixture = Fixture::new();
+    stand_in(&fixture.bundled("mount"), "0.5.2");
+    let installer = fixture.installer("mount", false, true);
+    installer.install(false).unwrap();
+    let copy = fixture.root.join("home/.local/share/pilo/bin/pilo");
+    let ran = fixture.root.join("ran");
+    std::fs::write(&copy, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();
+    stand_in(&fixture.bundled("mount"), "0.6.0");
+
+    let status = installer.status();
+    assert_eq!(status.state, "conflict");
+    assert_eq!(status.conflict_path.as_deref(), Some(copy.as_path()));
+    assert!(!installer.sync_on_launch().unwrap());
+    assert_eq!(installer.install(true).unwrap().outcome, Some("conflict"));
+    installer.uninstall().unwrap();
+    assert!(copy.exists());
+    assert!(!ran.exists());
+}
+
+#[test]
+fn path_removal_drops_only_the_entry_pilo_inserted() {
+    let mut entries = vec![
+        r"C:\Apps\Pilo\bin\".to_owned(),
+        r"C:\Tools".to_owned(),
+        r"C:\Apps\Pilo\bin".to_owned(),
+    ];
+    assert!(remove_path_entry(&mut entries, r"C:\Apps\Pilo\bin"));
+    assert_eq!(entries, [r"C:\Apps\Pilo\bin\", r"C:\Tools"]);
+    assert!(!remove_path_entry(&mut entries, r"C:\Apps\Pilo\bin"));
 }

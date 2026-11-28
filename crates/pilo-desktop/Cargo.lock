@@ -2112,6 +2112,7 @@ dependencies = [
  "reqwest-websocket",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "url",

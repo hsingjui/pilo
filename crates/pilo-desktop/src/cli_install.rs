@@ -110,11 +110,56 @@ pub(crate) struct Record {
     pub link_target: Option<PathBuf>,
     /// The AppImage's persistent copy the link points at.
     pub copy: Option<PathBuf>,
+    /// What Pilo wrote to `copy`, so another file there is never run, replaced or removed.
+    pub copy_fingerprint: Option<Fingerprint>,
     /// The PATH directory the entry relies on (Windows: the app's `bin`).
     pub path_entry: Option<PathBuf>,
     /// Whether Pilo added `path_entry` to the user PATH.
     pub path_entry_added: bool,
+    /// The exact user PATH entry Pilo inserted; only this entry is ever removed.
+    pub path_entry_raw: Option<String>,
     pub installation: Option<Installation>,
+}
+
+/// Removes the one PATH entry spelled exactly as Pilo inserted it, keeping
+/// equivalent entries the user added themselves.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn remove_path_entry(entries: &mut Vec<String>, raw: &str) -> bool {
+    match entries.iter().position(|entry| entry == raw) {
+        Some(index) => {
+            entries.remove(index);
+            true
+        }
+        None => false,
+    }
+}
+
+/// A file's size and SHA-256.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Fingerprint {
+    pub size: u64,
+    pub sha256: String,
+}
+
+impl Fingerprint {
+    pub(crate) fn of_bytes(bytes: &[u8]) -> Self {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(bytes);
+        Self {
+            size: bytes.len() as u64,
+            sha256: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
+        }
+    }
+
+    /// The fingerprint of a regular file (not a symlink); `None` otherwise.
+    pub(crate) fn of_file(path: &Path) -> Option<Self> {
+        let metadata = std::fs::symlink_metadata(path).ok()?;
+        if !metadata.is_file() {
+            return None;
+        }
+        std::fs::read(path).ok().map(|bytes| Self::of_bytes(&bytes))
+    }
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -144,6 +189,8 @@ pub(crate) struct Status {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ElevateError {
     Canceled,
+    /// The entry changed while authorization was pending; nothing was touched.
+    Conflict,
     Failed(String),
 }
 

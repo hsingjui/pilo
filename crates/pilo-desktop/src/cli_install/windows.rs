@@ -16,7 +16,7 @@ use windows_sys::Win32::{
     },
 };
 
-use super::{Installer, Record, Status, cli_version, same_path};
+use super::{Installer, Record, Status, cli_version, remove_path_entry, same_path};
 
 const USER_ENVIRONMENT: &str = "Environment";
 const SYSTEM_ENVIRONMENT: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
@@ -245,31 +245,36 @@ impl Installer {
         // A moved or re-extracted app drops only the entry Pilo itself added.
         if let Some(record) = &record
             && record.path_entry_added
-            && let Some(old) = &record.path_entry
+            && let (Some(old), Some(raw)) = (&record.path_entry, &record.path_entry_raw)
             && !same_path(old, &bin)
             && !self.entry_shared(old)
         {
-            let before = user.len();
-            user.retain(|entry| !matches(entry, old));
-            changed |= user.len() != before;
+            changed |= remove_path_entry(&mut user, raw);
         }
-        let kept_ours = record.as_ref().is_some_and(|record| {
-            record.path_entry_added
-                && record
-                    .path_entry
-                    .as_deref()
-                    .is_some_and(|old| same_path(old, &bin))
-        });
+        let kept_raw = record
+            .as_ref()
+            .filter(|record| {
+                record.path_entry_added
+                    && record
+                        .path_entry
+                        .as_deref()
+                        .is_some_and(|old| same_path(old, &bin))
+            })
+            .and_then(|record| record.path_entry_raw.clone())
+            .filter(|raw| user.iter().any(|entry| entry == raw));
         let in_user = user.iter().any(|entry| matches(entry, &bin));
         let in_system = entries(&system_path())
             .iter()
             .any(|entry| matches(entry, &bin));
-        let added = if in_user || in_system {
-            kept_ours && in_user
+        let raw = if kept_raw.is_some() {
+            kept_raw
+        } else if in_user || in_system {
+            None
         } else {
-            user.push(bin.to_string_lossy().into_owned());
+            let raw = bin.to_string_lossy().into_owned();
+            user.push(raw.clone());
             changed = true;
-            true
+            Some(raw)
         };
         if changed {
             let kind = if kind == 0 { REG_EXPAND_SZ } else { kind };
@@ -280,8 +285,10 @@ impl Installer {
             link: None,
             link_target: None,
             copy: None,
+            copy_fingerprint: None,
             path_entry: Some(bin),
-            path_entry_added: added,
+            path_entry_added: raw.is_some(),
+            path_entry_raw: raw,
             installation: self.installation.clone(),
         })?;
         let mut installer_status = self.status_after_path_change();
@@ -309,7 +316,7 @@ impl Installer {
     pub(super) fn uninstall(&self) -> Result<Status, String> {
         if let Some(record) = self.load_record()
             && record.path_entry_added
-            && let Some(entry) = &record.path_entry
+            && let (Some(entry), Some(raw)) = (&record.path_entry, &record.path_entry_raw)
             && !self.entry_shared(entry)
         {
             let key = open_key(
@@ -319,9 +326,7 @@ impl Installer {
             )?;
             let (value, kind) = read_path(&key)?;
             let mut user = entries(&value);
-            let before = user.len();
-            user.retain(|candidate| !matches(candidate, entry));
-            if user.len() != before {
+            if remove_path_entry(&mut user, raw) {
                 write_path(&key, &user.join(";"), kind)?;
                 broadcast_environment_change();
             }
