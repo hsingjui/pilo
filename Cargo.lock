@@ -944,6 +944,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pilo-cli"
+version = "0.5.2"
+dependencies = [
+ "pilo-ipc",
+ "pilo-runtime",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "pilo-domain"
 version = "0.5.2"
 dependencies = [
