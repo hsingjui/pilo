@@ -54,6 +54,7 @@ pub struct Pilo {
     executor: &'static Executor,
     event_stream: Arc<Mutex<EventStream>>,
     terminal_events: Arc<TerminalEventStream>,
+    default_launch: bool,
 }
 
 impl Pilo {
@@ -180,19 +181,6 @@ impl Pilo {
         runtime.start_external_activity_poll();
         let host = Arc::new(Mutex::new(Some(runtime.clone())));
         // Restore the saved Remote WebUI listener in the background without blocking startup IPC.
-        if default_launch {
-            let runtime = runtime.clone();
-            executor.spawn(async move {
-                let config = LocalIpcConfig {
-                    app_id: data_identifier(cfg!(debug_assertions)).to_owned(),
-                    app_version: env!("CARGO_PKG_VERSION").to_owned(),
-                    installation: None,
-                };
-                if let Err(error) = runtime.start_local_ipc(config).await {
-                    log::warn!(target: "local-ipc", "local IPC is unavailable: {error}");
-                }
-            });
-        }
         executor.spawn(async move {
             if let Err(error) = runtime.restore_remote().await {
                 eprintln!("failed to restore Remote WebUI: {error}");
@@ -204,7 +192,26 @@ impl Pilo {
             executor,
             event_stream: Arc::new(Mutex::new(event_stream)),
             terminal_events,
+            default_launch,
         })
+    }
+
+    /// Serves the Host to the current user's CLI on the endpoint of `app_id`, the
+    /// packaged `nsh.json` id that also names the bundled CLI's default instance.
+    /// Only the default data directory gets an endpoint.
+    pub async fn start_local_ipc(this: Instance<Self>, app_id: String) -> Result<(), String> {
+        if !this.with(|pilo| pilo.default_launch) {
+            return Err("local IPC is only served for the default data directory".into());
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            let config = LocalIpcConfig {
+                app_id,
+                app_version: env!("CARGO_PKG_VERSION").to_owned(),
+                installation: None,
+            };
+            runtime.start_local_ipc(config).await.map(|_| ())
+        })
+        .await
     }
 
     /// Waits for an ordered batch, an inclusive gap, or a closed event stream.
