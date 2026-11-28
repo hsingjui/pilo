@@ -235,77 +235,73 @@ export function AppToastStack(props: AppToastStackProps) {
 	);
 	cleanup(() => toasts.dispose());
 	return (
-		<>
-			{() =>
-				toasts.entries().length > 0 ? (
-					<Overlay
-						testID="app-toast-overlay"
-						style={{
-							top: layout().top,
-							left: layout().left,
-							width: layout().width,
-							zIndex: token("z-toast"),
+		<If when={toasts.entries().length > 0}>
+			<Overlay
+				testID="app-toast-overlay"
+				style={{
+					top: layout().top,
+					left: layout().left,
+					width: layout().width,
+					zIndex: token("z-toast"),
+				}}
+			>
+				<ToastStack
+					class="w-full"
+					onExpandedChange={({ expanded }) => toasts.setExpanded(expanded)}
+					onCancel={() => {
+						const newest = toasts.entries().at(-1);
+						if (newest) toasts.dismiss(newest.id);
+					}}
+				>
+					<Each of={toasts.entries()} key={(entry) => entry.id}>
+						{(entry) => {
+							const toast = entry().value as Omit<AppToast, "action"> & {
+								actionLabel?: string;
+							};
+							return (
+								<Toast
+									testID={`app-toast-${entry().id}`}
+									touch={props.touch}
+									transitionStatus={entry().status}
+									variant={toast.variant}
+									description={toasts.descriptionFor(
+										entry().id,
+										toast.description,
+									)}
+									action={
+										toast.actionLabel && (
+											<Button
+												testID={`app-toast-action-${entry().id}`}
+												class={
+													props.touch
+														? "shrink-0 min-h-10 rounded-(--pilo-mobile-radius-lg) px-3.5"
+														: "shrink-0 h-7 rounded-(--pilo-radius-lg) px-2.5"
+												}
+												size="sm"
+												variant="default"
+												disabled={entry().status === "ending"}
+												accessibilityLabel={toast.actionLabel}
+												onPress={() => toasts.performAction(entry().id)}
+											>
+												<Text class="font-sans font-medium text-xs text-(length:--pilo-ui-text-xs)">
+													{toast.actionLabel}
+												</Text>
+											</Button>
+										)
+									}
+									accessibilityLabel={toast.title}
+									closeLabel={t("common.close")}
+									onDismissRequest={() => toasts.dismiss(entry().id)}
+								>
+									<Text class="font-sans font-medium text-sm text-(length:--pilo-ui-text-sm) leading-snug text-popover-foreground">
+										{toast.title}
+									</Text>
+								</Toast>
+							);
 						}}
-					>
-						<ToastStack
-							class="w-full"
-							onExpandedChange={({ expanded }) => toasts.setExpanded(expanded)}
-							onCancel={() => {
-								const newest = toasts.entries().at(-1);
-								if (newest) toasts.dismiss(newest.id);
-							}}
-						>
-							<Each of={toasts.entries()} key={(entry) => entry.id}>
-								{(entry) => {
-									const toast = entry().value as Omit<AppToast, "action"> & {
-										actionLabel?: string;
-									};
-									return (
-										<Toast
-											testID={`app-toast-${entry().id}`}
-											touch={props.touch}
-											transitionStatus={entry().status}
-											variant={toast.variant}
-											description={toasts.descriptionFor(
-												entry().id,
-												toast.description,
-											)}
-											action={
-												toast.actionLabel && (
-													<Button
-														testID={`app-toast-action-${entry().id}`}
-														class={
-															props.touch
-																? "shrink-0 min-h-10 rounded-(--pilo-mobile-radius-lg) px-3.5"
-																: "shrink-0 h-7 rounded-(--pilo-radius-lg) px-2.5"
-														}
-														size="sm"
-														variant="default"
-														disabled={entry().status === "ending"}
-														accessibilityLabel={toast.actionLabel}
-														onPress={() => toasts.performAction(entry().id)}
-													>
-														<Text class="font-sans font-medium text-xs text-(length:--pilo-ui-text-xs)">
-															{toast.actionLabel}
-														</Text>
-													</Button>
-												)
-											}
-											accessibilityLabel={toast.title}
-											closeLabel={t("common.close")}
-											onDismissRequest={() => toasts.dismiss(entry().id)}
-										>
-											<Text class="font-sans font-medium text-sm text-(length:--pilo-ui-text-sm) leading-snug text-popover-foreground">
-												{toast.title}
-											</Text>
-										</Toast>
-									);
-								}}
-							</Each>
-						</ToastStack>
-					</Overlay>
-				) : null
-			}
-		</>
+					</Each>
+				</ToastStack>
+			</Overlay>
+		</If>
 	);
 }
