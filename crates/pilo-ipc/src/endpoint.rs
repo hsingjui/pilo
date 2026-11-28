@@ -232,6 +232,8 @@ pub mod windows {
 mod tests {
     use super::*;
 
+    // Unix socket paths use `/`-rooted paths, which are not absolute on Windows.
+    #[cfg(unix)]
     #[test]
     fn macos_uses_the_app_data_directory() {
         let endpoint = derive_unix(
@@ -249,6 +251,8 @@ mod tests {
         assert_eq!(endpoint.private_dir, None);
     }
 
+    // Unix socket paths use `/`-rooted paths, which are not absolute on Windows.
+    #[cfg(unix)]
     #[test]
     fn linux_uses_the_runtime_directory_or_a_private_tmp_directory() {
         let endpoint = derive_unix(
@@ -284,6 +288,8 @@ mod tests {
         }
     }
 
+    // Unix socket paths use `/`-rooted paths, which are not absolute on Windows.
+    #[cfg(unix)]
     #[test]
     fn long_paths_fall_back_at_the_100_byte_boundary() {
         let suffix = "/Library/Application Support/app.hsingjui.pilo/pilo.sock";
