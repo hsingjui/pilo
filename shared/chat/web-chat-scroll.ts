@@ -52,6 +52,7 @@ export interface WebChatScrollFollower {
 		nowMs: number,
 		visualViewportShrank?: boolean,
 	): WebChatScrollCommand;
+	onResume(metrics: WebChatScrollMetrics): WebChatScrollCommand;
 	syncRestoredPosition(metrics: WebChatScrollMetrics): void;
 	pauseForDisclosure(metrics: WebChatScrollMetrics): void;
 	startScrollToEnd(metrics: WebChatScrollMetrics): void;
@@ -92,6 +93,21 @@ export function createWebChatScrollFollower(
 		getChatScrollMaxOffset(metrics) - metrics.scrollTop <= tolerance;
 
 	const isInteracting = () => dragging || touchActive;
+
+	const wasNearEndBeforeShrink = (
+		metrics: WebChatScrollMetrics,
+		tolerance = threshold,
+	) =>
+		metrics.clientHeight < viewportHeight - 1 &&
+		metrics.contentHeight <= contentHeight &&
+		end - Math.max(metrics.scrollTop, lastOffset) <= tolerance;
+
+	const syncMetrics = (metrics: WebChatScrollMetrics) => {
+		end = getChatScrollMaxOffset(metrics);
+		viewportHeight = metrics.clientHeight;
+		contentHeight = metrics.contentHeight;
+		lastOffset = metrics.scrollTop;
+	};
 
 	const updateFollowing = (value: boolean) => {
 		pausedForDisclosure = false;
@@ -272,6 +288,12 @@ export function createWebChatScrollFollower(
 			const scrolledUp = offset < lastOffset;
 			lastOffset = offset;
 
+			// Momentum can reach the bottom after a small reverse movement at release.
+			// Restore following before focus or a keyboard resize can precede scrollEnd.
+			if (scrolledDown && !isInteracting() && isNearEnd(metrics, 1)) {
+				scrollingUp = false;
+			}
+
 			if (extentChanged) {
 				// During streaming or virtualized row measurement, `scrollHeight` can
 				// advance before ResizeObserver updates `end`. Still honor explicit
@@ -350,12 +372,13 @@ export function createWebChatScrollFollower(
 			if (
 				viewportShrank &&
 				!isInteracting() &&
-				!scrollingUp &&
+				(!scrollingUp || wasNearEndBeforeShrink(metrics, 1)) &&
 				!pausedForDisclosure
 			) {
 				const wasNearPrevEnd =
 					prevEnd - Math.max(metrics.scrollTop, prevOffset) <= threshold;
 				if (following || wasNearPrevEnd || nowMs <= viewportShrinkPinUntilMs) {
+					scrollingUp = false;
 					updateFollowing(true);
 					viewportShrinkPinUntilMs = Math.max(
 						viewportShrinkPinUntilMs,
@@ -387,29 +410,30 @@ export function createWebChatScrollFollower(
 			nowMs: number,
 			visualViewportShrank = false,
 		): WebChatScrollCommand {
-			if (isInteracting() || scrollingUp) return { scrollTop: null };
+			if (isInteracting()) return { scrollTop: null };
 			const maxOffset = getChatScrollMaxOffset(metrics);
-			// A browser can report the keyboard resize before the list's observer.
-			// In that case the last scroll offset still belongs to the old viewport.
-			const wasNearEndBeforeShrink =
-				metrics.clientHeight < viewportHeight - 1 &&
-				metrics.contentHeight <= contentHeight &&
-				end - lastOffset <= threshold;
-			// Focus alone does not override an explicit disclosure pause.
+			// Focus or keyboard resize can arrive before the final momentum event.
+			// Only a confirmed end overrides a lingering upward direction.
 			if (
-				pausedForDisclosure &&
-				!visualViewportShrank &&
-				!wasNearEndBeforeShrink
+				scrollingUp &&
+				!isNearEnd(metrics, 1) &&
+				!wasNearEndBeforeShrink(metrics, 1)
 			) {
+				return { scrollTop: null };
+			}
+			const wasNearPreviousEnd = wasNearEndBeforeShrink(metrics);
+			// Focus alone does not override an explicit disclosure pause.
+			if (pausedForDisclosure && !visualViewportShrank && !wasNearPreviousEnd) {
 				return { scrollTop: null };
 			}
 			const wasAtEnd =
 				maxOffset - metrics.scrollTop <= threshold ||
-				wasNearEndBeforeShrink ||
+				wasNearPreviousEnd ||
 				(!pausedForDisclosure &&
 					(following || end - metrics.scrollTop <= threshold));
 			if (!wasAtEnd) return { scrollTop: null };
 
+			scrollingUp = false;
 			updateFollowing(true);
 			viewportShrinkPinUntilMs = Math.max(
 				viewportShrinkPinUntilMs,
@@ -423,11 +447,24 @@ export function createWebChatScrollFollower(
 			return { scrollTop: null };
 		},
 
+		onResume(metrics: WebChatScrollMetrics): WebChatScrollCommand {
+			// A suspended page need not deliver drag-end or smooth-scroll-end.
+			dragging = false;
+			touchActive = false;
+			touchMoved = false;
+			lastTouchX = null;
+			lastTouchY = null;
+			clearUserPinOverrides();
+			syncMetrics(metrics);
+			if (!following || Math.abs(end - lastOffset) <= 1) {
+				return { scrollTop: null };
+			}
+			lastOffset = end;
+			return { scrollTop: end };
+		},
+
 		syncRestoredPosition(metrics: WebChatScrollMetrics) {
-			end = getChatScrollMaxOffset(metrics);
-			viewportHeight = metrics.clientHeight;
-			contentHeight = metrics.contentHeight;
-			lastOffset = metrics.scrollTop;
+			syncMetrics(metrics);
 			if (!isInteracting() && !scrollingUp && !pausedForDisclosure) {
 				updateFollowing(isNearEnd(metrics));
 			}

@@ -124,13 +124,14 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 		visualViewport?: HostVisualViewport | null;
 		getComputedStyle?: (element: unknown) => { overflowY?: string };
 		document?: {
+			hidden: boolean;
 			querySelector(selector: string): WebChatViewport | null;
 			addEventListener?: (
-				type: "focusin",
+				type: "focusin" | "visibilitychange",
 				listener: (event: WebChatFocusEvent) => void,
 			) => void;
 			removeEventListener?: (
-				type: "focusin",
+				type: "focusin" | "visibilitychange",
 				listener: (event: WebChatFocusEvent) => void,
 			) => void;
 		};
@@ -180,6 +181,15 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 		initiallyFollowing,
 		followThreshold,
 	);
+
+	const document = host.document;
+	let resumeFrame: number | undefined;
+	const suspended = () => document?.hidden || resumeFrame !== undefined;
+	const cancelResumeSync = () => {
+		if (resumeFrame === undefined) return;
+		host.cancelAnimationFrame(resumeFrame);
+		resumeFrame = undefined;
+	};
 
 	let restoreFrame: number | undefined;
 	const cancelRestoreSync = () => {
@@ -253,23 +263,35 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 		follower.onTouchMove(touch.clientY, readMetrics(), touch.clientX);
 	};
 	const readTouchEnd = (event: WebChatTouchEvent) => {
-		if ((event.touches?.length ?? 0) > 0) return;
+		if (suspended() || (event.touches?.length ?? 0) > 0) return;
 		touchTarget = null;
 		lastTouchClientY = null;
 		follower.onTouchEnd(readMetrics());
 	};
 	const readScroll = () => {
-		applyCommand(follower.onScroll(readMetrics(), nowMs()));
+		if (!suspended()) applyCommand(follower.onScroll(readMetrics(), nowMs()));
 	};
 	const resize = new host.ResizeObserver(() => {
 		// Correct the rendered offset before paint, after nsh has applied its layout.
-		applyCommand(follower.onResize(readMetrics(), nowMs()));
+		if (!suspended()) applyCommand(follower.onResize(readMetrics(), nowMs()));
 	});
 
 	const visualViewport = host.visualViewport ?? null;
 	let lastVisualViewportHeight = visualViewport?.height ?? 0;
+	const readVisibilityChange = () => {
+		cancelResumeSync();
+		if (document?.hidden) return;
+		// Scroll/resize events queued while hidden must not change follow intent.
+		resumeFrame = host.requestAnimationFrame(() => {
+			resumeFrame = undefined;
+			lastVisualViewportHeight = visualViewport?.height ?? 0;
+			touchTarget = null;
+			lastTouchClientY = null;
+			applyCommand(follower.onResume(readMetrics()));
+		});
+	};
 	const readVisualViewportResize = () => {
-		if (!visualViewport) return;
+		if (!visualViewport || suspended()) return;
 		const nextHeight = visualViewport.height;
 		const shrank =
 			lastVisualViewportHeight > 0 && nextHeight < lastVisualViewportHeight - 1;
@@ -281,6 +303,7 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 		}
 	};
 	const readFocusIn = (event: WebChatFocusEvent) => {
+		if (suspended()) return;
 		const target = event.target;
 		const tag = target?.tagName?.toUpperCase();
 		if (
@@ -298,7 +321,8 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 	viewport.addEventListener("touchend", readTouchEnd, { passive: true });
 	viewport.addEventListener("touchcancel", readTouchEnd, { passive: true });
 	visualViewport?.addEventListener("resize", readVisualViewportResize);
-	host.document?.addEventListener?.("focusin", readFocusIn);
+	document?.addEventListener?.("focusin", readFocusIn);
+	document?.addEventListener?.("visibilitychange", readVisibilityChange);
 	resize.observe(viewport);
 	resize.observe(content);
 
@@ -324,13 +348,15 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 			follower.setFollowing(value, readMetrics());
 		},
 		endScroll() {
-			applyCommand(follower.onScrollEnd(readMetrics()));
+			if (!suspended()) applyCommand(follower.onScrollEnd(readMetrics()));
 		},
 		setDragging(value: boolean) {
+			if (suspended()) return;
 			cancelRestoreSync();
 			follower.onDragChange(value, readMetrics());
 		},
 		disconnect() {
+			cancelResumeSync();
 			cancelRestoreSync();
 			resize.disconnect();
 			viewport.style.removeProperty("overflow-anchor");
@@ -341,7 +367,8 @@ function observeWebChatEnd(initiallyFollowing: boolean) {
 			viewport.removeEventListener("touchend", readTouchEnd);
 			viewport.removeEventListener("touchcancel", readTouchEnd);
 			visualViewport?.removeEventListener("resize", readVisualViewportResize);
-			host.document?.removeEventListener?.("focusin", readFocusIn);
+			document?.removeEventListener?.("focusin", readFocusIn);
+			document?.removeEventListener?.("visibilitychange", readVisibilityChange);
 		},
 	};
 }

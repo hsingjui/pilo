@@ -345,6 +345,15 @@ spacing, type sizes, or control heights.
   than inferring intent from a `scroll` event whose content extent may already
   have changed. When browser verification is authorized, scroll up during
   streamed growth, then return to the end and check following resumes.
+- `observeWebChatEnd` listens on the host document, not nsh's app iframe.
+  Ignore passive scroll/resize callbacks while hidden and until the first
+  foreground frame. Re-read the list there and align only if it was already
+  following; a user reading history or a paused disclosure must not jump.
+  At keyboard open, the measured bottom (including the pre-shrink bottom)
+  takes precedence over stale swipe direction, but not an active gesture.
+  On a phone, verify sending, backgrounding until the reply ends, returning,
+  and opening the keyboard immediately after a swipe to the bottom. Repeat
+  while reading above the bottom and check that neither action jumps to the end.
 - `useChatStickyScroll` keeps per-element resize heights in a ref-backed
   `WeakMap` across observer rebinds. Starting/ending an assistant message must
   not reset the viewport/content baseline: a turn-end error can grow the DOM
