@@ -14,12 +14,11 @@ import {
 	openChatTarget,
 } from "../app/shell/open-chat";
 import { followOpenSessionRead } from "../app/shell/read-open-session";
-import { createSessionAutoTitle } from "../app/shell/session-auto-title";
 import { SessionForker } from "../app/shell/session-fork";
-import { ComposerStore } from "../app/composer/composer-store";
 import { AppStore } from "../app/state/app-store";
 import { ChatRunConfigStore } from "../app/state/chat-run-config";
 import { ChatTranscriptStore } from "../app/state/chat-transcript-store";
+import { createWorkspaceComposer } from "../app/state/chat-workspace";
 import { ModelCatalogStore } from "../app/state/model-catalog";
 import { MobileAppShell } from "./mobile-app-shell";
 import { RemoteChatQueue } from "./remote-chat-queue";
@@ -154,43 +153,19 @@ function ConnectedWorkspace(props: {
 		const projectId = activeProjectId();
 		if (projectId) workspaceStorage?.writeActiveProject(projectId);
 	});
-	const nameSession = createSessionAutoTitle(client, (target, error) => {
-		composer.setStatus(
-			`${t("settings.automaticNamingFailed")}: ${
-				error instanceof Error ? error.message : String(error)
-			}`,
-			target.sessionKey,
-		);
-	});
-	const composer = new ComposerStore({
+	const composer = createWorkspaceComposer({
 		client,
-		shell: webDesktopShell,
 		hostId,
-		app: store.state,
-		draftTextStorage: workspaceStorage?.draftText,
+		shell: webDesktopShell,
+		store,
+		chat,
+		catalog,
+		runConfig,
 		queue,
+		toasts,
+		draftTextStorage: workspaceStorage?.draftText,
 		waitForStartupApproval: (sessionKey) =>
 			extensionUi.waitForStartupApproval(sessionKey),
-		catalog,
-		activeModel: () => runConfig.state()?.model ?? null,
-		beforeSend: (sessionKey, ensureReady, inBackground) =>
-			runConfig.prepareToSend(sessionKey, ensureReady, inBackground),
-		transcript: chat,
-		onPendingDraft: (target, text) => store.setPendingDraft(target, text),
-		onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),
-		onPromptStarted: (target, text) => {
-			store.confirmDraft(target, text);
-			nameSession(target, text);
-		},
-		onNewChat: () => {
-			const projectId =
-				composer.target()?.projectId ?? store.state().navigation.projectId;
-			if (projectId) store.selectProject(projectId);
-		},
-		onCompacted: () => {
-			void runConfig.refresh();
-		},
-		onNotice: (notice) => toasts.show(notice),
 	});
 
 	composer.followBackgroundSessions();

@@ -5,10 +5,11 @@ import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { RemoteScopes } from "@shared/api/remote-types";
 import { LOCAL_HOST_ID } from "@shared/host-id";
 import { hasRemoteScope } from "@shared/remote-hosts";
-import { ComposerStore } from "../composer/composer-store";
+import type { ComposerStore } from "../composer/composer-store";
 import { isSessionUnread } from "../state/app-state";
 import { AppStore } from "../state/app-store";
 import { ChatQueueStore } from "../state/chat-queue-store";
+import { createWorkspaceComposer } from "../state/chat-workspace";
 import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
@@ -28,7 +29,6 @@ import {
 } from "../shell/open-chat";
 import { followOpenSessionRead } from "../shell/read-open-session";
 import { SessionForker } from "../shell/session-fork";
-import { createSessionAutoTitle } from "../shell/session-auto-title";
 import {
 	connectSessionNotifications,
 	type SessionNotifier,
@@ -121,45 +121,21 @@ export class HostSession {
 			if (message.type !== "events") return;
 			for (const event of message.events) queue.receive(event);
 		});
-		const nameSession = createSessionAutoTitle(client, (target, error) => {
-			composer.setStatus(
-				`${t("settings.automaticNamingFailed")}: ${
-					error instanceof Error ? error.message : String(error)
-				}`,
-				target.sessionKey,
-			);
-		});
-		const runConfig = this.runConfig;
-		const composer: ComposerStore = new ComposerStore({
+		this.composer = createWorkspaceComposer({
 			client,
 			hostId,
 			shell,
-			app: store.state,
-			activeModel: () => runConfig.state()?.model ?? null,
+			store,
+			chat: this.chat,
 			catalog: this.catalog,
+			runConfig: this.runConfig,
 			queue,
-			beforeSend: (sessionKey, ensureReady, inBackground) =>
-				runConfig.prepareToSend(sessionKey, ensureReady, inBackground),
-			transcript: this.chat,
-			onPendingDraft: (target, text) => store.setPendingDraft(target, text),
-			onUnsentDraft: (target, text) => store.setUnsentDraft(target, text),
-			onPromptStarted: (target, text) => {
-				store.confirmDraft(target, text);
-				nameSession(target, text);
-			},
-			onNewChat: () => {
-				const projectId =
-					composer.target()?.projectId ?? store.state().navigation.projectId;
+			toasts: this.toasts,
+			onNewChat: (projectId) => {
 				terminals.select(null);
-				workspace.selectChat(projectId ?? undefined);
-				if (projectId) store.selectProject(projectId);
+				workspace.selectChat(projectId);
 			},
-			onCompacted: () => {
-				void runConfig.refresh();
-			},
-			onNotice: (notice) => this.toasts.show(notice),
 		});
-		this.composer = composer;
 		const chat = this.chat;
 		this.forker = new SessionForker(client, {
 			target: () => openChatTarget(store.state()),
