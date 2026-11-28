@@ -57,6 +57,7 @@ import {
 	isCompatibleProtocolVersion,
 	parseMajorVersion,
 	abortError,
+	defaultCreateAbortController,
 	defaultCreateWebSocket,
 	defaultFetch,
 	defaultScheduler,
@@ -87,6 +88,7 @@ export class HttpTransport implements HostTransport {
 	private readonly fetchFn: FetchLike;
 	private readonly createWebSocketFn: WebSocketFactory;
 	private readonly scheduler: SchedulerLike;
+	private readonly createAbortController: () => AbortControllerLike;
 	private readonly expectedMajor: number;
 	private readonly reconnectDelaysMs: readonly number[];
 	private readonly probeTimeoutMs: number;
@@ -153,6 +155,8 @@ export class HttpTransport implements HostTransport {
 		this.createWebSocketFn =
 			options.createWebSocket ?? defaultCreateWebSocket();
 		this.scheduler = options.scheduler ?? defaultScheduler();
+		this.createAbortController =
+			options.createAbortController ?? defaultCreateAbortController();
 		this.expectedMajor =
 			options.expectedMajorVersion ??
 			parseMajorVersion(HOST_API_PROTOCOL_VERSION) ??
@@ -383,10 +387,7 @@ export class HttpTransport implements HostTransport {
 		}
 
 		if (LONG_HTTP_METHODS.has(method)) return run(signal);
-		const { AbortController } = globalThis as unknown as {
-			AbortController: new () => AbortControllerLike;
-		};
-		const controller = new AbortController();
+		const controller = this.createAbortController();
 		let interrupt!: (error: Error) => void;
 		const interrupted = new Promise<never>((_resolve, reject) => {
 			interrupt = reject;

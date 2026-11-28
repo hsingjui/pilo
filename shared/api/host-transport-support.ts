@@ -170,6 +170,7 @@ export type HttpTransportOptions = {
 	fetch?: FetchLike;
 	createWebSocket?: WebSocketFactory;
 	scheduler?: SchedulerLike;
+	createAbortController?: () => AbortControllerLike;
 	expectedMajorVersion?: number;
 	reconnectDelaysMs?: readonly number[];
 	probeTimeoutMs?: number;
@@ -274,6 +275,21 @@ export function defaultScheduler(): SchedulerLike {
 		clearTimeout: (handle) => g.clearTimeout(handle),
 		now: () => Date.now(),
 	};
+}
+
+export function defaultCreateAbortController(): () => AbortControllerLike {
+	const g = globalThis as unknown as {
+		AbortController?: new () => AbortControllerLike;
+	};
+	const Ctor = g.AbortController;
+	if (typeof Ctor !== "function") {
+		throw new HostApiError(
+			"unavailable",
+			"Global AbortController is not available in this environment",
+			false,
+		);
+	}
+	return () => new Ctor();
 }
 
 export function defaultFetch(): FetchLike {
