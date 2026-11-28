@@ -79,7 +79,8 @@ pub(crate) fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>)
 }
 
 /// Delete a Pi session using the same policy as Pi's interactive session selector:
-/// prefer the optional `trash` CLI, then fall back to permanent file removal.
+/// prefer the optional `trash` CLI (or `gio trash` on Linux), then fall back to
+/// permanent file removal.
 pub(crate) fn session_delete(
     params: SessionDeleteParams,
     trash_only: bool,
@@ -89,8 +90,16 @@ pub(crate) fn session_delete(
     if params.path.starts_with('-') {
         trash.arg("--");
     }
-    let trash_status = trash.arg(&path).status();
-    if trash_status.is_ok_and(|status| status.success()) || (!trash_only && !path.exists()) {
+    let trashed = trash.arg(&path).status().is_ok_and(|status| status.success())
+        // Stock Linux desktops ship GLib's `gio trash` rather than a `trash` command.
+        || (cfg!(target_os = "linux")
+            && Command::new("gio")
+                .arg("trash")
+                .arg("--")
+                .arg(&path)
+                .status()
+                .is_ok_and(|status| status.success()));
+    if trashed || (!trash_only && !path.exists()) {
         return Ok(json!({ "method": "trash" }));
     }
     if trash_only {
