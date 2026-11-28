@@ -158,7 +158,7 @@ export type ChatTranscriptSnapshot = {
 	history: SessionHistoryResult;
 	/** Host timestamp of the reply segment active at this cut. */
 	liveStartedAtMs?: number;
-	/** Monotonic duration of that segment when the Host returned the cut. */
+	/** Host monotonic elapsed time, also available on truncated cuts with a known start. */
 	liveElapsedMs?: number;
 	/** Images indexed by the zero-based ordinal of user starts in this live cut. */
 	liveUserImages?: {

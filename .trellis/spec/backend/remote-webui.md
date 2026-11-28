@@ -101,7 +101,10 @@ Active cuts can include two independent values:
 - `liveElapsedMs`: elapsed milliseconds on the Host's monotonic clock, sampled
   after the history read for the captured segment. Resume the live UI clock with
   `performance.now() - liveElapsedMs` as the client start, never with
-  `Date.now() - liveStartedAtMs`.
+  `Date.now() - liveStartedAtMs`. A truncated cut may also include
+  `liveElapsedMs` when the Host observed the user start (including a queued
+  follow-up). This only times the waiting indicator; it does not make the
+  truncated transcript replayable. If the start is unknown, omit the clock.
 
 Apply the timing after replaying `live.events` and before buffered stream events.
 A later user echo can begin a new segment. A confirmed local submission keeps its

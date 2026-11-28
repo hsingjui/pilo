@@ -139,6 +139,10 @@ export type ChatTranscriptState = {
 	 * when it has settled.
 	 */
 	source: "snapshot" | "history" | null;
+	/** Pi is working, but the restored transcript has no live reply to render. */
+	waitingForReply?: boolean;
+	/** Client monotonic start, restored when the live reply could not be replayed. */
+	waitingClockStartedAtMs?: number;
 	message?: string;
 };
 
@@ -272,10 +276,19 @@ export class ChatTranscriptStore {
 			),
 		};
 	});
-	readonly state: Accessor<ChatTranscriptState> = () =>
-		this.visibleTemporary()?.displayed() ?? this.current();
-	private readonly failedPageStarts = signal<ReadonlySet<number>>(new Set());
 	private readonly liveTurnSignal = signal(false);
+	readonly state: Accessor<ChatTranscriptState> = computed(() => {
+		const temporary = this.visibleTemporary();
+		if (temporary) return temporary.displayed();
+		const state = this.current();
+		return state.source !== null &&
+			state.conversation &&
+			!state.conversation.active?.assistantMessageId &&
+			this.liveTurnSignal()
+			? { ...state, waitingForReply: true }
+			: state;
+	});
+	private readonly failedPageStarts = signal<ReadonlySet<number>>(new Set());
 	private readonly historyMetaSignal =
 		signal<ChatTranscriptHistoryMetadata | null>(null);
 	/** Metadata from the latest settled history read or cache hit, shared with run config. */
@@ -1193,8 +1206,10 @@ export class ChatTranscriptStore {
 				conversation: shown.conversation,
 				historyPrefix: shown.historyPrefix,
 				source: shown.source,
+				waitingClockStartedAtMs: shown.waitingClockStartedAtMs,
 			});
 		}
+		let waitingClockStartedAtMs: number | undefined;
 		/** Ends the read; `after` is the snapshot's cut, when it took one. */
 		const finish = (
 			next: Pick<ChatTranscriptState, "status" | "message"> &
@@ -1212,6 +1227,7 @@ export class ChatTranscriptStore {
 				// Not `shown`'s: messages may have been loaded during the read.
 				historyPrefix: this.current().historyPrefix,
 				source: shown.source,
+				waitingClockStartedAtMs,
 				...next,
 			});
 			return buffered.filter((event) => event.sequence > after);
@@ -1319,6 +1335,10 @@ export class ChatTranscriptStore {
 				}
 				after = snapshot.eventSequence;
 				if (!settled && (runtime?.activeTurn || runtime?.compacting)) {
+					if (runtime.activeTurn && snapshot.liveElapsedMs !== undefined) {
+						waitingClockStartedAtMs =
+							performance.now() - snapshot.liveElapsedMs;
+					}
 					if (shown.conversation !== null && !reloadWaitingHistory) {
 						this.liveTurnSignal.set(Boolean(this.local || runtime?.activeTurn));
 						const later = finish({ status: "loading" }, after);

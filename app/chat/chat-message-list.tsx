@@ -1,7 +1,19 @@
-import { computed, type JSX, type ListSlot, untracked, View } from "nsh";
+import {
+	computed,
+	effect,
+	type JSX,
+	type ListSlot,
+	signal,
+	Text,
+	untracked,
+	View,
+} from "nsh";
 
 import type { ChatMessage } from "@shared/chat/conversation-types";
+import { t } from "../shell/i18n";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
+import { workDurationText } from "./chat-activity-labels";
+import { ChatAgentActivityIndicator } from "./chat-agent-activity";
 import { ChatHistorySkeleton } from "./chat-history-skeleton";
 import { ChatExpansion } from "./chat-expansion";
 import { chatListView } from "./chat-list-view";
@@ -15,6 +27,7 @@ import type {
 	ChatWorkPreferences,
 	UserChatMessage,
 } from "./chat-message-types";
+import { ConversationColumn } from "./conversation-column";
 
 export interface ChatMessageListProps {
 	/** The open chat's transcript, as `ChatTranscriptStore` holds it. */
@@ -61,6 +74,28 @@ export interface ChatMessageListProps {
 
 const noMessages: readonly ChatMessage[] = [];
 
+function ChatWaitingDuration(props: { startedAtMs: () => number | undefined }) {
+	const now = signal(performance.now());
+	effect(() => {
+		if (props.startedAtMs() === undefined) return;
+		now.set(performance.now());
+		const timer = setInterval(() => now.set(performance.now()), 1_000);
+		return () => clearInterval(timer);
+	});
+	return () => {
+		const start = props.startedAtMs();
+		return start === undefined ? null : (
+			<Text class="font-sans text-xs tabular-nums text-muted-foreground">
+				{() =>
+					t("chat.workingDuration", {
+						duration: workDurationText(Math.max(0, now() - start)),
+					})
+				}
+			</Text>
+		);
+	};
+}
+
 /**
  * The messages of the open chat. Each chat gets a list of its own, so one
  * chat's rows and scroll position never show under another.
@@ -74,6 +109,15 @@ export function ChatMessageList(props: ChatMessageListProps) {
 	const liveMessages = computed(
 		() => transcript().conversation?.messages ?? noMessages,
 	);
+	const waitingForReply = computed(() => transcript().waitingForReply === true);
+	const waitingClockStartedAtMs = computed(() => {
+		if (props.preferences?.()?.showWorkDuration === false) return undefined;
+		const state = transcript();
+		return (
+			state.conversation?.active?.workClockStartedAtMs ??
+			state.waitingClockStartedAtMs
+		);
+	});
 	// What the user opened and closed in each chat, kept while the app runs.
 	const expansions = new Map<string, ChatExpansion>();
 	const expansionFor = () => {
@@ -141,7 +185,24 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								canForkAssistant={props.canForkAssistant}
 								forkingMessageId={props.forkingMessageId}
 								forkDisabled={props.forkDisabled}
-								footer={props.footer}
+								footer={() => (
+									<View>
+										{() =>
+											waitingForReply() ? (
+												<ConversationColumn class="flex-row flex-wrap items-center gap-2 py-3">
+													<ChatAgentActivityIndicator
+														testID="chat-reply-streaming"
+														label={() => t("chat.waitingResponse")}
+													/>
+													<ChatWaitingDuration
+														startedAtMs={waitingClockStartedAtMs}
+													/>
+												</ConversationColumn>
+											) : null
+										}
+										{props.footer}
+									</View>
+								)}
 								onVisibleRangeChange={props.onVisibleRangeChange}
 								isPlaceholderFailed={props.isPlaceholderFailed}
 								onRetryPlaceholder={props.onRetryPlaceholder}

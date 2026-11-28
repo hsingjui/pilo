@@ -321,19 +321,20 @@ impl SessionTurn {
                     }
                 }
             };
-            let started_at = if matches!(live, TurnLive::Active { .. }) {
-                started_at
-            } else {
-                None
-            };
+            let live_started_at_ms = started_at
+                .filter(|_| matches!(live, TurnLive::Active { .. }))
+                .map(|(timestamp, _)| timestamp);
+            // A truncated turn can still have a known start, e.g. a queued user echo.
+            let live_elapsed_ms = started_at
+                .filter(|_| !matches!(live, TurnLive::Idle))
+                .and_then(|(_, instant)| u64::try_from(instant.elapsed().as_millis()).ok());
             return Ok(TranscriptSnapshot {
                 event_sequence,
                 session_key: session_key.to_owned(),
                 generation,
                 history,
-                live_started_at_ms: started_at.map(|(timestamp, _)| timestamp),
-                live_elapsed_ms: started_at
-                    .and_then(|(_, instant)| u64::try_from(instant.elapsed().as_millis()).ok()),
+                live_started_at_ms,
+                live_elapsed_ms,
                 live_user_images: if matches!(live, TurnLive::Active { .. }) {
                     user_images
                 } else {
@@ -593,11 +594,11 @@ impl SessionTurn {
                 state.running = true;
                 state.step_has_output = false;
                 state.last_text_snapshot.clear();
+                state.started_at = sequenced.event.timestamp_ms.map(|ms| (ms, Instant::now()));
                 if state.expected_users.pop_front().is_none() {
                     state.projection.truncate();
                     return;
                 }
-                state.started_at = sequenced.event.timestamp_ms.map(|ms| (ms, Instant::now()));
             }
             RuntimeEvent::AssistantMessageStart { .. } => {
                 state.running = true;
@@ -685,6 +686,7 @@ impl SessionTurn {
                 state: PiProcessState::Failed | PiProcessState::Stopped,
                 ..
             } => {
+                state.started_at = None;
                 if state.active() {
                     state.projection.truncate();
                 }
