@@ -533,6 +533,10 @@ jobs:
           fi
           gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" \
             "${flags[@]}" --notes-file - <<EOF
+          ### CLI 变更
+
+          旧版 \`pilo-server ctl\` 已移除。在 SSH 或 WSL 中运行的 Pi 不再能通过旧命令控制 Pilo；你仍可在运行 Pilo 桌面端的本机使用 \`pilo\` CLI 管理这些 SSH 和 WSL 项目。
+
           ### 下载安装
 
           | 平台 | 文件 | 说明 |
