@@ -205,6 +205,7 @@ pub(crate) struct Status {
 
 /// The ways an elevated operation ends without succeeding.
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) enum ElevateError {
     Canceled,
     /// The entry changed while authorization was pending; nothing was touched.
