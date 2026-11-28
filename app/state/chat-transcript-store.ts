@@ -49,6 +49,21 @@ import {
 	type LocalPromptEcho,
 } from "./chat-transcript";
 import type { SessionHistoryMetadata } from "./chat-run-config";
+import {
+	type CachedTranscript,
+	type LocalTurn,
+	type SavedHistory,
+	firstWindow,
+	historyMetadata,
+	interruptTurn,
+	isMissingHistoryFile,
+	noMessages,
+	piExited,
+	settles,
+	startsTurn,
+	withoutLocalTurn,
+	TRANSCRIPT_CACHE_CAPACITY,
+} from "./chat-transcript-support";
 
 export type ChatTranscriptClient = Pick<
 	HostClient,
@@ -76,33 +91,6 @@ export type ChatTranscriptOpenOptions = {
 export type ChatTranscriptHistoryMetadata = {
 	sessionKey: string;
 	sessionPath: string;
-	history: SessionHistoryMetadata;
-};
-
-function historyMetadata({
-	model,
-	thinkingLevel,
-	name,
-	headerMissing,
-	stats,
-}: SessionHistory): SessionHistoryMetadata {
-	return { model, thinkingLevel, name, headerMissing, stats };
-}
-
-const TRANSCRIPT_CACHE_CAPACITY = 16;
-const interruptTurn = {
-	type: "assistant_turn_end",
-	completion: "interrupted",
-} as const;
-
-type CachedTranscript = {
-	projectId: string;
-	sessionPath: string;
-	fingerprint: SessionHistoryFingerprint;
-	conversation: ConversationState;
-	older: ChatHistoryWindowStore;
-	saved: SavedHistory | undefined;
-	historyPrefix: readonly ChatMessage[];
 	history: SessionHistoryMetadata;
 };
 
@@ -146,8 +134,6 @@ export type ChatTranscriptState = {
 	message?: string;
 };
 
-const noMessages: readonly ChatMessage[] = [];
-
 const closed: ChatTranscriptState = {
 	sessionKey: null,
 	status: "closed",
@@ -155,87 +141,6 @@ const closed: ChatTranscriptState = {
 	historyPrefix: noMessages,
 	source: null,
 };
-
-/** The session file a read's placeholders stand for. */
-type SavedHistory = {
-	projectId: string;
-	sessionPath: string;
-	/** The file as the read found it; a page of a changed file is not used. */
-	fingerprint: SessionHistoryFingerprint;
-	/** The messages before the read's window, none of them loaded. */
-	placeholders: readonly ChatMessage[];
-	/** The loaded messages `historyPrefix` was last built with. */
-	shown: ReadonlyMap<number, ChatMessage>;
-	/** The first messages of the pages being read. */
-	pages: Set<number>;
-};
-
-/**
- * A prompt sent from this app as the chat's next turn, shown before Pi
- * echoes it: the actions that put it and its pending reply on screen.
- */
-type LocalTurn = {
-	clientMessageId: string;
-	actions: ConversationAction[];
-};
-
-/** The conversation without a local turn's prompt and pending reply. */
-function withoutLocalTurn(
-	conversation: ConversationState,
-	clientMessageId: string,
-): ConversationState {
-	const owned = conversation.active?.localClientMessageId === clientMessageId;
-	const replyId = owned ? conversation.active?.assistantMessageId : undefined;
-	return {
-		...conversation,
-		messages: conversation.messages.filter(
-			(message) => message.id !== clientMessageId && message.id !== replyId,
-		),
-		pendingUsers: conversation.pendingUsers.filter(
-			(pending) => pending.clientMessageId !== clientMessageId,
-		),
-		active: owned ? null : conversation.active,
-	};
-}
-
-/** What a read asks for: the session's last messages and its message index. */
-const firstWindow: ChatTranscriptWindow = {
-	messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
-	includeMessageIndex: true,
-};
-
-/** Whether the session file was missing when history was read. */
-function isMissingHistoryFile(error: unknown) {
-	const message = error instanceof Error ? error.message : String(error);
-	return message.endsWith("(os error 2)") || message.includes("ENOENT");
-}
-
-/** Whether the event says no turn is running in the chat any more. */
-function settles(event: PiloClientEvent) {
-	return (
-		event.type === "assistant_message_end" ||
-		event.type === "runtime_error" ||
-		(event.type === "pi_reattached" && !event.active) ||
-		piExited(event)
-	);
-}
-
-/** Whether the event says the chat's Pi process is gone. */
-function piExited(event: PiloClientEvent) {
-	return (
-		event.type === "process_state" &&
-		(event.state === "failed" || event.state === "stopped")
-	);
-}
-
-/** Whether the event is one the Host counts as a turn having started. */
-function startsTurn(event: PiloClientEvent) {
-	return (
-		event.type === "user_message_start" ||
-		event.type === "assistant_message_start" ||
-		event.type === "auto_retry_start"
-	);
-}
 
 /**
  * The transcript of the one open chat. Opening a chat starts nothing.
