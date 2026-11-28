@@ -286,6 +286,7 @@ const enUS = {
 		remoteRevokeAll: "Disconnect and revoke all devices",
 		remoteRevokeAllDescription:
 			"All paired devices will be disconnected and the current pairing link will be invalidated. Devices must pair again to reconnect.",
+		cli: "CLI",
 		about: "About",
 		conversation: "Conversation",
 		developer: "Developer",
@@ -1278,6 +1279,44 @@ const enUS = {
 		updateServiceUnavailable:
 			"Unable to connect to the update service. Check the network and try again.",
 		updateFailed: "Update check failed. Try again later.",
+	},
+	cli: {
+		title: "Command line tool",
+		status: "Status",
+		command: "Command",
+		version: "Version",
+		versionUnknown: "Unknown",
+		location: "Location",
+		actions: "Actions",
+		refresh: "Refresh",
+		install: "Install",
+		repair: "Repair",
+		uninstall: "Uninstall",
+		stateReady: "Installed",
+		stateNotInstalled: "Not installed",
+		stateNotInPath: "Not on PATH",
+		stateStale: "Needs repair",
+		stateConflict: "Conflict",
+		stateUnavailable: "Unavailable",
+		stateShadowed: "Shadowed",
+		shadowedTitle: "PATH",
+		notInstalledHelp: "Install to run {{command}} from a terminal.",
+		notInPathHelp:
+			"{{dir}} is not on PATH. Add it in your shell profile to run {{command}}.",
+		conflictHelp:
+			"{{path}} already exists and was not created by Pilo, so it was not overwritten. Remove it manually and try again.",
+		unavailableHelp: "This Pilo build does not include the CLI.",
+		staleMissing: "The {{command}} entry was removed. Repair to restore it.",
+		staleMoved: "Pilo moved, so the entry points to an old location.",
+		staleOtherApp: "The entry belongs to another copy of Pilo.",
+		staleOutdated: "The installed CLI does not match this Pilo version.",
+		stalePathRemoved: "{{dir}} was removed from PATH.",
+		shadowed:
+			"{{path}} comes first on PATH, so running {{command}} in a terminal will not use Pilo's CLI.",
+		fallback:
+			"Administrator authorization was canceled, so the CLI was installed in {{dir}}.",
+		canceled: "Authorization was canceled. Nothing was changed.",
+		failed: "CLI action failed: {{message}}",
 	},
 } as const;
 
