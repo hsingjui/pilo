@@ -391,6 +391,25 @@ mod tests {
             id: "workspace".into(),
             scopes: RemoteScopes::ChatWorkspace,
         };
+        for principal in [&chat, &workspace] {
+            for method in ["session.status", "session.create", "session.send"] {
+                assert_eq!(
+                    call(&runtime, principal, method, params())
+                        .await
+                        .unwrap_err()
+                        .code,
+                    ErrorCode::Forbidden,
+                    "{method}"
+                );
+            }
+        }
+        assert_eq!(
+            call(&runtime, &Principal::Local, "session.status", params())
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidParams
+        );
         for (principal, workspace_error, admin_error) in [
             (
                 &Principal::Local,
@@ -471,6 +490,15 @@ mod tests {
             "remote.pairing.regenerate",
             "remote.port.set",
             "remote.state",
+            "session.resolve",
+            "session.page",
+            "session.create",
+            "session.send",
+            "session.abort",
+            "session.stop",
+            "session.update",
+            "session.trash",
+            "session.status",
         ]);
         let mut names = HashSet::new();
         for spec in methods() {

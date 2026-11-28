@@ -32,7 +32,9 @@ Commands:
                                             {sessionId, state, turn, runningTools,
                                              lastAssistantMessage}; never starts Pi
   sessions create --project <id>            stdin: {"message": "...", "title"?: "..."}
-                                            Returns once Pi accepted the first prompt
+                                            Returns once Pi accepted the first prompt;
+                                            outcome_unknown errors carry the new
+                                            sessionId to query
   sessions send <session id> --project <id> stdin: {"message": "..."}; busy sessions
                                             are refused, not queued
   sessions abort <session id> --project <id>   Interrupt the current turn only

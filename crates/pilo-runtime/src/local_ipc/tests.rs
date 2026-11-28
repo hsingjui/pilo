@@ -97,6 +97,14 @@ async fn hello_then_local_calls_dispatch_with_full_scope() {
     let listed = call(&mut stream, 1, "project.list", json!({})).await;
     assert_eq!(listed["id"], 1);
     assert!(listed["result"].is_array(), "{listed}");
+    let status = call(
+        &mut stream,
+        90,
+        "session.status",
+        json!({"projectId": "missing", "sessionId": "s"}),
+    )
+    .await;
+    assert_eq!(status["error"]["code"], "not_found", "{status}");
     let rejected = call(
         &mut stream,
         2,

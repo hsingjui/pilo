@@ -348,31 +348,31 @@ register! {
     "session.uiState.set": Chat Json |rt, _who| (project_id: Option<String>, session_path: String, update: SessionUiStateUpdate) {
         json(database_input(rt, move |rt| session_api::session_update_ui_state(rt, session_path, update, project_id)).await?)
     }
-    "session.resolve": Chat Json |rt, _who| (project_id: String, session_id: String) {
+    "session.resolve": Admin Json |rt, _who| (project_id: String, session_id: String) {
         json(session_ops::get(rt, &project_id, &session_id).await?)
     }
-    "session.page": Chat Json |rt, _who| (project_id: String, offset: Option<usize>, limit: Option<usize>) {
+    "session.page": Admin Json |rt, _who| (project_id: String, offset: Option<usize>, limit: Option<usize>) {
         json(session_ops::page(rt, &project_id, offset, limit).await?)
     }
-    "session.create": Chat Json |rt, _who| (project_id: String, message: String, title: Option<String>) {
-        json(session_ops::create(rt, project_id, message, title).await?)
+    "session.create": Admin Json |rt, _who| (project_id: String, session_id: String, message: String, title: Option<String>) {
+        json(session_ops::create(rt, project_id, session_id, message, title).await?)
     }
-    "session.send": Chat Json |rt, _who| (project_id: String, session_id: String, message: String) {
+    "session.send": Admin Json |rt, _who| (project_id: String, session_id: String, message: String) {
         json(session_ops::send(rt, &project_id, &session_id, message).await?)
     }
-    "session.abort": Chat Json |rt, _who| (project_id: String, session_id: String) {
+    "session.abort": Admin Json |rt, _who| (project_id: String, session_id: String) {
         json(session_ops::abort(rt, &project_id, &session_id).await?)
     }
-    "session.stop": Chat Json |rt, _who| (project_id: String, session_id: String) {
+    "session.stop": Admin Json |rt, _who| (project_id: String, session_id: String) {
         json(session_ops::stop(rt, &project_id, &session_id).await?)
     }
-    "session.update": Chat Json |rt, _who| (project_id: String, session_id: String, title: Option<String>, pinned: Option<bool>) {
+    "session.update": Admin Json |rt, _who| (project_id: String, session_id: String, title: Option<String>, pinned: Option<bool>) {
         json(session_ops::update(rt, &project_id, &session_id, title, pinned).await?)
     }
-    "session.trash": Chat Json |rt, _who| (project_id: String, session_id: String) {
+    "session.trash": Admin Json |rt, _who| (project_id: String, session_id: String) {
         json(session_ops::trash(rt, &project_id, &session_id).await?)
     }
-    "session.status": Chat Json |rt, _who| (project_id: String, session_id: String) {
+    "session.status": Admin Json |rt, _who| (project_id: String, session_id: String) {
         json(session_ops::status(rt, &project_id, &session_id).await?)
     }
     "session.readStates": Chat Json |rt, _who| () {

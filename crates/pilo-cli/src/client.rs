@@ -104,23 +104,36 @@ impl Client {
                 CliError::offline(reason)
             }
         };
-        if let Err(error) = write_frame(&mut self.stream, &request).await {
-            return Err(match error {
-                FrameError::TooLarge(_) => CliError::invalid(error.to_string()),
-                // Nothing reached the Host if the frame could not be written at all.
-                error => CliError::offline(format!("connection to Pilo failed: {error}")),
-            });
-        }
-        let response = tokio::time::timeout(self.timeout, read_frame(&mut self.stream))
-            .await
-            .map_err(|_| {
-                lost(format!(
+        // `--timeout` covers writing the request as well as waiting for the reply.
+        let stream = &mut self.stream;
+        let exchange = async move {
+            write_frame(stream, &request)
+                .await
+                .map_err(|error| (false, error))?;
+            read_frame(stream).await.map_err(|error| (true, error))
+        };
+        let response = match tokio::time::timeout(self.timeout, exchange).await {
+            Err(_) => {
+                return Err(lost(format!(
                     "no reply within {} seconds",
                     self.timeout.as_secs_f64()
-                ))
-            })?
-            .map_err(|error| lost(format!("connection to Pilo failed: {error}")))?
-            .ok_or_else(|| lost("Pilo closed the connection".to_owned()))?;
+                )));
+            }
+            Ok(Err((false, error @ FrameError::TooLarge(_)))) => {
+                return Err(CliError::invalid(error.to_string()));
+            }
+            // An incomplete request frame cannot be decoded, so the Host did not act on it.
+            Ok(Err((false, error))) => {
+                return Err(CliError::offline(format!(
+                    "connection to Pilo failed: {error}"
+                )));
+            }
+            Ok(Err((true, error))) => {
+                return Err(lost(format!("connection to Pilo failed: {error}")));
+            }
+            Ok(Ok(None)) => return Err(lost("Pilo closed the connection".to_owned())),
+            Ok(Ok(Some(response))) => response,
+        };
         if response.get("id") != Some(&json!(id)) {
             if let Some(error) = response.get("error") {
                 return Err(CliError::from_host(error, write));

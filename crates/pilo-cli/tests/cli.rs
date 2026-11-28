@@ -192,3 +192,67 @@ async fn commands_reach_the_host_as_local() {
     let (code, _, _) = run(&["--dev", "projects", "list"], "").await;
     assert_eq!(code, 3);
 }
+
+/// A Host stand-in that answers hello, reads one request and then either hangs
+/// up or never replies.
+async fn fake_host(home: &Path, reply: bool) -> tokio::task::JoinHandle<serde_json::Value> {
+    use pilo_ipc::{read_frame, write_frame};
+    let endpoint =
+        endpoint::derive_unix(endpoint::UnixPlatform::MacOs, APP_ID, Some(home), None, 0).unwrap();
+    std::fs::create_dir_all(endpoint.path.parent().unwrap()).unwrap();
+    let listener = tokio::net::UnixListener::bind(&endpoint.path).unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_frame(&mut stream).await.unwrap().unwrap();
+        let hello = serde_json::json!({
+            "protocol": "2.0",
+            "hostId": "fake",
+            "appVersion": "0.0.0",
+            "capabilities": {},
+        });
+        write_frame(&mut stream, &hello).await.unwrap();
+        let request = read_frame(&mut stream).await.unwrap().unwrap();
+        if reply {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+        request
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn create_reports_its_session_id_when_the_outcome_is_unknown() {
+    for hang in [false, true] {
+        let home = Home::new();
+        let host = fake_host(&home.0, hang).await;
+        let path = home.0.clone();
+        let (code, stdout, stderr) = tokio::task::spawn_blocking(move || {
+            pilo(
+                &path,
+                &[
+                    "--dev",
+                    "--timeout",
+                    "0.5",
+                    "sessions",
+                    "create",
+                    "--project",
+                    "p",
+                ],
+                r#"{"message":"hello"}"#,
+            )
+        })
+        .await
+        .unwrap();
+        assert_eq!((code, stdout), (6, Value::Null), "{stderr}");
+        let error: Value = serde_json::from_str(stderr.trim()).unwrap();
+        assert_eq!(error["error"]["category"], "outcome_unknown");
+        let session_id = error["error"]["sessionId"].as_str().unwrap().to_owned();
+        assert!(session_id.starts_with("cli-"), "{error}");
+        if !hang {
+            let request = host.await.unwrap();
+            assert_eq!(request["method"], "session.create");
+            assert_eq!(request["params"]["sessionId"], session_id.as_str());
+        } else {
+            host.abort();
+        }
+    }
+}

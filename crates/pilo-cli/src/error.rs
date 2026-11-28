@@ -47,6 +47,8 @@ pub struct CliError {
     /// The Host or transport error code, when there is one.
     pub code: Option<String>,
     pub message: String,
+    /// The ID a `sessions create` picked, reported when its outcome is unknown.
+    pub session_id: Option<String>,
 }
 
 impl CliError {
@@ -55,6 +57,7 @@ impl CliError {
             category,
             code: None,
             message: message.into(),
+            session_id: None,
         }
     }
 
@@ -101,14 +104,19 @@ impl CliError {
             category,
             code: Some(code),
             message,
+            session_id: None,
         }
     }
 
     pub fn to_json(&self) -> Value {
-        json!({"error": {
+        let mut error = json!({
             "category": self.category.name(),
             "code": self.code,
             "message": self.message,
-        }})
+        });
+        if let Some(id) = &self.session_id {
+            error["sessionId"] = json!(id);
+        }
+        json!({ "error": error })
     }
 }

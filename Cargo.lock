@@ -947,6 +947,7 @@ dependencies = [
 name = "pilo-cli"
 version = "0.5.2"
 dependencies = [
+ "getrandom 0.3.4",
  "pilo-ipc",
  "pilo-runtime",
  "serde_json",

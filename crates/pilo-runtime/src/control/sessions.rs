@@ -57,7 +57,10 @@ pub(super) async fn execute(
     match method {
         "sessions.create" => {
             let args: Create = decode(command.value)?;
-            return message(session_ops::create(runtime, project, args.message, args.title).await);
+            let session_id = session_ops::new_session_id().map_err(|error| error.message)?;
+            return message(
+                session_ops::create(runtime, project, session_id, args.message, args.title).await,
+            );
         }
         "sessions.list" => {
             let page: Page = optional(command.value)?;

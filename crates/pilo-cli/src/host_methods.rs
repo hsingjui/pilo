@@ -569,6 +569,7 @@ pub const SESSION_CREATE: Method = Method {
     name: "session.create",
     params: &[
         Param { name: "projectId", ty: "String", optional: false },
+        Param { name: "sessionId", ty: "String", optional: false },
         Param { name: "message", ty: "String", optional: false },
         Param { name: "title", ty: "Option<String>", optional: true },
     ],

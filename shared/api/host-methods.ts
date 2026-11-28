@@ -453,7 +453,12 @@ export type HostApiMethods = {
 		result: unknown;
 	};
 	"session.create": {
-		params: { projectId: string; message: string; title?: string };
+		params: {
+			projectId: string;
+			sessionId: string;
+			message: string;
+			title?: string;
+		};
 		result: unknown;
 	};
 	"session.send": {
@@ -624,15 +629,15 @@ export const HOST_API_METHOD_META: Record<
 	"session.title": { scope: "chat", kind: "json" },
 	"session.delete": { scope: "chat", kind: "json" },
 	"session.uiState.set": { scope: "chat", kind: "json" },
-	"session.resolve": { scope: "chat", kind: "json" },
-	"session.page": { scope: "chat", kind: "json" },
-	"session.create": { scope: "chat", kind: "json" },
-	"session.send": { scope: "chat", kind: "json" },
-	"session.abort": { scope: "chat", kind: "json" },
-	"session.stop": { scope: "chat", kind: "json" },
-	"session.update": { scope: "chat", kind: "json" },
-	"session.trash": { scope: "chat", kind: "json" },
-	"session.status": { scope: "chat", kind: "json" },
+	"session.resolve": { scope: "admin", kind: "json" },
+	"session.page": { scope: "admin", kind: "json" },
+	"session.create": { scope: "admin", kind: "json" },
+	"session.send": { scope: "admin", kind: "json" },
+	"session.abort": { scope: "admin", kind: "json" },
+	"session.stop": { scope: "admin", kind: "json" },
+	"session.update": { scope: "admin", kind: "json" },
+	"session.trash": { scope: "admin", kind: "json" },
+	"session.status": { scope: "admin", kind: "json" },
 	"session.readStates": { scope: "chat", kind: "json" },
 	"session.markRead": { scope: "chat", kind: "json" },
 	"chat.start": { scope: "chat", kind: "json" },

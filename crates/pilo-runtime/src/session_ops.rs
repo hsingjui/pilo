@@ -104,7 +104,10 @@ pub(crate) async fn resolve(
         move |runtime| session_api::session_list(runtime, project)
     })
     .await?;
-    let input_state = states.iter().find(|state| state.session_key == id);
+    let short_key = chat_key(project, id);
+    let input_state = states
+        .iter()
+        .find(|state| state.session_key == id || state.session_key == short_key);
     let entry = if let Some(state) = input_state.filter(|state| state.session_path.is_some()) {
         entries
             .iter()
@@ -195,6 +198,7 @@ pub(crate) async fn history(
 pub(crate) async fn create(
     runtime: &Runtime,
     project: String,
+    session_id: String,
     message: String,
     title: Option<String>,
 ) -> Result<Value, HostApiError> {
@@ -203,7 +207,13 @@ pub(crate) async fn create(
     if let Some(title) = &title {
         validate_title(title)?;
     }
-    let key = chat_key(&project, &format!("cli-{:032x}", random_id()?));
+    validate_new_session_id(&session_id)?;
+    let key = chat_key(&project, &session_id);
+    if runtime.chat_sessions.state(&key).await.is_some()
+        || resolve(runtime, &project, &session_id).await.is_ok()
+    {
+        return Err(conflict("session ID is already in use; generate a new one"));
+    }
     start(runtime, project.clone(), key.clone(), None)
         .await
         .map_err(|error| HostApiError::invalid(format!("{error}; first message was not sent")))?;
@@ -257,6 +267,7 @@ pub(crate) async fn create(
     };
     let state = runtime.chat_sessions.state(&key).await;
     Ok(json!({
+        "sessionId": session_id,
         "sessionKey": key,
         "accepted": true,
         "disposition": disposition,
@@ -543,6 +554,28 @@ fn last_assistant_message(history: &Value) -> Option<String> {
     }
     commit(&mut current);
     last
+}
+
+/// Creators pick the ID up front so it can be queried even when the outcome is unknown.
+pub(crate) fn new_session_id() -> Result<String, HostApiError> {
+    Ok(format!("{NEW_SESSION_ID_PREFIX}{:032x}", random_id()?))
+}
+
+const NEW_SESSION_ID_PREFIX: &str = "cli-";
+
+fn validate_new_session_id(id: &str) -> Result<(), HostApiError> {
+    let hex = id.strip_prefix(NEW_SESSION_ID_PREFIX).unwrap_or_default();
+    if hex.len() == 32
+        && hex
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        Ok(())
+    } else {
+        Err(HostApiError::invalid(
+            "sessionId must be 'cli-' followed by 32 lowercase hex digits",
+        ))
+    }
 }
 
 fn random_id() -> Result<u128, HostApiError> {

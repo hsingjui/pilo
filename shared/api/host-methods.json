@@ -1289,7 +1289,7 @@
 					"type": "String"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1314,7 +1314,7 @@
 					"type": "Option<usize>"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1329,6 +1329,11 @@
 					"type": "String"
 				},
 				{
+					"name": "sessionId",
+					"optional": false,
+					"type": "String"
+				},
+				{
 					"name": "message",
 					"optional": false,
 					"type": "String"
@@ -1339,7 +1344,7 @@
 					"type": "Option<String>"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1364,7 +1369,7 @@
 					"type": "String"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1384,7 +1389,7 @@
 					"type": "String"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1404,7 +1409,7 @@
 					"type": "String"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1434,7 +1439,7 @@
 					"type": "Option<bool>"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1454,7 +1459,7 @@
 					"type": "String"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{
@@ -1474,7 +1479,7 @@
 					"type": "String"
 				}
 			],
-			"scope": "chat",
+			"scope": "admin",
 			"timeoutMs": 45000
 		},
 		{

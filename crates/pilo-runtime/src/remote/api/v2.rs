@@ -1142,6 +1142,23 @@ mod tests {
         assert_eq!(status, 403);
         assert_eq!(err["error"]["code"], "forbidden");
 
+        // CLI session methods are local-only: paired devices of any scope are refused.
+        for token in [&token_b_chat, &token_b_ws] {
+            for method in ["session.status", "session.create", "session.trash"] {
+                let (status, err) = http_json(
+                    host_b.port,
+                    "POST",
+                    &format!("/api/v2/call/{method}"),
+                    Some(token),
+                    None,
+                    &json!({ "projectId": "p", "sessionId": "s" }),
+                )
+                .await;
+                assert_eq!(status, 403, "{method}");
+                assert_eq!(err["error"]["code"], "forbidden", "{method}");
+            }
+        }
+
         // Origin enforcement.
         let (status, _) = http_json(
             host_b.port,

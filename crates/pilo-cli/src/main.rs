@@ -193,6 +193,20 @@ fn text_field(
     }
 }
 
+/// Picks the ID of a new session so it stays queryable if the outcome is unknown.
+fn new_session_id() -> Result<String, CliError> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| CliError::internal(format!("could not generate a session ID: {error}")))?;
+    Ok(format!(
+        "cli-{}",
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
+}
+
 /// Commands that need a Host connection, as `(words consumed, write)`.
 fn host_command(words: &[String]) -> Option<(usize, bool)> {
     let words: Vec<&str> = words.iter().map(String::as_str).collect();
@@ -287,15 +301,30 @@ async fn run_host(client: &mut Client, words: &[String], write: bool) -> Result<
         ("sessions", "create", _) => {
             args.none()?;
             let input = stdin_object(&["message", "title"])?;
+            let project = json!(args.required("project")?);
+            let message = text_field(&input, "message", true)?;
+            let title = text_field(&input, "title", false)?;
+            let session_id = new_session_id()?;
             call(
                 &m::SESSION_CREATE,
                 &[
-                    ("projectId", json!(args.required("project")?)),
-                    ("message", text_field(&input, "message", true)?),
-                    ("title", text_field(&input, "title", false)?),
+                    ("projectId", project),
+                    ("sessionId", json!(session_id)),
+                    ("message", message),
+                    ("title", title),
                 ],
             )
             .await
+            .map_err(|mut error| {
+                if error.category == error::Category::OutcomeUnknown {
+                    error.message = format!(
+                        "{}; query it with `sessions status {session_id}`",
+                        error.message
+                    );
+                    error.session_id = Some(session_id);
+                }
+                error
+            })
         }
         ("sessions", action, _) => {
             let project = json!(args.required("project")?);

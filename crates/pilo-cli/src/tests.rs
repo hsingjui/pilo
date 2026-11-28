@@ -72,11 +72,15 @@ fn bindings_reject_unknown_and_missing_parameters() {
     let params = m::SESSION_CREATE
         .params(&[
             ("projectId", json!("p")),
+            ("sessionId", json!("cli-0")),
             ("message", json!("hi")),
             ("title", Value::Null),
         ])
         .unwrap();
-    assert_eq!(params, json!({"projectId": "p", "message": "hi"}));
+    assert_eq!(
+        params,
+        json!({"projectId": "p", "sessionId": "cli-0", "message": "hi"})
+    );
     assert!(
         m::SESSION_CREATE
             .params(&[("projectId", json!("p"))])
@@ -118,6 +122,26 @@ fn stdin_objects_are_strict() {
     let object = parse_object("{}", &["message", "title"]).unwrap();
     assert!(text_field(&object, "message", true).is_err());
     assert!(text_field(&object, "title", false).unwrap().is_null());
+}
+
+#[test]
+fn new_session_ids_are_unique_and_host_formatted() {
+    let first = new_session_id().unwrap();
+    assert_ne!(first, new_session_id().unwrap());
+    let hex = first.strip_prefix("cli-").unwrap();
+    assert_eq!(hex.len(), 32);
+    assert!(
+        hex.bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    );
+    let mut error = CliError::outcome_unknown("lost");
+    error.session_id = Some(first.clone());
+    assert_eq!(error.to_json()["error"]["sessionId"], json!(first));
+    assert!(
+        CliError::invalid("x").to_json()["error"]
+            .get("sessionId")
+            .is_none()
+    );
 }
 
 #[test]
