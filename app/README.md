@@ -293,6 +293,32 @@ Each package includes the built WebUI in `webui/` and all four server
 runtimes in `runtime/`. These directories live in `Contents/Resources/` on
 macOS and next to the app executable on Windows and Linux.
 
+Each package also includes the `pilo` CLI in `bin/` (`pilo-dev` for the
+`app.hsingjui.pilo.dev` app, with `.exe` on Windows), separate from the server
+runtimes. The CLI connects to the app ID it was built for, so the workflow
+builds it with `PILO_CLI_APP_ID` set to the final manifest's `id`; a CLI built
+without it defaults to `app.hsingjui.pilo.dev`. The Settings → CLI page in the
+desktop app links this binary onto PATH: `/usr/local/bin` on macOS (after an
+administrator prompt, or `~/.local/bin` when it is canceled), `~/.local/bin` on
+Linux (an AppImage links a copy in `~/.local/share/pilo/bin` that the app
+refreshes at launch), and the app's `bin` directory in the user PATH on
+Windows.
+
+To package locally, run `nsh package`, stage the WebUI and runtimes as above,
+then build and stage the CLI before signing the finished app:
+
+```bash
+nsh package --target macos --app-version "$VERSION" --out .nsh/release
+app_resources=.nsh/release/Pilo.app/Contents/Resources # .nsh/release/Pilo elsewhere
+bash scripts/stage-pilo-cli.sh "$app_resources" "$(jq -r .id nsh.json)" "$VERSION"
+```
+
+The script runs `cargo build --release -p pilo-cli --bin pilo` with
+`PILO_CLI_APP_ID`, copies the binary under the package's command name, ad hoc
+signs it on macOS, and checks that `version` prints
+`{"cli":"<version>","appId":"<app id>"}`. To try the CLI page against another
+binary, start the app with `PILO_CLI_BINARY=/path/to/pilo`.
+
 ## Chat transcripts
 
 `ChatTranscriptStore` (`state/chat-transcript-store.ts`) holds the transcript

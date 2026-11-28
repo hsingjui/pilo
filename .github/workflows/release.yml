@@ -213,6 +213,8 @@ jobs:
 
       - name: Stage app resources
         shell: bash
+        env:
+          NSH_MANIFEST: ${{ needs.preflight.outputs.nsh_manifest }}
         run: |
           set -euo pipefail
           bash scripts/verify-pilo-server-resources.sh
@@ -231,6 +233,9 @@ jobs:
           if [[ "$RUNNER_OS" != "Windows" ]]; then
             chmod +x "$app_resources"/runtime/pilo-server-*
           fi
+          # The CLI connects to the packaged app's ID by default and lives in bin/, not runtime/.
+          app_id=$(python3 -c 'import json, os; print(json.loads(os.environ["NSH_MANIFEST"])["id"])')
+          bash scripts/stage-pilo-cli.sh "$app_resources" "$app_id" "$VERSION"
 
       - name: Archive Windows portable app and compile installer
         if: runner.os == 'Windows'
@@ -285,6 +290,7 @@ jobs:
           app="$out/Pilo.app"
           # The executable in Resources is sealed as data, not verified as nested code.
           codesign --verify --strict "$app/Contents/Resources/runtime/pilo-server-darwin-aarch64"
+          codesign --verify --strict "$app/Contents/Resources/bin/pilo"
           # nsh signs before Pilo stages its resources; seal the finished bundle again.
           codesign --force --sign - --timestamp=none --preserve-metadata=entitlements "$app"
           codesign --verify --deep --strict "$app"
