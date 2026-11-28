@@ -2,6 +2,7 @@ import {
 	type Accessor,
 	appInfo,
 	computed,
+	type JSX,
 	platform,
 	signal,
 	Text,
@@ -14,6 +15,7 @@ import { Button as BaseButton } from "nsh/base";
 
 import type { Theme } from "@shared/theme-settings-types";
 import { Button } from "../ui/button";
+import { classNames } from "../ui/class-names";
 import { blurOnPointerPress } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon, type IconName } from "../ui/icon";
@@ -21,7 +23,7 @@ import { MOTION, tactileTransition, viewTransition } from "../ui/motion";
 import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
-import { Tooltip } from "../ui/tooltip";
+import { textTooltip } from "../ui/tooltip";
 import type { DesktopUpdate } from "./desktop-update";
 import type { ArchiveView } from "./archived-sessions";
 import { t } from "./i18n";
@@ -390,34 +392,23 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						}
 					}}
 					<View class="relative shrink-0 flex-row items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
-						{props.onOpenSettings ? (
-							<Button
-								testID="sidebar-settings"
-								variant="ghost"
-								size="icon"
-								accessibilityLabel={t("settings.title")}
-								tooltip={
-									<Tooltip>
-										<Text class="font-sans">{() => t("settings.title")}</Text>
-									</Tooltip>
-								}
-								onPress={props.onOpenSettings}
-							>
-								<Icon name="Settings" />
-							</Button>
-						) : null}
 						{() =>
 							props.listState() === "ready" && (
-								<Button
+								<SidebarFooterButton
 									testID="sidebar-archived"
-									variant="ghost"
-									size="sm"
-									accessibilityLabel={t("sidebar.archived")}
-									onPress={() => archived.set({})}
+									label={() => t("sidebar.archived")}
+									active={() => archiveView() !== null}
+									onPress={() =>
+										archived.set(
+											archiveView() !== null &&
+												archiveView()?.projectId === undefined
+												? null
+												: {},
+										)
+									}
 								>
-									<Icon name="Archive" size={14} />
-									<Text class="font-sans">{() => t("sidebar.archived")}</Text>
-								</Button>
+									<Icon name="Archive" />
+								</SidebarFooterButton>
 							)
 						}
 						{() =>
@@ -429,6 +420,15 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							{props.remote ? <RemoteButton {...props.remote} /> : null}
 							{props.onTheme ? (
 								<ThemeCycleButton theme={props.theme} onTheme={props.onTheme} />
+							) : null}
+							{props.onOpenSettings ? (
+								<SidebarFooterButton
+									testID="sidebar-settings"
+									label={() => t("settings.title")}
+									onPress={props.onOpenSettings}
+								>
+									<Icon name="Settings" />
+								</SidebarFooterButton>
 							) : null}
 						</View>
 					</View>
@@ -518,6 +518,7 @@ export function StartupSidebar(
 				<View class="shrink-0 flex-row items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
 					{footerButton()}
 					<View class="ml-auto flex-row items-center gap-1">
+						{footerButton()}
 						{footerButton()}
 						{footerButton()}
 					</View>
@@ -633,7 +634,52 @@ function ProjectSessionsToolbar(props: {
 }
 
 /**
- * Footer update trigger beside the settings gear, matching Tauri's
+ * An icon button in the sidebar footer: muted at rest so it yields to the
+ * session list, brightens on hover, and carries an active or accent state.
+ */
+function SidebarFooterButton(props: {
+	testID: string;
+	label: () => string;
+	tooltip?: () => string;
+	active?: () => boolean;
+	accent?: () => boolean;
+	onPress: () => void;
+	children: JSX.Element;
+}) {
+	const hover = createHover();
+	const active = () => props.active?.() ?? false;
+	const foreground = () => {
+		if (props.accent?.()) return token("primary");
+		if (active()) return token("pilo-sidebar-selected-foreground");
+		return token(
+			hover.hovered() ? "sidebar-hover-foreground" : "sidebar-foreground-muted",
+		);
+	};
+	return (
+		<Button
+			{...hover.props}
+			testID={props.testID}
+			variant="ghost"
+			size="icon"
+			selected={props.active ? active() : undefined}
+			class={classNames(
+				"hover:bg-sidebar-hover",
+				active() && "bg-(--pilo-sidebar-selected-background)",
+			)}
+			focusVisibleStyle={sidebarFocusRing()}
+			accessibilityLabel={props.label()}
+			tooltip={textTooltip(props.tooltip ?? props.label)}
+			onPress={props.onPress}
+		>
+			<Foreground.Provider value={foreground}>
+				{props.children}
+			</Foreground.Provider>
+		</Button>
+	);
+}
+
+/**
+ * Footer update trigger beside the archived toggle, matching Tauri's
  * `SidebarFooter` update button: opens the update dialog to view release notes
  * or active download progress without taking extra vertical space.
  */
@@ -679,13 +725,10 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 			testID="sidebar-update"
 			variant="ghost"
 			size="sm"
-			class="h-(--pilo-button-icon-size) gap-1.5 px-2.5 text-xs tabular-nums"
+			class="h-(--pilo-button-icon-size) min-w-0 shrink gap-1.5 px-2 text-xs tabular-nums hover:bg-sidebar-hover"
+			focusVisibleStyle={sidebarFocusRing()}
 			accessibilityLabel={detail()}
-			tooltip={
-				<Tooltip>
-					<Text class="font-sans">{detail}</Text>
-				</Tooltip>
-			}
+			tooltip={textTooltip(detail)}
 			onPress={() => update.setDialogOpen(true)}
 		>
 			{() => {
@@ -697,7 +740,7 @@ function UpdateButton(props: { update: DesktopUpdate }) {
 				return <Icon name="Download" size={14} color={color} />;
 			}}
 			<Text
-				class="font-sans text-xs font-medium tabular-nums"
+				class="min-w-0 shrink truncate font-sans text-xs font-medium tabular-nums"
 				style={{ color: token(colorToken()) }}
 			>
 				{label}
@@ -712,26 +755,14 @@ function RemoteButton(props: {
 	onOpen: () => void;
 }) {
 	return (
-		<Button
+		<SidebarFooterButton
 			testID="sidebar-remote"
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={t("settings.remote")}
-			tooltip={
-				<Tooltip>
-					<Text class="font-sans">{() => t("settings.remote")}</Text>
-				</Tooltip>
-			}
+			label={() => t("settings.remote")}
+			accent={props.running}
 			onPress={props.onOpen}
 		>
-			{() =>
-				props.running() ? (
-					<Icon name="Smartphone" color={token("primary")} />
-				) : (
-					<Icon name="Smartphone" />
-				)
-			}
-		</Button>
+			<Icon name="Smartphone" />
+		</SidebarFooterButton>
 	);
 }
 
@@ -740,25 +771,19 @@ function ThemeCycleButton(props: {
 	theme: Accessor<Theme>;
 	onTheme: (theme: Theme) => void;
 }) {
-	const label = () =>
+	const tooltip = () =>
 		`${t("settings.theme")}: ${t(THEME_LABELS[props.theme()])}`;
 	return (
-		<Button
+		<SidebarFooterButton
 			testID="sidebar-theme"
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={t("settings.theme")}
-			tooltip={
-				<Tooltip>
-					<Text class="font-sans">{label}</Text>
-				</Tooltip>
-			}
+			label={() => t("settings.theme")}
+			tooltip={tooltip}
 			onPress={() => {
 				const index = THEME_CYCLE.indexOf(props.theme());
 				props.onTheme(THEME_CYCLE[(index + 1) % THEME_CYCLE.length]);
 			}}
 		>
 			{() => <Icon name={THEME_ICONS[props.theme()]} />}
-		</Button>
+		</SidebarFooterButton>
 	);
 }
