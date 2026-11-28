@@ -111,14 +111,14 @@ pub(crate) fn methods_hash() -> &'static str {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Capabilities<'a> {
+pub(crate) struct Capabilities<'a> {
     platform: &'static str,
     wsl: bool,
     methods: Vec<&'static str>,
     methods_hash: &'a str,
 }
 
-fn host_capabilities() -> Capabilities<'static> {
+pub(crate) fn host_capabilities() -> Capabilities<'static> {
     Capabilities {
         platform: platform_name(),
         wsl: cfg!(target_os = "windows"),

@@ -52,6 +52,7 @@ pub struct RuntimeState {
     web_assets: OnceLock<Arc<dyn super::web_assets::WebAssets>>,
     pub(crate) core: super::PiloRuntime,
     pub(crate) remote: super::RemoteServerManager,
+    pub(crate) local_ipc: tokio::sync::Mutex<Option<super::local_ipc::LocalIpcServer>>,
 }
 
 impl std::ops::Deref for RuntimeState {
@@ -104,6 +105,7 @@ impl Runtime {
             web_assets: OnceLock::new(),
             core: super::PiloRuntime::default(),
             remote: super::RemoteServerManager::default(),
+            local_ipc: tokio::sync::Mutex::default(),
         }));
         runtime.servers.initialize_control(&runtime);
         runtime
@@ -139,6 +141,9 @@ impl Runtime {
     }
 
     pub async fn shutdown(&self) {
+        if let Some(server) = self.local_ipc.lock().await.take() {
+            server.stop().await;
+        }
         self.events.close_streams();
         self.terminal_events.close();
         self.servers.begin_shutdown();

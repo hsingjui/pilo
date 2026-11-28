@@ -987,6 +987,7 @@ dependencies = [
  "keyring",
  "log",
  "pilo-domain",
+ "pilo-ipc",
  "pilo-protocol",
  "pilo-server",
  "regex",
@@ -1000,6 +1001,7 @@ dependencies = [
  "tower-http",
  "url",
  "windows 0.61.3",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -17,6 +17,7 @@ mod git;
 pub mod handle;
 pub mod host_api;
 pub mod host_paths;
+pub mod local_ipc;
 pub use handle::Runtime;
 pub mod next_prompt;
 mod pi_event_adapters;
