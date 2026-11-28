@@ -160,6 +160,7 @@ pub(crate) struct Fingerprint {
     pub sha256: String,
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 impl Fingerprint {
     pub(crate) fn of_bytes(bytes: &[u8]) -> Self {
         use sha2::{Digest, Sha256};
@@ -207,8 +208,10 @@ pub(crate) struct Status {
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) enum ElevateError {
+    #[cfg_attr(windows, allow(dead_code))]
     Canceled,
     /// The entry changed while authorization was pending; nothing was touched.
+    #[cfg_attr(windows, allow(dead_code))]
     Conflict,
     Failed(String),
 }
@@ -226,11 +229,14 @@ pub(crate) struct Installer {
     /// The PATH directories a new terminal searches, in order.
     pub path_dirs: Vec<PathBuf>,
     /// macOS `/usr/local/bin`, linked with authorization when not writable.
+    #[cfg_attr(windows, allow(dead_code))]
     pub system_dir: Option<PathBuf>,
     /// `~/.local/bin`.
     pub user_dir: PathBuf,
     /// The AppImage persistent copy directory, `~/.local/share/pilo/bin`.
+    #[cfg_attr(windows, allow(dead_code))]
     pub copy_dir: Option<PathBuf>,
+    #[cfg_attr(windows, allow(dead_code))]
     pub elevate: Elevate,
 }
 
@@ -372,6 +378,7 @@ fn write_temporary(path: &Path, bytes: &[u8], executable: bool) -> Result<PathBu
 /// Writes `bytes` to `path` only if nothing is there: a sibling temporary file
 /// is hard-linked into place, which fails instead of replacing. `Ok(false)`
 /// means something already exists at `path`.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn write_new(path: &Path, bytes: &[u8], executable: bool) -> Result<bool, String> {
     let temporary = write_temporary(path, bytes, executable)?;
     let placed = std::fs::hard_link(&temporary, path);
