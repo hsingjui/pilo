@@ -196,18 +196,22 @@ pub(super) async fn upload(
     Query(query): Query<HashMap<String, String>>,
     body: Body,
 ) -> Response {
-    let spec = host_api::methods().iter().find(|spec| spec.name == method);
-    if let Some(spec) = spec
-        && !host.principal.allows(spec.scope)
-    {
+    let Some(spec) = host_api::methods().iter().find(|spec| spec.name == method) else {
+        return v2_error(HostApiError::not_found(format!(
+            "Unknown Host API method '{method}'"
+        )));
+    };
+    if !host.principal.allows(spec.scope) {
         return v2_error(HostApiError::new(
             ErrorCode::Forbidden,
             format!("Access to '{method}' is forbidden"),
         ));
     }
-    let limit = spec
-        .and_then(|spec| spec.limits.max_binary_input_bytes)
-        .unwrap_or(host_api::MAX_BLOB_OUTPUT_BYTES);
+    let Some(limit) = spec.limits.max_binary_input_bytes else {
+        return v2_error(HostApiError::invalid(format!(
+            "Invalid request kind for '{method}'"
+        )));
+    };
     let data = match axum::body::to_bytes(body, limit).await {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -1875,6 +1879,28 @@ mod tests {
         assert_eq!(status, 403);
         let parsed: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed["error"]["code"], "forbidden");
+
+        // Uploads to unknown or non-binary methods fail before the body is read,
+        // so a body over every upload limit still gets the method error.
+        let oversized_upload = vec![b'x'; host_api::MAX_BLOB_OUTPUT_BYTES + 1];
+        for (path, expected_status, expected_code) in [
+            ("/api/v2/upload/no.such.method", 404, "not_found"),
+            ("/api/v2/upload/project.list", 400, "invalid_params"),
+        ] {
+            let (status, body) = http_raw(
+                host.port,
+                "POST",
+                path,
+                Some(&token_ws),
+                None,
+                Some("application/octet-stream"),
+                &oversized_upload,
+            )
+            .await;
+            assert_eq!(status, expected_status, "{path}");
+            let parsed: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(parsed["error"]["code"], expected_code, "{path}");
+        }
 
         // 2. session.historyImage returning > 10 MiB returns 413 with invalid_params.
         let pi_agent_dir = std::env::var_os("PI_CODING_AGENT_DIR")
