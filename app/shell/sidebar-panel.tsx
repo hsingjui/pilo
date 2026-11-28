@@ -519,7 +519,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							class={`pointer-events-none absolute top-3 right-[5px] bottom-3 w-[2px] rounded-full ${
 								layout.resizing()
 									? "bg-sidebar-ring/70"
-									: "bg-transparent group-hover:bg-sidebar-ring/50 group-focus:bg-sidebar-ring"
+									: "bg-transparent group-hover:bg-sidebar-ring/50 group-focus-visible:bg-sidebar-ring"
 							}`}
 							style={tactileTransition("background-color")}
 						/>
