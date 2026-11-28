@@ -177,3 +177,37 @@ fn host_errors_map_to_stable_categories() {
     unique.dedup();
     assert_eq!(unique.len(), codes.len());
 }
+
+#[test]
+fn open_targets_resolve_against_the_callers_cwd() {
+    assert_eq!(open_target(&words(&[])).unwrap(), OpenTarget::App);
+    assert_eq!(
+        open_target(&words(&["--session", "0198-ab"])).unwrap(),
+        OpenTarget::Session("0198-ab".into())
+    );
+    let cwd = std::path::Path::new("/work/some dir");
+    assert_eq!(
+        resolve_directory(cwd, "my project").unwrap(),
+        std::path::PathBuf::from("/work/some dir/my project")
+    );
+    assert_eq!(
+        resolve_directory(cwd, "/abs").unwrap(),
+        std::path::PathBuf::from("/abs")
+    );
+    for bad in [
+        &["a", "b"][..],
+        &[".", "--session", "x"],
+        &["--session", " "],
+        &["--project", "x"],
+    ] {
+        let error = open_target(&words(bad)).unwrap_err();
+        assert_eq!(error.category, error::Category::InvalidInput, "{bad:?}");
+    }
+}
+
+#[test]
+fn launch_is_a_global_option() {
+    let options = parse_options(words(&["projects", "list", "--launch"])).unwrap();
+    assert!(options.launch);
+    assert_eq!(options.command, words(&["projects", "list"]));
+}

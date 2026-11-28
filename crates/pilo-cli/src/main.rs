@@ -4,11 +4,12 @@
 //! `{"error": {...}}` on stderr and exit non-zero (see [`error::Category`]).
 //! `help` prints text.
 
-use std::{io::Read, process::ExitCode, time::Duration};
+use std::{io::Read, path::PathBuf, process::ExitCode, time::Duration};
 
 use pilo_ipc::{DEFAULT_REQUEST_TIMEOUT, DEV_APP_ID, Endpoint};
 use serde_json::{Value, json};
 
+mod app;
 mod client;
 mod contract;
 mod error;
@@ -16,6 +17,7 @@ mod error;
 #[allow(dead_code)]
 mod host_methods;
 
+use app::App;
 use client::Client;
 use error::CliError;
 use host_methods as m;
@@ -30,6 +32,7 @@ fn app_id() -> &'static str {
 #[derive(Debug, PartialEq)]
 struct Options {
     dev: bool,
+    launch: bool,
     timeout: Duration,
     command: Vec<String>,
 }
@@ -37,6 +40,7 @@ struct Options {
 fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, CliError> {
     let mut options = Options {
         dev: false,
+        launch: false,
         timeout: DEFAULT_REQUEST_TIMEOUT,
         command: Vec::new(),
     };
@@ -44,6 +48,7 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, CliE
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dev" => options.dev = true,
+            "--launch" => options.launch = true,
             "--timeout" => {
                 let value = args
                     .next()
@@ -418,6 +423,74 @@ async fn run_host(client: &mut Client, words: &[String], write: bool) -> Result<
     }
 }
 
+/// What `pilo open` shows once the app runs.
+#[derive(Debug, PartialEq)]
+enum OpenTarget {
+    App,
+    /// An absolute directory, resolved against the caller's cwd.
+    Directory(PathBuf),
+    Session(String),
+}
+
+fn open_target(words: &[String]) -> Result<OpenTarget, CliError> {
+    let args = Args::parse(words, &["session"])?;
+    match (args.positional.as_slice(), args.flag("session")) {
+        ([], None) => Ok(OpenTarget::App),
+        ([path], None) => {
+            let cwd = std::env::current_dir().map_err(|error| {
+                CliError::invalid(format!("cannot read the working directory: {error}"))
+            })?;
+            Ok(OpenTarget::Directory(resolve_directory(&cwd, path)?))
+        }
+        ([], Some(id)) if id.trim().is_empty() => {
+            Err(CliError::invalid("--session requires a session ID"))
+        }
+        ([], Some(id)) => Ok(OpenTarget::Session(id.to_owned())),
+        (_, Some(_)) => Err(CliError::invalid(
+            "pass either a directory or --session, not both",
+        )),
+        _ => Err(CliError::invalid("pilo open takes at most one directory")),
+    }
+}
+
+fn resolve_directory(cwd: &std::path::Path, path: &str) -> Result<PathBuf, CliError> {
+    if path.is_empty() {
+        return Err(CliError::invalid("the directory is empty"));
+    }
+    std::path::absolute(cwd.join(path))
+        .map_err(|error| CliError::invalid(format!("cannot resolve '{path}': {error}")))
+}
+
+/// The app this binary belongs to; `--dev` cannot start a different app's copy.
+fn own_app(options: &Options) -> Result<App, CliError> {
+    if options.dev && app_id() != DEV_APP_ID {
+        return Err(CliError::invalid(format!(
+            "this pilo belongs to {}; --dev cannot start or verify the development app, use pilo-dev",
+            app_id()
+        )));
+    }
+    App::current(app_id())
+}
+
+async fn open(options: &Options, endpoint: &Endpoint) -> Result<Value, CliError> {
+    let target = open_target(&options.command[1..])?;
+    let app = own_app(options)?;
+    // A navigation brings the window forward itself; a plain open asks the OS to.
+    let activate = target == OpenTarget::App;
+    let mut client = app.connect(endpoint, options.timeout, activate).await?;
+    let fields = match target {
+        OpenTarget::App => {
+            return Ok(json!({"opened": true, "installation": app.installation()}));
+        }
+        OpenTarget::Directory(path) => [
+            ("path", json!(path.to_string_lossy())),
+            ("sessionId", Value::Null),
+        ],
+        OpenTarget::Session(id) => [("path", Value::Null), ("sessionId", json!(id))],
+    };
+    client.call(&m::DESKTOP_OPEN, &fields, true).await
+}
+
 async fn run(options: Options) -> Result<Option<Value>, CliError> {
     let words = &options.command;
     match words.first().map(String::as_str) {
@@ -433,15 +506,27 @@ async fn run(options: Options) -> Result<Option<Value>, CliError> {
         }
         _ => {}
     }
+    let endpoint = || {
+        let app_id = if options.dev { DEV_APP_ID } else { app_id() };
+        Endpoint::current(app_id).map_err(CliError::offline)
+    };
+    if words[0] == "open" {
+        return open(&options, &endpoint()?).await.map(Some);
+    }
     let (_, write) = host_command(words).ok_or_else(|| {
         CliError::invalid(format!(
             "unknown command '{}'; see pilo help",
             words.join(" ")
         ))
     })?;
-    let app_id = if options.dev { DEV_APP_ID } else { app_id() };
-    let endpoint = Endpoint::current(app_id).map_err(CliError::offline)?;
-    let mut client = Client::connect(&endpoint, options.timeout).await?;
+    let endpoint = endpoint()?;
+    let mut client = if options.launch {
+        own_app(&options)?
+            .connect(&endpoint, options.timeout, false)
+            .await?
+    } else {
+        Client::connect(&endpoint, options.timeout).await?
+    };
     run_host(&mut client, words, write).await.map(Some)
 }
 

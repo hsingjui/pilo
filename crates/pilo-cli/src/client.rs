@@ -18,13 +18,14 @@ pub struct Client {
     stream: Box<dyn Stream>,
     timeout: Duration,
     next_id: u64,
+    hello: HostHello,
 }
 
 impl Client {
     pub async fn connect(endpoint: &Endpoint, timeout: Duration) -> Result<Self, CliError> {
         let offline = |error: std::io::Error| {
             CliError::offline(format!(
-                "Pilo is not running or not reachable at {endpoint} ({error}); start the Pilo app first"
+                "Pilo is not running or not reachable at {endpoint} ({error}); run `pilo open` or pass --launch"
             ))
         };
         let stream: Box<dyn Stream> = match endpoint {
@@ -79,7 +80,12 @@ impl Client {
             stream,
             timeout,
             next_id: 1,
+            hello,
         })
+    }
+
+    pub fn hello(&self) -> &HostHello {
+        &self.hello
     }
 
     /// Sends one request. A failure after a write was sent is reported as an

@@ -74,7 +74,168 @@ fn error_category(stderr: &str) -> String {
     value["error"]["category"].as_str().unwrap().to_owned()
 }
 
+fn error_code(stderr: &str) -> String {
+    let value: Value = serde_json::from_str(stderr.trim()).unwrap();
+    value["error"]["code"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// A copy of the CLI inside a stand-in `.app` bundle, as packages ship it.
+fn bundled_pilo(home: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let bundle = home.join(format!("{name}.app"));
+    let bin = bundle.join("Contents/Resources/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bundle.join("Contents/Info.plist"), "<plist/>").unwrap();
+    let cli = bin.join("pilo");
+    std::fs::copy(env!("CARGO_BIN_EXE_pilo"), &cli).unwrap();
+    (std::fs::canonicalize(&bundle).unwrap(), cli)
+}
+
+fn run_in(cli: &Path, home: &Path, cwd: &Path, args: &[&str]) -> (i32, Value, String) {
+    let output = Command::new(cli)
+        .args(args)
+        .env("HOME", home)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let value = serde_json::from_str(&stdout).unwrap_or(Value::Null);
+    (
+        output.status.code().unwrap(),
+        value,
+        String::from_utf8(output.stderr).unwrap(),
+    )
+}
+
+/// Answers navigations like the desktop window, recording each target.
+fn serve_navigation(runtime: &Runtime) -> tokio::task::JoinHandle<Vec<String>> {
+    let navigator = runtime.navigator();
+    tokio::spawn(async move {
+        let mut seen = Vec::new();
+        while let Some(request) = navigator.next().await {
+            navigator.complete(request.id, None);
+            seen.push(request.project_id);
+        }
+        seen
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn open_navigates_only_the_app_the_cli_belongs_to() {
+    let home = Home::new();
+    let (bundle, cli) = bundled_pilo(&home.0, "Pilo Dev");
+    let (other, _) = bundled_pilo(&home.0, "Other Pilo");
+    let directory = home.0.join("my project");
+    std::fs::create_dir_all(&directory).unwrap();
+    let installation = |path: &Path| pilo_ipc::Installation {
+        source: "installed".into(),
+        path: path.to_string_lossy().into_owned(),
+    };
+
+    // Another copy with the same app ID is running: refuse before navigating.
+    let (runtime, server) = host_at(&home.0, Some(installation(&other))).await;
+    let ui = serve_navigation(&runtime);
+    let (code, _, stderr) = {
+        let (cli, home, cwd) = (cli.clone(), home.0.clone(), home.0.clone());
+        tokio::task::spawn_blocking(move || {
+            run_in(&cli, &home, &cwd, &["--dev", "open", "my project"])
+        })
+        .await
+        .unwrap()
+    };
+    assert_eq!(code, 5, "{stderr}");
+    assert_eq!(error_code(&stderr), "installation_mismatch");
+    assert!(stderr.contains("Other Pilo.app"), "{stderr}");
+    let (code, _, stderr) = {
+        let (cli, home, cwd) = (cli.clone(), home.0.clone(), home.0.clone());
+        tokio::task::spawn_blocking(move || {
+            run_in(
+                &cli,
+                &home,
+                &cwd,
+                &["--dev", "--launch", "projects", "list"],
+            )
+        })
+        .await
+        .unwrap()
+    };
+    assert_eq!(
+        error_code(&stderr),
+        "installation_mismatch",
+        "{code}: {stderr}"
+    );
+    runtime.navigator().close();
+    assert!(ui.await.unwrap().is_empty());
+    server.stop().await;
+
+    // This copy is running: relative paths resolve against the caller's cwd.
+    let (runtime, server) = host_at(&home.0, Some(installation(&bundle))).await;
+    let ui = serve_navigation(&runtime);
+    let (code, opened, stderr) = {
+        let (cli, home, cwd) = (cli.clone(), home.0.clone(), directory.clone());
+        tokio::task::spawn_blocking(move || run_in(&cli, &home, &cwd, &["--dev", "open", "."]))
+            .await
+            .unwrap()
+    };
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(opened["added"], true);
+    let (code, again, stderr) = {
+        let (cli, home, cwd) = (cli.clone(), home.0.clone(), home.0.clone());
+        tokio::task::spawn_blocking(move || {
+            run_in(&cli, &home, &cwd, &["--dev", "open", "my project"])
+        })
+        .await
+        .unwrap()
+    };
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(again["added"], false);
+    assert_eq!(again["projectId"], opened["projectId"]);
+    let (code, _, stderr) = {
+        let (cli, home, cwd) = (cli.clone(), home.0.clone(), home.0.clone());
+        tokio::task::spawn_blocking(move || {
+            run_in(
+                &cli,
+                &home,
+                &cwd,
+                &["--dev", "--launch", "projects", "list"],
+            )
+        })
+        .await
+        .unwrap()
+    };
+    assert_eq!(code, 0, "{stderr}");
+    runtime.navigator().close();
+    let project = opened["projectId"].as_str().unwrap().to_owned();
+    assert_eq!(ui.await.unwrap(), vec![project.clone(), project]);
+    server.stop().await;
+}
+
+#[test]
+fn launch_reports_an_app_that_cannot_start() {
+    let home = Home::new();
+    let (_, cli) = bundled_pilo(&home.0, "Broken Pilo");
+    let (code, _, stderr) = run_in(
+        &cli,
+        &home.0,
+        &home.0,
+        &["--dev", "--launch", "projects", "list"],
+    );
+    assert_eq!(code, 3, "{stderr}");
+    assert_eq!(error_code(&stderr), "launch_failed");
+    assert!(stderr.contains("pilo open"), "{stderr}");
+}
+
 async fn host(home: &Path) -> (Runtime, pilo_runtime::local_ipc::LocalIpcServer) {
+    host_at(home, None).await
+}
+
+async fn host_at(
+    home: &Path,
+    installation: Option<pilo_ipc::Installation>,
+) -> (Runtime, pilo_runtime::local_ipc::LocalIpcServer) {
     let runtime = Runtime::new(HostPaths::new(home.join("data"), home.join("resources")).unwrap());
     let endpoint =
         endpoint::derive_unix(endpoint::UnixPlatform::MacOs, APP_ID, Some(home), None, 0).unwrap();
@@ -84,7 +245,7 @@ async fn host(home: &Path) -> (Runtime, pilo_runtime::local_ipc::LocalIpcServer)
             LocalIpcConfig {
                 app_id: APP_ID.to_owned(),
                 app_version: "0.0.0-test".to_owned(),
-                installation: None,
+                installation,
             },
         )
         .await
@@ -122,9 +283,15 @@ fn offline_and_usage_errors_are_categorized() {
     let (code, value, stderr) = pilo(&home.0, &["--dev", "projects", "list"], "");
     assert_eq!((code, value), (3, Value::Null));
     assert_eq!(error_category(&stderr), "offline");
-    let (code, _, stderr) = pilo(&home.0, &["open"], "");
+    let (code, _, stderr) = pilo(&home.0, &["open", "a", "b"], "");
     assert_eq!(code, 2);
     assert_eq!(error_category(&stderr), "invalid_input");
+    let (code, _, stderr) = pilo(&home.0, &["open", ".", "--session", "abc"], "");
+    assert_eq!(code, 2, "{stderr}");
+    // The test binary is not inside a Pilo app, so there is nothing to open.
+    let (code, _, stderr) = pilo(&home.0, &["--dev", "open"], "");
+    assert_eq!(code, 5, "{stderr}");
+    assert_eq!(error_code(&stderr), "app_not_found");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -69,6 +69,20 @@ impl CliError {
         Self::new(Category::Offline, message)
     }
 
+    pub fn offline_code(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            code: Some(code.to_owned()),
+            ..Self::new(Category::Offline, message)
+        }
+    }
+
+    pub fn rejected(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            code: Some(code.to_owned()),
+            ..Self::new(Category::Rejected, message)
+        }
+    }
+
     pub fn incompatible(message: impl Into<String>) -> Self {
         Self::new(Category::Incompatible, message)
     }

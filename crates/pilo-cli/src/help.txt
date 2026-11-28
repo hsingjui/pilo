@@ -1,12 +1,15 @@
 pilo - command-line client for the running Pilo app
 
-Usage: pilo [--dev] [--timeout <seconds>] <command>
+Usage: pilo [--dev] [--launch] [--timeout <seconds>] <command>
 
-The Pilo app must be running; pilo talks to it over a private local socket
-(named pipe on Windows) owned by the current user. No token or pairing.
+pilo talks to the running Pilo app over a private local socket (named pipe on
+Windows) owned by the current user. No token or pairing. Only `open` and
+`--launch` start the app; they use the copy this pilo was installed from and
+refuse another running copy with the same app ID.
 
 Options:
   --dev                 Connect to the development app (app.hsingjui.pilo.dev)
+  --launch              Start the app when it is not running, then run the command once
   --timeout <seconds>   Wait for each request up to this long (default 60)
   -h, --help            Show this help
   --version             Same as `pilo version`
@@ -14,6 +17,12 @@ Options:
 Commands:
   version                                   {"cli","appId"}; needs no running app
   help                                      This text
+
+  open                                      Start or bring forward the app
+  open <directory>                          Show a Local project; relative to the
+                                            current directory, added when new
+  open --session <id>                       Show a session by ID or unique ID
+                                            prefix; ambiguous prefixes list matches
 
   settings get                              Preferences
   settings patch                            Field-level patch; stdin: JSON object
