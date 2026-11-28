@@ -88,8 +88,8 @@ export function createWebChatScrollFollower(
 	let contentHeight = initialMetrics.contentHeight;
 	let lastOffset = initialMetrics.scrollTop;
 
-	const isNearEnd = (metrics: ChatScrollElementLike) =>
-		getChatScrollMaxOffset(metrics) - metrics.scrollTop <= threshold;
+	const isNearEnd = (metrics: ChatScrollElementLike, tolerance = threshold) =>
+		getChatScrollMaxOffset(metrics) - metrics.scrollTop <= tolerance;
 
 	const isInteracting = () => dragging || touchActive;
 
@@ -188,9 +188,10 @@ export function createWebChatScrollFollower(
 			touchMoved = false;
 			lastTouchX = null;
 			lastTouchY = null;
-			// Clear directional intent if the touch never started a drag/scroll,
-			// so a minor finger jitter without a following `scrollEnd` cannot stick.
-			if (!dragging && metrics.scrollTop === lastOffset) {
+			if (
+				!dragging &&
+				(metrics.scrollTop === lastOffset || isNearEnd(metrics, 1))
+			) {
 				scrollingUp = false;
 			}
 			// A plain tap fires `pointerup` (which may pause for a disclosure)
@@ -214,6 +215,9 @@ export function createWebChatScrollFollower(
 				updateFollowing(false);
 				lastOffset = metrics.scrollTop;
 				return;
+			}
+			if (!touchActive && isNearEnd(metrics, 1)) {
+				scrollingUp = false;
 			}
 			// Do not permanently lock out momentum scrolling; only mark following
 			// now if already at the bottom, and let subsequent scroll/scrollEnd
