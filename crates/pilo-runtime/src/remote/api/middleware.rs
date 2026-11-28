@@ -20,7 +20,7 @@ use crate::{
 };
 use pilo_domain::{RemoteAccessAddress, RemoteDevice};
 
-use super::{ApiFailureDiagnostic, AuthKind, AuthSession, RemoteHttpState, api_error};
+use super::{ApiFailureDiagnostic, AuthSession, RemoteHttpState, api_error};
 
 pub(super) async fn cancel_on_shutdown(
     State(mut shutdown): State<watch::Receiver<bool>>,
@@ -152,10 +152,7 @@ pub(super) async fn pairing_info(
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     Json(request): Json<PairingInfoRequest>,
 ) -> Response {
-    if state
-        .rate_limiter
-        .is_blocked(AuthKind::Pairing, address.ip())
-    {
+    if state.rate_limiter.is_blocked(address.ip()) {
         return auth_rate_limited();
     }
     let pairing = state.pairing.clone();
@@ -170,10 +167,7 @@ pub(super) async fn pair(
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     Json(request): Json<PairRequest>,
 ) -> Response {
-    if state
-        .rate_limiter
-        .is_blocked(AuthKind::Pairing, address.ip())
-    {
+    if state.rate_limiter.is_blocked(address.ip()) {
         return auth_rate_limited();
     }
     let paths = state.runtime.paths.clone();
@@ -222,11 +216,11 @@ fn pairing_response<T: Serialize>(
 ) -> Response {
     match result {
         Ok(value) => {
-            state.rate_limiter.clear(AuthKind::Pairing, ip);
+            state.rate_limiter.clear(ip);
             Json(value).into_response()
         }
         Err(PairingError::Unauthorized) => {
-            if state.rate_limiter.try_record_failure(AuthKind::Pairing, ip) {
+            if state.rate_limiter.try_record_failure(ip) {
                 api_error(StatusCode::UNAUTHORIZED, "invalid or expired pairing link")
             } else {
                 auth_rate_limited()
@@ -276,11 +270,13 @@ pub(super) async fn device_renew(
 
 pub(super) async fn require_auth(
     state: RemoteHttpState,
-    ConnectInfo(address): ConnectInfo<SocketAddr>,
     mut request: Request,
     next: Next,
 ) -> Response {
-    let ip = address.ip();
+    // Device tokens are 32 random bytes (SHA-256 indexed), so there is no
+    // brute-force surface worth locking an IP out for. Applying the pairing
+    // rate limiter here masked the 401 that tells a WebUI client its stale
+    // token is dead, turning 401s into an unrecoverable 429 lockout.
     let Some(token) = token_from_headers(request.headers()) else {
         return api_error(StatusCode::UNAUTHORIZED, "authentication required");
     };
@@ -302,13 +298,7 @@ pub(super) async fn require_auth(
                 .insert(AuthSession { device, token });
             next.run(request).await
         }
-        Ok(Ok(None)) => {
-            if state.rate_limiter.try_record_failure(AuthKind::Device, ip) {
-                api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token")
-            } else {
-                auth_rate_limited()
-            }
-        }
+        Ok(Ok(None)) => api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token"),
         Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         Err(error) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,

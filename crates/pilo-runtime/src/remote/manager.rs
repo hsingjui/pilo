@@ -683,7 +683,7 @@ mod tests {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
     #[tokio::test]
-    async fn gateway_enforces_configured_origins_and_limits_device_failures_per_ip() {
+    async fn gateway_enforces_configured_origins_and_never_rate_limits_device_tokens() {
         let root = std::env::temp_dir().join(format!(
             "pilo-remote-requests-{}-{}",
             std::process::id(),
@@ -749,23 +749,23 @@ mod tests {
         ] {
             assert_eq!(request("/api/v2/health", headers).await, 403);
         }
+        // A stale token must keep seeing 401, however often it retries, so the
+        // client knows to pair again instead of waiting out a 429.
         for _ in 0..8 {
             assert_eq!(request("/api/v1/auth/device", "").await, 401);
-        }
-        for _ in 0..5 {
             assert_eq!(
                 request("/api/v1/auth/device", "Authorization: Bearer invalid\r\n").await,
                 401
             );
+            assert_eq!(
+                request(
+                    "/api/v1/auth/device",
+                    "Sec-WebSocket-Protocol: pilo, pilo-token.invalid\r\n"
+                )
+                .await,
+                401
+            );
         }
-        assert_eq!(
-            request(
-                "/api/v1/auth/device",
-                "Sec-WebSocket-Protocol: pilo, pilo-token.invalid\r\n"
-            )
-            .await,
-            429
-        );
         let paired =
             super::super::auth::create_device(None, "127.0.0.1", RemoteScopes::Chat).unwrap();
         let db = storage::open_with_paths(&runtime.paths).unwrap();
@@ -783,11 +783,6 @@ mod tests {
             )
             .await,
             200
-        );
-        assert_eq!(request("/api/v1/auth/device", "").await, 401);
-        assert_eq!(
-            request("/api/v1/auth/device", "Authorization: Bearer invalid\r\n").await,
-            429
         );
         runtime.remote.stop().await;
         std::fs::remove_dir_all(root).unwrap();

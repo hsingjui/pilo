@@ -77,18 +77,12 @@ struct AuthRateLimiter {
 
 #[derive(Default)]
 struct AuthFailures {
-    by_ip: HashMap<IpAddr, [VecDeque<Instant>; 2]>,
+    by_ip: HashMap<IpAddr, VecDeque<Instant>>,
     insertion_order: VecDeque<IpAddr>,
 }
 
-#[derive(Clone, Copy)]
-enum AuthKind {
-    Pairing,
-    Device,
-}
-
 impl AuthRateLimiter {
-    fn is_blocked(&self, kind: AuthKind, ip: IpAddr) -> bool {
+    fn is_blocked(&self, ip: IpAddr) -> bool {
         let mut failures = self
             .failures
             .lock()
@@ -96,8 +90,8 @@ impl AuthRateLimiter {
         let Some(attempts) = failures.by_ip.get_mut(&ip) else {
             return false;
         };
-        Self::prune_expired(&mut attempts[kind as usize], Instant::now());
-        attempts[kind as usize].len() >= AUTH_FAILURE_LIMIT
+        Self::prune_expired(attempts, Instant::now());
+        attempts.len() >= AUTH_FAILURE_LIMIT
     }
 
     fn prune_expired(attempts: &mut VecDeque<Instant>, now: Instant) {
@@ -109,7 +103,7 @@ impl AuthRateLimiter {
         }
     }
 
-    fn try_record_failure(&self, kind: AuthKind, ip: IpAddr) -> bool {
+    fn try_record_failure(&self, ip: IpAddr) -> bool {
         let mut failures = self
             .failures
             .lock()
@@ -122,7 +116,7 @@ impl AuthRateLimiter {
             }
             failures.insertion_order.push_back(ip);
         }
-        let attempts = &mut failures.by_ip.entry(ip).or_default()[kind as usize];
+        let attempts = failures.by_ip.entry(ip).or_default();
         let now = Instant::now();
         Self::prune_expired(attempts, now);
         if attempts.len() >= AUTH_FAILURE_LIMIT {
@@ -132,7 +126,7 @@ impl AuthRateLimiter {
         true
     }
 
-    fn clear(&self, kind: AuthKind, ip: IpAddr) {
+    fn clear(&self, ip: IpAddr) {
         if let Some(attempts) = self
             .failures
             .lock()
@@ -140,7 +134,7 @@ impl AuthRateLimiter {
             .by_ip
             .get_mut(&ip)
         {
-            attempts[kind as usize].clear();
+            attempts.clear();
         }
     }
 }
@@ -455,13 +449,12 @@ mod tests {
         let first = "192.168.1.1".parse().unwrap();
         let second = "192.168.1.2".parse().unwrap();
         for _ in 0..AUTH_FAILURE_LIMIT {
-            assert!(limiter.try_record_failure(AuthKind::Device, first));
+            assert!(limiter.try_record_failure(first));
         }
-        assert!(limiter.is_blocked(AuthKind::Device, first));
-        assert!(!limiter.is_blocked(AuthKind::Device, second));
-        assert!(!limiter.is_blocked(AuthKind::Pairing, first));
-        limiter.clear(AuthKind::Device, first);
-        assert!(!limiter.is_blocked(AuthKind::Device, first));
+        assert!(limiter.is_blocked(first));
+        assert!(!limiter.is_blocked(second));
+        limiter.clear(first);
+        assert!(!limiter.is_blocked(first));
     }
 
     #[test]
@@ -474,7 +467,7 @@ mod tests {
                 .map(|_| {
                     scope.spawn(|| {
                         barrier.wait();
-                        limiter.try_record_failure(AuthKind::Device, ip)
+                        limiter.try_record_failure(ip)
                     })
                 })
                 .collect::<Vec<_>>()
@@ -491,8 +484,7 @@ mod tests {
         let limiter = AuthRateLimiter::default();
         for index in 0..=AUTH_FAILURE_MAX_IPS {
             let ip = IpAddr::V4(std::net::Ipv4Addr::from(index as u32));
-            assert!(limiter.try_record_failure(AuthKind::Device, ip));
-            assert!(limiter.try_record_failure(AuthKind::Pairing, ip));
+            assert!(limiter.try_record_failure(ip));
         }
         let failures = limiter.failures.lock().unwrap();
         assert_eq!(failures.by_ip.len(), AUTH_FAILURE_MAX_IPS);
