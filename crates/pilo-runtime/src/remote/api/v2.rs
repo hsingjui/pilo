@@ -709,6 +709,30 @@ mod tests {
             }
         }
 
+        /// Local projects need the workspace's `pilo-server` build and a Pi
+        /// executable; a stub answering `--version` stands in for Pi.
+        async fn start_with_local_projects(label: &str) -> Self {
+            let Some(server_bin) = locate_pilo_server_binary() else {
+                panic!("pilo-server binary not found; run `cargo build -p pilo-server` first");
+            };
+            initialize_local_server_binary(server_bin);
+            let host = Self::start_ephemeral(label).await;
+            let pi = host.root.join("pi");
+            std::fs::write(&pi, "#!/bin/sh\necho 0.0.0-test\n").unwrap();
+            #[cfg(unix)]
+            std::fs::set_permissions(&pi, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .unwrap();
+            let local = crate::connections::local_connection_get(&host.runtime).unwrap();
+            crate::connections::connection_settings_update(
+                &host.runtime,
+                local.id,
+                local.name,
+                Some(pi.to_string_lossy().into_owned()),
+            )
+            .unwrap();
+            host
+        }
+
         async fn pair(&self, scopes: RemoteScopes, device_name: &str) -> (String, String) {
             let state = self
                 .runtime
@@ -1178,12 +1202,7 @@ mod tests {
 
     #[tokio::test]
     async fn project_mutations_notify_native_and_web_clients() {
-        let Some(server_bin) = locate_pilo_server_binary() else {
-            panic!("pilo-server binary not found; run `cargo build -p pilo-server` first");
-        };
-        initialize_local_server_binary(server_bin);
-
-        let host = TestHost::start_ephemeral("project-events").await;
+        let host = TestHost::start_with_local_projects("project-events").await;
         let (token, _) = host.pair(RemoteScopes::ChatWorkspace, "Workspace").await;
         let mut web = WsClient::connect(host.port, "/api/v2/events", &token).await;
         assert_eq!(web.recv_json().await["type"], "hello");
@@ -1257,12 +1276,7 @@ mod tests {
 
     #[tokio::test]
     async fn v2_terminal_ownership_disconnect_retention_snapshot_toggle_and_revoke() {
-        let Some(server_bin) = locate_pilo_server_binary() else {
-            panic!("pilo-server binary not found; run `cargo build -p pilo-server` first");
-        };
-        initialize_local_server_binary(server_bin);
-
-        let host = TestHost::start_ephemeral("term").await;
+        let host = TestHost::start_with_local_projects("term").await;
         host.runtime
             .terminals
             .set_disconnect_retention(Duration::from_secs(5));
@@ -1503,7 +1517,7 @@ mod tests {
 
     #[tokio::test]
     async fn v2_terminal_open_rejects_downgraded_revoked_disabled_and_expires_headless_terminal() {
-        let host = TestHost::start_ephemeral("term-race").await;
+        let host = TestHost::start_with_local_projects("term-race").await;
         let project_dir = host.root.join("term-race-proj");
         std::fs::create_dir_all(&project_dir).unwrap();
         let project_path = project_dir.to_string_lossy().to_string();
@@ -1682,7 +1696,7 @@ mod tests {
 
     #[tokio::test]
     async fn v2_terminal_open_barrier_concurrency_ws_drop_downgrade_and_cancellation() {
-        let host = TestHost::start_ephemeral("term-barrier").await;
+        let host = TestHost::start_with_local_projects("term-barrier").await;
         let project_dir = host.root.join("barrier-proj");
         std::fs::create_dir_all(&project_dir).unwrap();
         let project_path = project_dir.to_string_lossy().to_string();
@@ -1820,7 +1834,7 @@ mod tests {
 
     #[tokio::test]
     async fn v2_binary_limits_enforce_terminal_write_1mib_and_blob_10mib() {
-        let host = TestHost::start_ephemeral("bin-limit").await;
+        let host = TestHost::start_with_local_projects("bin-limit").await;
         let project_dir = host.root.join("bin-limit-proj");
         std::fs::create_dir_all(&project_dir).unwrap();
         let project_path = project_dir.to_string_lossy().to_string();
