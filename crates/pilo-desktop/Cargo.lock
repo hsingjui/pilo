@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-desktop"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "base64 0.22.1",
  "dispatch2",
@@ -1461,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-domain"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "getrandom 0.3.4",
  "regex",
@@ -1471,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-protocol"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "prost",
  "prost-build",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-runtime"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1509,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-server"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "libc",
  "memchr",
