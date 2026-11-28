@@ -325,8 +325,12 @@ jobs:
             "$root/usr/share/icons/hicolor/256x256/apps"
           cp -R "$app" "$root/opt/pilo"
           chmod -R u+rwX,go+rX,go-w "$root"
-          ln -s /opt/pilo/Pilo "$root/usr/bin/pilo"
-          sed 's|^Exec=Pilo|Exec=pilo|' "$app/$id.desktop" > "$root/usr/share/applications/$id.desktop"
+          # The GUI gets its own command so /usr/bin never shadows the CLI's `pilo`.
+          launcher=pilo-desktop
+          [[ $id == *.dev ]] && launcher=pilo-desktop-dev
+          ln -s /opt/pilo/Pilo "$root/usr/bin/$launcher"
+          sed "s|^Exec=Pilo|Exec=$launcher|" "$app/$id.desktop" > "$root/usr/share/applications/$id.desktop"
+          grep -qx "Exec=$launcher.*" "$root/usr/share/applications/$id.desktop"
           cp "$app/$id.png" "$root/usr/share/icons/hicolor/256x256/apps/$id.png"
 
           shlibs="$RUNNER_TEMP/pilo-shlibs"
@@ -375,7 +379,7 @@ jobs:
           %files
           %defattr(-,root,root,-)
           /opt/pilo
-          /usr/bin/pilo
+          /usr/bin/$launcher
           /usr/share/applications/$id.desktop
           /usr/share/icons/hicolor/256x256/apps/$id.png
           EOF
