@@ -15,7 +15,7 @@ import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
 import { TerminalStore } from "../state/terminal-store";
 import { WorkspaceStore } from "../state/workspace-store";
-import type { AppShellProps } from "../shell/AppShell";
+import type { AppShellProps } from "../shell/app-shell-props";
 import { AppToasts } from "../shell/app-toasts";
 import type { DesktopNotificationsApi } from "../shell/desktop-notifications";
 import type { DesktopShell, DesktopWindowShell } from "../shell/desktop-shell";
