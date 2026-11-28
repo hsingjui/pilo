@@ -734,6 +734,11 @@ pub(crate) fn is_cli_session_id(id: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// Whether `key` is the runtime key of a session the CLI created.
+pub(crate) fn is_cli_session_key(key: &str) -> bool {
+    serde_json::from_str::<[String; 2]>(key).is_ok_and(|[_, id]| is_cli_session_id(&id))
+}
+
 fn chat_key(project: &str, id: &str) -> String {
     json!([project, id]).to_string()
 }
@@ -910,6 +915,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn only_cli_created_ids_make_cli_session_keys() {
+        let cli_id = format!("{NEW_SESSION_ID_PREFIX}{}", "0123456789abcdef".repeat(2));
+        assert!(is_cli_session_key(&chat_key("project", &cli_id)));
+        assert!(!is_cli_session_key(&chat_key("project", "temporary-1")));
+        assert!(!is_cli_session_key(&chat_key("project", "cli-0123")));
+        assert!(!is_cli_session_key(&cli_id));
+    }
 
     #[test]
     fn last_assistant_message_skips_empty_and_tool_only_messages() {

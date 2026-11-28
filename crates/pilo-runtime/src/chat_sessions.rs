@@ -303,7 +303,13 @@ impl ChatSessions {
                     .snapshots
                     .insert(session_key.to_owned(), reader.clone());
                 let turn = match project.connection.kind {
-                    _ if launch.no_session => turn_projection::SessionTurn::new_in_memory(),
+                    // CLI temporary sessions are read back by snapshot; other noSession
+                    // chats keep the truncated snapshot their clients expect.
+                    _ if launch.no_session
+                        && crate::session_ops::is_cli_session_key(session_key) =>
+                    {
+                        turn_projection::SessionTurn::new_in_memory()
+                    }
                     pilo_domain::ConnectionKind::Local => turn_projection::SessionTurn::new(true),
                     _ => turn_projection::SessionTurn::new_remote(reader),
                 };
