@@ -499,6 +499,6 @@ fn terminal_access_error(error: crate::terminal::TerminalAccessError) -> HostApi
         crate::terminal::TerminalAccessError::Forbidden(message) => {
             HostApiError::new(super::ErrorCode::Forbidden, message)
         }
-        crate::terminal::TerminalAccessError::Internal(message) => HostApiError::invalid(message),
+        crate::terminal::TerminalAccessError::Internal(message) => HostApiError::internal(message),
     }
 }
